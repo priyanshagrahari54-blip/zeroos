@@ -18,6 +18,10 @@ void scheduler_yield(void) {
     task_yield();
 }
 
+int scheduler_sleep_until(uint64_t deadline) {
+    return task_sleep_until(deadline);
+}
+
 int scheduler_sleep_ticks(uint64_t ticks) {
     return task_sleep_ticks(ticks);
 }
