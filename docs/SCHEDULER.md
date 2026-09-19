@@ -66,10 +66,13 @@ the normal `popq` + `iretq` path. This prevents the earlier unsafe pattern
 where a normal C-call-frame context switch was attempted while an interrupt
 return frame was still owned by the interrupted task.
 
-Tasks receive an iret-compatible synthetic frame when created, so a task that
-has not yet taken its first interrupt can still be selected by IRQ-exit
-preemption. Once a task is actually interrupted, its hardware-generated frame
-replaces the synthetic pointer.
+New tasks start with only their ABI-valid cooperative context. The IRQ-exit
+scheduler can restore that context directly through the tagged `saved_stack`
+path. A live `interrupt_frame` exists only for a task that has actually been
+preempted. Cooperative scheduling deliberately skips such tasks until an IRQ
+exit can restore their live architectural frame; this prevents a stale
+cooperative return address from being mistaken for the interrupted execution
+point.
 
 The design follows the same architectural principle used by mature kernels:
 interrupt entry/exit and scheduling state are explicit boundaries, and the
