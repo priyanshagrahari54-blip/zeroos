@@ -75,6 +75,20 @@ The design follows the same architectural principle used by mature kernels:
 interrupt entry/exit and scheduling state are explicit boundaries, and the
 scheduler does not corrupt an in-flight interrupt frame. citeturn3search1turn2search13
 
+## Timed sleep and deadlines
+
+Kernel tasks can sleep for a number of monotonic PIT ticks through `task_sleep_ticks()` / `scheduler_sleep_ticks()`. Sleeping tasks are kept in a time-ordered intrusive list using their task descriptor, so the common case requires no heap allocation. The timer path wakes all expired deadlines before the scheduler considers preemption.
+
+The current timer is intentionally tick-granular at 100 Hz: a five-tick sleep has a nominal 50 ms duration and wakeup occurs on the first tick at or after its deadline. Deadline arithmetic uses unsigned 64-bit monotonic ticks with signed-difference ordering, making normal wraparound-safe comparisons possible for deadlines within the representable half-range.
+
+This is deliberately a low-overhead timeout mechanism rather than the final high-resolution timer subsystem. Mature timer architectures separate low-resolution timeout scheduling from high-resolution event timers; ZEROOS can add a clocksource/clockevent layer and high-resolution timers later without changing the task sleep API. citeturn0search0turn0search2
+
+## Task lifecycle and reclamation
+
+A task that returns from its entry function becomes `TASK_ZOMBIE`. Its kernel stack cannot be freed by the task itself because execution is still using that stack. The scheduler therefore reclaims zombie stacks from a later timer/scheduler context, resets the descriptor to `TASK_UNUSED`, and returns the physical page to the page allocator. This makes task slots reusable without allocating a separate reaper thread or permanent reaper stack.
+
+The lifecycle is therefore `UNUSED → RUNNABLE → RUNNING → BLOCKED/RUNNABLE → ZOMBIE → UNUSED`. A blocked task cannot become a zombie until it is explicitly resumed and exits.
+
 ## Resource model
 
 The permanent idle task costs one 4 KiB kernel stack page plus one static task
