@@ -221,12 +221,11 @@ struct task *task_current(void) {
 
 void task_yield(void) {
     struct task *previous=current_task;
-
-    /* Keep current_task and the saved C stack coherent across the switch. */
-    __asm__ volatile ("cli" ::: "memory");
     int next;
+    uint64_t flags;
 
     if (!previous || previous->preempt_count!=0) return;
+    flags=task_irq_save();
 
     next=find_next_runnable();
     if (next<0 || &tasks[next]==previous) {
@@ -254,13 +253,14 @@ int task_prepare_block(void) {
 
 int task_block(void) {
     struct task *previous=current_task;
-
-    __asm__ volatile ("cli" ::: "memory");
     int next;
+    uint64_t flags;
 
     if (!previous || previous==&tasks[0] ||
         previous==&tasks[ZEROOS_IDLE_SLOT] || previous->preempt_count!=0)
         return -1;
+
+    flags=task_irq_save();
 
     if (previous->state==TASK_RUNNABLE) {
         task_irq_restore(flags);
@@ -299,9 +299,8 @@ int task_wake(struct task *task) {
 
 void task_exit(void) {
     struct task *previous=current_task;
-
-    __asm__ volatile ("cli" ::: "memory");
     int next;
+    uint64_t flags;
 
     if (!previous || previous==&tasks[0] ||
         previous==&tasks[ZEROOS_IDLE_SLOT])
@@ -409,8 +408,7 @@ uint8_t task_need_resched(void) {
 
 void task_start_first(void) {
     int next;
-
-    __asm__ volatile ("cli" ::: "memory");
+    uint64_t flags=task_irq_save();
 
     tasks[0].state=TASK_BLOCKED;
     next=find_next_runnable();
