@@ -1805,12 +1805,32 @@ isr_common:
     call interrupt_dispatch
 
     /*
-     * interrupt_dispatch returns the complete frame selected for IRQ exit.
-     * It may be the interrupted frame or a different task's frame. Loading
-     * RSP here makes the existing register/IRET epilogue restore that task
-     * atomically from its saved architectural state.
+     * interrupt_dispatch returns either:
+     *   - an aligned architectural frame pointer (bit 0 clear), or
+     *   - a tagged cooperative saved-stack pointer (bit 0 set).
+     *
+     * The latter is necessary when the selected task last yielded
+     * cooperatively: it has a valid callee-saved context but no live hardware
+     * interrupt frame. Restore that context and return normally; interrupts
+     * are enabled immediately before retq because the interrupted IRQ has
+     * left IF cleared.
      */
-    mov %rax, %rsp
+    test $1, %rax
+    jz 1f
+
+    andq $-2, %rax
+    movq %rax, %rsp
+    popq %r15
+    popq %r14
+    popq %r13
+    popq %r12
+    popq %rbx
+    popq %rbp
+    sti
+    retq
+
+1:
+    movq %rax, %rsp
     popq %r15
     popq %r14
     popq %r13
