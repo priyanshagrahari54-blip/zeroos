@@ -56,7 +56,8 @@ _start:
     mov $pml4_table, %eax
     mov %eax, %cr3
     mov %cr4, %eax
-    or $0x20, %eax
+    # PAE + OSFXSR + OSXMMEXCPT for compiler-generated SSE instructions.
+    or $0x620, %eax
     mov %eax, %cr4
     mov $0xC0000080, %ecx
     rdmsr
