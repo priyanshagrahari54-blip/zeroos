@@ -28,5 +28,15 @@ jobs:
         run: |
           timeout 10s qemu-system-x86_64             -cdrom build/zeroos.iso             -serial file:build/serial.log             -display none || true
           grep -q "ZEROOS: foundation milestone reached." build/serial.log
-          grep -q "ZEROOS: timer tick 100." build/serial.log
           grep -q "ZEROOS: physical page allocator initialized." build/serial.log
+          grep -q "ZEROOS: timer tick 100." build/serial.log
+
+      - name: Dump serial log on failure
+        if: failure()
+        run: |
+          echo "===== ZEROOS serial.log ====="
+          if test -f build/serial.log; then
+            cat build/serial.log
+          else
+            echo "serial.log was not produced"
+          fi
