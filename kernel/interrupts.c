@@ -1,6 +1,7 @@
 #include "interrupts.h"
 #include "pic.h"
 #include "timer.h"
+#include "scheduler.h"
 
 struct idt_entry {
     uint16_t offset_low; uint16_t selector; uint8_t ist; uint8_t type_attr;
@@ -78,6 +79,7 @@ static inline void lidt(const struct idtr *descriptor) {
 static void timer_irq_handler(uint8_t irq, struct interrupt_frame *frame, void *context) {
     (void)irq; (void)frame; (void)context;
     timer_tick();
+    scheduler_tick();
 }
 
 void interrupt_dispatch(struct interrupt_frame *frame) {
