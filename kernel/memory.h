@@ -10,5 +10,6 @@ void *page_alloc(void);
 void page_free(void *address);
 uint64_t memory_total_pages(void);
 uint64_t memory_free_pages(void);
+uint64_t memory_max_physical(void);
 
 #endif
