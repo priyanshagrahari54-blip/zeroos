@@ -79,6 +79,27 @@ static void vmm_self_test(void) {
         kernel_panic("VMM map failed");
     if (vmm_translate(VMM_SELF_TEST_VA)!=(uint64_t)physical)
         kernel_panic("VMM translation mismatch");
+    if (vmm_protect_page(VMM_SELF_TEST_VA,VMM_USER|VMM_NO_EXECUTE)!=0)
+        kernel_panic("VMM protection update failed");
+    if (!vmm_is_user_range(VMM_SELF_TEST_VA,VMM_PAGE_SIZE,0))
+        kernel_panic("VMM user-range validation failed");
+    if (vmm_is_user_range(VMM_SELF_TEST_VA,VMM_PAGE_SIZE,1))
+        kernel_panic("VMM write permission validation failed");
+
+    void *range_a=page_alloc();
+    void *range_b=page_alloc();
+    if (!range_a || !range_b)
+        kernel_panic("VMM range self-test allocation failed");
+    const uint64_t range_va=VMM_SELF_TEST_VA+0x2000ULL;
+    if (vmm_map_range(range_va,(uint64_t)range_a,2,VMM_USER|VMM_WRITABLE|VMM_NO_EXECUTE)!=0)
+        kernel_panic("VMM range mapping failed");
+    if (!vmm_is_user_range(range_va,8192,1))
+        kernel_panic("VMM multi-page range validation failed");
+    if (vmm_unmap_range(range_va,2)!=0)
+        kernel_panic("VMM range unmap failed");
+    page_free(range_a);
+    page_free(range_b);
+
     if (vmm_unmap_page(VMM_SELF_TEST_VA)!=0) kernel_panic("VMM unmap failed");
     page_free(physical);
     serial_write_public("ZEROOS: virtual memory self-test passed.\n");
