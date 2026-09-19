@@ -491,6 +491,13 @@ uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
 
     if (next<0 || &tasks[next]==previous) {
         previous->need_resched=0;
+        /*
+         * The architectural frame is consumed by the iretq epilogue. Once
+         * execution returns to the task, RSP points above the frame and the
+         * normal downward-growing stack may overwrite it. Do not retain a
+         * pointer to a frame that is no longer live.
+         */
+        previous->interrupt_frame=0;
         return (uint64_t)frame;
     }
 
@@ -512,8 +519,16 @@ uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
      * expected by context_switch(). The low-bit tag tells isr_common which
      * exit protocol to use, avoiding any stale-frame reuse.
      */
-    if (tasks[next].interrupt_frame)
-        return (uint64_t)tasks[next].interrupt_frame;
+    if (tasks[next].interrupt_frame) {
+        struct interrupt_frame *target_frame=tasks[next].interrupt_frame;
+        /*
+         * target_frame is consumed exactly once by iretq. Clear the task's
+         * metadata before leaving IRQ context so future cooperative code
+         * cannot mistake this dead stack frame for a resumable context.
+         */
+        tasks[next].interrupt_frame=0;
+        return (uint64_t)target_frame;
+    }
 
     return tasks[next].saved_stack | 1ULL;
 }
