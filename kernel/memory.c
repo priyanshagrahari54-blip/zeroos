@@ -4,6 +4,22 @@
 #define MULTIBOOT_TAG_TYPE_MMAP 6
 #define MULTIBOOT_MEMORY_AVAILABLE 1
 
+static void memory_debug_u64(uint64_t value) {
+    extern void serial_write_public(const char *text);
+    char buffer[21];
+    int pos = 20;
+    buffer[pos] = '\0';
+    if (value == 0) {
+        serial_write_public("0");
+        return;
+    }
+    while (value > 0 && pos > 0) {
+        buffer[--pos] = (char)('0' + (value % 10));
+        value /= 10;
+    }
+    serial_write_public(&buffer[pos]);
+}
+
 static inline void memory_debug(char marker) {
     __asm__ volatile ("outb %0, $0xe9"
                       : "+a"(marker)
@@ -112,10 +128,10 @@ void memory_init(uint64_t multiboot_info) {
     extern void serial_write_public(const char *text);
     extern void serial_write_u64_public(uint64_t value);
     serial_write_public("ZEROOS: bitmap address: ");
-    serial_write_u64_public((uint64_t)page_bitmap);
+    memory_debug_u64((uint64_t)page_bitmap);
     serial_write_public("\n");
     serial_write_public("ZEROOS: bitmap bytes: ");
-    serial_write_u64_public((uint64_t)sizeof(page_bitmap));
+    memory_debug_u64((uint64_t)sizeof(page_bitmap));
     serial_write_public("\n");
     for (uint64_t i = 0; i < ZEROOS_BITMAP_WORDS; ++i)
         page_bitmap[i] = ~0ULL;
