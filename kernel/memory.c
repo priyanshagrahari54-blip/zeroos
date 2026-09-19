@@ -4,6 +4,10 @@
 #define MULTIBOOT_TAG_TYPE_MMAP 6
 #define MULTIBOOT_MEMORY_AVAILABLE 1
 
+static inline void memory_debug(char marker) {
+    __asm__ volatile ("outb %0, $0xe9" : : "a"(marker));
+}
+
 /*
  * Early physical-memory policy:
  * - track the first 512 MiB, which is enough for the current low-memory
@@ -96,6 +100,7 @@ static void reserve_range(uint64_t start, uint64_t end) {
 }
 
 void memory_init(uint64_t multiboot_info) {
+    memory_debug('a');
     /*
      * Start fully reserved.  We then release only firmware-reported
      * available ranges.  This is safer than assuming RAM is contiguous.
@@ -109,12 +114,14 @@ void memory_init(uint64_t multiboot_info) {
     managed_pages = 0;
     free_pages = 0;
     available_pages = 0;
+    memory_debug('b');
 
     /* The first two words are total_size and reserved. */
     if (multiboot_info == 0)
         return;
 
     uint32_t total_size = *(uint32_t *)(uint64_t)multiboot_info;
+    memory_debug('c');
     if (total_size < 16U)
         return;
 
@@ -126,6 +133,7 @@ void memory_init(uint64_t multiboot_info) {
     if (total_size > 0x1000000U)
         return;
 
+    memory_debug('d');
     while (cursor + sizeof(struct multiboot_tag) <= end) {
         struct multiboot_tag *tag = (struct multiboot_tag *)cursor;
 
@@ -134,6 +142,7 @@ void memory_init(uint64_t multiboot_info) {
             break;
 
         if (tag->type == MULTIBOOT_TAG_TYPE_MMAP) {
+            memory_debug('m');
             struct multiboot_tag_mmap *mmap =
                 (struct multiboot_tag_mmap *)tag;
 
@@ -190,12 +199,14 @@ void memory_init(uint64_t multiboot_info) {
         cursor += (tag->size + 7U) & ~7U;
     }
 
+    memory_debug('e');
     reserve_range(0, ZEROOS_PAGE_SIZE);
     reserve_range((uint64_t)&__kernel_start,
                   (uint64_t)&__kernel_end);
     reserve_range(multiboot_info, multiboot_info + total_size);
 
     managed_pages = available_pages;
+    memory_debug('f');
 }
 
 void *page_alloc(void) {
