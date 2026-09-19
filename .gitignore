@@ -1,0 +1,7 @@
+build/
+*.o
+*.iso
+*.img
+*.elf
+.vscode/
+.idea/
