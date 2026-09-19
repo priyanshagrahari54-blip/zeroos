@@ -6,6 +6,7 @@
 
 extern void context_switch(uint64_t *old_sp, uint64_t *new_sp);
 extern void serial_write_public(const char *text);
+extern void serial_write_u64(uint64_t value);
 
 #define ZEROOS_IDLE_SLOT 1
 #define ZEROOS_DEFAULT_TIMESLICE 10U
@@ -435,13 +436,12 @@ int task_sleep_ticks(uint64_t ticks) {
 void task_exit(void) {
     struct task *previous=current_task;
     int next;
-    uint64_t flags;
 
     if (!previous || previous==&tasks[0] ||
         previous==&tasks[ZEROOS_IDLE_SLOT])
         return;
 
-    flags=task_irq_save();
+    task_irq_save();
     previous->state=TASK_ZOMBIE;
     previous->need_resched=0;
     next=find_next_runnable(1);
