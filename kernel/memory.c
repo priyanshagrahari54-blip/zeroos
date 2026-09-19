@@ -5,7 +5,10 @@
 #define MULTIBOOT_MEMORY_AVAILABLE 1
 
 static inline void memory_debug(char marker) {
-    __asm__ volatile ("outb %0, $0xe9" : : "a"(marker));
+    __asm__ volatile ("outb %0, $0xe9"
+                      : "+a"(marker)
+                      :
+                      : "memory", "cc");
 }
 
 /*
