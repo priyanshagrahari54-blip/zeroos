@@ -2081,3 +2081,5 @@ isr_stub_table:
     .quad isr_stub_253
     .quad isr_stub_254
     .quad isr_stub_255
+
+.section .note.GNU-stack,"",@progbits
