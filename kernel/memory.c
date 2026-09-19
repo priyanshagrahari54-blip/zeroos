@@ -105,11 +105,15 @@ void memory_init(uint64_t multiboot_info) {
      * Start fully reserved.  We then release only firmware-reported
      * available ranges.  This is safer than assuming RAM is contiguous.
      */
+    memory_debug('1');
     for (uint64_t i = 0; i < ZEROOS_BITMAP_WORDS; ++i)
         page_bitmap[i] = ~0ULL;
+    memory_debug('2');
 
+    memory_debug('3');
     for (uint64_t i = 0; i < ZEROOS_SUMMARY_WORDS; ++i)
         free_word_summary[i] = 0;
+    memory_debug('4');
 
     managed_pages = 0;
     free_pages = 0;
