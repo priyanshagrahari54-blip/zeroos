@@ -1,0 +1,14 @@
+#ifndef ZEROOS_MEMORY_H
+#define ZEROOS_MEMORY_H
+
+#include "types.h"
+
+#define ZEROOS_PAGE_SIZE 4096ULL
+
+void memory_init(uint64_t multiboot_info);
+void *page_alloc(void);
+void page_free(void *address);
+uint64_t memory_total_pages(void);
+uint64_t memory_free_pages(void);
+
+#endif
