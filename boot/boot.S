@@ -16,9 +16,7 @@ mb2_header_end:
 .type _start, @function
 _start:
     cli
-
-    # Early UART marker: proves GRUB reached our 32-bit entry even if
-    # long-mode or C initialization fails before the normal console exists.
+    # Early UART marker: proves GRUB reached our 32-bit entry.
     mov $0x00, %al
     mov $0x3f9, %dx
     out %al, %dx
@@ -40,111 +38,25 @@ _start:
     mov $0x0b, %al
     mov $0x3fc, %dx
     out %al, %dx
-    mov 
-    # Multiboot2: EAX = magic, EBX = info structure.
-    # Keep both values in registers across the long-mode transition.
-    mov %ebx, %edi
-    mov %eax, %esi
-    mov $stack_top, %esp
-
-    mov $pml4_table, %eax
-    mov %eax, %cr3
-
-    mov %cr4, %eax
-    or $0x20, %eax
-    mov %eax, %cr4
-
-    mov $0xC0000080, %ecx
-    rdmsr
-    or $0x100, %eax
-    wrmsr
-
-    mov %cr0, %eax
-    or $0x80000000, %eax
-    mov %eax, %cr0
-
-    lgdt gdt64_ptr
-    ljmp $0x08, $long_mode
-
-.code64
-long_mode:
-    mov $0x10, %ax
-    mov %ax, %ds
-    mov %ax, %es
-    mov %ax, %ss
-
-    # SysV x86-64 ABI: RDI=info address, RSI=magic.
-    # The 32-bit writes above already zero-extended both registers.
-    mov $stack_top, %rsp
-    and $-16, %rsp
-
-    # Long-mode marker before entering C code.
-    mov 
-
-.hang:
-    cli
-    hlt
-    jmp .hang
-
-.section .data
-.align 8
-gdt64:
-    .quad 0
-    .quad 0x00af9a000000ffff
-    .quad 0x00af92000000ffff
-gdt64_end:
-
-gdt64_ptr:
-    .word gdt64_end - gdt64 - 1
-    .long gdt64
-
-# Bootstrap page tables contain non-zero addresses/flags, so they
-# belong in a data section rather than .bss.
-.align 4096
-pml4_table:
-    .quad pdpt_table + 0x03
-    .fill 511, 8, 0
-
-.align 4096
-pdpt_table:
-    .quad pd_table + 0x03
-    .fill 511, 8, 0
-
-.align 4096
-pd_table:
-    .quad 0x00000083
-    .fill 511, 8, 0
-
-.section .bss
-.align 16
-stack_bottom:
-    .skip 16384
-stack_top:
-B', %al
+    mov $'B', %al
     mov $0x3f8, %dx
     out %al, %dx
-    # Multiboot2: EAX = magic, EBX = info structure.
-    # Keep both values in registers across the long-mode transition.
+
     mov %ebx, %edi
     mov %eax, %esi
     mov $stack_top, %esp
-
     mov $pml4_table, %eax
     mov %eax, %cr3
-
     mov %cr4, %eax
     or $0x20, %eax
     mov %eax, %cr4
-
     mov $0xC0000080, %ecx
     rdmsr
     or $0x100, %eax
     wrmsr
-
     mov %cr0, %eax
     or $0x80000000, %eax
     mov %eax, %cr0
-
     lgdt gdt64_ptr
     ljmp $0x08, $long_mode
 
@@ -154,11 +66,11 @@ long_mode:
     mov %ax, %ds
     mov %ax, %es
     mov %ax, %ss
-
-    # SysV x86-64 ABI: RDI=info address, RSI=magic.
-    # The 32-bit writes above already zero-extended both registers.
     mov $stack_top, %rsp
     and $-16, %rsp
+    mov $'L', %al
+    mov $0x3f8, %dx
+    out %al, %dx
     call kernel_main
 
 .hang:
@@ -173,23 +85,18 @@ gdt64:
     .quad 0x00af9a000000ffff
     .quad 0x00af92000000ffff
 gdt64_end:
-
 gdt64_ptr:
     .word gdt64_end - gdt64 - 1
     .long gdt64
 
-# Bootstrap page tables contain non-zero addresses/flags, so they
-# belong in a data section rather than .bss.
 .align 4096
 pml4_table:
     .quad pdpt_table + 0x03
     .fill 511, 8, 0
-
 .align 4096
 pdpt_table:
     .quad pd_table + 0x03
     .fill 511, 8, 0
-
 .align 4096
 pd_table:
     .quad 0x00000083
@@ -200,128 +107,5 @@ pd_table:
 stack_bottom:
     .skip 16384
 stack_top:
-L', %al
-    mov $0x3f8, %dx
-    out %al, %dx
 
-    call kernel_main
-
-.hang:
-    cli
-    hlt
-    jmp .hang
-
-.section .data
-.align 8
-gdt64:
-    .quad 0
-    .quad 0x00af9a000000ffff
-    .quad 0x00af92000000ffff
-gdt64_end:
-
-gdt64_ptr:
-    .word gdt64_end - gdt64 - 1
-    .long gdt64
-
-# Bootstrap page tables contain non-zero addresses/flags, so they
-# belong in a data section rather than .bss.
-.align 4096
-pml4_table:
-    .quad pdpt_table + 0x03
-    .fill 511, 8, 0
-
-.align 4096
-pdpt_table:
-    .quad pd_table + 0x03
-    .fill 511, 8, 0
-
-.align 4096
-pd_table:
-    .quad 0x00000083
-    .fill 511, 8, 0
-
-.section .bss
-.align 16
-stack_bottom:
-    .skip 16384
-stack_top:
-B', %al
-    mov $0x3f8, %dx
-    out %al, %dx
-    # Multiboot2: EAX = magic, EBX = info structure.
-    # Keep both values in registers across the long-mode transition.
-    mov %ebx, %edi
-    mov %eax, %esi
-    mov $stack_top, %esp
-
-    mov $pml4_table, %eax
-    mov %eax, %cr3
-
-    mov %cr4, %eax
-    or $0x20, %eax
-    mov %eax, %cr4
-
-    mov $0xC0000080, %ecx
-    rdmsr
-    or $0x100, %eax
-    wrmsr
-
-    mov %cr0, %eax
-    or $0x80000000, %eax
-    mov %eax, %cr0
-
-    lgdt gdt64_ptr
-    ljmp $0x08, $long_mode
-
-.code64
-long_mode:
-    mov $0x10, %ax
-    mov %ax, %ds
-    mov %ax, %es
-    mov %ax, %ss
-
-    # SysV x86-64 ABI: RDI=info address, RSI=magic.
-    # The 32-bit writes above already zero-extended both registers.
-    mov $stack_top, %rsp
-    and $-16, %rsp
-    call kernel_main
-
-.hang:
-    cli
-    hlt
-    jmp .hang
-
-.section .data
-.align 8
-gdt64:
-    .quad 0
-    .quad 0x00af9a000000ffff
-    .quad 0x00af92000000ffff
-gdt64_end:
-
-gdt64_ptr:
-    .word gdt64_end - gdt64 - 1
-    .long gdt64
-
-# Bootstrap page tables contain non-zero addresses/flags, so they
-# belong in a data section rather than .bss.
-.align 4096
-pml4_table:
-    .quad pdpt_table + 0x03
-    .fill 511, 8, 0
-
-.align 4096
-pdpt_table:
-    .quad pd_table + 0x03
-    .fill 511, 8, 0
-
-.align 4096
-pd_table:
-    .quad 0x00000083
-    .fill 511, 8, 0
-
-.section .bss
-.align 16
-stack_bottom:
-    .skip 16384
-stack_top:
+.section .note.GNU-stack,"",@progbits
