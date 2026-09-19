@@ -23,10 +23,12 @@ jobs:
           test -s build/zeroos.elf
           test -s build/zeroos.iso
           file build/zeroos.elf build/zeroos.iso
+          grub-file --is-x86-multiboot2 build/zeroos.elf
+          readelf -h -l build/zeroos.elf
 
       - name: Boot test
         run: |
-          timeout 10s qemu-system-x86_64             -cdrom build/zeroos.iso             -serial file:build/serial.log             -display none || true
+          timeout 10s qemu-system-x86_64             -cdrom build/zeroos.iso             -serial file:build/serial.log             -display none             -no-reboot             -no-shutdown             -d guest_errors,cpu_reset             -D build/qemu.log || true
           grep -q "ZEROOS: foundation milestone reached." build/serial.log
           grep -q "ZEROOS: physical page allocator initialized." build/serial.log
           grep -q "ZEROOS: timer tick 100." build/serial.log
@@ -39,4 +41,10 @@ jobs:
             cat build/serial.log
           else
             echo "serial.log was not produced"
+          fi
+          echo "===== QEMU diagnostics ====="
+          if test -f build/qemu.log; then
+            cat build/qemu.log
+          else
+            echo "qemu.log was not produced"
           fi
