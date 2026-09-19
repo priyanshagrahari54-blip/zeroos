@@ -42,6 +42,7 @@ static uint64_t page_bitmap[ZEROOS_BITMAP_WORDS];
 static uint64_t free_word_summary[ZEROOS_SUMMARY_WORDS];
 static uint64_t managed_pages;
 static uint64_t free_pages;
+static uint64_t available_pages;
 
 extern char __kernel_start;
 extern char __kernel_end;
@@ -107,6 +108,7 @@ void memory_init(uint64_t multiboot_info) {
 
     managed_pages = 0;
     free_pages = 0;
+    available_pages = 0;
 
     uint32_t total_size = *(uint32_t *)(uint64_t)multiboot_info;
     uint8_t *cursor = (uint8_t *)(uint64_t)(multiboot_info + 8);
@@ -144,6 +146,7 @@ void memory_init(uint64_t multiboot_info) {
                             if (bitmap_test(page)) {
                                 bitmap_clear(page);
                                 ++free_pages;
+                                ++available_pages;
                                 summary_set(page >> 6);
                             }
                         }
@@ -165,23 +168,7 @@ void memory_init(uint64_t multiboot_info) {
                   (uint64_t)&__kernel_end);
     reserve_range(multiboot_info, multiboot_info + total_size);
 
-    /*
-     * managed_pages is the number of pages ZEROOS actually accepted from
-     * the firmware map, not the artificial 512 MiB tracking ceiling.
-     */
-    managed_pages = free_pages;
-
-    /* Reserved pages are included in the physical span, so reconstruct the
-       managed count from the accepted map below rather than free_pages. */
-    for (uint64_t word = 0; word < ZEROOS_BITMAP_WORDS; ++word) {
-        uint64_t used = page_bitmap[word];
-        for (uint64_t bit = 0; bit < 64; ++bit) {
-            uint64_t page = (word << 6) + bit;
-            if (page >= ZEROOS_MAX_PAGES) break;
-            if (!((used >> bit) & 1ULL))
-                ++managed_pages;
-        }
-    }
+    managed_pages = available_pages;
 }
 
 void *page_alloc(void) {
