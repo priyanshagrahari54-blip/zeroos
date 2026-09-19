@@ -1,4 +1,6 @@
 #include "interrupts.h"
+#include "pic.h"
+#include "timer.h"
 
 struct idt_entry {
     uint16_t offset_low;
@@ -39,17 +41,24 @@ void interrupt_dispatch(struct interrupt_frame *frame) {
     if (frame->vector < 32) {
         serial_write_public("ZEROOS: CPU exception vector ");
         if (frame->vector == 3) {
-            serial_write_public("3 (#BP breakpoint).\\n");
+            serial_write_public("3 (#BP breakpoint).\n");
         } else {
-            serial_write_public("unexpected exception.\\n");
+            serial_write_public("unexpected exception.\n");
         }
         for (;;) {
             __asm__ volatile ("cli; hlt");
         }
     }
+
+    if (frame->vector == 32) {
+        timer_tick();
+    }
 }
 
 void interrupts_init(void) {
+    pic_init();
+    timer_init();
+
     for (uint16_t i = 0; i < 256; ++i) {
         idt_set_gate((uint8_t)i, isr_stub_table[i]);
     }
