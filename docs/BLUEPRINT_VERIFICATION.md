@@ -11,6 +11,10 @@ Use this document to verify that the repository contains the complete project vi
 - docs/HARDWARE.md
 - docs/BOOT_SPEC.md
 
+## Repository bridge documents
+
+The short execution bridge is `docs/ROADMAP.md`. Current hardware and boot contracts are `docs/HARDWARE.md` and `docs/BOOT_SPEC.md`. The detailed master blueprint and master roadmap remain authoritative for the intended system scope.
+
 ## How to verify in GitHub
 
 Open the repository and enter the docs directory.
@@ -124,3 +128,4 @@ A correct continuation should:
 3. recognize the scheduler/context corruption history
 4. verify actual CI
 5. continue implementation rather than rebuilding the project from scratch
+6. verify the latest scheduler stress certification and update implementation status before advancing to the next subsystem
