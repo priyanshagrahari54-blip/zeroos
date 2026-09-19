@@ -132,7 +132,18 @@ int task_block(void) {
     struct task *previous=current_task;
     int next;
 
-    if (!previous || previous==&tasks[0] || previous->state!=TASK_BLOCKED)
+    if (!previous || previous==&tasks[0])
+        return -1;
+
+    /*
+     * A wakeup may race with the handoff after the wait-queue lock is
+     * released. In that case the task is already runnable and must not
+     * context-switch away from itself.
+     */
+    if (previous->state==TASK_RUNNABLE)
+        return 0;
+
+    if (previous->state!=TASK_BLOCKED)
         return -1;
 
     next=find_next_runnable();
