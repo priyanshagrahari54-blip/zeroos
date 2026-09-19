@@ -262,22 +262,18 @@ void task_scheduler_tick(void) {
     }
 
     /*
-     * Timer IRQ entry has interrupts disabled. The outgoing task's interrupt
-     * frame remains on its stack while context_switch saves the scheduler's
-     * call context. When the task is selected again, execution returns to
-     * this exact IRQ path and the normal ISR epilogue performs iretq.
+     * Do not context-switch from inside the C timer handler. The interrupted
+     * CPU state is owned by the ISR frame, while context_switch() saves a
+     * normal C call frame; switching here would make the eventual iretq use
+     * another task's stack without a matching interrupt frame.
+     *
+     * A mature preemption path will switch complete interrupt frames at the
+     * common interrupt-exit boundary. Until that path exists, a tick only
+     * records the scheduling decision and cooperative yield/block/exit paths
+     * perform the actual switch.
      */
-    if (!task->need_resched || task->preempt_count!=0)
+    if (task->need_resched && task->preempt_count==0)
         return;
-
-    int next=find_next_runnable();
-    if (next<0 || &tasks[next]==task) {
-        task->need_resched=0;
-        return;
-    }
-
-    task->need_resched=0;
-    switch_to_next(task,next);
 }
 
 int task_preempt_disable(void) {
