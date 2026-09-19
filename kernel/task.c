@@ -1,6 +1,7 @@
 #include "task.h"
 #include "memory.h"
 #include "sync.h"
+
 extern void context_switch(uint64_t *old_sp, uint64_t *new_sp);
 extern void serial_write_public(const char *text);
 
@@ -46,25 +47,47 @@ static int find_next_runnable(void) {
 
 int task_system_init(void) {
     for (int i=0;i<ZEROOS_MAX_TASKS;++i) {
-        tasks[i].id=0; tasks[i].state=TASK_UNUSED; tasks[i].saved_stack=0;
-        tasks[i].stack_base=0; tasks[i].entry=0; tasks[i].argument=0;
+        tasks[i].id=0;
+        tasks[i].state=TASK_UNUSED;
+        tasks[i].saved_stack=0;
+        tasks[i].stack_base=0;
+        tasks[i].entry=0;
+        tasks[i].argument=0;
     }
+
+    /*
+     * Slot zero is the bootstrap execution context. It owns no allocated
+     * stack; context_switch captures the real kernel_main stack into it.
+     */
+    tasks[0].id=0;
+    tasks[0].state=TASK_RUNNING;
+
     spinlock_init(&task_lock);
-    current_task=0;
+    current_task=&tasks[0];
     next_task_id=1;
     return 0;
 }
 
 int task_create(task_entry_t entry, void *argument, uint64_t *task_id) {
     if (!entry) return -1;
+
     uint64_t flags=spin_lock_irqsave(&task_lock);
     int slot=-1;
-    for (int i=0;i<ZEROOS_MAX_TASKS;++i)
+
+    for (int i=1;i<ZEROOS_MAX_TASKS;++i) {
         if (tasks[i].state==TASK_UNUSED) { slot=i; break; }
-    if (slot<0) { spin_unlock_irqrestore(&task_lock,flags); return -1; }
+    }
+
+    if (slot<0) {
+        spin_unlock_irqrestore(&task_lock,flags);
+        return -1;
+    }
 
     void *stack=page_alloc();
-    if (!stack) { spin_unlock_irqrestore(&task_lock,flags); return -1; }
+    if (!stack) {
+        spin_unlock_irqrestore(&task_lock,flags);
+        return -1;
+    }
 
     struct task *task=&tasks[slot];
     task->id=next_task_id++;
@@ -73,52 +96,68 @@ int task_create(task_entry_t entry, void *argument, uint64_t *task_id) {
     task->entry=entry;
     task->argument=argument;
     task_prepare_stack(task);
+
     if (task_id) *task_id=task->id;
     spin_unlock_irqrestore(&task_lock,flags);
     return 0;
 }
 
-struct task *task_current(void) { return current_task; }
+struct task *task_current(void) {
+    return current_task;
+}
 
 void task_yield(void) {
     struct task *previous=current_task;
     int next=find_next_runnable();
+
     if (!previous || next<0) return;
+
     previous->state=TASK_RUNNABLE;
     tasks[next].state=TASK_RUNNING;
     current_task=&tasks[next];
+
     context_switch(&previous->saved_stack,&current_task->saved_stack);
 }
 
 void task_exit(void) {
     struct task *previous=current_task;
     int next;
-    if (!previous) return;
+
+    if (!previous || previous==&tasks[0]) return;
+
     previous->state=TASK_ZOMBIE;
     next=find_next_runnable();
+
     if (next<0) {
-        serial_write_public("ZEROOS: all kernel tasks exited; CPU entering idle.\n");
-        for (;;) __asm__ volatile ("sti; hlt");
+        tasks[0].state=TASK_RUNNABLE;
+        next=0;
     }
+
     tasks[next].state=TASK_RUNNING;
     current_task=&tasks[next];
     context_switch(&previous->saved_stack,&current_task->saved_stack);
+
     for (;;) __asm__ volatile ("cli; hlt");
 }
 
 void task_start_first(void) {
     int next=find_next_runnable();
     if (next<0) return;
+
+    tasks[0].state=TASK_RUNNABLE;
     tasks[next].state=TASK_RUNNING;
     current_task=&tasks[next];
-    static uint64_t bootstrap_stack;
-    context_switch(&bootstrap_stack,&current_task->saved_stack);
-    for (;;) __asm__ volatile ("sti; hlt");
+
+    context_switch(&tasks[0].saved_stack,&current_task->saved_stack);
+
+    current_task=&tasks[0];
+    tasks[0].state=TASK_RUNNING;
 }
 
 uint64_t task_count(void) {
     uint64_t count=0;
     for (int i=0;i<ZEROOS_MAX_TASKS;++i)
-        if (tasks[i].state!=TASK_UNUSED) ++count;
+        if (tasks[i].state!=TASK_UNUSED)
+            ++count;
     return count;
 }
