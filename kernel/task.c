@@ -342,18 +342,17 @@ void task_exit(void) {
  * state remains intact. The assembly epilogue later loads the returned frame
  * as its new iret source.
  */
-struct interrupt_frame *task_reschedule_from_interrupt(
-    struct interrupt_frame *frame) {
+uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
     struct task *previous=current_task;
     int next;
 
     if (!previous || !frame)
-        return frame;
+        return (uint64_t)frame;
 
     previous->interrupt_frame=frame;
 
     if (previous->preempt_count!=0)
-        return frame;
+        return (uint64_t)frame;
 
     /*
      * Normal tasks enter the IRQ-exit scheduler only after their time slice
@@ -361,17 +360,13 @@ struct interrupt_frame *task_reschedule_from_interrupt(
      * Idle is the exception: if runnable work exists, leave idle immediately.
      */
     if (previous!=&tasks[ZEROOS_IDLE_SLOT] && !previous->need_resched)
-        return frame;
+        return (uint64_t)frame;
 
     next=find_next_runnable();
 
-    /*
-     * No runnable task means keep the interrupted task. A runnable task
-     * includes idle, so a non-idle current task normally has a real choice.
-     */
     if (next<0 || &tasks[next]==previous) {
         previous->need_resched=0;
-        return frame;
+        return (uint64_t)frame;
     }
 
     previous->need_resched=0;
@@ -381,13 +376,16 @@ struct interrupt_frame *task_reschedule_from_interrupt(
     current_task=&tasks[next];
 
     /*
-     * Only switch to a frame that is known to belong to the selected task.
-     * A task created but not yet interrupted uses its synthetic iret frame;
-     * an interrupted task has its live hardware frame recorded above.
+     * A task with an active hardware frame can leave through iretq directly.
+     * A task that has since yielded cooperatively has no live interrupt frame;
+     * its saved_stack contains the callee-saved context and return address
+     * expected by context_switch(). The low-bit tag tells isr_common which
+     * exit protocol to use, avoiding any stale-frame reuse.
      */
     if (tasks[next].interrupt_frame)
-        return tasks[next].interrupt_frame;
-    return frame;
+        return (uint64_t)tasks[next].interrupt_frame;
+
+    return tasks[next].saved_stack | 1ULL;
 }
 
 void task_scheduler_tick(void) {
