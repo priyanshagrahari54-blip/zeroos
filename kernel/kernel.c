@@ -69,6 +69,15 @@ static void memory_self_test(void) {
     if (!a || !b || a==b) kernel_panic("physical page allocator self-test failed");
     page_free(b); page_free(a);
     if (memory_free_pages()!=before) kernel_panic("physical page allocator accounting failed");
+    if (!memory_is_managed_range((uint64_t)a,ZEROOS_PAGE_SIZE) ||
+        memory_page_is_allocated((uint64_t)a))
+        kernel_panic("physical allocator ownership validation failed");
+    void *z=page_alloc_zero();
+    if (!z) kernel_panic("zeroed page allocation failed");
+    for (uint64_t i=0;i<ZEROOS_PAGE_SIZE/sizeof(uint64_t);++i)
+        if (((uint64_t *)z)[i]!=0)
+            kernel_panic("zeroed page validation failed");
+    page_free(z);
     serial_write_public("ZEROOS: physical allocator self-test passed.\n");
 }
 
