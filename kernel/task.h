@@ -81,5 +81,6 @@ uint8_t task_need_resched(void);
 
 void task_start_first(void);
 uint64_t task_count(void);
+int task_debug_validate(void);
 
 #endif
