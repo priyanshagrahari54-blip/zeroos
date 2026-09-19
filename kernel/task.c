@@ -163,6 +163,13 @@ static void task_validate_table(const char *where) {
         if (!task_state_valid(task->state) || !task_identity_ok(task))
             task_context_panic(where,task);
 
+        /*
+         * Slot 0 is the bootstrap task. It intentionally has no allocated
+         * task stack; scheduler_start parks it while the first real task runs.
+         */
+        if (i==0)
+            continue;
+
         if (task->state==TASK_UNUSED)
             continue;
 
