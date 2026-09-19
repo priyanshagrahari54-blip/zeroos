@@ -4,6 +4,7 @@
 
 #define ZEROOS_MAX_TASKS 16
 #define ZEROOS_TASK_STACK_SIZE 4096ULL
+#define ZEROOS_TASK_STACK_GUARD 0x5a45524f5441534bULL
 
 struct interrupt_frame;
 typedef void (*task_entry_t)(void *argument);
