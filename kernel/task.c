@@ -836,6 +836,11 @@ void task_start_first(void) {
     for (;;) __asm__ volatile ("cli; hlt");
 }
 
+int task_debug_validate(void) {
+    task_validate_table("ZEROOS PANIC: explicit scheduler checkpoint failed.\n");
+    return 0;
+}
+
 uint64_t task_count(void) {
     uint64_t count=0;
     for (int i=0;i<ZEROOS_MAX_TASKS;++i)
