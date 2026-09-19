@@ -21,6 +21,27 @@ static int task_stack_guard_ok(const struct task *task) {
            *(const uint64_t *)(uint64_t)task->stack_base == ZEROOS_TASK_STACK_GUARD;
 }
 
+static int task_saved_stack_ok(const struct task *task) {
+    uint64_t sp;
+    if (!task || !task->stack_base || task->saved_stack==0)
+        return 0;
+    sp=task->saved_stack;
+    return (sp & 7ULL)==0 &&
+           sp >= task->stack_base &&
+           sp < task->stack_base + ZEROOS_TASK_STACK_SIZE;
+}
+
+static int task_frame_ok(const struct task *task,
+                         const struct interrupt_frame *frame) {
+    uint64_t fp;
+    if (!task || !task->stack_base || !frame)
+        return 0;
+    fp=(uint64_t)frame;
+    return (fp & 7ULL)==0 &&
+           fp >= task->stack_base &&
+           fp + sizeof(*frame) <= task->stack_base + ZEROOS_TASK_STACK_SIZE;
+}
+
 static void task_write_u64(uint64_t value) {
     char buffer[21];
     int pos=20;
@@ -484,6 +505,10 @@ uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
     if (!previous || !frame)
         return (uint64_t)frame;
     if (!task_stack_guard_ok(previous)) task_stack_guard_panic(previous);
+    if (!task_frame_ok(previous,frame)) {
+        serial_write_public("ZEROOS PANIC: invalid current IRQ frame.\n");
+        for (;;) __asm__ volatile ("cli; hlt");
+    }
 
     previous->interrupt_frame=frame;
 
@@ -532,6 +557,10 @@ uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
      */
     if (tasks[next].interrupt_frame) {
         struct interrupt_frame *target_frame=tasks[next].interrupt_frame;
+        if (!task_frame_ok(&tasks[next],target_frame)) {
+            serial_write_public("ZEROOS PANIC: invalid target IRQ frame.\n");
+            for (;;) __asm__ volatile ("cli; hlt");
+        }
         /*
          * target_frame is consumed exactly once by iretq. Clear the task's
          * metadata before leaving IRQ context so future cooperative code
@@ -541,6 +570,10 @@ uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
         return (uint64_t)target_frame;
     }
 
+    if (!task_saved_stack_ok(&tasks[next])) {
+        serial_write_public("ZEROOS PANIC: invalid target saved stack.\n");
+        for (;;) __asm__ volatile ("cli; hlt");
+    }
     return tasks[next].saved_stack | 1ULL;
 }
 
