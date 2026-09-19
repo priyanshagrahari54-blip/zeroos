@@ -50,10 +50,14 @@ int wait_queue_block(struct wait_queue *queue) {
         return -1;
     }
 
+    /*
+     * Keep interrupts disabled from queue insertion through the context
+     * switch. Otherwise a timer IRQ can preempt the task after it has been
+     * marked BLOCKED but before task_block() saves its context.
+     */
     wait_queue_push_locked(queue,task);
-    spin_unlock_irqrestore(&queue->lock,flags);
-
-    return task_block();
+    spin_unlock(&queue->lock);
+    return task_block_irqsave(flags);
 }
 
 uint64_t wait_queue_wake_one(struct wait_queue *queue) {
