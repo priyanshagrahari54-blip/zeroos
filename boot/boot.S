@@ -16,6 +16,8 @@ mb2_header_end:
 .type _start, @function
 _start:
     cli
+    # Multiboot2: EAX = magic, EBX = info structure.
+    # Keep both values in registers across the long-mode transition.
     mov %ebx, %edi
     mov %eax, %esi
     mov $stack_top, %esp
@@ -46,8 +48,8 @@ long_mode:
     mov %ax, %es
     mov %ax, %ss
 
-    mov %edi, %rsi
-    mov %esi, %rdi
+    # SysV x86-64 ABI: RDI=info address, RSI=magic.
+    # The 32-bit writes above already zero-extended both registers.
     mov $stack_top, %rsp
     and $-16, %rsp
     call kernel_main
@@ -69,7 +71,8 @@ gdt64_ptr:
     .word gdt64_end - gdt64 - 1
     .long gdt64
 
-.section .bss
+# Bootstrap page tables contain non-zero addresses/flags, so they
+# belong in a data section rather than .bss.
 .align 4096
 pml4_table:
     .quad pdpt_table + 0x03
@@ -85,6 +88,7 @@ pd_table:
     .quad 0x00000083
     .fill 511, 8, 0
 
+.section .bss
 .align 16
 stack_bottom:
     .skip 16384
