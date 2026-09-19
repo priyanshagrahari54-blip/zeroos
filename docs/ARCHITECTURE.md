@@ -27,13 +27,17 @@
           |       +--> exception diagnostics
           |       +--> IRQ ownership
           |       +--> timer delivery
+          +--> Task / context layer
+          |       +--> kernel task objects
+          |       +--> kernel stacks
+          |       +--> context switching
+          |       +--> bounded scheduler
           +--> PIT/8259 bootstrap timer
           |
           v
        Future kernel core
-          +--> task/thread objects
           +--> blocking/wakeup
-          +--> scheduler
+          +--> preemptive scheduler
           +--> syscall ABI
           +--> user address spaces
           +--> driver framework
@@ -57,14 +61,14 @@
 - Keep synchronization scheduler-independent until task blocking exists.
 - Keep idle CPUs asleep rather than generating unnecessary periodic work.
 - Keep architecture-specific code isolated from portable kernel logic.
+- Keep scheduling policy separate from task/context mechanics.
 
 ## Current status
 
 The foundation now has real physical memory discovery/allocation, x86-64
 virtual memory, normalized interrupt entry, IRQ ownership, timer delivery,
-and scheduler-independent synchronization.
+scheduler-independent synchronization, kernel task objects, and real x86-64
+context switching.
 
-The next architectural layer is task/thread state plus blocking/wakeup and
-scheduler context switching. These pieces will consume the synchronization
-and timer interfaces already established instead of introducing replacement
-bootstrap APIs.
+The next architectural layer is wait queues plus blocking/wakeup, followed by
+interrupt-safe preemption and a fuller scheduler policy.
