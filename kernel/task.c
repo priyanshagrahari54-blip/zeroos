@@ -4,10 +4,20 @@
 
 extern void context_switch(uint64_t *old_sp, uint64_t *new_sp);
 
+#define ZEROOS_IDLE_SLOT 1
+
 static struct task tasks[ZEROOS_MAX_TASKS];
 static struct task *current_task;
 static struct spinlock task_lock;
 static uint64_t next_task_id;
+
+static void task_idle_entry(void *argument) {
+    (void)argument;
+    for (;;) {
+        __asm__ volatile ("sti; hlt" ::: "memory");
+        task_yield();
+    }
+}
 
 static void task_trampoline(void) {
     struct task *task=current_task;
@@ -33,18 +43,28 @@ static void task_prepare_stack(struct task *task) {
 
 static int find_next_runnable(void) {
     int start=-1;
+    int index;
+
     for (int i=0;i<ZEROOS_MAX_TASKS;++i)
         if (&tasks[i]==current_task) { start=i; break; }
 
+    /* Prefer ordinary runnable tasks; the idle task is a last resort. */
     for (int step=1;step<=ZEROOS_MAX_TASKS;++step) {
-        int index=(start+step)%ZEROOS_MAX_TASKS;
-        if (tasks[index].state==TASK_RUNNABLE)
+        index=(start+step)%ZEROOS_MAX_TASKS;
+        if (index!=0 && index!=ZEROOS_IDLE_SLOT &&
+            tasks[index].state==TASK_RUNNABLE)
             return index;
     }
+
+    if (tasks[ZEROOS_IDLE_SLOT].state==TASK_RUNNABLE)
+        return ZEROOS_IDLE_SLOT;
+
     return -1;
 }
 
 int task_system_init(void) {
+    void *idle_stack;
+
     for (int i=0;i<ZEROOS_MAX_TASKS;++i) {
         tasks[i].id=0;
         tasks[i].state=TASK_UNUSED;
@@ -59,9 +79,23 @@ int task_system_init(void) {
     tasks[0].id=0;
     tasks[0].state=TASK_RUNNING;
 
+    /*
+     * Slot one is a permanent scheduler idle task. It owns one kernel stack
+     * page and is selected only when no ordinary task is runnable.
+     */
+    idle_stack=page_alloc();
+    if (!idle_stack) return -1;
+
+    tasks[ZEROOS_IDLE_SLOT].id=next_task_id++;
+    tasks[ZEROOS_IDLE_SLOT].state=TASK_RUNNABLE;
+    tasks[ZEROOS_IDLE_SLOT].stack_base=(uint64_t)idle_stack;
+    tasks[ZEROOS_IDLE_SLOT].entry=task_idle_entry;
+    tasks[ZEROOS_IDLE_SLOT].argument=0;
+    task_prepare_stack(&tasks[ZEROOS_IDLE_SLOT]);
+
     spinlock_init(&task_lock);
     current_task=&tasks[0];
-    next_task_id=1;
+    next_task_id=2;
     return 0;
 }
 
@@ -71,7 +105,7 @@ int task_create(task_entry_t entry, void *argument, uint64_t *task_id) {
     uint64_t flags=spin_lock_irqsave(&task_lock);
     int slot=-1;
 
-    for (int i=1;i<ZEROOS_MAX_TASKS;++i) {
+    for (int i=2;i<ZEROOS_MAX_TASKS;++i) {
         if (tasks[i].state==TASK_UNUSED) { slot=i; break; }
     }
 
@@ -109,7 +143,7 @@ void task_yield(void) {
     struct task *previous=current_task;
     int next=find_next_runnable();
 
-    if (!previous || next<0) return;
+    if (!previous || next<0 || &tasks[next]==previous) return;
 
     previous->state=TASK_RUNNABLE;
     tasks[next].state=TASK_RUNNING;
@@ -121,7 +155,8 @@ void task_yield(void) {
 int task_prepare_block(void) {
     struct task *task=current_task;
 
-    if (!task || task==&tasks[0] || task->state!=TASK_RUNNING)
+    if (!task || task==&tasks[0] || task==&tasks[ZEROOS_IDLE_SLOT] ||
+        task->state!=TASK_RUNNING)
         return -1;
 
     task->state=TASK_BLOCKED;
@@ -132,14 +167,10 @@ int task_block(void) {
     struct task *previous=current_task;
     int next;
 
-    if (!previous || previous==&tasks[0])
+    if (!previous || previous==&tasks[0] ||
+        previous==&tasks[ZEROOS_IDLE_SLOT])
         return -1;
 
-    /*
-     * A wakeup may race with the handoff after the wait-queue lock is
-     * released. In that case the task is already runnable and must not
-     * context-switch away from itself.
-     */
     if (previous->state==TASK_RUNNABLE)
         return 0;
 
@@ -159,7 +190,8 @@ int task_block(void) {
 }
 
 int task_wake(struct task *task) {
-    if (!task || task->state!=TASK_BLOCKED)
+    if (!task || task==&tasks[0] || task==&tasks[ZEROOS_IDLE_SLOT] ||
+        task->state!=TASK_BLOCKED)
         return -1;
 
     task->state=TASK_RUNNABLE;
@@ -170,14 +202,16 @@ void task_exit(void) {
     struct task *previous=current_task;
     int next;
 
-    if (!previous || previous==&tasks[0]) return;
+    if (!previous || previous==&tasks[0] ||
+        previous==&tasks[ZEROOS_IDLE_SLOT])
+        return;
 
     previous->state=TASK_ZOMBIE;
     next=find_next_runnable();
 
     if (next<0) {
-        tasks[0].state=TASK_RUNNABLE;
-        next=0;
+        tasks[ZEROOS_IDLE_SLOT].state=TASK_RUNNABLE;
+        next=ZEROOS_IDLE_SLOT;
     }
 
     tasks[next].state=TASK_RUNNING;
@@ -188,17 +222,22 @@ void task_exit(void) {
 }
 
 void task_start_first(void) {
-    int next=find_next_runnable();
+    int next;
+
+    /*
+     * Bootstrap is no longer a schedulable task after scheduler_start().
+     * It remains a saved continuation only if the scheduler is later
+     * extended with an explicit scheduler shutdown path.
+     */
+    tasks[0].state=TASK_BLOCKED;
+    next=find_next_runnable();
     if (next<0) return;
 
-    tasks[0].state=TASK_RUNNABLE;
     tasks[next].state=TASK_RUNNING;
     current_task=&tasks[next];
-
     context_switch(&tasks[0].saved_stack,&current_task->saved_stack);
 
-    current_task=&tasks[0];
-    tasks[0].state=TASK_RUNNING;
+    for (;;) __asm__ volatile ("cli; hlt");
 }
 
 uint64_t task_count(void) {
