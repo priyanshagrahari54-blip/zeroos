@@ -67,8 +67,7 @@
 
 The foundation now has real physical memory discovery/allocation, x86-64
 virtual memory, normalized interrupt entry, IRQ ownership, timer delivery,
-scheduler-independent synchronization, kernel task objects, and real x86-64
-context switching.
+scheduler-independent synchronization, kernel task objects, real x86-64 context switching, wait queues, timed sleep,
+zombie reclamation, scheduler invariants, and IRQ-exit preemption.
 
-The next architectural layer is wait queues plus blocking/wakeup, followed by
-interrupt-safe preemption and a fuller scheduler policy.
+The scheduler layer now includes wait queues, timed sleep, zombie reclamation, cooperative context switching, and timer-driven IRQ-exit preemption. Fresh tasks enter through an assembly trampoline with 264 bytes of interrupt headroom. The next architectural boundary is kernel memory hardening, followed by process/thread separation, user-mode entry, and a syscall ABI.
