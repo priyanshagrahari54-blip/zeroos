@@ -5,6 +5,7 @@
 #include "sync.h"
 #include "task.h"
 #include "scheduler.h"
+#include "wait.h"
 
 #define COM1 0x3F8
 #define VMM_SELF_TEST_VA 0x4000000000ULL
@@ -98,6 +99,8 @@ static void sync_self_test(void) {
 }
 
 static struct atomic_u64 task_probe_counter;
+static struct wait_queue wait_probe_queue;
+static struct atomic_u64 wait_probe_state;
 
 static void scheduler_probe_worker(void *argument) {
     (void)argument;
@@ -108,10 +111,29 @@ static void scheduler_probe_worker(void *argument) {
     serial_write_public("ZEROOS: task context-switch worker completed.\n");
 }
 
+static void wait_probe_waiter(void *argument) {
+    (void)argument;
+    if (wait_queue_block(&wait_probe_queue)!=0)
+        kernel_panic("wait queue block failed");
+    if (atomic_u64_load(&wait_probe_state)!=1)
+        kernel_panic("wait queue wake state mismatch");
+    atomic_u64_store(&wait_probe_state,2);
+    serial_write_public("ZEROOS: wait queue block/wakeup self-test passed.\n");
+}
+
+static void wait_probe_waker(void *argument) {
+    (void)argument;
+    scheduler_yield();
+    atomic_u64_store(&wait_probe_state,1);
+    if (wait_queue_wake_one(&wait_probe_queue)!=1)
+        kernel_panic("wait queue wake failed");
+}
+
 static void scheduler_probe_monitor(void *argument) {
     (void)argument;
     uint64_t last_report=0;
     int context_reported=0;
+    int wait_reported=0;
 
     for (;;) {
         uint64_t now=timer_ticks();
@@ -119,6 +141,11 @@ static void scheduler_probe_monitor(void *argument) {
         if (!context_reported && atomic_u64_load(&task_probe_counter)==32) {
             context_reported=1;
             serial_write_public("ZEROOS: task context-switch self-test passed.\n");
+        }
+
+        if (!wait_reported && atomic_u64_load(&wait_probe_state)==2) {
+            wait_reported=1;
+            serial_write_public("ZEROOS: wait queue integration verified.\n");
         }
 
         if (now>=last_report+100) {
@@ -132,9 +159,11 @@ static void scheduler_probe_monitor(void *argument) {
 }
 
 static void scheduler_self_test(void) {
-    uint64_t worker_id, monitor_id;
+    uint64_t worker_id, monitor_id, waiter_id, waker_id;
 
     atomic_u64_init(&task_probe_counter,0);
+    atomic_u64_init(&wait_probe_state,0);
+    wait_queue_init(&wait_probe_queue);
 
     if (task_system_init()!=0)
         kernel_panic("task system initialization failed");
@@ -145,6 +174,10 @@ static void scheduler_self_test(void) {
         kernel_panic("scheduler worker creation failed");
     if (task_create(scheduler_probe_monitor,0,&monitor_id)!=0)
         kernel_panic("scheduler monitor creation failed");
+    if (task_create(wait_probe_waiter,0,&waiter_id)!=0)
+        kernel_panic("waiter task creation failed");
+    if (task_create(wait_probe_waker,0,&waker_id)!=0)
+        kernel_panic("waker task creation failed");
 
     serial_write_public("ZEROOS: kernel tasks created: ");
     serial_write_u64(task_count());
@@ -152,6 +185,10 @@ static void scheduler_self_test(void) {
     serial_write_u64(worker_id);
     serial_write_public(", monitor=");
     serial_write_u64(monitor_id);
+    serial_write_public(", waiter=");
+    serial_write_u64(waiter_id);
+    serial_write_public(", waker=");
+    serial_write_u64(waker_id);
     serial_write_public(").\n");
 
     if (timer_register_tick_hook(scheduler_tick)!=0)
