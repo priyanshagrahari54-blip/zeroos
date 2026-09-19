@@ -7,6 +7,8 @@
 extern void context_switch(uint64_t *old_sp, uint64_t *new_sp);
 extern void serial_write_public(const char *text);
 
+static void task_write_u64(uint64_t value);
+
 #define ZEROOS_IDLE_SLOT 1
 #define ZEROOS_DEFAULT_TIMESLICE 10U
 
