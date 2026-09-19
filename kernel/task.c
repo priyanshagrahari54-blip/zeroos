@@ -48,22 +48,21 @@ static void task_trampoline(void) {
 }
 
 /*
- * A task can be selected directly by the IRQ-exit path before it has ever
- * taken an interrupt of its own. Give it a real iret-compatible frame from
- * the beginning. Once the task is actually interrupted, this pointer is
- * replaced with the hardware-generated frame.
+ * New tasks begin with an ABI-valid cooperative context. A hardware interrupt
+ * frame is created only by an actual interrupt and is owned exclusively by
+ * the IRQ-exit path until that task resumes.
  */
 static void task_prepare_stack(struct task *task) {
     uint64_t top=task->stack_base+ZEROOS_TASK_STACK_SIZE;
     uint64_t *sp;
 
     /*
-     * context_switch restores six callee-saved registers then retq. Keep the
-     * saved context is 8 mod 16 before the six register restores. After
-     * those restores and retq, task_trampoline enters with RSP 8 mod 16,
-     * satisfying the SysV x86-64 call-site alignment invariant.
+     * context_switch restores six callee-saved registers then retq. The
+     * saved stack must be 0 mod 16 so that six 8-byte pops followed by retq
+     * leave task_trampoline with RSP 8 mod 16, as required at a SysV ABI
+     * function entry.
      */
-    top=top & ~0xFULL;
+    top=(top & ~0xFULL)-8ULL;
     sp=(uint64_t *)top;
     *--sp=(uint64_t)task_trampoline;
     *--sp=0;
