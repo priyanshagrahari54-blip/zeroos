@@ -18,7 +18,7 @@ static struct task *sleep_head;
 
 static int task_stack_guard_ok(const struct task *task) {
     return task && task->stack_base &&
-           *(const uint64_t *)(uintptr_t)task->stack_base == ZEROOS_TASK_STACK_GUARD;
+           *(const uint64_t *)(uint64_t)task->stack_base == ZEROOS_TASK_STACK_GUARD;
 }
 
 static void task_stack_guard_panic(const struct task *task) {
@@ -68,7 +68,7 @@ static void task_prepare_stack(struct task *task) {
     uint64_t top=task->stack_base+ZEROOS_TASK_STACK_SIZE;
     uint64_t *sp;
 
-    *(uint64_t *)(uintptr_t)task->stack_base=ZEROOS_TASK_STACK_GUARD;
+    *(uint64_t *)(uint64_t)task->stack_base=ZEROOS_TASK_STACK_GUARD;
 
     /*
      * context_switch restores six callee-saved registers then retq. The
