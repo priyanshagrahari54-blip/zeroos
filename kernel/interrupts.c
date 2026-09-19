@@ -80,10 +80,9 @@ static inline void lidt(const struct idtr *descriptor) {
 static void timer_irq_handler(uint8_t irq, struct interrupt_frame *frame, void *context) {
     (void)irq; (void)frame; (void)context;
     timer_tick();
-    scheduler_tick();
 }
 
-struct interrupt_frame *interrupt_dispatch(struct interrupt_frame *frame) {
+uint64_t interrupt_dispatch(struct interrupt_frame *frame) {
     if (frame->vector < 32)
         halt_exception(frame);
 
