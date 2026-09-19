@@ -8,9 +8,6 @@ extern void context_switch(uint64_t *old_sp, uint64_t *new_sp);
 
 #define ZEROOS_IDLE_SLOT 1
 #define ZEROOS_DEFAULT_TIMESLICE 10U
-#define ZEROOS_KERNEL_CS 0x08ULL
-#define ZEROOS_KERNEL_SS 0x10ULL
-#define ZEROOS_INITIAL_RFLAGS 0x202ULL
 
 static struct task tasks[ZEROOS_MAX_TASKS];
 static struct task *current_task;
@@ -56,37 +53,6 @@ static void task_trampoline(void) {
  * the beginning. Once the task is actually interrupted, this pointer is
  * replaced with the hardware-generated frame.
  */
-static void task_prepare_interrupt_frame(struct task *task) {
-    struct interrupt_frame *frame=
-        (struct interrupt_frame *)(task->stack_base + 64ULL);
-    uint64_t top=(task->stack_base + ZEROOS_TASK_STACK_SIZE) & ~0xFULL;
-
-    frame->r15=0;
-    frame->r14=0;
-    frame->r13=0;
-    frame->r12=0;
-    frame->r11=0;
-    frame->r10=0;
-    frame->r9=0;
-    frame->r8=0;
-    frame->rbp=0;
-    frame->rdi=0;
-    frame->rsi=0;
-    frame->rdx=0;
-    frame->rcx=0;
-    frame->rbx=0;
-    frame->rax=0;
-    frame->vector=32;
-    frame->error_code=0;
-    frame->rip=(uint64_t)task_trampoline;
-    frame->cs=ZEROOS_KERNEL_CS;
-    frame->rflags=ZEROOS_INITIAL_RFLAGS;
-    frame->rsp=top-8ULL;
-    frame->ss=ZEROOS_KERNEL_SS;
-
-    task->interrupt_frame=frame;
-}
-
 static void task_prepare_stack(struct task *task) {
     uint64_t top=task->stack_base+ZEROOS_TASK_STACK_SIZE;
     uint64_t *sp;
@@ -167,7 +133,7 @@ static void reap_zombies_locked(void) {
     }
 }
 
-static int find_next_runnable(void) {
+static int find_next_runnable(int cooperative) {
     int start=-1;
     int index;
 
@@ -177,7 +143,8 @@ static int find_next_runnable(void) {
     for (int step=1;step<=ZEROOS_MAX_TASKS;++step) {
         index=(start+step)%ZEROOS_MAX_TASKS;
         if (index!=0 && index!=ZEROOS_IDLE_SLOT &&
-            tasks[index].state==TASK_RUNNABLE)
+            tasks[index].state==TASK_RUNNABLE &&
+            (!cooperative || tasks[index].interrupt_frame==0))
             return index;
     }
 
@@ -242,7 +209,6 @@ int task_system_init(void) {
     tasks[ZEROOS_IDLE_SLOT].entry=task_idle_entry;
     tasks[ZEROOS_IDLE_SLOT].timeslice_ticks=ZEROOS_DEFAULT_TIMESLICE;
     task_prepare_stack(&tasks[ZEROOS_IDLE_SLOT]);
-    task_prepare_interrupt_frame(&tasks[ZEROOS_IDLE_SLOT]);
 
     spinlock_init(&task_lock);
     current_task=&tasks[0];
@@ -289,7 +255,6 @@ int task_create(task_entry_t entry, void *argument, uint64_t *task_id) {
     task->wake_tick=0;
     task->sleep_armed=0;
     task_prepare_stack(task);
-    task_prepare_interrupt_frame(task);
 
     if (task_id) *task_id=task->id;
     spin_unlock_irqrestore(&task_lock,flags);
@@ -308,7 +273,7 @@ void task_yield(void) {
     if (!previous || previous->preempt_count!=0) return;
     flags=task_irq_save();
 
-    next=find_next_runnable();
+    next=find_next_runnable(1);
     if (next<0 || &tasks[next]==previous) {
         previous->need_resched=0;
         task_irq_restore(flags);
@@ -353,7 +318,7 @@ int task_block(void) {
         return -1;
     }
 
-    next=find_next_runnable();
+    next=find_next_runnable(1);
     if (next<0) {
         previous->state=TASK_RUNNING;
         task_irq_restore(flags);
@@ -363,7 +328,6 @@ int task_block(void) {
     tasks[next].state=TASK_RUNNING;
     tasks[next].context_switches++;
     previous->interrupt_frame=0;
-    tasks[next].interrupt_frame=0;
     current_task=&tasks[next];
     context_switch(&previous->saved_stack,&current_task->saved_stack);
     task_irq_restore(flags);
@@ -418,7 +382,6 @@ int task_sleep_ticks(uint64_t ticks) {
     tasks[next].state=TASK_RUNNING;
     tasks[next].context_switches++;
     task->interrupt_frame=0;
-    tasks[next].interrupt_frame=0;
     current_task=&tasks[next];
     context_switch(&task->saved_stack,&current_task->saved_stack);
     task_irq_restore(flags);
@@ -437,7 +400,7 @@ void task_exit(void) {
     flags=task_irq_save();
     previous->state=TASK_ZOMBIE;
     previous->need_resched=0;
-    next=find_next_runnable();
+    next=find_next_runnable(1);
 
     if (next<0) {
         tasks[ZEROOS_IDLE_SLOT].state=TASK_RUNNABLE;
@@ -447,7 +410,6 @@ void task_exit(void) {
     tasks[next].state=TASK_RUNNING;
     tasks[next].context_switches++;
     previous->interrupt_frame=0;
-    tasks[next].interrupt_frame=0;
     current_task=&tasks[next];
     context_switch(&previous->saved_stack,&current_task->saved_stack);
 
@@ -480,7 +442,7 @@ uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
     if (previous!=&tasks[ZEROOS_IDLE_SLOT] && !previous->need_resched)
         return (uint64_t)frame;
 
-    next=find_next_runnable();
+    next=find_next_runnable(0);
 
     if (next<0 || &tasks[next]==previous) {
         previous->need_resched=0;
@@ -553,7 +515,7 @@ void task_start_first(void) {
     uint64_t flags=task_irq_save();
 
     tasks[0].state=TASK_BLOCKED;
-    next=find_next_runnable();
+    next=find_next_runnable(1);
     if (next<0) {
         task_irq_restore(flags);
         return;
@@ -562,7 +524,6 @@ void task_start_first(void) {
     tasks[next].state=TASK_RUNNING;
     tasks[next].context_switches++;
     tasks[0].interrupt_frame=0;
-    tasks[next].interrupt_frame=0;
     current_task=&tasks[next];
     context_switch(&tasks[0].saved_stack,&current_task->saved_stack);
 
