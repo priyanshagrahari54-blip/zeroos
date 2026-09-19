@@ -17,3 +17,5 @@ context_switch:
     popq %rbx
     popq %rbp
     retq
+
+.section .note.GNU-stack,"",@progbits
