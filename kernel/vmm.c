@@ -8,8 +8,6 @@
 #define PHYS_MASK 0x000ffffffffff000ULL
 
 #define VMM_LEAF_FLAGS 0x00000000000001ffULL
-#define VMM_SPLIT_FLAGS (VMM_PRESENT | VMM_WRITABLE | VMM_USER | \
-                         VMM_WRITE_THROUGH | VMM_CACHE_DISABLE | 0x100ULL)
 
 static uint64_t *root_table;
 static uint64_t root_physical;
@@ -89,10 +87,11 @@ static int split_2m(uint64_t *pd, uint64_t index) {
      * the PT so no CPU can retain a stale translation for the old page size.
      */
     pd[index] = 0;
-    invalidate_page(index * HUGE_PAGE_SIZE);
+    write_cr3(root_physical);
     pd[index] = ((uint64_t)pt & PAGE_MASK) |
                 VMM_PRESENT | VMM_WRITABLE |
                 (old & VMM_USER);
+    write_cr3(root_physical);
 
     return 0;
 }
