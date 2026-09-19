@@ -205,6 +205,9 @@ struct task *task_current(void) {
 
 void task_yield(void) {
     struct task *previous=current_task;
+
+    /* Keep current_task and the saved C stack coherent across the switch. */
+    __asm__ volatile ("cli" ::: "memory");
     int next;
 
     if (!previous || previous->preempt_count!=0) return;
@@ -212,11 +215,13 @@ void task_yield(void) {
     next=find_next_runnable();
     if (next<0 || &tasks[next]==previous) {
         previous->need_resched=0;
+        __asm__ volatile ("sti" ::: "memory");
         return;
     }
 
     previous->need_resched=0;
     switch_to_next(previous,next);
+    __asm__ volatile ("sti" ::: "memory");
 }
 
 int task_prepare_block(void) {
@@ -233,21 +238,28 @@ int task_prepare_block(void) {
 
 int task_block(void) {
     struct task *previous=current_task;
+
+    __asm__ volatile ("cli" ::: "memory");
     int next;
 
     if (!previous || previous==&tasks[0] ||
         previous==&tasks[ZEROOS_IDLE_SLOT] || previous->preempt_count!=0)
         return -1;
 
-    if (previous->state==TASK_RUNNABLE)
+    if (previous->state==TASK_RUNNABLE) {
+        __asm__ volatile ("sti" ::: "memory");
         return 0;
+    }
 
-    if (previous->state!=TASK_BLOCKED)
+    if (previous->state!=TASK_BLOCKED) {
+        __asm__ volatile ("sti" ::: "memory");
         return -1;
+    }
 
     next=find_next_runnable();
     if (next<0) {
         previous->state=TASK_RUNNING;
+        __asm__ volatile ("sti" ::: "memory");
         return -1;
     }
 
@@ -255,6 +267,7 @@ int task_block(void) {
     tasks[next].context_switches++;
     current_task=&tasks[next];
     context_switch(&previous->saved_stack,&current_task->saved_stack);
+    __asm__ volatile ("sti" ::: "memory");
     return 0;
 }
 
@@ -270,6 +283,8 @@ int task_wake(struct task *task) {
 
 void task_exit(void) {
     struct task *previous=current_task;
+
+    __asm__ volatile ("cli" ::: "memory");
     int next;
 
     if (!previous || previous==&tasks[0] ||
@@ -289,6 +304,7 @@ void task_exit(void) {
     tasks[next].context_switches++;
     current_task=&tasks[next];
     context_switch(&previous->saved_stack,&current_task->saved_stack);
+    __asm__ volatile ("sti" ::: "memory");
 
     for (;;) __asm__ volatile ("cli; hlt");
 }
@@ -378,14 +394,20 @@ uint8_t task_need_resched(void) {
 void task_start_first(void) {
     int next;
 
+    __asm__ volatile ("cli" ::: "memory");
+
     tasks[0].state=TASK_BLOCKED;
     next=find_next_runnable();
-    if (next<0) return;
+    if (next<0) {
+        __asm__ volatile ("sti" ::: "memory");
+        return;
+    }
 
     tasks[next].state=TASK_RUNNING;
     tasks[next].context_switches++;
     current_task=&tasks[next];
     context_switch(&tasks[0].saved_stack,&current_task->saved_stack);
+    __asm__ volatile ("sti" ::: "memory");
 
     for (;;) __asm__ volatile ("cli; hlt");
 }
