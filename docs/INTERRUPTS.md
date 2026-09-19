@@ -19,53 +19,57 @@ The assembly layer normalizes the interrupt stack into:
 
 Exceptions that architecturally push an error code keep that CPU-provided error code. Other vectors receive a synthetic zero error code. The common handler saves and restores all general-purpose registers before returning with IRETQ.
 
-The common return path is deliberately explicit because register-frame corruption in an interrupt path can destroy the entire kernel.
-
 ## Exception diagnostics
 
-Fatal CPU exceptions now report:
+Fatal CPU exceptions report vector, decoded exception name, error code, saved RIP, and CR2 for page faults, then enter a halted panic state.
 
-- vector
-- decoded exception name
-- error code
-- saved RIP
-- CR2 for page faults
+## IRQ ownership and dispatch
 
-The kernel then enters a halted panic state. This gives the next memory/protection stages a reliable diagnostic path instead of silently hanging.
+Hardware IRQs are now separated from device-specific handling:
 
-## Current hardware IRQ path
-
-The current bring-up timer path remains:
-
-    PIT channel 0
-          |
-          v
-        IRQ0
-          |
-          v
-       8259 PIC
-          |
-          v
-      IDT vector 32
-          |
-          v
-       ISR stub
-          |
-          v
+    hardware IRQ
+         |
+         v
+    IDT vector 32-47
+         |
+         v
+    common ISR entry
+         |
+         v
     interrupt_dispatch()
-          |
-          v
-       timer_tick()
+         |
+         +--> IRQ binding
+                |
+                +--> registered handler
+                |
+                +--> PIC EOI
 
-The PIC is remapped away from CPU exception vectors. Only IRQ0 is currently enabled.
+irq_register() installs one owner for each legacy PIC IRQ. irq_unregister()
+requires the same handler/context pair, preventing accidental removal of a
+different binding.
+
+The interface is controller-independent enough for later Local APIC/IOAPIC
+routing to replace the current 8259 implementation without making drivers own
+PIC details.
 
 ## Timer
 
-The PIT currently provides a 100 Hz bootstrap scheduling clock. The handler performs only tick accounting and EOI work.
+The PIT remains a 100 Hz bootstrap clock. Its IRQ handler only performs tick
+accounting and an optional tiny tick hook. It does not perform logging,
+filesystem I/O, or scheduler policy.
 
-This is intentionally kept small: timer interrupts should not perform scheduler policy, I/O, filesystem work or logging in the hard interrupt path.
+The timer exposes:
 
-The production timer design will move toward APIC-based per-CPU clock events and dynamic/tickless idle. Periodic scheduler ticks are useful for preemption, but waking an otherwise idle CPU purely for a periodic tick wastes idle residency; dynamic tick designs avoid that when no timer event requires the wakeup. citeturn5search1turn5search6
+- timer_ticks()
+- timer_frequency_hz()
+- timer_register_tick_hook()
+
+The tick hook is the scheduler insertion point. It runs in interrupt context,
+so future scheduler accounting must remain bounded and non-sleeping.
+
+Keeping interrupt work small and separating interrupt-context synchronization
+from task-context sleeping is consistent with established kernel designs.
+citeturn0search1turn0search4
 
 ## Production direction
 
@@ -75,8 +79,10 @@ The production timer design will move toward APIC-based per-CPU clock events and
 | PIT | APIC/HPET/TSC-backed clock-event layer |
 | Global periodic tick | Per-CPU event scheduling / idle tick suppression |
 | Single CPU | SMP-aware interrupt routing |
-| No IRQ ownership | Driver IRQ registration |
-| No deferred work | Top-half/bottom-half style split |
+| Single IRQ owner | Shared/managed device IRQ registration where required |
+| Hard IRQ handler | Deferred work / threaded device handling |
 | No TLB shootdown | SMP invalidation protocol |
 
-The legacy path remains only because it gives ZEROOS a deterministic early-boot interrupt mechanism before the modern interrupt controller and scheduler layers exist.
+The legacy path remains because it gives ZEROOS a deterministic early-boot
+interrupt mechanism before the modern interrupt controller and scheduler layers
+exist.
