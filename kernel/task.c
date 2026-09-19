@@ -519,6 +519,8 @@ int task_preempt_enable(void) {
     struct task *task=current_task;
     if (!task || task->preempt_count==0) return -1;
     --task->preempt_count;
+    if (task->preempt_count==0 && task->need_resched)
+        task_yield();
     return 0;
 }
 
