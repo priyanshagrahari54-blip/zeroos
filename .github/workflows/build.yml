@@ -25,6 +25,8 @@ jobs:
           file build/zeroos.elf build/zeroos.iso
           readelf -h -l build/zeroos.elf
           objdump -s -j .multiboot2 build/zeroos.elf
+          echo "===== ZEROOS linker symbols ====="
+          nm -n build/zeroos.elf | grep -E '(__kernel_start|__kernel_end|stack_bottom|stack_top|pml4_table|pdpt_table|pd_table|page_bitmap|free_word_summary)' || true
 
       - name: Boot test
         run: |
