@@ -481,6 +481,7 @@ int task_create(task_entry_t entry, void *argument, uint64_t *task_id) {
      * creation boundary instead of a much later scheduler failure.
      */
     task_validate_table("ZEROOS PANIC: task creation invariant failed.\n");
+    task_debug_dump_all("after task_create");
 
     if (task_id) *task_id=task->id;
     spin_unlock_irqrestore(&task_lock,flags);
