@@ -1,11 +1,15 @@
 #include "task.h"
 #include "memory.h"
 #include "sync.h"
+#include "interrupts.h"
 
 extern void context_switch(uint64_t *old_sp, uint64_t *new_sp);
 
 #define ZEROOS_IDLE_SLOT 1
 #define ZEROOS_DEFAULT_TIMESLICE 10U
+#define ZEROOS_KERNEL_CS 0x08ULL
+#define ZEROOS_KERNEL_SS 0x10ULL
+#define ZEROOS_INITIAL_RFLAGS 0x202ULL
 
 static struct task tasks[ZEROOS_MAX_TASKS];
 static struct task *current_task;
@@ -26,6 +30,43 @@ static void task_trampoline(void) {
     task->entry(task->argument);
     task_exit();
     for (;;) __asm__ volatile ("cli; hlt");
+}
+
+/*
+ * A task can be selected directly by the IRQ-exit path before it has ever
+ * taken an interrupt of its own. Give it a real iret-compatible frame from
+ * the beginning. Once the task is actually interrupted, this pointer is
+ * replaced with the hardware-generated frame.
+ */
+static void task_prepare_interrupt_frame(struct task *task) {
+    struct interrupt_frame *frame=
+        (struct interrupt_frame *)(task->stack_base + 64ULL);
+    uint64_t top=(task->stack_base + ZEROOS_TASK_STACK_SIZE) & ~0xFULL;
+
+    frame->r15=0;
+    frame->r14=0;
+    frame->r13=0;
+    frame->r12=0;
+    frame->r11=0;
+    frame->r10=0;
+    frame->r9=0;
+    frame->r8=0;
+    frame->rbp=0;
+    frame->rdi=0;
+    frame->rsi=0;
+    frame->rdx=0;
+    frame->rcx=0;
+    frame->rbx=0;
+    frame->rax=0;
+    frame->vector=32;
+    frame->error_code=0;
+    frame->rip=(uint64_t)task_trampoline;
+    frame->cs=ZEROOS_KERNEL_CS;
+    frame->rflags=ZEROOS_INITIAL_RFLAGS;
+    frame->rsp=top-8ULL;
+    frame->ss=ZEROOS_KERNEL_SS;
+
+    task->interrupt_frame=frame;
 }
 
 static void task_prepare_stack(struct task *task) {
@@ -91,6 +132,7 @@ int task_system_init(void) {
         tasks[i].timeslice_ticks=ZEROOS_DEFAULT_TIMESLICE;
         tasks[i].preempt_count=0;
         tasks[i].need_resched=0;
+        tasks[i].interrupt_frame=0;
         tasks[i].wait_next=0;
         tasks[i].wait_queue=0;
     }
@@ -107,6 +149,7 @@ int task_system_init(void) {
     tasks[ZEROOS_IDLE_SLOT].entry=task_idle_entry;
     tasks[ZEROOS_IDLE_SLOT].timeslice_ticks=ZEROOS_DEFAULT_TIMESLICE;
     task_prepare_stack(&tasks[ZEROOS_IDLE_SLOT]);
+    task_prepare_interrupt_frame(&tasks[ZEROOS_IDLE_SLOT]);
 
     spinlock_init(&task_lock);
     current_task=&tasks[0];
@@ -149,6 +192,7 @@ int task_create(task_entry_t entry, void *argument, uint64_t *task_id) {
     task->wait_next=0;
     task->wait_queue=0;
     task_prepare_stack(task);
+    task_prepare_interrupt_frame(task);
 
     if (task_id) *task_id=task->id;
     spin_unlock_irqrestore(&task_lock,flags);
@@ -249,6 +293,45 @@ void task_exit(void) {
     for (;;) __asm__ volatile ("cli; hlt");
 }
 
+/*
+ * This is the only timer-driven context-switch path. It runs while the CPU
+ * is still on the interrupt stack, so the old task's complete architectural
+ * state remains intact. The assembly epilogue later loads the returned frame
+ * as its new iret source.
+ */
+struct interrupt_frame *task_reschedule_from_interrupt(
+    struct interrupt_frame *frame) {
+    struct task *previous=current_task;
+    int next;
+
+    if (!previous || !frame)
+        return frame;
+
+    previous->interrupt_frame=frame;
+
+    if (previous->preempt_count!=0)
+        return frame;
+
+    next=find_next_runnable();
+
+    /*
+     * No runnable task means keep the interrupted task. A runnable task
+     * includes idle, so a non-idle current task normally has a real choice.
+     */
+    if (next<0 || &tasks[next]==previous) {
+        previous->need_resched=0;
+        return frame;
+    }
+
+    previous->need_resched=0;
+    previous->state=TASK_RUNNABLE;
+    tasks[next].state=TASK_RUNNING;
+    tasks[next].context_switches++;
+    current_task=&tasks[next];
+
+    return tasks[next].interrupt_frame ? tasks[next].interrupt_frame : frame;
+}
+
 void task_scheduler_tick(void) {
     struct task *task=current_task;
 
@@ -260,20 +343,6 @@ void task_scheduler_tick(void) {
             task->runtime_ticks % task->timeslice_ticks==0)
             task->need_resched=1;
     }
-
-    /*
-     * Do not context-switch from inside the C timer handler. The interrupted
-     * CPU state is owned by the ISR frame, while context_switch() saves a
-     * normal C call frame; switching here would make the eventual iretq use
-     * another task's stack without a matching interrupt frame.
-     *
-     * A mature preemption path will switch complete interrupt frames at the
-     * common interrupt-exit boundary. Until that path exists, a tick only
-     * records the scheduling decision and cooperative yield/block/exit paths
-     * perform the actual switch.
-     */
-    if (task->need_resched && task->preempt_count==0)
-        return;
 }
 
 int task_preempt_disable(void) {
