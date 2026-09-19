@@ -790,6 +790,17 @@ uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
     previous->state=TASK_RUNNABLE;
 
     /*
+     * Idle is a special non-progressing task. If it was interrupted while
+     * hlt/yield was running and we are switching away from it, its precise
+     * hardware frame is not a required continuation point. Retire that frame
+     * and keep the idle task resumable through its stable cooperative context.
+     * Ordinary tasks must retain their interrupt frame for exact preemption
+     * resume.
+     */
+    if (previous==&tasks[ZEROOS_IDLE_SLOT])
+        previous->interrupt_frame=0;
+
+    /*
      * Capture and retire a target interrupt frame before publishing the new
      * current_task. This makes the context ownership transition atomic with
      * respect to all scheduler diagnostics: a TASK_RUNNING task never
