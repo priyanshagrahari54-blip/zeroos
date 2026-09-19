@@ -16,6 +16,9 @@ mb2_header_end:
 .type _start, @function
 _start:
     cli
+    # Preserve the Multiboot2 handoff before using EAX/EDX for UART setup.
+    mov %ebx, %edi
+    mov %eax, %esi
     # Early UART marker: proves GRUB reached our 32-bit entry.
     mov $0x00, %al
     mov $0x3f9, %dx
@@ -42,8 +45,6 @@ _start:
     mov $0x3f8, %dx
     out %al, %dx
 
-    mov %ebx, %edi
-    mov %eax, %esi
     mov $stack_top, %esp
     mov $pml4_table, %eax
     mov %eax, %cr3
