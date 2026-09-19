@@ -59,6 +59,14 @@ static void halt_exception(struct interrupt_frame *frame) {
     serial_write_public(" rflags="); serial_write_hex(frame->rflags);
     serial_write_public(" rsp="); serial_write_hex(frame->rsp);
     serial_write_public(" ss="); serial_write_hex(frame->ss);
+    {
+        struct task *task=task_current();
+        if (task) {
+            serial_write_public(" task="); serial_write_hex(task->id);
+            serial_write_public(" stack="); serial_write_hex(task->stack_base);
+            serial_write_public(" saved="); serial_write_hex(task->saved_stack);
+        }
+    }
     if (frame->vector == 14) {
         serial_write_public(" cr2="); serial_write_hex(read_cr2());
     }
