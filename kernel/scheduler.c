@@ -18,6 +18,10 @@ void scheduler_yield(void) {
     task_yield();
 }
 
+int scheduler_sleep_ticks(uint64_t ticks) {
+    return task_sleep_ticks(ticks);
+}
+
 void scheduler_start(void) {
     task_start_first();
 }
