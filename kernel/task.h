@@ -32,9 +32,12 @@ struct task {
     uint32_t preempt_count;
     uint8_t need_resched;
 
-    /* Points at the complete architectural frame used by IRQ-exit
-     * preemption. It is valid only while this task is not running
-     * cooperatively; the next interrupt refreshes it. */
+    /*
+     * Active architectural interrupt frame, valid only when this task was
+     * interrupted and has not subsequently resumed through a cooperative
+     * context switch. A null value means the task must resume through its
+     * cooperative saved_stack context.
+     */
     struct interrupt_frame *interrupt_frame;
 
     struct task *wait_next;
@@ -51,12 +54,17 @@ int task_wake(struct task *task);
 void task_exit(void);
 
 /*
- * Called from the common interrupt-exit path. The current task's complete
- * interrupt frame is retained on its stack and the selected task's frame is
- * returned for the assembly epilogue to restore.
+ * Called from the common interrupt-exit path.
+ *
+ * Return value encoding:
+ *   bit 0 clear: architectural interrupt_frame pointer; exit with iretq.
+ *   bit 0 set:   cooperative saved-stack pointer; restore context and retq.
+ *
+ * Both forms are required because a runnable task can either have a live
+ * hardware interrupt frame or only a cooperative context saved by
+ * context_switch().
  */
-struct interrupt_frame *task_reschedule_from_interrupt(
-    struct interrupt_frame *frame);
+uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame);
 
 void task_scheduler_tick(void);
 int task_preempt_disable(void);
