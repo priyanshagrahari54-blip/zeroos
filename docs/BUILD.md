@@ -1,0 +1,17 @@
+# ZEROOS Build Guide
+
+The first milestone uses GCC/binutils, GRUB Multiboot2 tooling, xorriso, and QEMU.
+
+Build with:
+
+    make
+
+Run with:
+
+    make run
+
+Clean with:
+
+    make clean
+
+A feature is complete only when it has an appropriate build and verification path.
