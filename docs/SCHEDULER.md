@@ -54,10 +54,26 @@ resuming.
 
 ## Preemption boundary
 
-Timer accounting exists, but the PIT ISR still does not perform an arbitrary
-context switch. Safe timer-driven preemption requires preserving and selecting
-the complete interrupt-return frame, with interrupt-entry/exit state ordering
-kept explicit. citeturn0search1turn0search6
+Timer-driven preemption now occurs at the common IRQ-exit boundary rather than
+inside the C timer handler. The timer tick only accounts CPU time and raises
+the task's `need_resched` flag when its time slice expires.
+
+The common ISR saves the complete architectural register frame and passes its
+address through `interrupt_dispatch()`. After the IRQ handler and PIC EOI,
+the task layer may select another runnable task and return that task's saved
+interrupt frame. The assembly epilogue then loads the selected frame and uses
+the normal `popq` + `iretq` path. This prevents the earlier unsafe pattern
+where a normal C-call-frame context switch was attempted while an interrupt
+return frame was still owned by the interrupted task.
+
+Tasks receive an iret-compatible synthetic frame when created, so a task that
+has not yet taken its first interrupt can still be selected by IRQ-exit
+preemption. Once a task is actually interrupted, its hardware-generated frame
+replaces the synthetic pointer.
+
+The design follows the same architectural principle used by mature kernels:
+interrupt entry/exit and scheduling state are explicit boundaries, and the
+scheduler does not corrupt an in-flight interrupt frame. citeturn3search1turn2search13
 
 ## Resource model
 
@@ -66,7 +82,8 @@ descriptor. No heap allocation is used for idle execution or waiters.
 
 ## Next stage
 
-The next scheduler stage is complete interrupt-frame preemption, scheduler
-accounting, and then timed sleep. Higher-level synchronization primitives can
-build on the wait-queue foundation once those timing and scheduling boundaries
-exist.
+With interrupt-exit preemption in place, the next scheduler work is to harden
+accounting and lifecycle management, add timed sleep, reclaim ZOMBIE task
+stacks, and then introduce a real per-CPU runqueue model before SMP support.
+Higher-level synchronization primitives can build on the existing wait-queue
+and preemption boundaries.
