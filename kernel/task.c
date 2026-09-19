@@ -167,8 +167,11 @@ static void task_validate_table(const char *where) {
          * Slot 0 is the bootstrap task. It intentionally has no allocated
          * task stack; scheduler_start parks it while the first real task runs.
          */
-        if (i==0)
+        if (i==0) {
+            if (task->state==TASK_RUNNING)
+                ++running;
             continue;
+        }
 
         if (task->state==TASK_UNUSED)
             continue;
