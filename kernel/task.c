@@ -368,7 +368,14 @@ struct interrupt_frame *task_reschedule_from_interrupt(
     tasks[next].context_switches++;
     current_task=&tasks[next];
 
-    return tasks[next].interrupt_frame ? tasks[next].interrupt_frame : frame;
+    /*
+     * Only switch to a frame that is known to belong to the selected task.
+     * A task created but not yet interrupted uses its synthetic iret frame;
+     * an interrupted task has its live hardware frame recorded above.
+     */
+    if (tasks[next].interrupt_frame)
+        return tasks[next].interrupt_frame;
+    return frame;
 }
 
 void task_scheduler_tick(void) {
