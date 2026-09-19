@@ -1803,6 +1803,14 @@ isr_common:
     pushq %r15
     mov %rsp, %rdi
     call interrupt_dispatch
+
+    /*
+     * interrupt_dispatch returns the complete frame selected for IRQ exit.
+     * It may be the interrupted frame or a different task's frame. Loading
+     * RSP here makes the existing register/IRET epilogue restore that task
+     * atomically from its saved architectural state.
+     */
+    mov %rax, %rsp
     popq %r15
     popq %r14
     popq %r13
