@@ -1,13 +1,16 @@
-# ZEROOS Task, Scheduler, and Wait-Queue Architecture
+# ZEROOS Task, Scheduler, Idle, and Wait-Queue Architecture
 
-ZEROOS has a kernel-task context layer, a bounded scheduler, and scheduler-owned
-blocking/wakeup primitives.
+ZEROOS has a kernel-task context layer, a bounded scheduler, a permanent idle
+task, and scheduler-owned blocking/wakeup primitives.
 
 ## Task model
 
 Each task contains a stable ID, lifecycle state, saved kernel stack pointer,
 one kernel stack page, entry function, opaque argument, and intrusive wait-list
 links. States are UNUSED, RUNNABLE, RUNNING, BLOCKED, and ZOMBIE.
+
+Slot zero is the bootstrap execution context. Slot one is a permanent idle task.
+Ordinary kernel tasks use the remaining slots.
 
 ## Context switching
 
@@ -17,45 +20,53 @@ the task at its previous execution point.
 
 ## Scheduling policy
 
-The current policy is bounded round-robin over 16 task slots. The task/context
-mechanics are separate from policy so later fairness, latency, or per-CPU
-runqueue work can evolve without replacing task stacks and context state.
+The current policy is bounded round-robin over the ordinary task slots. The
+idle task is excluded from normal round-robin selection and is chosen only when
+no ordinary task is runnable. The task/context mechanics remain separate from
+policy so later fairness, latency, or per-CPU runqueue work can evolve without
+replacing task stacks and context state.
+
+## Idle execution
+
+The idle task executes HLT with interrupts enabled and yields after wakeup.
+This gives ZEROOS a real no-work execution context instead of treating the
+bootstrap continuation as an idle task. A dedicated idle task is a standard
+scheduler model: the CPU runs it when there is no other runnable work, and the
+idle loop can enter processor idle states. citeturn1search0
+
+The current implementation intentionally keeps the PIT tick enabled while
+idle. Tickless idle can be added later after the timer subsystem can reprogram
+the next wakeup event safely; avoiding scheduler ticks during long idle
+intervals is an established power optimization. citeturn1search1turn1search4
 
 ## Blocking and wakeup
 
 Wait queues use a spinlock plus an intrusive FIFO of task descriptors. The
 waiter is first marked BLOCKED and linked while the queue lock is held. The
-queue lock is released before the scheduler performs the context switch. This
-keeps the queue lock out of the sleeping interval and prevents a waker from
-being forced to wait for the blocked task to resume.
+queue lock is released before the scheduler performs the context switch.
 
 A wake-one or wake-all operation removes waiters from the queue before making
-them RUNNABLE. Waking never performs a context switch itself, so the primitive
-can be used by interrupt-oriented paths once the scheduler's interrupt
-boundary is extended.
+them RUNNABLE. Waking never performs a context switch itself.
 
 The condition itself remains owned by the caller. A producer changes the
 condition and then wakes the queue; a waiter re-checks its condition after
-resuming. The wait queue therefore provides scheduling synchronization rather
-than becoming a hidden event state.
+resuming.
 
-This follows the established wait-queue principle that the waiter is prepared
-before sleeping, the condition is re-checked after wakeup, and wakeup follows
-the state change. citeturn1search0turn1search1
+## Preemption boundary
+
+Timer accounting exists, but the PIT ISR still does not perform an arbitrary
+context switch. Safe timer-driven preemption requires preserving and selecting
+the complete interrupt-return frame, with interrupt-entry/exit state ordering
+kept explicit. citeturn0search1turn0search6
 
 ## Resource model
 
-There is no per-wait heap allocation. Each task carries its own intrusive wait
-node, so adding a waiter costs only existing task memory plus the queue head.
-
-## Current boundary
-
-The implementation is kernel-task-only. Timeouts, interruptible sleep,
-signals, user address spaces, priority inheritance, and SMP runqueues are not
-exposed until their underlying scheduler/state machinery exists.
+The permanent idle task costs one 4 KiB kernel stack page plus one static task
+descriptor. No heap allocation is used for idle execution or waiters.
 
 ## Next stage
 
-The next kernel stage is a real idle task, timer-driven preemption with complete
-interrupt-frame switching, scheduler accounting, and then sleep/timeouts and
-higher-level synchronization primitives such as completions and mutexes.
+The next scheduler stage is complete interrupt-frame preemption, scheduler
+accounting, and then timed sleep. Higher-level synchronization primitives can
+build on the wait-queue foundation once those timing and scheduling boundaries
+exist.
