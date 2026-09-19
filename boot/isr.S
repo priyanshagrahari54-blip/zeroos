@@ -1826,7 +1826,12 @@ isr_common:
     popq %r12
     popq %rbx
     popq %rbp
-    sti
+    /*
+     * Cooperative contexts were saved with interrupts disabled. The
+     * context_switch caller restores its saved RFLAGS after retq. Enabling
+     * IF here would create a window on the task's saved context stack before
+     * the caller can restore its interrupt state.
+     */
     retq
 
 1:
