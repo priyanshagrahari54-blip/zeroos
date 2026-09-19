@@ -55,6 +55,10 @@ static void halt_exception(struct interrupt_frame *frame) {
     serial_write_public("\n  vector="); serial_write_hex(frame->vector);
     serial_write_public(" error="); serial_write_hex(frame->error_code);
     serial_write_public(" rip="); serial_write_hex(frame->rip);
+    serial_write_public(" cs="); serial_write_hex(frame->cs);
+    serial_write_public(" rflags="); serial_write_hex(frame->rflags);
+    serial_write_public(" rsp="); serial_write_hex(frame->rsp);
+    serial_write_public(" ss="); serial_write_hex(frame->ss);
     if (frame->vector == 14) {
         serial_write_public(" cr2="); serial_write_hex(read_cr2());
     }
