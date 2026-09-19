@@ -298,3 +298,27 @@ void page_free(void *address) {
 uint64_t memory_total_pages(void) { return managed_pages; }
 uint64_t memory_free_pages(void) { return free_pages; }
 uint64_t memory_max_physical(void) { return ZEROOS_MAX_PHYS_MEM; }
+
+
+void *page_alloc_zero(void) {
+    void *page = page_alloc();
+    if (!page) return (void *)0;
+    uint64_t *words = (uint64_t *)page;
+    for (uint64_t i = 0; i < ZEROOS_PAGE_SIZE / sizeof(uint64_t); ++i)
+        words[i] = 0;
+    return page;
+}
+
+int memory_is_managed_range(uint64_t address, uint64_t length) {
+    if (length == 0 || address + length < address)
+        return 0;
+    uint64_t end = address + length;
+    return address < ZEROOS_MAX_PHYS_MEM && end <= ZEROOS_MAX_PHYS_MEM;
+}
+
+int memory_page_is_allocated(uint64_t address) {
+    if ((address % ZEROOS_PAGE_SIZE) != 0 ||
+        address >= ZEROOS_MAX_PHYS_MEM)
+        return 0;
+    return bitmap_test(address / ZEROOS_PAGE_SIZE);
+}
