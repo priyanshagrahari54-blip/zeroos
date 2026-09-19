@@ -23,7 +23,7 @@ static int task_stack_guard_ok(const struct task *task) {
 
 static void task_stack_guard_panic(const struct task *task) {
     (void)task;
-    serial_write_public("ZEROOS PANIC: task stack guard corrupted.\\n");
+    serial_write_public("ZEROOS PANIC: task stack guard corrupted.\n");
     for (;;) __asm__ volatile ("cli; hlt");
 }
 
