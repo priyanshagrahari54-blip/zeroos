@@ -1,7 +1,7 @@
 #ifndef ZEROOS_INTERRUPTS_H
 #define ZEROOS_INTERRUPTS_H
 
-typedef unsigned long long uint64_t;
+#include "types.h"
 
 struct interrupt_frame {
     uint64_t r15;
