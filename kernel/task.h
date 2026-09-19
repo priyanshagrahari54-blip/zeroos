@@ -53,6 +53,7 @@ void task_yield(void);
 int task_prepare_block(void);
 int task_block(void);
 int task_wake(struct task *task);
+int task_sleep_until(uint64_t deadline);
 int task_sleep_ticks(uint64_t ticks);
 void task_exit(void);
 
