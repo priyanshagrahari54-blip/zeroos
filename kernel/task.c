@@ -115,12 +115,25 @@ static void sleep_queue_insert_locked(struct task *task) {
     *cursor=task;
 }
 
+static void sleep_queue_remove_locked(struct task *task) {
+    struct task **cursor=&sleep_head;
+    while (*cursor && *cursor!=task)
+        cursor=&(*cursor)->sleep_next;
+    if (*cursor==task) {
+        *cursor=task->sleep_next;
+        task->sleep_next=0;
+    }
+    task->wake_tick=0;
+    task->sleep_armed=0;
+}
+
 static void sleep_queue_wake_expired_locked(uint64_t now) {
     while (sleep_head && (long long)(now-sleep_head->wake_tick)>=0) {
         struct task *task=sleep_head;
         sleep_head=task->sleep_next;
         task->sleep_next=0;
         task->wake_tick=0;
+        task->sleep_armed=0;
         if (task->state==TASK_BLOCKED) {
             task->state=TASK_RUNNABLE;
             task->need_resched=1;
@@ -150,6 +163,7 @@ static void reap_zombies_locked(void) {
         task->wait_queue=0;
         task->sleep_next=0;
         task->wake_tick=0;
+        task->sleep_armed=0;
     }
 }
 
@@ -213,6 +227,7 @@ int task_system_init(void) {
         tasks[i].wait_queue=0;
         tasks[i].sleep_next=0;
         tasks[i].wake_tick=0;
+        tasks[i].sleep_armed=0;
     }
 
     tasks[0].id=0;
@@ -272,6 +287,7 @@ int task_create(task_entry_t entry, void *argument, uint64_t *task_id) {
     task->wait_queue=0;
     task->sleep_next=0;
     task->wake_tick=0;
+    task->sleep_armed=0;
     task_prepare_stack(task);
     task_prepare_interrupt_frame(task);
 
@@ -355,11 +371,16 @@ int task_block(void) {
 }
 
 int task_wake(struct task *task) {
+    uint64_t flags;
     if (!task || task==&tasks[0] || task==&tasks[ZEROOS_IDLE_SLOT] ||
         task->state!=TASK_BLOCKED)
         return -1;
 
+    flags=task_irq_save();
+    if (task->sleep_armed)
+        sleep_queue_remove_locked(task);
     task->state=TASK_RUNNABLE;
+    task_irq_restore(flags);
     task->need_resched=1;
     return 0;
 }
@@ -381,6 +402,7 @@ int task_sleep_ticks(uint64_t ticks) {
     }
 
     task->wake_tick=timer_ticks()+ticks;
+    task->sleep_armed=1;
     task->need_resched=0;
     task->state=TASK_BLOCKED;
     sleep_queue_insert_locked(task);
@@ -388,8 +410,7 @@ int task_sleep_ticks(uint64_t ticks) {
     int next=find_next_runnable();
     if (next<0) {
         task->state=TASK_RUNNING;
-        task->sleep_next=0;
-        task->wake_tick=0;
+        sleep_queue_remove_locked(task);
         task_irq_restore(flags);
         return -1;
     }
