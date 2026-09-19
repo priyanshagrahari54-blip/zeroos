@@ -101,6 +101,7 @@ static void sync_self_test(void) {
 static struct atomic_u64 task_probe_counter;
 static struct wait_queue wait_probe_queue;
 static struct atomic_u64 wait_probe_state;
+static struct atomic_u64 sleep_probe_state;
 
 static void scheduler_probe_worker(void *argument) {
     (void)argument;
@@ -127,6 +128,15 @@ static void wait_probe_waker(void *argument) {
     atomic_u64_store(&wait_probe_state,1);
     if (wait_queue_wake_one(&wait_probe_queue)!=1)
         kernel_panic("wait queue wake failed");
+}
+
+static void scheduler_probe_sleeper(void *argument) {
+    (void)argument;
+    atomic_u64_store(&sleep_probe_state,1);
+    if (scheduler_sleep_ticks(5)!=0)
+        kernel_panic("timed sleep failed");
+    atomic_u64_store(&sleep_probe_state,2);
+    serial_write_public("ZEROOS: timed sleep wakeup self-test passed.\\n");
 }
 
 static void scheduler_probe_monitor(void *argument) {
@@ -159,10 +169,11 @@ static void scheduler_probe_monitor(void *argument) {
 }
 
 static void scheduler_self_test(void) {
-    uint64_t worker_id, monitor_id, waiter_id, waker_id;
+    uint64_t worker_id, monitor_id, waiter_id, waker_id, sleeper_id;
 
     atomic_u64_init(&task_probe_counter,0);
     atomic_u64_init(&wait_probe_state,0);
+    atomic_u64_init(&sleep_probe_state,0);
     wait_queue_init(&wait_probe_queue);
 
     if (task_system_init()!=0)
@@ -178,6 +189,8 @@ static void scheduler_self_test(void) {
         kernel_panic("waiter task creation failed");
     if (task_create(wait_probe_waker,0,&waker_id)!=0)
         kernel_panic("waker task creation failed");
+    if (task_create(scheduler_probe_sleeper,0,&sleeper_id)!=0)
+        kernel_panic("timed sleeper creation failed");
 
     serial_write_public("ZEROOS: kernel tasks created: ");
     serial_write_u64(task_count());
