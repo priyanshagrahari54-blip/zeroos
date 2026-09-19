@@ -33,10 +33,9 @@ struct task {
     uint8_t need_resched;
 
     /*
-     * Active architectural interrupt frame, valid only when this task was
-     * interrupted and has not subsequently resumed through a cooperative
-     * context switch. A null value means the task must resume through its
-     * cooperative saved_stack context.
+     * Active architectural interrupt frame, valid only while this task is
+     * runnable because it was preempted and has not yet resumed. A null value
+     * means the task resumes through its cooperative saved_stack context.
      */
     struct interrupt_frame *interrupt_frame;
 
