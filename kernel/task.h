@@ -24,6 +24,13 @@ struct task {
     uint64_t stack_base;
     task_entry_t entry;
     void *argument;
+
+    uint64_t runtime_ticks;
+    uint64_t context_switches;
+    uint32_t timeslice_ticks;
+    uint32_t preempt_count;
+    uint8_t need_resched;
+
     struct task *wait_next;
     struct wait_queue *wait_queue;
 };
@@ -36,6 +43,13 @@ int task_prepare_block(void);
 int task_block(void);
 int task_wake(struct task *task);
 void task_exit(void);
+
+void task_scheduler_tick(void);
+int task_preempt_disable(void);
+int task_preempt_enable(void);
+uint32_t task_preempt_count(void);
+uint8_t task_need_resched(void);
+
 void task_start_first(void);
 uint64_t task_count(void);
 
