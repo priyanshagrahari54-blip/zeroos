@@ -144,6 +144,7 @@ static void scheduler_probe_monitor(void *argument) {
     uint64_t last_report=0;
     int context_reported=0;
     int wait_reported=0;
+    int sleep_reported=0;
 
     for (;;) {
         uint64_t now=timer_ticks();
