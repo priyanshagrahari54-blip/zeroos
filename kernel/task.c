@@ -124,6 +124,14 @@ static int find_next_runnable(void) {
 static int switch_to_next(struct task *previous, int next) {
     if (!previous || next<0 || &tasks[next]==previous) return 0;
 
+    /*
+     * A cooperative switch resumes the task's saved RET frame, not an old
+     * interrupt frame. A frame retained from an earlier preemption becomes
+     * stale as soon as that task has resumed and later yields again.
+     */
+    previous->interrupt_frame=0;
+    tasks[next].interrupt_frame=0;
+
     previous->state=TASK_RUNNABLE;
     tasks[next].state=TASK_RUNNING;
     tasks[next].context_switches++;
@@ -281,6 +289,8 @@ int task_block(void) {
 
     tasks[next].state=TASK_RUNNING;
     tasks[next].context_switches++;
+    previous->interrupt_frame=0;
+    tasks[next].interrupt_frame=0;
     current_task=&tasks[next];
     context_switch(&previous->saved_stack,&current_task->saved_stack);
     task_irq_restore(flags);
@@ -318,6 +328,8 @@ void task_exit(void) {
 
     tasks[next].state=TASK_RUNNING;
     tasks[next].context_switches++;
+    previous->interrupt_frame=0;
+    tasks[next].interrupt_frame=0;
     current_task=&tasks[next];
     context_switch(&previous->saved_stack,&current_task->saved_stack);
 
@@ -426,6 +438,8 @@ void task_start_first(void) {
 
     tasks[next].state=TASK_RUNNING;
     tasks[next].context_switches++;
+    tasks[0].interrupt_frame=0;
+    tasks[next].interrupt_frame=0;
     current_task=&tasks[next];
     context_switch(&tasks[0].saved_stack,&current_task->saved_stack);
 
