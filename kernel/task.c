@@ -5,6 +5,7 @@
 extern void context_switch(uint64_t *old_sp, uint64_t *new_sp);
 
 #define ZEROOS_IDLE_SLOT 1
+#define ZEROOS_DEFAULT_TIMESLICE 10U
 
 static struct task tasks[ZEROOS_MAX_TASKS];
 static struct task *current_task;
@@ -21,6 +22,7 @@ static void task_idle_entry(void *argument) {
 
 static void task_trampoline(void) {
     struct task *task=current_task;
+    __asm__ volatile ("sti" ::: "memory");
     task->entry(task->argument);
     task_exit();
     for (;;) __asm__ volatile ("cli; hlt");
@@ -29,6 +31,7 @@ static void task_trampoline(void) {
 static void task_prepare_stack(struct task *task) {
     uint64_t top=task->stack_base+ZEROOS_TASK_STACK_SIZE;
     uint64_t *sp;
+
     top=(top & ~0xFULL)-8;
     sp=(uint64_t *)top;
     *--sp=(uint64_t)task_trampoline;
@@ -48,7 +51,6 @@ static int find_next_runnable(void) {
     for (int i=0;i<ZEROOS_MAX_TASKS;++i)
         if (&tasks[i]==current_task) { start=i; break; }
 
-    /* Prefer ordinary runnable tasks; the idle task is a last resort. */
     for (int step=1;step<=ZEROOS_MAX_TASKS;++step) {
         index=(start+step)%ZEROOS_MAX_TASKS;
         if (index!=0 && index!=ZEROOS_IDLE_SLOT &&
@@ -62,6 +64,18 @@ static int find_next_runnable(void) {
     return -1;
 }
 
+static int switch_to_next(struct task *previous, int next) {
+    if (!previous || next<0 || &tasks[next]==previous) return 0;
+
+    previous->state=TASK_RUNNABLE;
+    tasks[next].state=TASK_RUNNING;
+    tasks[next].context_switches++;
+    current_task=&tasks[next];
+
+    context_switch(&previous->saved_stack,&current_task->saved_stack);
+    return 1;
+}
+
 int task_system_init(void) {
     void *idle_stack;
 
@@ -72,6 +86,11 @@ int task_system_init(void) {
         tasks[i].stack_base=0;
         tasks[i].entry=0;
         tasks[i].argument=0;
+        tasks[i].runtime_ticks=0;
+        tasks[i].context_switches=0;
+        tasks[i].timeslice_ticks=ZEROOS_DEFAULT_TIMESLICE;
+        tasks[i].preempt_count=0;
+        tasks[i].need_resched=0;
         tasks[i].wait_next=0;
         tasks[i].wait_queue=0;
     }
@@ -79,18 +98,14 @@ int task_system_init(void) {
     tasks[0].id=0;
     tasks[0].state=TASK_RUNNING;
 
-    /*
-     * Slot one is a permanent scheduler idle task. It owns one kernel stack
-     * page and is selected only when no ordinary task is runnable.
-     */
     idle_stack=page_alloc();
     if (!idle_stack) return -1;
 
-    tasks[ZEROOS_IDLE_SLOT].id=next_task_id++;
+    tasks[ZEROOS_IDLE_SLOT].id=1;
     tasks[ZEROOS_IDLE_SLOT].state=TASK_RUNNABLE;
     tasks[ZEROOS_IDLE_SLOT].stack_base=(uint64_t)idle_stack;
     tasks[ZEROOS_IDLE_SLOT].entry=task_idle_entry;
-    tasks[ZEROOS_IDLE_SLOT].argument=0;
+    tasks[ZEROOS_IDLE_SLOT].timeslice_ticks=ZEROOS_DEFAULT_TIMESLICE;
     task_prepare_stack(&tasks[ZEROOS_IDLE_SLOT]);
 
     spinlock_init(&task_lock);
@@ -126,6 +141,11 @@ int task_create(task_entry_t entry, void *argument, uint64_t *task_id) {
     task->stack_base=(uint64_t)stack;
     task->entry=entry;
     task->argument=argument;
+    task->runtime_ticks=0;
+    task->context_switches=0;
+    task->timeslice_ticks=ZEROOS_DEFAULT_TIMESLICE;
+    task->preempt_count=0;
+    task->need_resched=0;
     task->wait_next=0;
     task->wait_queue=0;
     task_prepare_stack(task);
@@ -141,25 +161,29 @@ struct task *task_current(void) {
 
 void task_yield(void) {
     struct task *previous=current_task;
-    int next=find_next_runnable();
+    int next;
 
-    if (!previous || next<0 || &tasks[next]==previous) return;
+    if (!previous || previous->preempt_count!=0) return;
 
-    previous->state=TASK_RUNNABLE;
-    tasks[next].state=TASK_RUNNING;
-    current_task=&tasks[next];
+    next=find_next_runnable();
+    if (next<0 || &tasks[next]==previous) {
+        previous->need_resched=0;
+        return;
+    }
 
-    context_switch(&previous->saved_stack,&current_task->saved_stack);
+    previous->need_resched=0;
+    switch_to_next(previous,next);
 }
 
 int task_prepare_block(void) {
     struct task *task=current_task;
 
     if (!task || task==&tasks[0] || task==&tasks[ZEROOS_IDLE_SLOT] ||
-        task->state!=TASK_RUNNING)
+        task->state!=TASK_RUNNING || task->preempt_count!=0)
         return -1;
 
     task->state=TASK_BLOCKED;
+    task->need_resched=0;
     return 0;
 }
 
@@ -168,7 +192,7 @@ int task_block(void) {
     int next;
 
     if (!previous || previous==&tasks[0] ||
-        previous==&tasks[ZEROOS_IDLE_SLOT])
+        previous==&tasks[ZEROOS_IDLE_SLOT] || previous->preempt_count!=0)
         return -1;
 
     if (previous->state==TASK_RUNNABLE)
@@ -184,6 +208,7 @@ int task_block(void) {
     }
 
     tasks[next].state=TASK_RUNNING;
+    tasks[next].context_switches++;
     current_task=&tasks[next];
     context_switch(&previous->saved_stack,&current_task->saved_stack);
     return 0;
@@ -195,6 +220,7 @@ int task_wake(struct task *task) {
         return -1;
 
     task->state=TASK_RUNNABLE;
+    task->need_resched=1;
     return 0;
 }
 
@@ -207,6 +233,7 @@ void task_exit(void) {
         return;
 
     previous->state=TASK_ZOMBIE;
+    previous->need_resched=0;
     next=find_next_runnable();
 
     if (next<0) {
@@ -215,25 +242,75 @@ void task_exit(void) {
     }
 
     tasks[next].state=TASK_RUNNING;
+    tasks[next].context_switches++;
     current_task=&tasks[next];
     context_switch(&previous->saved_stack,&current_task->saved_stack);
 
     for (;;) __asm__ volatile ("cli; hlt");
 }
 
+void task_scheduler_tick(void) {
+    struct task *task=current_task;
+
+    if (!task) return;
+
+    if (task->state==TASK_RUNNING && task!=&tasks[ZEROOS_IDLE_SLOT]) {
+        ++task->runtime_ticks;
+        if (task->timeslice_ticks==0 ||
+            task->runtime_ticks % task->timeslice_ticks==0)
+            task->need_resched=1;
+    }
+
+    /*
+     * Timer IRQ entry has interrupts disabled. The outgoing task's interrupt
+     * frame remains on its stack while context_switch saves the scheduler's
+     * call context. When the task is selected again, execution returns to
+     * this exact IRQ path and the normal ISR epilogue performs iretq.
+     */
+    if (!task->need_resched || task->preempt_count!=0)
+        return;
+
+    int next=find_next_runnable();
+    if (next<0 || &tasks[next]==task) {
+        task->need_resched=0;
+        return;
+    }
+
+    task->need_resched=0;
+    switch_to_next(task,next);
+}
+
+int task_preempt_disable(void) {
+    struct task *task=current_task;
+    if (!task || task->preempt_count==0xffffffffU) return -1;
+    ++task->preempt_count;
+    return 0;
+}
+
+int task_preempt_enable(void) {
+    struct task *task=current_task;
+    if (!task || task->preempt_count==0) return -1;
+    --task->preempt_count;
+    return 0;
+}
+
+uint32_t task_preempt_count(void) {
+    return current_task ? current_task->preempt_count : 0;
+}
+
+uint8_t task_need_resched(void) {
+    return current_task ? current_task->need_resched : 0;
+}
+
 void task_start_first(void) {
     int next;
 
-    /*
-     * Bootstrap is no longer a schedulable task after scheduler_start().
-     * It remains a saved continuation only if the scheduler is later
-     * extended with an explicit scheduler shutdown path.
-     */
     tasks[0].state=TASK_BLOCKED;
     next=find_next_runnable();
     if (next<0) return;
 
     tasks[next].state=TASK_RUNNING;
+    tasks[next].context_switches++;
     current_task=&tasks[next];
     context_switch(&tasks[0].saved_stack,&current_task->saved_stack);
 
