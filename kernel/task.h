@@ -42,6 +42,8 @@ struct task {
 
     struct task *wait_next;
     struct wait_queue *wait_queue;
+    struct task *sleep_next;
+    uint64_t wake_tick;
 };
 
 int task_system_init(void);
@@ -51,6 +53,7 @@ void task_yield(void);
 int task_prepare_block(void);
 int task_block(void);
 int task_wake(struct task *task);
+int task_sleep_ticks(uint64_t ticks);
 void task_exit(void);
 
 /*
