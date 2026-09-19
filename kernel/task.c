@@ -357,14 +357,15 @@ int task_wake(struct task *task) {
     return 0;
 }
 
-int task_sleep_ticks(uint64_t ticks) {
+int task_sleep_until(uint64_t deadline) {
     struct task *task=current_task;
     uint64_t flags;
 
     if (!task || task==&tasks[0] || task==&tasks[ZEROOS_IDLE_SLOT] ||
         task->state!=TASK_RUNNING || task->preempt_count!=0)
         return -1;
-    if (ticks==0)
+
+    if ((long long)(deadline-timer_ticks())<=0)
         return 0;
 
     flags=task_irq_save();
@@ -373,7 +374,12 @@ int task_sleep_ticks(uint64_t ticks) {
         return -1;
     }
 
-    task->wake_tick=timer_ticks()+ticks;
+    if ((long long)(deadline-timer_ticks())<=0) {
+        task_irq_restore(flags);
+        return 0;
+    }
+
+    task->wake_tick=deadline;
     task->sleep_armed=1;
     task->need_resched=0;
     task->state=TASK_BLOCKED;
@@ -394,6 +400,12 @@ int task_sleep_ticks(uint64_t ticks) {
     context_switch(&task->saved_stack,&current_task->saved_stack);
     task_irq_restore(flags);
     return 0;
+}
+
+int task_sleep_ticks(uint64_t ticks) {
+    if (ticks==0)
+        return 0;
+    return task_sleep_until(timer_ticks()+ticks);
 }
 
 void task_exit(void) {
