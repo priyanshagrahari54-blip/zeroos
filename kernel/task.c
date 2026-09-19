@@ -10,6 +10,7 @@ extern char __kernel_start;
 extern char __kernel_end;
 
 static void task_write_u64(uint64_t value);
+static void task_debug_dump_all(const char *label);
 
 #define ZEROOS_IDLE_SLOT 1
 #define ZEROOS_DEFAULT_TIMESLICE 10U
