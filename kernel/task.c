@@ -371,7 +371,7 @@ int task_sleep_ticks(uint64_t ticks) {
     task->state=TASK_BLOCKED;
     sleep_queue_insert_locked(task);
 
-    int next=find_next_runnable();
+    int next=find_next_runnable(1);
     if (next<0) {
         task->state=TASK_RUNNING;
         sleep_queue_remove_locked(task);
