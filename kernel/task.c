@@ -837,6 +837,21 @@ void task_scheduler_tick(void) {
 
     if (!task) return;
 
+    /*
+     * interrupt_frame is a pending resume context only while a task is
+     * suspended. A RUNNING task is executing on the CPU; its current hardware
+     * IRQ frame belongs to the active interrupt path and will be captured by
+     * task_reschedule_from_interrupt() after the timer hook returns. If a
+     * previous resume frame was left behind, retire that stale metadata before
+     * validating the task table.
+     */
+    if (task->state==TASK_RUNNING && task->interrupt_frame) {
+        serial_write_public("ZEROOS: retiring stale IRQ frame from running task ");
+        task_write_u64(task->id);
+        serial_write_public(".\n");
+        task->interrupt_frame=0;
+    }
+
     now=timer_ticks();
     if (!task_stack_guard_ok(task)) task_stack_guard_panic(task);
     {
