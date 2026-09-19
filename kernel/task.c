@@ -16,6 +16,22 @@ static struct task *current_task;
 static struct spinlock task_lock;
 static uint64_t next_task_id;
 
+static uint64_t task_irq_save(void) {
+    uint64_t flags;
+    __asm__ volatile ("pushfq; popq %0; cli"
+                      : "=r"(flags)
+                      :
+                      : "memory");
+    return flags;
+}
+
+static void task_irq_restore(uint64_t flags) {
+    __asm__ volatile ("pushq %0; popfq"
+                      :
+                      : "r"(flags)
+                      : "memory", "cc");
+}
+
 static void task_idle_entry(void *argument) {
     (void)argument;
     for (;;) {
@@ -215,13 +231,13 @@ void task_yield(void) {
     next=find_next_runnable();
     if (next<0 || &tasks[next]==previous) {
         previous->need_resched=0;
-        __asm__ volatile ("sti" ::: "memory");
+        task_irq_restore(flags);
         return;
     }
 
     previous->need_resched=0;
     switch_to_next(previous,next);
-    __asm__ volatile ("sti" ::: "memory");
+    task_irq_restore(flags);
 }
 
 int task_prepare_block(void) {
@@ -247,19 +263,19 @@ int task_block(void) {
         return -1;
 
     if (previous->state==TASK_RUNNABLE) {
-        __asm__ volatile ("sti" ::: "memory");
+        task_irq_restore(flags);
         return 0;
     }
 
     if (previous->state!=TASK_BLOCKED) {
-        __asm__ volatile ("sti" ::: "memory");
+        task_irq_restore(flags);
         return -1;
     }
 
     next=find_next_runnable();
     if (next<0) {
         previous->state=TASK_RUNNING;
-        __asm__ volatile ("sti" ::: "memory");
+        task_irq_restore(flags);
         return -1;
     }
 
@@ -267,7 +283,7 @@ int task_block(void) {
     tasks[next].context_switches++;
     current_task=&tasks[next];
     context_switch(&previous->saved_stack,&current_task->saved_stack);
-    __asm__ volatile ("sti" ::: "memory");
+    task_irq_restore(flags);
     return 0;
 }
 
@@ -291,6 +307,7 @@ void task_exit(void) {
         previous==&tasks[ZEROOS_IDLE_SLOT])
         return;
 
+    flags=task_irq_save();
     previous->state=TASK_ZOMBIE;
     previous->need_resched=0;
     next=find_next_runnable();
@@ -304,7 +321,6 @@ void task_exit(void) {
     tasks[next].context_switches++;
     current_task=&tasks[next];
     context_switch(&previous->saved_stack,&current_task->saved_stack);
-    __asm__ volatile ("sti" ::: "memory");
 
     for (;;) __asm__ volatile ("cli; hlt");
 }
@@ -399,7 +415,7 @@ void task_start_first(void) {
     tasks[0].state=TASK_BLOCKED;
     next=find_next_runnable();
     if (next<0) {
-        __asm__ volatile ("sti" ::: "memory");
+        task_irq_restore(flags);
         return;
     }
 
@@ -407,7 +423,6 @@ void task_start_first(void) {
     tasks[next].context_switches++;
     current_task=&tasks[next];
     context_switch(&tasks[0].saved_stack,&current_task->saved_stack);
-    __asm__ volatile ("sti" ::: "memory");
 
     for (;;) __asm__ volatile ("cli; hlt");
 }
