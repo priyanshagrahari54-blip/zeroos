@@ -13,7 +13,12 @@
 
 int vmm_init(void);
 int vmm_map_page(uint64_t virtual_address, uint64_t physical_address, uint64_t flags);
+int vmm_map_range(uint64_t virtual_address, uint64_t physical_address,
+                  uint64_t page_count, uint64_t flags);
 int vmm_unmap_page(uint64_t virtual_address);
+int vmm_unmap_range(uint64_t virtual_address, uint64_t page_count);
+int vmm_protect_page(uint64_t virtual_address, uint64_t flags);
+int vmm_is_user_range(uint64_t virtual_address, uint64_t length, uint64_t write);
 uint64_t vmm_translate(uint64_t virtual_address);
 uint64_t vmm_root(void);
 
