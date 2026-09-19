@@ -469,6 +469,16 @@ int task_create(task_entry_t entry, void *argument, uint64_t *task_id) {
     task->sleep_armed=0;
     task_prepare_stack(task);
 
+    if (!task_saved_context_ok(task))
+        task_saved_context_panic(task);
+
+    /*
+     * Validate the whole task table after every creation while interrupts are
+     * disabled. This makes a metadata/context overwrite attributable to the
+     * creation boundary instead of a much later scheduler failure.
+     */
+    task_validate_table("ZEROOS PANIC: task creation invariant failed.\n");
+
     if (task_id) *task_id=task->id;
     spin_unlock_irqrestore(&task_lock,flags);
     return 0;
