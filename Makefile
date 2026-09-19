@@ -20,11 +20,17 @@ $(BUILD):
 $(BUILD)/boot.o: boot/boot.S | $(BUILD)
 	$(AS) $(ASFLAGS) -c $< -o $@
 
-$(BUILD)/kernel.o: kernel/kernel.c | $(BUILD)
-	$(CC) $(CFLAGS) -c $< -o $@
+$(BUILD)/isr.o: boot/isr.S | $(BUILD)
+	$(AS) $(ASFLAGS) -c $< -o $@
 
-$(KERNEL): $(BUILD)/boot.o $(BUILD)/kernel.o kernel/linker.ld
-	$(LD) $(LDFLAGS) -o $@ $(BUILD)/boot.o $(BUILD)/kernel.o
+$(BUILD)/kernel.o: kernel/kernel.c kernel/interrupts.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(BUILD)/interrupts.o: kernel/interrupts.c kernel/interrupts.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(KERNEL): $(BUILD)/boot.o $(BUILD)/isr.o $(BUILD)/kernel.o $(BUILD)/interrupts.o kernel/linker.ld
+	$(LD) $(LDFLAGS) -o $@ $(BUILD)/boot.o $(BUILD)/isr.o $(BUILD)/kernel.o $(BUILD)/interrupts.o
 
 iso: $(KERNEL)
 	rm -rf $(BUILD)/iso
