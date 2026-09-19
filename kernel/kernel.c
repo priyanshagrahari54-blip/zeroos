@@ -1,7 +1,5 @@
-typedef unsigned char uint8_t;
-typedef unsigned short uint16_t;
-typedef unsigned int uint32_t;
-typedef unsigned long long uint64_t;
+#include "types.h"
+#include "timer.h"
 
 #define COM1 0x3F8
 
@@ -53,9 +51,17 @@ void kernel_main(uint64_t multiboot_info, uint64_t multiboot_magic) {
     (void)multiboot_info;
     interrupts_init();
     serial_write_public("ZEROOS: IDT installed and interrupts enabled.\n");
+    serial_write_public("ZEROOS: PIT timer configured at 100 Hz.\n");
     serial_write_public("ZEROOS: foundation milestone reached.\n");
 
-    __asm__ volatile ("int3");
+    uint64_t last_report = 0;
+    for (;;) {
+        __asm__ volatile ("hlt");
 
-    for (;;) __asm__ volatile ("hlt");
+        uint64_t now = timer_ticks();
+        if (now >= last_report + 100) {
+            last_report = now;
+            serial_write_public("ZEROOS: timer tick 100.\n");
+        }
+    }
 }
