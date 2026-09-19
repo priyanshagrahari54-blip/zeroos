@@ -211,6 +211,10 @@ void kernel_main(uint64_t multiboot_info, uint64_t multiboot_magic) {
     else
         kernel_panic("unexpected Multiboot2 boot magic");
 
+    serial_write_public("ZEROOS: Multiboot info address: ");
+    serial_write_u64(multiboot_info);
+    serial_write_public("\n");
+
     memory_init(multiboot_info);
     serial_write_public("ZEROOS: physical page allocator initialized.\n");
     serial_write_public("ZEROOS: managed pages: ");
