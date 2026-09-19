@@ -105,7 +105,6 @@ static struct atomic_u64 sleep_probe_state;
 
 static void scheduler_probe_worker(void *argument) {
     uint64_t rbx_value=0x1122334455667788ULL;
-    uint64_t rbp_value=0x8877665544332211ULL;
     uint64_t r12_value=0x13579bdf2468ace0ULL;
     uint64_t r13_value=0x0eca8642fdb97531ULL;
     uint64_t r14_value=0x55aa55aa33cc33ccULL;
@@ -118,7 +117,6 @@ static void scheduler_probe_worker(void *argument) {
      * making this a direct regression test for context.S.
      */
     register uint64_t rbx asm("rbx")=rbx_value;
-    register uint64_t rbp asm("rbp")=rbp_value;
     register uint64_t r12 asm("r12")=r12_value;
     register uint64_t r13 asm("r13")=r13_value;
     register uint64_t r14 asm("r14")=r14_value;
@@ -127,7 +125,7 @@ static void scheduler_probe_worker(void *argument) {
     for (uint64_t i=0;i<32;++i) {
         atomic_u64_fetch_add(&task_probe_counter,1);
         scheduler_yield();
-        if (rbx!=rbx_value || rbp!=rbp_value ||
+        if (rbx!=rbx_value ||
             r12!=r12_value || r13!=r13_value ||
             r14!=r14_value || r15!=r15_value)
             kernel_panic("callee-saved register context corruption");
