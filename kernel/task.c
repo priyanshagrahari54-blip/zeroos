@@ -305,16 +305,15 @@ int task_prepare_block(void) {
     return 0;
 }
 
-int task_block(void) {
+static int task_block_locked(uint64_t flags) {
     struct task *previous=current_task;
     int next;
-    uint64_t flags;
 
     if (!previous || previous==&tasks[0] ||
-        previous==&tasks[ZEROOS_IDLE_SLOT] || previous->preempt_count!=0)
+        previous==&tasks[ZEROOS_IDLE_SLOT] || previous->preempt_count!=0) {
+        task_irq_restore(flags);
         return -1;
-
-    flags=task_irq_save();
+    }
 
     if (previous->state==TASK_RUNNABLE) {
         task_irq_restore(flags);
@@ -340,6 +339,15 @@ int task_block(void) {
     context_switch(&previous->saved_stack,&current_task->saved_stack);
     task_irq_restore(flags);
     return 0;
+}
+
+int task_block(void) {
+    uint64_t flags=task_irq_save();
+    return task_block_locked(flags);
+}
+
+int task_block_irqsave(uint64_t flags) {
+    return task_block_locked(flags);
 }
 
 int task_wake(struct task *task) {
