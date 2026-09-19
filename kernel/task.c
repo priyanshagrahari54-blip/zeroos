@@ -71,6 +71,8 @@ static void task_prepare_stack(struct task *task) {
     *--sp=0;
     *--sp=0;
     *--sp=0;
+    if (((uint64_t)sp & 0xFULL)!=0)
+        return;
     task->saved_stack=(uint64_t)sp;
 }
 
