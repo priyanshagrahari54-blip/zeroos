@@ -26,38 +26,36 @@ static void serial_init(void) {
 }
 
 static void serial_putc(char c) {
-    while ((inb(COM1 + 5) & 0x20) == 0) {
-    }
+    while ((inb(COM1 + 5) & 0x20) == 0) {}
     outb(COM1, (uint8_t)c);
 }
 
-static void serial_write(const char *text) {
+void serial_write_public(const char *text) {
     while (*text) {
-        if (*text == '\n') {
-            serial_putc('\r');
-        }
+        if (*text == '\n') serial_putc('\r');
         serial_putc(*text++);
     }
 }
 
+extern void interrupts_init(void);
+
 void kernel_main(uint64_t multiboot_info, uint64_t multiboot_magic) {
     serial_init();
+    serial_write_public("\nZEROOS kernel starting...\n");
+    serial_write_public("ZEROOS: entered x86-64 long mode.\n");
+    serial_write_public("ZEROOS: serial console initialized.\n");
 
-    serial_write("\nZEROOS kernel starting...\n");
-    serial_write("ZEROOS: entered x86-64 long mode.\n");
-    serial_write("ZEROOS: serial console initialized.\n");
-
-    if ((uint32_t)multiboot_magic == 0x36d76289) {
-        serial_write("ZEROOS: Multiboot2 handoff verified.\n");
-    } else {
-        serial_write("ZEROOS: warning: unexpected boot magic.\n");
-    }
+    if ((uint32_t)multiboot_magic == 0x36d76289)
+        serial_write_public("ZEROOS: Multiboot2 handoff verified.\n");
+    else
+        serial_write_public("ZEROOS: warning: unexpected boot magic.\n");
 
     (void)multiboot_info;
-    serial_write("ZEROOS: foundation milestone reached.\n");
-    serial_write("ZEROOS: next: interrupts, memory manager, and hardware discovery.\n");
+    interrupts_init();
+    serial_write_public("ZEROOS: IDT installed and interrupts enabled.\n");
+    serial_write_public("ZEROOS: foundation milestone reached.\n");
 
-    for (;;) {
-        __asm__ volatile ("hlt");
-    }
+    __asm__ volatile ("int3");
+
+    for (;;) __asm__ volatile ("hlt");
 }
