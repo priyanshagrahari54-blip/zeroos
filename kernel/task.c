@@ -6,6 +6,8 @@
 
 extern void context_switch(uint64_t *old_sp, uint64_t *new_sp);
 extern void serial_write_public(const char *text);
+extern char __kernel_start;
+extern char __kernel_end;
 
 static void task_write_u64(uint64_t value);
 
@@ -44,6 +46,39 @@ static int task_frame_ok(const struct task *task,
            fp + sizeof(*frame) <= task->stack_base + ZEROOS_TASK_STACK_SIZE;
 }
 
+static int task_saved_context_ok(const struct task *task) {
+    uint64_t rip;
+    uint64_t start=(uint64_t)&__kernel_start;
+    uint64_t end=(uint64_t)&__kernel_end;
+
+    if (!task_saved_stack_ok(task))
+        return 0;
+
+    /* context_switch restores six callee-saved registers then retq. */
+    rip=*(const uint64_t *)(task->saved_stack + 48ULL);
+    return rip >= start && rip < end;
+}
+
+static void task_saved_context_panic(const struct task *task) {
+    uint64_t rip=0;
+    if (task && task->saved_stack &&
+        task->stack_base &&
+        task->saved_stack + 48ULL < task->stack_base + ZEROOS_TASK_STACK_SIZE)
+        rip=*(const uint64_t *)(task->saved_stack + 48ULL);
+
+    serial_write_public("ZEROOS PANIC: invalid saved context RIP. task=");
+    if (task) task_write_u64(task->id);
+    serial_write_public(" stack=");
+    if (task) task_write_u64(task->stack_base);
+    serial_write_public(" saved=");
+    if (task) task_write_u64(task->saved_stack);
+    serial_write_public(" rip=");
+    task_write_u64(rip);
+    serial_write_public("\n");
+
+    for (;;) __asm__ volatile ("cli; hlt");
+}
+
 static int task_pointer_ok(const struct task *task) {
     uint64_t address;
     uint64_t base;
@@ -55,6 +90,32 @@ static int task_pointer_ok(const struct task *task) {
     end=(uint64_t)&tasks[ZEROOS_MAX_TASKS];
     return address>=base && address<end &&
            ((address-base) % sizeof(tasks[0]))==0;
+}
+
+static int task_identity_ok(const struct task *task) {
+    uint64_t address;
+    uint64_t base;
+    uint64_t slot;
+
+    if (!task_pointer_ok(task))
+        return 0;
+
+    address=(uint64_t)task;
+    base=(uint64_t)&tasks[0];
+    slot=(address-base)/sizeof(tasks[0]);
+
+    if (slot==0)
+        return task->id==0 && task->state!=TASK_UNUSED;
+    if (slot==ZEROOS_IDLE_SLOT)
+        return task->id==1 && task->state!=TASK_UNUSED;
+    if (task->state==TASK_UNUSED)
+        return task->id==0;
+
+    return task->id>=2 && task->id<next_task_id;
+}
+
+static int task_state_valid(enum task_state state) {
+    return state>=TASK_UNUSED && state<=TASK_ZOMBIE;
 }
 
 static void task_context_panic(const char *message,
@@ -84,6 +145,56 @@ static void task_write_u64(uint64_t value) {
         value/=10;
     }
     serial_write_public(&buffer[pos]);
+}
+
+static void task_validate_table(const char *where) {
+    int running=0;
+
+    if (!task_pointer_ok(current_task) ||
+        !task_identity_ok(current_task) ||
+        current_task->state!=TASK_RUNNING) {
+        task_context_panic("ZEROOS PANIC: current task invariant failed.\n",
+                           current_task);
+    }
+
+    for (int i=0;i<ZEROOS_MAX_TASKS;++i) {
+        struct task *task=&tasks[i];
+
+        if (!task_state_valid(task->state) || !task_identity_ok(task))
+            task_context_panic(where,task);
+
+        if (task->state==TASK_UNUSED)
+            continue;
+
+        if (!task->stack_base ||
+            (task->stack_base & (ZEROOS_PAGE_SIZE-1ULL))!=0 ||
+            task->stack_base>=memory_max_physical())
+            task_context_panic("ZEROOS PANIC: task stack metadata invalid.\n",
+                               task);
+
+        if (!task_stack_guard_ok(task))
+            task_context_panic("ZEROOS PANIC: task stack guard corrupted.\n",
+                               task);
+
+        if (task->saved_stack && !task_saved_stack_ok(task))
+            task_context_panic("ZEROOS PANIC: task saved stack invalid.\n",
+                               task);
+
+        if (task->saved_stack && !task_saved_context_ok(task))
+            task_saved_context_panic(task);
+
+        if (task->interrupt_frame &&
+            !task_frame_ok(task,task->interrupt_frame))
+            task_context_panic("ZEROOS PANIC: task IRQ frame invalid.\n",
+                               task);
+
+        if (task->state==TASK_RUNNING)
+            ++running;
+    }
+
+    if (running!=1)
+        task_context_panic("ZEROOS PANIC: scheduler running-task count invalid.\n",
+                           current_task);
 }
 
 static void task_stack_guard_panic(const struct task *task) {
@@ -232,7 +343,8 @@ static int find_next_runnable(int cooperative) {
             return index;
     }
 
-    if (tasks[ZEROOS_IDLE_SLOT].state==TASK_RUNNABLE)
+    if (tasks[ZEROOS_IDLE_SLOT].state==TASK_RUNNABLE &&
+        (!cooperative || tasks[ZEROOS_IDLE_SLOT].interrupt_frame==0))
         return ZEROOS_IDLE_SLOT;
 
     return -1;
@@ -253,6 +365,11 @@ static int switch_to_next(struct task *previous, int next) {
     /* Cooperative selection excludes tasks with a live IRQ frame. */
     if (tasks[next].interrupt_frame!=0)
         return 0;
+    if (!task_identity_ok(previous) || !task_identity_ok(&tasks[next]))
+        task_context_panic("ZEROOS PANIC: task identity invariant failed.\n",
+                           previous);
+    if (!task_saved_context_ok(&tasks[next]))
+        task_saved_context_panic(&tasks[next]);
 
     previous->state=TASK_RUNNABLE;
     tasks[next].state=TASK_RUNNING;
@@ -417,6 +534,7 @@ static int task_block_locked(uint64_t flags) {
     tasks[next].context_switches++;
     previous->interrupt_frame=0;
     current_task=&tasks[next];
+    task_validate_table("ZEROOS PANIC: task block invariant failed.\n");
     context_switch(&previous->saved_stack,&current_task->saved_stack);
     task_irq_restore(flags);
     return 0;
@@ -486,6 +604,7 @@ int task_sleep_until(uint64_t deadline) {
     tasks[next].context_switches++;
     task->interrupt_frame=0;
     current_task=&tasks[next];
+    task_validate_table("ZEROOS PANIC: task sleep invariant failed.\n");
     context_switch(&task->saved_stack,&current_task->saved_stack);
     task_irq_restore(flags);
     return 0;
@@ -519,6 +638,9 @@ void task_exit(void) {
     tasks[next].context_switches++;
     previous->interrupt_frame=0;
     current_task=&tasks[next];
+    if (!task_saved_context_ok(&tasks[next]))
+        task_saved_context_panic(&tasks[next]);
+    task_validate_table("ZEROOS PANIC: task exit invariant failed.\n");
     context_switch(&previous->saved_stack,&current_task->saved_stack);
 
     for (;;) __asm__ volatile ("cli; hlt");
@@ -538,6 +660,8 @@ uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
         return (uint64_t)frame;
     if (!task_pointer_ok(previous))
         task_context_panic("ZEROOS PANIC: invalid current task pointer.\n",previous);
+    if (!task_identity_ok(previous))
+        task_context_panic("ZEROOS PANIC: invalid current task identity.\n",previous);
     if (previous->state!=TASK_RUNNING)
         task_context_panic("ZEROOS PANIC: current task is not running.\n",previous);
     if (!task_stack_guard_ok(previous)) task_stack_guard_panic(previous);
@@ -609,10 +733,9 @@ uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
         return (uint64_t)target_frame;
     }
 
-    if (!task_saved_stack_ok(&tasks[next])) {
-        serial_write_public("ZEROOS PANIC: invalid target saved stack.\n");
-        for (;;) __asm__ volatile ("cli; hlt");
-    }
+    if (!task_saved_stack_ok(&tasks[next]) ||
+        !task_saved_context_ok(&tasks[next]))
+        task_saved_context_panic(&tasks[next]);
     return tasks[next].saved_stack | 1ULL;
 }
 
@@ -634,6 +757,8 @@ void task_scheduler_tick(void) {
         reap_zombies_locked();
         spin_unlock_irqrestore(&task_lock,flags);
     }
+
+    task_validate_table("ZEROOS PANIC: scheduler table invariant failed.\n");
 
     if (task->state==TASK_RUNNING && task!=&tasks[ZEROOS_IDLE_SLOT]) {
         ++task->runtime_ticks;
@@ -682,6 +807,10 @@ void task_start_first(void) {
     tasks[next].context_switches++;
     tasks[0].interrupt_frame=0;
     current_task=&tasks[next];
+    if (tasks[next].interrupt_frame!=0 ||
+        !task_saved_context_ok(&tasks[next]))
+        task_saved_context_panic(&tasks[next]);
+    task_validate_table("ZEROOS PANIC: scheduler start invariant failed.\n");
     context_switch(&tasks[0].saved_stack,&current_task->saved_stack);
 
     for (;;) __asm__ volatile ("cli; hlt");
