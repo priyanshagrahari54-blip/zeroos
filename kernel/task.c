@@ -274,7 +274,7 @@ static void task_idle_entry(void *argument) {
     }
 }
 
-static void task_trampoline(void) {
+void task_trampoline_body(void) {
     struct task *task=current_task;
     __asm__ volatile ("sti" ::: "memory");
     task->entry(task->argument);
@@ -296,8 +296,8 @@ static void task_prepare_stack(struct task *task) {
     /*
      * context_switch restores six callee-saved registers then retq. The
      * saved stack must be 0 mod 16 so that six 8-byte pops followed by retq
-     * leave task_trampoline with RSP 8 mod 16, as required at a SysV ABI
-     * function entry.
+     * leave the assembly task_trampoline wrapper with RSP 8 mod 16. The
+     * wrapper then reserves interrupt headroom before calling the C body.
      */
     top=(top & ~0xFULL)-8ULL;
     sp=(uint64_t *)top;
