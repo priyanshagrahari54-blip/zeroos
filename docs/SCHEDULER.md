@@ -99,8 +99,4 @@ descriptor. No heap allocation is used for idle execution or waiters.
 
 ## Next stage
 
-With interrupt-exit preemption in place, the next scheduler work is to harden
-accounting and lifecycle management, add timed sleep, reclaim ZOMBIE task
-stacks, and then introduce a real per-CPU runqueue model before SMP support.
-Higher-level synchronization primitives can build on the existing wait-queue
-and preemption boundaries.
+Scheduler certification now covers cooperative switching, callee-saved register preservation, timer-only CPU-bound preemption, wait/wakeup, timed sleep, bounded deadlock detection, zombie reclamation, and slot reuse. The next scheduler stage is long-duration fairness/latency measurement, followed by per-CPU runqueues as part of SMP preparation. Higher-level synchronization can continue to build on the existing wait-queue and preemption boundaries.
