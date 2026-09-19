@@ -136,7 +136,7 @@ static void scheduler_probe_sleeper(void *argument) {
     if (scheduler_sleep_ticks(5)!=0)
         kernel_panic("timed sleep failed");
     atomic_u64_store(&sleep_probe_state,2);
-    serial_write_public("ZEROOS: timed sleep wakeup self-test passed.\\n");
+    serial_write_public("ZEROOS: timed sleep wakeup self-test passed.\n");
 }
 
 static void scheduler_probe_monitor(void *argument) {
@@ -157,6 +157,11 @@ static void scheduler_probe_monitor(void *argument) {
         if (!wait_reported && atomic_u64_load(&wait_probe_state)==2) {
             wait_reported=1;
             serial_write_public("ZEROOS: wait queue integration verified.\n");
+        }
+
+        if (!sleep_reported && atomic_u64_load(&sleep_probe_state)==2) {
+            sleep_reported=1;
+            serial_write_public("ZEROOS: timed sleep integration verified.\n");
         }
 
         if (now>=last_report+100) {
