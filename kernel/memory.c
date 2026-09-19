@@ -109,6 +109,14 @@ void memory_init(uint64_t multiboot_info) {
      * available ranges.  This is safer than assuming RAM is contiguous.
      */
     memory_debug('1');
+    extern void serial_write_public(const char *text);
+    extern void serial_write_u64_public(uint64_t value);
+    serial_write_public("ZEROOS: bitmap address: ");
+    serial_write_u64_public((uint64_t)page_bitmap);
+    serial_write_public("\n");
+    serial_write_public("ZEROOS: bitmap bytes: ");
+    serial_write_u64_public((uint64_t)sizeof(page_bitmap));
+    serial_write_public("\n");
     for (uint64_t i = 0; i < ZEROOS_BITMAP_WORDS; ++i)
         page_bitmap[i] = ~0ULL;
     memory_debug('2');
