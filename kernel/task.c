@@ -5,6 +5,7 @@
 #include "timer.h"
 
 extern void context_switch(uint64_t *old_sp, uint64_t *new_sp);
+extern void task_trampoline(void);
 extern void serial_write_public(const char *text);
 extern char __kernel_start;
 extern char __kernel_end;
