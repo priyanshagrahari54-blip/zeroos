@@ -2,6 +2,7 @@
 #include "pic.h"
 #include "timer.h"
 #include "scheduler.h"
+#include "task.h"
 
 struct idt_entry {
     uint16_t offset_low; uint16_t selector; uint8_t ist; uint8_t type_attr;
@@ -92,8 +93,16 @@ void interrupt_dispatch(struct interrupt_frame *frame) {
         if (binding->handler)
             binding->handler(irq, frame, binding->context);
         pic_send_eoi(irq);
-        return;
+
+        /*
+         * Scheduling is deliberately deferred until after the device EOI
+         * and handler return. The assembly epilogue then restores either
+         * this frame or another task's complete frame.
+         */
+        return task_reschedule_from_interrupt(frame);
     }
+
+    return frame;
 }
 
 int irq_register(uint8_t irq, irq_handler_t handler, void *context) {
