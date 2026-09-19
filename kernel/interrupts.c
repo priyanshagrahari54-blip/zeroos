@@ -113,7 +113,7 @@ uint64_t interrupt_dispatch(struct interrupt_frame *frame) {
         return task_reschedule_from_interrupt(frame);
     }
 
-    return frame;
+    return (uint64_t)frame;
 }
 
 int irq_register(uint8_t irq, irq_handler_t handler, void *context) {
