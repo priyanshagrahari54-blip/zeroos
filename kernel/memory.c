@@ -122,6 +122,10 @@ void memory_init(uint64_t multiboot_info) {
     uint8_t *cursor = info_base + 8;
     uint8_t *end = info_base + total_size;
 
+    /* Validate the mandatory end tag boundary before walking variable tags. */
+    if (total_size > 0x1000000U)
+        return;
+
     while (cursor + sizeof(struct multiboot_tag) <= end) {
         struct multiboot_tag *tag = (struct multiboot_tag *)cursor;
 
@@ -154,7 +158,7 @@ void memory_init(uint64_t multiboot_info) {
                     else
                         end_addr = start + entry->len;
 
-                    if (start < ZEROOS_MAX_PHYS_MEM) {
+                    if (start < ZEROOS_MAX_PHYS_MEM && end_addr > start) {
                         if (end_addr > ZEROOS_MAX_PHYS_MEM)
                             end_addr = ZEROOS_MAX_PHYS_MEM;
 
