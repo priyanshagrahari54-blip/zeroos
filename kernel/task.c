@@ -380,8 +380,8 @@ int task_wake(struct task *task) {
     if (task->sleep_armed)
         sleep_queue_remove_locked(task);
     task->state=TASK_RUNNABLE;
-    task_irq_restore(flags);
     task->need_resched=1;
+    task_irq_restore(flags);
     return 0;
 }
 
