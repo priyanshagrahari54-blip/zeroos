@@ -315,19 +315,25 @@ int vmm_protect_page(uint64_t virtual_address, uint64_t flags) {
 }
 
 int vmm_is_user_range(uint64_t virtual_address, uint64_t length, uint64_t write) {
-    if (length == 0) return 0;
-    if (!canonical_address(virtual_address)) return 0;
-    if (virtual_address + length < virtual_address) return 0;
-    uint64_t end = virtual_address + length - 1;
-    if (!canonical_address(end)) return 0;
+    if (!root_table || length == 0 || !canonical_address(virtual_address))
+        return 0;
+    if (virtual_address + length < virtual_address)
+        return 0;
 
-    for (uint64_t cursor = virtual_address;;) {
+    uint64_t end = virtual_address + length - 1;
+    if (!canonical_address(end))
+        return 0;
+
+    uint64_t cursor = virtual_address & ~(VMM_PAGE_SIZE - 1ULL);
+    uint64_t last = end & ~(VMM_PAGE_SIZE - 1ULL);
+
+    for (;;) {
         uint64_t pml4_index = (cursor >> 39) & 0x1ff;
         uint64_t pdpt_index = (cursor >> 30) & 0x1ff;
         uint64_t pd_index = (cursor >> 21) & 0x1ff;
         uint64_t pt_index = (cursor >> 12) & 0x1ff;
 
-        uint64_t e1 = root_table ? root_table[pml4_index] : 0;
+        uint64_t e1 = root_table[pml4_index];
         if (!(e1 & VMM_PRESENT) || !(e1 & VMM_USER)) return 0;
         uint64_t *pdpt = table_from_entry(e1);
         uint64_t e2 = pdpt[pdpt_index];
@@ -345,12 +351,8 @@ int vmm_is_user_range(uint64_t virtual_address, uint64_t length, uint64_t write)
             if (write && !(e4 & VMM_WRITABLE)) return 0;
         }
 
-        if (cursor > end - VMM_PAGE_SIZE && end > cursor) {
-            cursor = end;
-        } else {
-            break;
-        }
-        if (cursor == end) break;
+        if (cursor == last) break;
+        cursor += VMM_PAGE_SIZE;
     }
     return 1;
 }
