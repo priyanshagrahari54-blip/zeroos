@@ -3,7 +3,6 @@
 #include "sync.h"
 
 extern void context_switch(uint64_t *old_sp, uint64_t *new_sp);
-extern void serial_write_public(const char *text);
 
 static struct task tasks[ZEROOS_MAX_TASKS];
 static struct task *current_task;
@@ -53,12 +52,10 @@ int task_system_init(void) {
         tasks[i].stack_base=0;
         tasks[i].entry=0;
         tasks[i].argument=0;
+        tasks[i].wait_next=0;
+        tasks[i].wait_queue=0;
     }
 
-    /*
-     * Slot zero is the bootstrap execution context. It owns no allocated
-     * stack; context_switch captures the real kernel_main stack into it.
-     */
     tasks[0].id=0;
     tasks[0].state=TASK_RUNNING;
 
@@ -95,6 +92,8 @@ int task_create(task_entry_t entry, void *argument, uint64_t *task_id) {
     task->stack_base=(uint64_t)stack;
     task->entry=entry;
     task->argument=argument;
+    task->wait_next=0;
+    task->wait_queue=0;
     task_prepare_stack(task);
 
     if (task_id) *task_id=task->id;
@@ -117,6 +116,43 @@ void task_yield(void) {
     current_task=&tasks[next];
 
     context_switch(&previous->saved_stack,&current_task->saved_stack);
+}
+
+int task_prepare_block(void) {
+    struct task *task=current_task;
+
+    if (!task || task==&tasks[0] || task->state!=TASK_RUNNING)
+        return -1;
+
+    task->state=TASK_BLOCKED;
+    return 0;
+}
+
+int task_block(void) {
+    struct task *previous=current_task;
+    int next;
+
+    if (!previous || previous==&tasks[0] || previous->state!=TASK_BLOCKED)
+        return -1;
+
+    next=find_next_runnable();
+    if (next<0) {
+        previous->state=TASK_RUNNING;
+        return -1;
+    }
+
+    tasks[next].state=TASK_RUNNING;
+    current_task=&tasks[next];
+    context_switch(&previous->saved_stack,&current_task->saved_stack);
+    return 0;
+}
+
+int task_wake(struct task *task) {
+    if (!task || task->state!=TASK_BLOCKED)
+        return -1;
+
+    task->state=TASK_RUNNABLE;
+    return 0;
 }
 
 void task_exit(void) {
