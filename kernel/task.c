@@ -42,6 +42,27 @@ static int task_frame_ok(const struct task *task,
            fp + sizeof(*frame) <= task->stack_base + ZEROOS_TASK_STACK_SIZE;
 }
 
+static int task_pointer_ok(const struct task *task) {
+    return task && task>=&tasks[0] && task<&tasks[ZEROOS_MAX_TASKS];
+}
+
+static void task_context_panic(const char *message,
+                               const struct task *task) {
+    serial_write_public(message);
+    if (task) {
+        serial_write_public(" id=");
+        task_write_u64(task->id);
+        serial_write_public(" state=");
+        task_write_u64((uint64_t)task->state);
+        serial_write_public(" stack=");
+        task_write_u64(task->stack_base);
+        serial_write_public(" saved=");
+        task_write_u64(task->saved_stack);
+        serial_write_public("\n");
+    }
+    for (;;) __asm__ volatile ("cli; hlt");
+}
+
 static void task_write_u64(uint64_t value) {
     char buffer[21];
     int pos=20;
@@ -504,6 +525,10 @@ uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
 
     if (!previous || !frame)
         return (uint64_t)frame;
+    if (!task_pointer_ok(previous))
+        task_context_panic("ZEROOS PANIC: invalid current task pointer.\n",previous);
+    if (previous->state!=TASK_RUNNING)
+        task_context_panic("ZEROOS PANIC: current task is not running.\n",previous);
     if (!task_stack_guard_ok(previous)) task_stack_guard_panic(previous);
     if (!task_frame_ok(previous,frame)) {
         serial_write_public("ZEROOS PANIC: invalid current IRQ frame.\n");
@@ -542,6 +567,9 @@ uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
     tasks[next].state=TASK_RUNNING;
     tasks[next].context_switches++;
     current_task=&tasks[next];
+    if (!task_pointer_ok(current_task) ||
+        current_task->state!=TASK_RUNNING)
+        task_context_panic("ZEROOS PANIC: invalid selected task.\n",current_task);
     if (tasks[next].interrupt_frame) {
         serial_write_public("ZEROOS: IRQ switch -> saved frame task ");
         task_write_u64(tasks[next].id);
