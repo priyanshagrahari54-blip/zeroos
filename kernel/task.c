@@ -6,7 +6,6 @@
 
 extern void context_switch(uint64_t *old_sp, uint64_t *new_sp);
 extern void serial_write_public(const char *text);
-extern void serial_write_u64(uint64_t value);
 
 #define ZEROOS_IDLE_SLOT 1
 #define ZEROOS_DEFAULT_TIMESLICE 10U
@@ -20,6 +19,18 @@ static struct task *sleep_head;
 static int task_stack_guard_ok(const struct task *task) {
     return task && task->stack_base &&
            *(const uint64_t *)(uint64_t)task->stack_base == ZEROOS_TASK_STACK_GUARD;
+}
+
+static void task_write_u64(uint64_t value) {
+    char buffer[21];
+    int pos=20;
+    buffer[pos]='\0';
+    if (value==0) { serial_write_public("0"); return; }
+    while (value>0 && pos>0) {
+        buffer[--pos]=(char)('0'+(value%10));
+        value/=10;
+    }
+    serial_write_public(&buffer[pos]);
 }
 
 static void task_stack_guard_panic(const struct task *task) {
@@ -441,7 +452,7 @@ void task_exit(void) {
         previous==&tasks[ZEROOS_IDLE_SLOT])
         return;
 
-    task_irq_save();
+    (void)task_irq_save();
     previous->state=TASK_ZOMBIE;
     previous->need_resched=0;
     next=find_next_runnable(1);
@@ -508,7 +519,7 @@ uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
     current_task=&tasks[next];
     if (tasks[next].interrupt_frame) {
         serial_write_public("ZEROOS: IRQ switch -> saved frame task ");
-        serial_write_u64(tasks[next].id);
+        task_write_u64(tasks[next].id);
         serial_write_public(".\n");
     }
 
