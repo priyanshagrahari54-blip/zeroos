@@ -312,6 +312,14 @@ struct interrupt_frame *task_reschedule_from_interrupt(
     if (previous->preempt_count!=0)
         return frame;
 
+    /*
+     * Normal tasks enter the IRQ-exit scheduler only after their time slice
+     * expires (or another kernel path explicitly requests rescheduling).
+     * Idle is the exception: if runnable work exists, leave idle immediately.
+     */
+    if (previous!=&tasks[ZEROOS_IDLE_SLOT] && !previous->need_resched)
+        return frame;
+
     next=find_next_runnable();
 
     /*
