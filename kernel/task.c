@@ -5,6 +5,7 @@
 #include "timer.h"
 
 extern void context_switch(uint64_t *old_sp, uint64_t *new_sp);
+extern void serial_write_public(const char *text);
 
 #define ZEROOS_IDLE_SLOT 1
 #define ZEROOS_DEFAULT_TIMESLICE 10U
@@ -14,6 +15,17 @@ static struct task *current_task;
 static struct spinlock task_lock;
 static uint64_t next_task_id;
 static struct task *sleep_head;
+
+static int task_stack_guard_ok(const struct task *task) {
+    return task && task->stack_base &&
+           *(const uint64_t *)(uintptr_t)task->stack_base == ZEROOS_TASK_STACK_GUARD;
+}
+
+static void task_stack_guard_panic(const struct task *task) {
+    (void)task;
+    serial_write_public("ZEROOS PANIC: task stack guard corrupted.\\n");
+    for (;;) __asm__ volatile ("cli; hlt");
+}
 
 static uint64_t task_irq_save(void) {
     uint64_t flags;
@@ -55,6 +67,8 @@ static void task_trampoline(void) {
 static void task_prepare_stack(struct task *task) {
     uint64_t top=task->stack_base+ZEROOS_TASK_STACK_SIZE;
     uint64_t *sp;
+
+    *(uint64_t *)(uintptr_t)task->stack_base=ZEROOS_TASK_STACK_GUARD;
 
     /*
      * context_switch restores six callee-saved registers then retq. The
@@ -161,6 +175,8 @@ static int find_next_runnable(int cooperative) {
 
 static int switch_to_next(struct task *previous, int next) {
     if (!previous || next<0 || &tasks[next]==previous) return 0;
+    if (!task_stack_guard_ok(previous)) task_stack_guard_panic(previous);
+    if (!task_stack_guard_ok(&tasks[next])) task_stack_guard_panic(&tasks[next]);
 
     /*
      * A cooperative switch resumes the task's saved RET frame, not an old
@@ -456,6 +472,7 @@ uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
 
     if (!previous || !frame)
         return (uint64_t)frame;
+    if (!task_stack_guard_ok(previous)) task_stack_guard_panic(previous);
 
     previous->interrupt_frame=frame;
 
@@ -503,6 +520,7 @@ void task_scheduler_tick(void) {
     if (!task) return;
 
     now=timer_ticks();
+    if (!task_stack_guard_ok(task)) task_stack_guard_panic(task);
     {
         uint64_t flags=spin_lock_irqsave(&task_lock);
         sleep_queue_wake_expired_locked(now);
