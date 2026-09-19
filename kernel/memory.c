@@ -21,10 +21,10 @@ static void memory_debug_u64(uint64_t value) {
 }
 
 static inline void memory_debug(char marker) {
-    __asm__ volatile ("outb %b0, $0xe9"
+    __asm__ volatile ("outb %0, $0xe9"
                       :
-                      : "q"(marker)
-                      : "memory", "cc");
+                      : "a"(marker)
+                      : "memory");
 }
 
 /*
