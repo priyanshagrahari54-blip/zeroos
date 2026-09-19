@@ -499,6 +499,11 @@ uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
     tasks[next].state=TASK_RUNNING;
     tasks[next].context_switches++;
     current_task=&tasks[next];
+    if (tasks[next].interrupt_frame) {
+        serial_write_public("ZEROOS: IRQ switch -> saved frame task ");
+        serial_write_u64(tasks[next].id);
+        serial_write_public(".\n");
+    }
 
     /*
      * A task with an active hardware frame can leave through iretq directly.
@@ -516,6 +521,10 @@ uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
 void task_scheduler_tick(void) {
     struct task *task=current_task;
     uint64_t now;
+
+    if (task && (task->state!=TASK_RUNNING || task->id==0 ||
+                 task->stack_base==0 || task->saved_stack==0))
+        task_stack_guard_panic(task);
 
     if (!task) return;
 
