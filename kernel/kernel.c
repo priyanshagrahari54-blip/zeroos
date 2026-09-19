@@ -103,6 +103,94 @@ static struct wait_queue wait_probe_queue;
 static struct atomic_u64 wait_probe_state;
 static struct atomic_u64 sleep_probe_state;
 
+/* Advanced scheduler certification state. */
+static struct atomic_u64 preempt_probe_a;
+static struct atomic_u64 preempt_probe_b;
+static struct atomic_u64 preempt_probe_done;
+static struct atomic_u64 preempt_probe_ticks;
+static struct atomic_u64 lifecycle_probe_done;
+static struct atomic_u64 lifecycle_probe_created;
+static struct atomic_u64 lifecycle_probe_exited;
+static struct atomic_u64 scheduler_stress_failures;
+
+static void scheduler_probe_cpu_a(void *argument) {
+    (void)argument;
+    atomic_u64_store(&preempt_probe_ticks,timer_ticks());
+
+    /*
+     * Deliberately never yield.  CPU-B must still make progress here, proving
+     * timer-only preemption rather than cooperative scheduling.
+     */
+    while (atomic_u64_load(&preempt_probe_b)==0) {
+        atomic_u64_fetch_add(&preempt_probe_a,1);
+        if (timer_ticks() - atomic_u64_load(&preempt_probe_ticks) > 250) {
+            atomic_u64_fetch_add(&scheduler_stress_failures,1);
+            kernel_panic("timer-only preemption failed: CPU-B made no progress");
+        }
+    }
+    atomic_u64_fetch_add(&preempt_probe_done,1);
+
+    /*
+     * Keep callee-saved registers live across repeated preemptions as well as
+     * voluntary switches. The values are checked after CPU-B has run.
+     */
+    register uint64_t rbx asm("rbx")=0x9e3779b97f4a7c15ULL;
+    register uint64_t r12 asm("r12")=0x243f6a8885a308d3ULL;
+    register uint64_t r13 asm("r13")=0x13198a2e03707344ULL;
+    register uint64_t r14 asm("r14")=0xa4093822299f31d0ULL;
+    register uint64_t r15 asm("r15")=0x082efa98ec4e6c89ULL;
+    for (volatile uint64_t i=0;i<2000000ULL;++i) {
+        __asm__ volatile ("" : "+r"(rbx), "+r"(r12), "+r"(r13), "+r"(r14), "+r"(r15));
+    }
+    if (rbx!=0x9e3779b97f4a7c15ULL ||
+        r12!=0x243f6a8885a308d3ULL ||
+        r13!=0x13198a2e03707344ULL ||
+        r14!=0xa4093822299f31d0ULL ||
+        r15!=0x082efa98ec4e6c89ULL)
+        kernel_panic("callee-saved register corruption during preemption");
+}
+
+static void scheduler_probe_cpu_b(void *argument) {
+    (void)argument;
+    register uint64_t rbx asm("rbx")=0xdeadbeefcafebabeULL;
+    register uint64_t r12 asm("r12")=0x0123456789abcdefULL;
+    register uint64_t r13 asm("r13")=0xfedcba9876543210ULL;
+    register uint64_t r14 asm("r14")=0x55aa55aa55aa55aaULL;
+    register uint64_t r15 asm("r15")=0xaa55aa55aa55aa55ULL;
+
+    atomic_u64_store(&preempt_probe_b,1);
+    while (atomic_u64_load(&preempt_probe_done)==0) {
+        atomic_u64_fetch_add(&preempt_probe_b,1);
+        __asm__ volatile ("" : "+r"(rbx), "+r"(r12), "+r"(r13), "+r"(r14), "+r"(r15));
+    }
+    if (rbx!=0xdeadbeefcafebabeULL ||
+        r12!=0x0123456789abcdefULL ||
+        r13!=0xfedcba9876543210ULL ||
+        r14!=0x55aa55aa55aa55aaULL ||
+        r15!=0xaa55aa55aa55aa55ULL)
+        kernel_panic("CPU-B callee-saved register corruption during preemption");
+}
+
+static void scheduler_probe_lifecycle_worker(void *argument) {
+    (void)argument;
+    atomic_u64_fetch_add(&lifecycle_probe_exited,1);
+    /* Returning exercises ZOMBIE transition and deferred stack reclamation. */
+}
+
+static void scheduler_probe_lifecycle_creator(void *argument) {
+    (void)argument;
+    for (uint64_t i=0;i<6;++i) {
+        uint64_t id;
+        if (task_create(scheduler_probe_lifecycle_worker,0,&id)!=0) {
+            atomic_u64_fetch_add(&scheduler_stress_failures,1);
+            kernel_panic("lifecycle slot reuse creation failed");
+        }
+        atomic_u64_fetch_add(&lifecycle_probe_created,1);
+        scheduler_yield();
+    }
+    atomic_u64_store(&lifecycle_probe_done,1);
+}
+
 static void scheduler_probe_worker(void *argument) {
     uint64_t rbx_value=0x1122334455667788ULL;
     uint64_t r12_value=0x13579bdf2468ace0ULL;
@@ -166,6 +254,9 @@ static void scheduler_probe_monitor(void *argument) {
     int context_reported=0;
     int wait_reported=0;
     int sleep_reported=0;
+    int preempt_reported=0;
+    int lifecycle_reported=0;
+    uint64_t stress_start=timer_ticks();
 
     for (;;) {
         uint64_t now=timer_ticks();
@@ -185,9 +276,34 @@ static void scheduler_probe_monitor(void *argument) {
             serial_write_public("ZEROOS: timed sleep integration verified.\n");
         }
 
+        if (!preempt_reported && atomic_u64_load(&preempt_probe_done)==1 &&
+            atomic_u64_load(&preempt_probe_b)>1) {
+            preempt_reported=1;
+            serial_write_public("ZEROOS: timer-only preemption stress passed.\n");
+        }
+
+        if (!lifecycle_reported && atomic_u64_load(&lifecycle_probe_done)==1 &&
+            atomic_u64_load(&lifecycle_probe_exited)>=6) {
+            lifecycle_reported=1;
+            serial_write_public("ZEROOS: zombie reaping and slot-reuse stress passed.\n");
+        }
+
         if (now>=last_report+100) {
             last_report=now;
             serial_write_public("ZEROOS: timer tick 100.\n");
+        }
+
+        /*
+         * Certification deadline: all stress probes must complete within a
+         * bounded tick budget. This prevents a broken scheduler from hanging
+         * CI forever while retaining deterministic QEMU behavior.
+         */
+        if (now-stress_start>400 &&
+            (!preempt_reported || !lifecycle_reported ||
+             atomic_u64_load(&sleep_probe_state)!=2 ||
+             atomic_u64_load(&wait_probe_state)!=2)) {
+            atomic_u64_fetch_add(&scheduler_stress_failures,1);
+            kernel_panic("scheduler stress certification timed out");
         }
 
         __asm__ volatile ("hlt");
@@ -197,10 +313,19 @@ static void scheduler_probe_monitor(void *argument) {
 
 static void scheduler_self_test(void) {
     uint64_t worker_id, monitor_id, waiter_id, waker_id, sleeper_id;
+    uint64_t preempt_a_id, preempt_b_id, lifecycle_id;
 
     atomic_u64_init(&task_probe_counter,0);
     atomic_u64_init(&wait_probe_state,0);
     atomic_u64_init(&sleep_probe_state,0);
+    atomic_u64_init(&preempt_probe_a,0);
+    atomic_u64_init(&preempt_probe_b,0);
+    atomic_u64_init(&preempt_probe_done,0);
+    atomic_u64_init(&preempt_probe_ticks,0);
+    atomic_u64_init(&lifecycle_probe_done,0);
+    atomic_u64_init(&lifecycle_probe_created,0);
+    atomic_u64_init(&lifecycle_probe_exited,0);
+    atomic_u64_init(&scheduler_stress_failures,0);
     wait_queue_init(&wait_probe_queue);
 
     if (task_system_init()!=0)
@@ -218,6 +343,12 @@ static void scheduler_self_test(void) {
         kernel_panic("waker task creation failed");
     if (task_create(scheduler_probe_sleeper,0,&sleeper_id)!=0)
         kernel_panic("timed sleeper creation failed");
+    if (task_create(scheduler_probe_cpu_a,0,&preempt_a_id)!=0)
+        kernel_panic("timer-preemption CPU-A creation failed");
+    if (task_create(scheduler_probe_cpu_b,0,&preempt_b_id)!=0)
+        kernel_panic("timer-preemption CPU-B creation failed");
+    if (task_create(scheduler_probe_lifecycle_creator,0,&lifecycle_id)!=0)
+        kernel_panic("lifecycle creator creation failed");
 
     serial_write_public("ZEROOS: kernel tasks created: ");
     serial_write_u64(task_count());
@@ -229,6 +360,12 @@ static void scheduler_self_test(void) {
     serial_write_u64(waiter_id);
     serial_write_public(", waker=");
     serial_write_u64(waker_id);
+    serial_write_public(", preemptA=");
+    serial_write_u64(preempt_a_id);
+    serial_write_public(", preemptB=");
+    serial_write_u64(preempt_b_id);
+    serial_write_public(", lifecycle=");
+    serial_write_u64(lifecycle_id);
     serial_write_public(").\n");
 
     task_debug_validate();
