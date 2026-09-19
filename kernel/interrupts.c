@@ -83,7 +83,7 @@ static void timer_irq_handler(uint8_t irq, struct interrupt_frame *frame, void *
     scheduler_tick();
 }
 
-void interrupt_dispatch(struct interrupt_frame *frame) {
+struct interrupt_frame *interrupt_dispatch(struct interrupt_frame *frame) {
     if (frame->vector < 32)
         halt_exception(frame);
 
