@@ -45,7 +45,16 @@ static int task_frame_ok(const struct task *task,
 }
 
 static int task_pointer_ok(const struct task *task) {
-    return task && task>=&tasks[0] && task<&tasks[ZEROOS_MAX_TASKS];
+    uint64_t address;
+    uint64_t base;
+    uint64_t end;
+
+    if (!task) return 0;
+    address=(uint64_t)task;
+    base=(uint64_t)&tasks[0];
+    end=(uint64_t)&tasks[ZEROOS_MAX_TASKS];
+    return address>=base && address<end &&
+           ((address-base) % sizeof(tasks[0]))==0;
 }
 
 static void task_context_panic(const char *message,
