@@ -788,43 +788,42 @@ uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
 
     previous->need_resched=0;
     previous->state=TASK_RUNNABLE;
+
+    /*
+     * Capture and retire a target interrupt frame before publishing the new
+     * current_task. This makes the context ownership transition atomic with
+     * respect to all scheduler diagnostics: a TASK_RUNNING task never
+     * advertises a frame that is about to be consumed by iretq.
+     */
+    struct interrupt_frame *target_frame=tasks[next].interrupt_frame;
+    if (target_frame) {
+        if (!task_frame_ok(&tasks[next],target_frame)) {
+            serial_write_public("ZEROOS PANIC: invalid target IRQ frame.\n");
+            for (;;) __asm__ volatile ("cli; hlt");
+        }
+        serial_write_public("ZEROOS: IRQ switch -> saved frame task ");
+        task_write_u64(tasks[next].id);
+        serial_write_public(".\n");
+        tasks[next].interrupt_frame=0;
+    } else if (!task_saved_stack_ok(&tasks[next]) ||
+               !task_saved_context_ok(&tasks[next])) {
+        task_saved_context_panic(&tasks[next]);
+    }
+
     tasks[next].state=TASK_RUNNING;
     tasks[next].context_switches++;
     current_task=&tasks[next];
     if (!task_pointer_ok(current_task) ||
         current_task->state!=TASK_RUNNING)
         task_context_panic("ZEROOS PANIC: invalid selected task.\n",current_task);
-    if (tasks[next].interrupt_frame) {
-        serial_write_public("ZEROOS: IRQ switch -> saved frame task ");
-        task_write_u64(tasks[next].id);
-        serial_write_public(".\n");
-    }
 
     /*
-     * A task with an active hardware frame can leave through iretq directly.
-     * A task that has since yielded cooperatively has no live interrupt frame;
-     * its saved_stack contains the callee-saved context and return address
-     * expected by context_switch(). The low-bit tag tells isr_common which
-     * exit protocol to use, avoiding any stale-frame reuse.
+     * The target context is now exclusively owned by the IRQ-exit path:
+     * target_frame -> iretq, or saved_stack -> cooperative restore + retq.
      */
-    if (tasks[next].interrupt_frame) {
-        struct interrupt_frame *target_frame=tasks[next].interrupt_frame;
-        if (!task_frame_ok(&tasks[next],target_frame)) {
-            serial_write_public("ZEROOS PANIC: invalid target IRQ frame.\n");
-            for (;;) __asm__ volatile ("cli; hlt");
-        }
-        /*
-         * target_frame is consumed exactly once by iretq. Clear the task's
-         * metadata before leaving IRQ context so future cooperative code
-         * cannot mistake this dead stack frame for a resumable context.
-         */
-        tasks[next].interrupt_frame=0;
+    if (target_frame)
         return (uint64_t)target_frame;
-    }
 
-    if (!task_saved_stack_ok(&tasks[next]) ||
-        !task_saved_context_ok(&tasks[next]))
-        task_saved_context_panic(&tasks[next]);
     return tasks[next].saved_stack | 1ULL;
 }
 
