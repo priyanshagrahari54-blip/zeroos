@@ -96,10 +96,10 @@ static int split_2m(uint64_t *pd, uint64_t index) {
     return 0;
 }
 
-void vmm_init(void) {
+int vmm_init(void) {
     void *root = page_alloc();
     if (!root)
-        return;
+        return -1;
 
     root_table = (uint64_t *)root;
     root_physical = (uint64_t)root;
@@ -107,11 +107,11 @@ void vmm_init(void) {
 
     uint64_t *pdpt = ensure_table(root_table, 0, 0);
     if (!pdpt)
-        return;
+        return -1;
 
     uint64_t *pd = ensure_table(pdpt, 0, 0);
     if (!pd)
-        return;
+        return -1;
 
     /*
      * Keep a compact identity/direct map for the complete physical range
@@ -134,6 +134,7 @@ void vmm_init(void) {
     }
 
     write_cr3(root_physical);
+    return 0;
 }
 
 int vmm_map_page(uint64_t virtual_address,
