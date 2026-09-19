@@ -115,8 +115,14 @@ pdpt_table:
     .fill 511, 8, 0
 .align 4096
 pd_table:
-    .quad 0x00000083
-    .fill 511, 8, 0
+    # Identity-map the first 1 GiB with 2 MiB pages.  This keeps the
+    # Multiboot information and early firmware data reachable after the
+    # long-mode transition without assuming GRUB placed them below 2 MiB.
+    .set pd_index, 0
+    .rept 512
+        .quad (pd_index << 21) | 0x83
+        .set pd_index, pd_index + 1
+    .endr
 
 .section .bss
 .align 16
