@@ -4,6 +4,7 @@
 #include "vmm.h"
 
 #define COM1 0x3F8
+#define VMM_SELF_TEST_VA 0x4000000000ULL
 
 static inline void outb(uint16_t port, uint8_t value) {
     __asm__ volatile ("outb %0, %1" : : "a"(value), "Nd"(port));
@@ -32,7 +33,8 @@ static void serial_putc(char c) {
 
 void serial_write_public(const char *text) {
     while (*text) {
-        if (*text == '\n') serial_putc('\r');
+        if (*text == '\n')
+            serial_putc('\r');
         serial_putc(*text++);
     }
 }
@@ -57,6 +59,53 @@ static void serial_write_u64(uint64_t value) {
     serial_write_public(&buffer[pos]);
 }
 
+static void kernel_panic(const char *message) {
+    serial_write_public("ZEROOS PANIC: ");
+    serial_write_public(message);
+    serial_write_public("\n");
+
+    for (;;) {
+        __asm__ volatile ("cli; hlt");
+    }
+}
+
+static void memory_self_test(void) {
+    uint64_t before = memory_free_pages();
+    void *a = page_alloc();
+    void *b = page_alloc();
+
+    if (!a || !b || a == b)
+        kernel_panic("physical page allocator self-test failed");
+
+    page_free(b);
+    page_free(a);
+
+    if (memory_free_pages() != before)
+        kernel_panic("physical page allocator accounting failed");
+
+    serial_write_public("ZEROOS: physical allocator self-test passed.\n");
+}
+
+static void vmm_self_test(void) {
+    void *physical = page_alloc();
+    if (!physical)
+        kernel_panic("VMM self-test could not allocate a page");
+
+    if (vmm_map_page(VMM_SELF_TEST_VA,
+                     (uint64_t)physical,
+                     VMM_WRITABLE | VMM_NO_EXECUTE) != 0)
+        kernel_panic("VMM map failed");
+
+    if (vmm_translate(VMM_SELF_TEST_VA) != (uint64_t)physical)
+        kernel_panic("VMM translation mismatch");
+
+    if (vmm_unmap_page(VMM_SELF_TEST_VA) != 0)
+        kernel_panic("VMM unmap failed");
+
+    page_free(physical);
+    serial_write_public("ZEROOS: virtual memory self-test passed.\n");
+}
+
 void kernel_main(uint64_t multiboot_info, uint64_t multiboot_magic) {
     serial_init();
     serial_write_public("\nZEROOS kernel starting...\n");
@@ -66,16 +115,23 @@ void kernel_main(uint64_t multiboot_info, uint64_t multiboot_magic) {
     if ((uint32_t)multiboot_magic == 0x36d76289)
         serial_write_public("ZEROOS: Multiboot2 handoff verified.\n");
     else
-        serial_write_public("ZEROOS: warning: unexpected boot magic.\n");
+        kernel_panic("unexpected Multiboot2 boot magic");
 
     memory_init(multiboot_info);
     serial_write_public("ZEROOS: physical page allocator initialized.\n");
-    serial_write_public("ZEROOS: free pages: ");
+    serial_write_public("ZEROOS: managed pages: ");
+    serial_write_u64(memory_total_pages());
+    serial_write_public("\nZEROOS: free pages: ");
     serial_write_u64(memory_free_pages());
     serial_write_public("\n");
 
-    vmm_init();
+    memory_self_test();
+
+    if (vmm_init() != 0)
+        kernel_panic("virtual memory initialization failed");
+
     serial_write_public("ZEROOS: virtual memory manager initialized.\n");
+    vmm_self_test();
 
     interrupts_init();
     serial_write_public("ZEROOS: IDT installed and interrupts enabled.\n");
