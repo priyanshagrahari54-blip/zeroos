@@ -231,6 +231,8 @@ static void scheduler_self_test(void) {
     serial_write_u64(waker_id);
     serial_write_public(").\n");
 
+    task_debug_validate();
+
     if (timer_register_tick_hook(scheduler_tick)!=0)
         kernel_panic("scheduler timer hook registration failed");
 
