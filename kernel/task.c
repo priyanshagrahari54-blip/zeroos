@@ -487,6 +487,37 @@ int task_create(task_entry_t entry, void *argument, uint64_t *task_id) {
     return 0;
 }
 
+static void task_debug_dump_all(const char *label) {
+    serial_write_public("ZEROOS DEBUG: ");
+    serial_write_public(label);
+    serial_write_public("\n");
+
+    for (int i=0;i<ZEROOS_MAX_TASKS;++i) {
+        struct task *task=&tasks[i];
+        if (task->state==TASK_UNUSED)
+            continue;
+
+        serial_write_public("  slot=");
+        task_write_u64((uint64_t)i);
+        serial_write_public(" id=");
+        task_write_u64(task->id);
+        serial_write_public(" state=");
+        task_write_u64((uint64_t)task->state);
+        serial_write_public(" stack=");
+        task_write_u64(task->stack_base);
+        serial_write_public(" saved=");
+        task_write_u64(task->saved_stack);
+
+        if (task->saved_stack &&
+            task->stack_base &&
+            task->saved_stack + 48ULL < task->stack_base + ZEROOS_TASK_STACK_SIZE) {
+            serial_write_public(" rip=");
+            task_write_u64(*(const uint64_t *)(task->saved_stack + 48ULL));
+        }
+        serial_write_public("\n");
+    }
+}
+
 struct task *task_current(void) {
     return current_task;
 }
