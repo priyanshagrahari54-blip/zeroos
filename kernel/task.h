@@ -52,6 +52,8 @@ struct task *task_current(void);
 void task_yield(void);
 int task_prepare_block(void);
 int task_block(void);
+/* Block while interrupts are already disabled; restores the supplied flags when resumed. */
+int task_block_irqsave(uint64_t flags);
 int task_wake(struct task *task);
 int task_sleep_until(uint64_t deadline);
 int task_sleep_ticks(uint64_t ticks);
