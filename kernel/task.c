@@ -163,7 +163,10 @@ static int switch_to_next(struct task *previous, int next) {
      * stale as soon as that task has resumed and later yields again.
      */
     previous->interrupt_frame=0;
-    tasks[next].interrupt_frame=0;
+
+    /* Cooperative selection excludes tasks with a live IRQ frame. */
+    if (tasks[next].interrupt_frame!=0)
+        return 0;
 
     previous->state=TASK_RUNNABLE;
     tasks[next].state=TASK_RUNNING;
