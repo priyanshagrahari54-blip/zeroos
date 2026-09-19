@@ -187,20 +187,56 @@ static void task_validate_table(const char *where) {
             task_context_panic("ZEROOS PANIC: task stack guard corrupted.\n",
                                task);
 
-        if (task->saved_stack && !task_saved_stack_ok(task))
-            task_context_panic("ZEROOS PANIC: task saved stack invalid.\n",
-                               task);
-
-        if (task->saved_stack && !task_saved_context_ok(task))
-            task_saved_context_panic(task);
-
-        if (task->interrupt_frame &&
-            !task_frame_ok(task,task->interrupt_frame))
-            task_context_panic("ZEROOS PANIC: task IRQ frame invalid.\n",
-                               task);
-
-        if (task->state==TASK_RUNNING)
+        /*
+         * saved_stack is a suspended cooperative context, not a permanent
+         * snapshot of a task's stack. Once a task resumes, normal execution
+         * may overwrite the old frame, so a RUNNING task's saved_stack must
+         * never be validated as if it were live context.
+         *
+         * A RUNNING task owns the CPU context directly and therefore cannot
+         * simultaneously own a live interrupt frame. Suspended runnable/
+         * blocked tasks must have either a valid interrupt frame or a valid
+         * cooperative saved context. ZOMBIE tasks have no resumable context.
+         */
+        if (task->state==TASK_RUNNING) {
+            if (task->interrupt_frame)
+                task_context_panic("ZEROOS PANIC: running task retains IRQ frame.\n",
+                                   task);
             ++running;
+            continue;
+        }
+
+        if (task->state==TASK_ZOMBIE) {
+            if (task->interrupt_frame || task->wait_queue ||
+                task->wait_next || task->sleep_next || task->sleep_armed)
+                task_context_panic("ZEROOS PANIC: zombie task retains queue/context state.\n",
+                                   task);
+            continue;
+        }
+
+        if (task->wait_queue && task->sleep_armed)
+            task_context_panic("ZEROOS PANIC: task is in wait and sleep queues.\n",
+                               task);
+
+        if (task->wait_queue && task->wait_next==task)
+            task_context_panic("ZEROOS PANIC: task wait queue self-cycle.\n",
+                               task);
+
+        if (task->sleep_armed && task->sleep_next==task)
+            task_context_panic("ZEROOS PANIC: task sleep queue self-cycle.\n",
+                               task);
+
+        if (task->interrupt_frame) {
+            if (!task_frame_ok(task,task->interrupt_frame))
+                task_context_panic("ZEROOS PANIC: task IRQ frame invalid.\n",
+                                   task);
+        } else {
+            if (!task_saved_stack_ok(task))
+                task_context_panic("ZEROOS PANIC: task saved stack invalid.\n",
+                                   task);
+            if (!task_saved_context_ok(task))
+                task_saved_context_panic(task);
+        }
     }
 
     if (running!=1)
