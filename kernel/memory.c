@@ -110,16 +110,33 @@ void memory_init(uint64_t multiboot_info) {
     free_pages = 0;
     available_pages = 0;
 
-    uint32_t total_size = *(uint32_t *)(uint64_t)multiboot_info;
-    uint8_t *cursor = (uint8_t *)(uint64_t)(multiboot_info + 8);
-    uint8_t *end = cursor + total_size;
+    /* The first two words are total_size and reserved. */
+    if (multiboot_info == 0)
+        return;
 
-    while (cursor < end) {
+    uint32_t total_size = *(uint32_t *)(uint64_t)multiboot_info;
+    if (total_size < 16U)
+        return;
+
+    uint8_t *info_base = (uint8_t *)(uint64_t)multiboot_info;
+    uint8_t *cursor = info_base + 8;
+    uint8_t *end = info_base + total_size;
+
+    while (cursor + sizeof(struct multiboot_tag) <= end) {
         struct multiboot_tag *tag = (struct multiboot_tag *)cursor;
+
+        if (tag->size < sizeof(struct multiboot_tag) ||
+            cursor + tag->size > end)
+            break;
 
         if (tag->type == MULTIBOOT_TAG_TYPE_MMAP) {
             struct multiboot_tag_mmap *mmap =
                 (struct multiboot_tag_mmap *)tag;
+
+            if (mmap->size < sizeof(*mmap) ||
+                mmap->entry_size < sizeof(struct multiboot_mmap_entry))
+                break;
+
             uint8_t *entry_ptr = cursor + sizeof(*mmap);
             uint8_t *entry_end = cursor + mmap->size;
 
@@ -129,7 +146,13 @@ void memory_init(uint64_t multiboot_info) {
 
                 if (entry->type == MULTIBOOT_MEMORY_AVAILABLE) {
                     uint64_t start = entry->addr;
-                    uint64_t end_addr = entry->addr + entry->len;
+                    uint64_t end_addr;
+
+                    /* Reject wrapped address ranges before doing arithmetic. */
+                    if (entry->len > (~0ULL - start))
+                        end_addr = ~0ULL;
+                    else
+                        end_addr = start + entry->len;
 
                     if (start < ZEROOS_MAX_PHYS_MEM) {
                         if (end_addr > ZEROOS_MAX_PHYS_MEM)
