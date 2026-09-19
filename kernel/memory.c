@@ -21,9 +21,9 @@ static void memory_debug_u64(uint64_t value) {
 }
 
 static inline void memory_debug(char marker) {
-    __asm__ volatile ("outb %0, $0xe9"
-                      : "+a"(marker)
+    __asm__ volatile ("outb %b0, $0xe9"
                       :
+                      : "q"(marker)
                       : "memory", "cc");
 }
 
@@ -133,8 +133,11 @@ void memory_init(uint64_t multiboot_info) {
     serial_write_public("ZEROOS: bitmap bytes: ");
     memory_debug_u64((uint64_t)sizeof(page_bitmap));
     serial_write_public("\n");
-    for (uint64_t i = 0; i < ZEROOS_BITMAP_WORDS; ++i)
+    for (uint64_t i = 0; i < ZEROOS_BITMAP_WORDS; ++i) {
         page_bitmap[i] = ~0ULL;
+        if ((i & 255ULL) == 255ULL)
+            memory_debug((char)('A' + (i >> 8)));
+    }
     memory_debug('2');
 
     memory_debug('3');
