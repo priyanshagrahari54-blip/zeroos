@@ -32,6 +32,7 @@ int task_system_init(void);
 int task_create(task_entry_t entry, void *argument, uint64_t *task_id);
 struct task *task_current(void);
 void task_yield(void);
+int task_prepare_block(void);
 int task_block(void);
 int task_wake(struct task *task);
 void task_exit(void);
