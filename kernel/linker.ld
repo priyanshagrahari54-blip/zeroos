@@ -3,6 +3,7 @@ ENTRY(_start)
 SECTIONS
 {
     . = 1M;
+    __kernel_start = .;
 
     .multiboot2 : ALIGN(8)
     {
@@ -13,6 +14,8 @@ SECTIONS
     .rodata : ALIGN(16) { *(.rodata*) }
     .data : ALIGN(16) { *(.data*) }
     .bss : ALIGN(16) { *(COMMON) *(.bss*) }
+
+    __kernel_end = .;
 
     /DISCARD/ :
     {
