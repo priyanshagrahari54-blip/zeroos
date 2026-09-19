@@ -23,7 +23,7 @@ $(BUILD)/boot.o: boot/boot.S | $(BUILD)
 $(BUILD)/isr.o: boot/isr.S | $(BUILD)
 	$(AS) $(ASFLAGS) -c $< -o $@
 
-$(BUILD)/kernel.o: kernel/kernel.c kernel/types.h kernel/memory.h kernel/timer.h | $(BUILD)
+$(BUILD)/kernel.o: kernel/kernel.c kernel/types.h kernel/memory.h kernel/timer.h kernel/vmm.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
 $(BUILD)/interrupts.o: kernel/interrupts.c kernel/interrupts.h kernel/types.h kernel/pic.h kernel/timer.h | $(BUILD)
@@ -38,8 +38,11 @@ $(BUILD)/timer.o: kernel/timer.c kernel/timer.h kernel/pic.h kernel/types.h | $(
 $(BUILD)/memory.o: kernel/memory.c kernel/memory.h kernel/types.h kernel/linker.ld | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
-$(KERNEL): $(BUILD)/boot.o $(BUILD)/isr.o $(BUILD)/kernel.o $(BUILD)/interrupts.o $(BUILD)/pic.o $(BUILD)/timer.o $(BUILD)/memory.o kernel/linker.ld
-	$(LD) $(LDFLAGS) -o $@ $(BUILD)/boot.o $(BUILD)/isr.o $(BUILD)/kernel.o $(BUILD)/interrupts.o $(BUILD)/pic.o $(BUILD)/timer.o $(BUILD)/memory.o
+$(BUILD)/vmm.o: kernel/vmm.c kernel/vmm.h kernel/memory.h kernel/types.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(KERNEL): $(BUILD)/boot.o $(BUILD)/isr.o $(BUILD)/kernel.o $(BUILD)/interrupts.o $(BUILD)/pic.o $(BUILD)/timer.o $(BUILD)/memory.o $(BUILD)/vmm.o kernel/linker.ld
+	$(LD) $(LDFLAGS) -o $@ $(BUILD)/boot.o $(BUILD)/isr.o $(BUILD)/kernel.o $(BUILD)/interrupts.o $(BUILD)/pic.o $(BUILD)/timer.o $(BUILD)/memory.o $(BUILD)/vmm.o
 
 iso: $(KERNEL)
 	rm -rf $(BUILD)/iso
