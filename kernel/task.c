@@ -2,6 +2,7 @@
 #include "memory.h"
 #include "sync.h"
 #include "interrupts.h"
+#include "timer.h"
 
 extern void context_switch(uint64_t *old_sp, uint64_t *new_sp);
 
@@ -15,6 +16,7 @@ static struct task tasks[ZEROOS_MAX_TASKS];
 static struct task *current_task;
 static struct spinlock task_lock;
 static uint64_t next_task_id;
+static struct task *sleep_head;
 
 static uint64_t task_irq_save(void) {
     uint64_t flags;
@@ -101,6 +103,56 @@ static void task_prepare_stack(struct task *task) {
     task->saved_stack=(uint64_t)sp;
 }
 
+static int deadline_before(uint64_t a, uint64_t b) {
+    return (long long)(a-b)<0;
+}
+
+static void sleep_queue_insert_locked(struct task *task) {
+    struct task **cursor=&sleep_head;
+    while (*cursor && !deadline_before(task->wake_tick,(*cursor)->wake_tick))
+        cursor=&(*cursor)->sleep_next;
+    task->sleep_next=*cursor;
+    *cursor=task;
+}
+
+static void sleep_queue_wake_expired_locked(uint64_t now) {
+    while (sleep_head && (long long)(now-sleep_head->wake_tick)>=0) {
+        struct task *task=sleep_head;
+        sleep_head=task->sleep_next;
+        task->sleep_next=0;
+        task->wake_tick=0;
+        if (task->state==TASK_BLOCKED) {
+            task->state=TASK_RUNNABLE;
+            task->need_resched=1;
+        }
+    }
+}
+
+static void reap_zombies_locked(void) {
+    for (int i=2;i<ZEROOS_MAX_TASKS;++i) {
+        struct task *task=&tasks[i];
+        if (task->state!=TASK_ZOMBIE || !task->stack_base)
+            continue;
+        page_free((void *)task->stack_base);
+        task->id=0;
+        task->state=TASK_UNUSED;
+        task->saved_stack=0;
+        task->stack_base=0;
+        task->entry=0;
+        task->argument=0;
+        task->runtime_ticks=0;
+        task->context_switches=0;
+        task->timeslice_ticks=ZEROOS_DEFAULT_TIMESLICE;
+        task->preempt_count=0;
+        task->need_resched=0;
+        task->interrupt_frame=0;
+        task->wait_next=0;
+        task->wait_queue=0;
+        task->sleep_next=0;
+        task->wake_tick=0;
+    }
+}
+
 static int find_next_runnable(void) {
     int start=-1;
     int index;
@@ -159,6 +211,8 @@ int task_system_init(void) {
         tasks[i].interrupt_frame=0;
         tasks[i].wait_next=0;
         tasks[i].wait_queue=0;
+        tasks[i].sleep_next=0;
+        tasks[i].wake_tick=0;
     }
 
     tasks[0].id=0;
@@ -178,6 +232,7 @@ int task_system_init(void) {
     spinlock_init(&task_lock);
     current_task=&tasks[0];
     next_task_id=2;
+    sleep_head=0;
     return 0;
 }
 
@@ -215,6 +270,8 @@ int task_create(task_entry_t entry, void *argument, uint64_t *task_id) {
     task->need_resched=0;
     task->wait_next=0;
     task->wait_queue=0;
+    task->sleep_next=0;
+    task->wake_tick=0;
     task_prepare_stack(task);
     task_prepare_interrupt_frame(task);
 
@@ -307,6 +364,46 @@ int task_wake(struct task *task) {
     return 0;
 }
 
+int task_sleep_ticks(uint64_t ticks) {
+    struct task *task=current_task;
+    uint64_t flags;
+
+    if (!task || task==&tasks[0] || task==&tasks[ZEROOS_IDLE_SLOT] ||
+        task->state!=TASK_RUNNING || task->preempt_count!=0)
+        return -1;
+    if (ticks==0)
+        return 0;
+
+    flags=task_irq_save();
+    if (task->state!=TASK_RUNNING || task->preempt_count!=0) {
+        task_irq_restore(flags);
+        return -1;
+    }
+
+    task->wake_tick=timer_ticks()+ticks;
+    task->need_resched=0;
+    task->state=TASK_BLOCKED;
+    sleep_queue_insert_locked(task);
+
+    int next=find_next_runnable();
+    if (next<0) {
+        task->state=TASK_RUNNING;
+        task->sleep_next=0;
+        task->wake_tick=0;
+        task_irq_restore(flags);
+        return -1;
+    }
+
+    tasks[next].state=TASK_RUNNING;
+    tasks[next].context_switches++;
+    task->interrupt_frame=0;
+    tasks[next].interrupt_frame=0;
+    current_task=&tasks[next];
+    context_switch(&task->saved_stack,&current_task->saved_stack);
+    task_irq_restore(flags);
+    return 0;
+}
+
 void task_exit(void) {
     struct task *previous=current_task;
     int next;
@@ -390,8 +487,15 @@ uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
 
 void task_scheduler_tick(void) {
     struct task *task=current_task;
+    uint64_t now;
 
     if (!task) return;
+
+    now=timer_ticks();
+    spin_lock(&task_lock);
+    sleep_queue_wake_expired_locked(now);
+    reap_zombies_locked();
+    spin_unlock(&task_lock);
 
     if (task->state==TASK_RUNNING && task!=&tasks[ZEROOS_IDLE_SLOT]) {
         ++task->runtime_ticks;
