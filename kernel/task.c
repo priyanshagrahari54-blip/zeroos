@@ -495,10 +495,12 @@ void task_scheduler_tick(void) {
     if (!task) return;
 
     now=timer_ticks();
-    spin_lock(&task_lock);
-    sleep_queue_wake_expired_locked(now);
-    reap_zombies_locked();
-    spin_unlock(&task_lock);
+    {
+        uint64_t flags=spin_lock_irqsave(&task_lock);
+        sleep_queue_wake_expired_locked(now);
+        reap_zombies_locked();
+        spin_unlock_irqrestore(&task_lock,flags);
+    }
 
     if (task->state==TASK_RUNNING && task!=&tasks[ZEROOS_IDLE_SLOT]) {
         ++task->runtime_ticks;
