@@ -59,8 +59,9 @@ static void task_prepare_stack(struct task *task) {
 
     /*
      * context_switch restores six callee-saved registers then retq. Keep the
-     * saved stack 16-byte aligned so the first C function entered by retq
-     * observes the SysV ABI's required 8-byte entry alignment.
+     * saved context is 8 mod 16 before the six register restores. After
+     * those restores and retq, task_trampoline enters with RSP 8 mod 16,
+     * satisfying the SysV x86-64 call-site alignment invariant.
      */
     top=top & ~0xFULL;
     sp=(uint64_t *)top;
@@ -71,8 +72,6 @@ static void task_prepare_stack(struct task *task) {
     *--sp=0;
     *--sp=0;
     *--sp=0;
-    if (((uint64_t)sp & 0xFULL)!=0)
-        return;
     task->saved_stack=(uint64_t)sp;
 }
 
