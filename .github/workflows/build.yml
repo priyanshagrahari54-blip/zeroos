@@ -29,6 +29,10 @@ jobs:
           nm -n build/zeroos.elf | grep -E '(__kernel_start|__kernel_end|stack_bottom|stack_top|tasks$|task_lock$|next_task_id$|sleep_head$|tick_hook$|ticks$|page_bitmap|free_word_summary)' || true
           echo "===== ZEROOS memory_init disassembly ====="
           objdump -d --disassemble=memory_init build/zeroos.elf
+          echo "===== ZEROOS task context disassembly ====="
+          objdump -d --disassemble=task_trampoline build/zeroos.elf
+          objdump -d --disassemble=switch_to_next build/zeroos.elf
+          objdump -d --disassemble=task_yield build/zeroos.elf
 
       - name: Boot test
         run: |
