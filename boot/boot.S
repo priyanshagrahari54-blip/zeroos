@@ -62,7 +62,11 @@ _start:
     rdmsr
     or $0x100, %eax
     wrmsr
+    # Enable paging and establish the x86-64 floating-point/SSE baseline
+    # expected by compiler-generated code in long mode.
     mov %cr0, %eax
+    and $~0x4, %eax
+    or $0x00010002, %eax
     or $0x80000000, %eax
     mov %eax, %cr0
     lgdt gdt64_ptr
