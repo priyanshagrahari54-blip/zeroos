@@ -1108,7 +1108,7 @@ int task_discard_new(uint64_t tid) {
  * terminal thread. The executing stack is never eligible for reclamation. */
 int task_reap_finished(uint64_t tid) {
     uint64_t flags=spin_lock_irqsave(&task_lock);
-    struct task *task=task_find_by_id(tid);
+    struct task *task=task_find_by_id_locked(tid);
     int result=-1;
     if (task && task!=current_task && task->state==TASK_ZOMBIE) {
         page_free((void *)task->stack_base);
