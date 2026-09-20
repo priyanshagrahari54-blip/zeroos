@@ -188,7 +188,8 @@ void memory_init(uint64_t multiboot_info) {
                   (uint64_t)&__kernel_end);
     reserve_range(multiboot_info, multiboot_info + total_size);
 
-    managed_pages = available_pages;
+    /* Public capacity means final usable managed pages after all reservations. */
+    managed_pages = free_pages;
 
 }
 
@@ -303,8 +304,13 @@ static void *page_alloc_at_locked(uint64_t address) {
  * page-level fallback covers arbitrary sizes.
  */
 uint64_t memory_find_free_run(uint64_t need_pages) {
-    if (need_pages == 0)
+    uint64_t irq_flags = irq_save();
+    uint64_t result;
+
+    if (need_pages == 0) {
+        irq_restore(irq_flags);
         return 0;
+    }
     if (need_pages > ZEROOS_MAX_PAGES)
         return ~0ULL;
 
@@ -321,7 +327,8 @@ uint64_t memory_find_free_run(uint64_t need_pages) {
                 }
             }
             if (ok)
-                return word * 64ULL;
+                result = word * 64ULL;
+                goto out;
         }
         /* No word-aligned run: a run may still start mid-word. */
     }
@@ -338,9 +345,14 @@ uint64_t memory_find_free_run(uint64_t need_pages) {
             }
         }
         if (ok)
-            return page;
+            result = page;
+            goto out;
     }
-    return ~0ULL;
+    result = ~0ULL;
+
+out:
+    irq_restore(irq_flags);
+    return result;
 }
 
 int memory_page_is_allocated(uint64_t address) {
