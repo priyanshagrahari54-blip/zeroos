@@ -25,6 +25,15 @@ int main(void) {
     struct elf_image out;
     make_base();
     assert(elf64_validate_image(image,sizeof(image),&out)==0);
+    struct vmm_space load_space;
+    memset(&load_space,0,sizeof(load_space));
+    uint64_t root[512] __attribute__((aligned(4096)));
+    memset(root,0,sizeof(root));
+    load_space.root=root;
+    assert(elf64_load_image(image,sizeof(image),&load_space,&out)==0);
+    assert(vmm_space_translate(&load_space,0x00007f0000001000ULL)!=0);
+    assert(*(uint8_t *)vmm_space_translate(&load_space,0x00007f0000001000ULL)==0xc3);
+    vmm_space_destroy(&load_space);
     assert(out.entry==0x00007f0000001000ULL && out.segment_count==1);
 
     ((struct elf64_ehdr *)image)->machine=3;
