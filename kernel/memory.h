@@ -9,6 +9,7 @@ void memory_init(uint64_t multiboot_info);
 void *page_alloc(void);
 void *page_alloc_at(uint64_t address);
 /* IRQ-safe: serializes the bitmap search against allocator/reservation updates. */
+/* The returned index is a physical page number, not a byte address. */
 uint64_t memory_find_free_run(uint64_t need_pages);
 void *page_alloc_zero(void);
 void page_free(void *address);
