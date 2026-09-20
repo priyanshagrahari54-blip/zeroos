@@ -178,13 +178,16 @@ static int split_2m(uint64_t *pd, uint64_t index, uint64_t base_virtual) {
         pt[i] = (base + i * VMM_PAGE_SIZE) | flags;
 
     /*
-     * Clear the PDE before installing the PT, then invalidate the 4 KiB
-     * range so no CPU can retain a stale huge-page translation. invlpg is
-     * correct whether or not this space is the one currently loaded in CR3.
+     * Clear the PDE before installing the PT. INVLPG is scoped to the
+     * currently loaded address-space context; it must not be used as if it
+     * invalidated an inactive space. Inactive-space translations are
+     * invalidated when that space is activated by vmm_load_root().
      */
     pd[index] = 0;
-    for (uint64_t i = 0; i < ENTRY_COUNT; ++i)
-        invalidate_page(base_virtual + i * VMM_PAGE_SIZE);
+    if (active_root == root_physical) {
+        for (uint64_t i = 0; i < ENTRY_COUNT; ++i)
+            invalidate_page(base_virtual + i * VMM_PAGE_SIZE);
+    }
     pd[index] = ((uint64_t)pt & PAGE_MASK) |
                 VMM_PRESENT | VMM_WRITABLE |
                 (old & VMM_USER);
@@ -307,6 +310,12 @@ static int vmm_map_page_locked(uint64_t virtual_address,
     if ((virtual_address & (VMM_PAGE_SIZE - 1)) != 0)
         return -1;
     if ((physical_address & (VMM_PAGE_SIZE - 1)) != 0)
+        return -1;
+
+    /* Public kernel-root mappings are supervisor-only. User mappings must
+     * go through vmm_space_* so ownership and the dedicated user PML4 slot
+     * are enforced together. */
+    if (flags & VMM_USER)
         return -1;
 
     uint64_t pml4_index = (virtual_address >> 39) & 0x1ff;
@@ -504,6 +513,9 @@ int vmm_unmap_range(uint64_t virtual_address, uint64_t page_count) {
 }
 
 static int vmm_protect_page_locked(uint64_t virtual_address, uint64_t flags) {
+    /* Kernel-root protection cannot promote a supervisor mapping to user
+     * accessible. Only the per-space user API may set VMM_USER. */
+    if (flags & VMM_USER) return -1;
     if (virtual_address < memory_max_physical() || !(flags&VMM_NO_EXECUTE) ||
         (flags&~(VMM_LEAF_FLAGS|VMM_NO_EXECUTE))) return -1;
     if (!root_table || !canonical_address(virtual_address) ||
