@@ -4,6 +4,16 @@
 #include "irq_state.h"
 #include "sync.h"
 
+#ifdef ZEROOS_HOST_TEST
+static inline uint64_t vmm_lock_irqsave(void) { return 0; }
+static inline void vmm_lock_irqrestore(uint64_t flags) { (void)flags; }
+static inline void vmm_lock_init(void) {}
+#else
+static inline uint64_t vmm_lock_irqsave(void) { return spin_lock_irqsave(&vmm_lock); }
+static inline void vmm_lock_irqrestore(uint64_t flags) { spin_unlock_irqrestore(&vmm_lock, flags); }
+static inline void vmm_lock_init(void) { vmm_lock_init(); }
+#endif
+
 #define ENTRY_COUNT 512ULL
 #define PAGE_MASK 0x000ffffffffff000ULL
 #define HUGE_PAGE_2M 0x080ULL
@@ -864,9 +874,9 @@ unsigned vmm_pcid_in_use(void) {
 }
 
 int vmm_space_create(struct vmm_space *space) {
-    uint64_t vmm_flags=spin_lock_irqsave(&vmm_lock);
+    uint64_t vmm_flags=vmm_lock_irqsave();
     int result=vmm_space_create_locked(space);
-    spin_unlock_irqrestore(&vmm_lock,vmm_flags);
+    vmm_lock_irqrestore(vmm_flags);
     return result;
 }
 
@@ -891,9 +901,9 @@ int vmm_space_unmap_page(struct vmm_space *space, uint64_t virtual_address) {
 }
 
 int vmm_space_own_page(struct vmm_space *space, uint64_t physical) {
-    uint64_t flags=spin_lock_irqsave(&vmm_lock);
+    uint64_t flags=vmm_lock_irqsave();
     int result=vmm_space_own_page_locked(space, physical);
-    spin_unlock_irqrestore(&vmm_lock,flags);
+    vmm_lock_irqrestore(flags);
     return result;
 }
 
