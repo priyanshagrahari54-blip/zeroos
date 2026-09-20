@@ -8,7 +8,8 @@
 #include "wait.h"
 
 #define COM1 0x3F8
-#define VMM_SELF_TEST_VA 0x4000000000ULL
+#define VMM_SELF_TEST_VA 0x00007f0000000000ULL
+#define VMM_SPACE_TEST_VA (VMM_SELF_TEST_VA + 0x2000ULL)
 
 static inline void outb(uint16_t port, uint8_t value) {
     __asm__ volatile ("outb %0, %1" : : "a"(value), "Nd"(port));
@@ -112,6 +113,31 @@ static void vmm_self_test(void) {
     if (vmm_unmap_page(VMM_SELF_TEST_VA)!=0) kernel_panic("VMM unmap failed");
     page_free(physical);
     serial_write_public("ZEROOS: virtual memory self-test passed.\n");
+}
+
+static void vmm_space_self_test(void) {
+    struct vmm_space space;
+    void *physical=page_alloc_zero();
+    if (!physical) kernel_panic("address-space page allocation failed");
+    if (vmm_space_create(&space)!=0)
+        kernel_panic("address-space creation failed");
+    if (vmm_space_translate(&space,VMM_SPACE_TEST_VA)!=0)
+        kernel_panic("fresh address-space is not empty");
+    if (vmm_space_map_page(&space,VMM_SPACE_TEST_VA,(uint64_t)physical,
+                           VMM_USER|VMM_WRITABLE|VMM_NO_EXECUTE)!=0)
+        kernel_panic("address-space user mapping failed");
+    if (vmm_space_translate(&space,VMM_SPACE_TEST_VA)!=(uint64_t)physical)
+        kernel_panic("address-space translation failed");
+    if (vmm_space_map_page(&space,0x4000000000ULL,(uint64_t)physical,
+                           VMM_USER|VMM_WRITABLE)!=-1)
+        kernel_panic("address-space accepted unsafe PML4");
+    if (vmm_space_unmap_page(&space,VMM_SPACE_TEST_VA)!=0)
+        kernel_panic("address-space unmap failed");
+    if (vmm_space_translate(&space,VMM_SPACE_TEST_VA)!=0)
+        kernel_panic("address-space unmap translation failed");
+    vmm_space_destroy(&space);
+    page_free(physical);
+    serial_write_public("ZEROOS: per-address-space VMM self-test passed.\n");
 }
 
 static void sync_self_test(void) {
@@ -440,6 +466,7 @@ void kernel_main(uint64_t multiboot_info, uint64_t multiboot_magic) {
     if (vmm_init()!=0) kernel_panic("virtual memory initialization failed");
     serial_write_public("ZEROOS: virtual memory manager initialized.\n");
     vmm_self_test();
+    vmm_space_self_test();
 
     sync_self_test();
 
