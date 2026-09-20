@@ -78,22 +78,30 @@ int heap_init(void) {
     /*
      * Consume pages from the physical allocator until a strictly linear
      * window is built. The bitmap allocator hands out pages in address
-     * order, so the contiguous prefix before the first gap is taken; the
-     * gap page is returned. The region may be as small as 1 MiB on hosts
-     * with fragmented low memory; capacity is reported at runtime.
+     * order. Firmware memory maps are not guaranteed to be contiguous:
+     * on a typical i386 map the low-memory region below the 1 MiB
+     * PCI/BIOS hole is free but not adjacent to the main RAM run, so the
+     * first address-ordered run can be shorter than the minimum. On a
+     * gap the run is restarted at the gap page and the abandoned prefix
+     * is returned to the allocator; the first run long enough is kept.
      */
-    while (pages < HEAP_REGION_PAGES) {
+    for (;;) {
         uint8_t *next = (uint8_t *)page_alloc_zero();
         if (!next)
             break;
         if (pages > 0 &&
             (uint64_t)next != (uint64_t)region + pages * ZEROOS_PAGE_SIZE) {
-            page_free(next);
-            break;
+            for (uint64_t i = 0; i < pages; ++i)
+                page_free(region + i * ZEROOS_PAGE_SIZE);
+            region = next;
+            pages = 1;
+            continue;
         }
         if (!region)
             region = next;
         ++pages;
+        if (pages >= HEAP_REGION_PAGES)
+            break;
     }
 
     if (!region || pages < HEAP_MIN_PAGES) {
