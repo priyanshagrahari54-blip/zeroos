@@ -284,7 +284,8 @@ int process_reap(uint64_t pid) {
 }
 
 int process_wait_ticks(uint64_t ticks) {
-    uint64_t deadline = timer_ticks() + ticks;
+    uint64_t now=timer_ticks();
+    uint64_t deadline=(~0ULL-now<ticks) ? ~0ULL : now+ticks;
 
     for (;;) {
         if (process_zombie_count() != 0)
