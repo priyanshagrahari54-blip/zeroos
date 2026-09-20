@@ -24,6 +24,7 @@ C_OBJECTS := \
 	$(BUILD)/process.o \
 	$(BUILD)/syscall.o \
 	$(BUILD)/elf.o \
+	$(BUILD)/elf_loader.o \
 	$(BUILD)/wait.o \
 	$(BUILD)/scheduler.o
 
