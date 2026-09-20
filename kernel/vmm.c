@@ -878,20 +878,16 @@ void vmm_space_destroy(struct vmm_space *space) {
 
 int vmm_space_map_page(struct vmm_space *space, uint64_t virtual_address, uint64_t physical_address, uint64_t flags) {
     uint64_t vmm_flags=spin_lock_irqsave(&vmm_lock);
-    uint64_t irq=irq_save();
     int result=vmm_space_map_page_locked(space, virtual_address, physical_address, flags);
-    irq_restore(irq);
-    return result;
     spin_unlock_irqrestore(&vmm_lock,vmm_flags);
+    return result;
 }
 
 int vmm_space_unmap_page(struct vmm_space *space, uint64_t virtual_address) {
     uint64_t vmm_flags=spin_lock_irqsave(&vmm_lock);
-    uint64_t irq=irq_save();
     int result=vmm_space_unmap_page_locked(space, virtual_address);
-    irq_restore(irq);
-    return result;
     spin_unlock_irqrestore(&vmm_lock,vmm_flags);
+    return result;
 }
 
 int vmm_space_own_page(struct vmm_space *space, uint64_t physical) {
@@ -923,27 +919,21 @@ void vmm_pcid_free(uint16_t pcid) {
 
 int vmm_map_page(uint64_t virtual_address, uint64_t physical_address, uint64_t flags) {
     uint64_t vmm_flags=spin_lock_irqsave(&vmm_lock);
-    uint64_t irq=irq_save();
     int result=vmm_map_page_locked(virtual_address, physical_address, flags);
-    irq_restore(irq);
-    return result;
     spin_unlock_irqrestore(&vmm_lock,vmm_flags);
+    return result;
 }
 
 int vmm_unmap_page(uint64_t virtual_address) {
     uint64_t vmm_flags=spin_lock_irqsave(&vmm_lock);
-    uint64_t irq=irq_save();
     int result=vmm_unmap_page_locked(virtual_address);
-    irq_restore(irq);
-    return result;
     spin_unlock_irqrestore(&vmm_lock,vmm_flags);
+    return result;
 }
 
 int vmm_protect_page(uint64_t virtual_address, uint64_t flags) {
     uint64_t vmm_flags=spin_lock_irqsave(&vmm_lock);
-    uint64_t irq=irq_save();
     int result=vmm_protect_page_locked(virtual_address, flags);
-    irq_restore(irq);
-    return result;
     spin_unlock_irqrestore(&vmm_lock,vmm_flags);
+    return result;
 }
