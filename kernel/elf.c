@@ -25,7 +25,6 @@ int elf64_validate_image(const void *data, uint64_t size,
                          struct elf_image *out) {
     const uint8_t *bytes=(const uint8_t *)data;
     const struct elf64_ehdr *eh;
-    uint64_t last_end=0;
     int have_exec=0;
 
     if (!data || !out || size < sizeof(struct elf64_ehdr))
@@ -58,7 +57,7 @@ int elf64_validate_image(const void *data, uint64_t size,
         const struct elf64_phdr *ph =
             (const struct elf64_phdr *)(bytes + eh->phoff +
                                         (uint64_t)i * eh->phentsize);
-        uint64_t vend, fend;
+        uint64_t vend;
 
         if (ph->type!=ZEROOS_PT_LOAD)
             continue;
@@ -75,10 +74,6 @@ int elf64_validate_image(const void *data, uint64_t size,
             return -1;
         if (!range_end(ph->vaddr,ph->memsz,&vend))
             return -1;
-        if (!range_end(ph->offset,ph->filesz,&fend))
-            return -1;
-        (void)fend;
-
         if (ph->align>1) {
             if (!is_power_of_two(ph->align) ||
                 (ph->vaddr % ph->align)!=(ph->offset % ph->align))
@@ -119,7 +114,6 @@ int elf64_validate_image(const void *data, uint64_t size,
         if (ph->flags & ZEROOS_PF_X)
             have_exec=1;
         ++out->segment_count;
-        (void)last_end;
     }
 
     if (!out->segment_count || !have_exec)
