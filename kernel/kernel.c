@@ -331,35 +331,51 @@ static int idt_probe(void) {
     return 0;
 }
 
-static void heap_probe(char phase) {
-    probe_out(phase);
-    probe_out((char)('0' + idt_probe()));
-}
-
 static void probe_hex16(uint64_t value) {
     const char *hex = "0123456789abcdef";
     for (int i = 15; i >= 0; --i)
         probe_out(hex[(value >> (i * 4)) & 0xfULL]);
 }
 
+/*
+ * Framed value probe: <phase> 0xFF <16 hex digits> 0xFF. The 0xFF
+ * delimiters make the stream unambiguous to parse (hex digits can look
+ * like phase letters).
+ */
 static void probe_kv(char phase, uint64_t value) {
     probe_out(phase);
-    probe_out((char)('0' + idt_probe()));
+    probe_out(0xFF);
     probe_hex16(value);
+    probe_out(0xFF);
 }
 
-/* One byte per 2 MiB PDE of the first 8 GiB: bit set = PDE present. */
-static void probe_pde_presence(void) {
-    uint64_t *pml4 = (uint64_t *)vmm_root();
-    uint64_t *pdpt = (uint64_t *)(pml4[0] & 0x000ffffffffff000ULL);
-    uint64_t *pd = (uint64_t *)(pdpt[0] & 0x000ffffffffff000ULL);
-    uint8_t word = 0;
-    for (uint64_t i = 0; i < 8; ++i)
-        if (pd[i] & 1ULL)
-            word |= (uint8_t)(1U << i);
-    probe_out('P');
-    probe_out((char)word);
-    probe_hex16(pd[1]);
+/*
+ * Dump the first PDEs of the page table whose PML4 is at `pml4`.
+ * Defensive: stops at the first non-present entry so a broken chain
+ * is reported instead of faulting inside the probe.
+ */
+static void probe_pde_chain(char tag, const uint64_t *pml4) {
+    uint64_t e = pml4[0];
+    probe_kv(tag, e);
+    if (!(e & 1ULL))
+        return;
+    const uint64_t *pdpt = (const uint64_t *)(e & 0x000ffffffffff000ULL);
+    e = pdpt[0];
+    probe_kv((char)(tag + 1), e);
+    if (!(e & 1ULL))
+        return;
+    const uint64_t *pd = (const uint64_t *)(e & 0x000ffffffffff000ULL);
+    for (uint64_t i = 0; i < 4; ++i)
+        probe_kv((char)(tag + 2 + i), pd[i]);
+}
+
+static void heap_probe(char phase) {
+    probe_out(phase);
+    probe_out((char)('0' + idt_probe()));
+}
+
+static void heap_probe_plain(char phase) {
+    probe_out(phase);
 }
 
 static void heap_self_test(void) {
@@ -423,12 +439,29 @@ static void heap_self_test(void) {
         kernel_panic("heap huge allocation rejection failed");
     heap_probe('c');
 
+    /*
+     * Control-state and page-table dump: the earlier run read a
+     * suspicious CR3, so read CR3, CR0 and EFER, then dump the page
+     table the CPU actually uses (walked from CR3) next to the table
+     the VMM believes it installed (walked from vmm_root()).
+     */
     {
         uint64_t cr3;
         __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
         probe_kv('R', cr3);
+        probe_pde_chain('W', (const uint64_t *)(cr3 & ~0xFFFULL));
     }
-    probe_pde_presence();
+    {
+        uint64_t cr0;
+        __asm__ volatile ("mov %%cr0, %0" : "=r"(cr0));
+        probe_kv('T', cr0);
+    }
+    {
+        uint32_t lo, hi;
+        __asm__ volatile ("rdmsr" : "=a"(lo), "=d"(hi) : "c"(0xc0000080));
+        probe_kv('U', ((uint64_t)hi << 32) | lo);
+    }
+    probe_pde_chain('C', (const uint64_t *)vmm_root());
     {
         uint64_t rspv;
         __asm__ volatile ("mov %%rsp, %0" : "=r"(rspv));
@@ -445,8 +478,12 @@ static void heap_self_test(void) {
         if ((i & 0xFFFF) == 0 && i >= 0x10000 && i <= 0xF0000)
             heap_probe((char)(((i >> 16) < 10) ?
                 '0' + (char)(i >> 16) : 'A' + (char)((i >> 16) - 10)));
+        if (i == 0x7FFE0) heap_probe_plain('p');
+        else if (i == 0x7FFF0) heap_probe_plain('q');
+        else if (i == 0x80000) heap_probe_plain('r');
+        else if (i == 0x80010) heap_probe_plain('s');
     }
-    heap_probe('h');
+    heap_probe('t');
     for (uint64_t i=0;i<capacity-ZEROOS_HEAP_MIN_ALLOC;++i)
         if (((uint8_t *)big)[i]!=0x5A)
             kernel_panic("heap near-maximum payload failed");

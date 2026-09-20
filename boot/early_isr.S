@@ -24,6 +24,10 @@
 .global early_stub_\n
 .type early_stub_\n, @function
 early_stub_\n:
+    movb  $'E', %al
+    outb  %al, $0xe9
+    movb  $\n, %al
+    outb  %al, $0xe9
     pushq $0
     pushq $\n
     jmp early_common
@@ -35,6 +39,10 @@ early_stub_\n:
 .global early_stub_\n
 .type early_stub_\n, @function
 early_stub_\n:
+    movb  $'E', %al
+    outb  %al, $0xe9
+    movb  $\n, %al
+    outb  %al, $0xe9
     pushq $\n
     jmp early_common
 .endm
@@ -86,15 +94,12 @@ early_stub_noerr 31
 .type early_common, @function
 early_common:
     /*
-     * Fault-proof first report, before any stack read or C call: marker,
-     * vector, then the faulting RIP as 16 hex digits on the isa-debugcon
-     * (port 0xe9), which CI captures in debug.log. A CPU exception cannot
-     * be raised by outb in CPL0, so this cannot re-fault.
+     * The stub already emitted 'E' + vector fault-free (before any
+     * stack use). Now append the faulting RIP as 16 hex digits on the
+     * isa-debugcon (port 0xe9), which CI captures in debug.log. Reading
+     * the stack can still fault if it is corrupt; the vector is already
+     * recorded in that case.
      */
-    movb  $'E', %al
-    outb  %al, $0xe9
-    movzbl 0(%rsp), %eax
-    outb  %al, $0xe9
     movq  48(%rsp), %r11
     movq  $16, %r12
 1:  movq  %r11, %r10
