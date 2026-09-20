@@ -5,6 +5,7 @@ Runs the same fault-instrumented ISO on low/default/capped RAM and available
 CPU features. Records the actual PCID mode instead of inferring it from -cpu.
 """
 from pathlib import Path
+import os
 import subprocess
 import time
 
@@ -12,6 +13,7 @@ EXPECTED = [
     "physical allocator self-test passed.", "heap self-test passed.",
     "virtual memory self-test passed.", "per-address-space VMM self-test passed.",
     "live-CR3 isolation, ownership and W^X passed.",
+    "address-space reuse with displaced frames passed.",
     "process rollback and lifetime stress passed.",
     "bootstrap IRQ regression passed.", "process execution/reap stress passed.",
     "GDT extended (user segments) and TSS loaded.",
@@ -33,14 +35,14 @@ FORBIDDEN = ["ZEROOS PANIC", "ZEROOS: FAIL", "ZEROOS EARLY FATAL",
              "kernel halted after fatal exception"]
 
 
-def run(name, cpu, ram):
+def run(name, cpu, ram, accel="tcg"):
     directory = Path("build/matrix") / name
     directory.mkdir(parents=True, exist_ok=True)
     serial, trace = directory / "serial.log", directory / "qemu.log"
     serial.write_text("")
     with (directory / "startup.log").open("w") as log:
         proc = subprocess.Popen([
-            "qemu-system-x86_64", "-cpu", cpu, "-m", str(ram), "-smp", "1",
+            "qemu-system-x86_64", "-accel", accel, "-cpu", cpu, "-m", str(ram), "-smp", "1",
             "-cdrom", "build/zeroos.iso", "-display", "none", "-monitor", "none",
             "-no-reboot", "-no-shutdown", "-serial", f"file:{serial}",
             "-d", "guest_errors,cpu_reset,int", "-D", str(trace),
@@ -74,8 +76,9 @@ def run(name, cpu, ram):
     if "Triple fault" in trace.read_text(errors="replace"):
         raise RuntimeError(f"{name}: triple fault")
     mode = "enabled" if "PCID TLB isolation enabled." in text else "flush fallback"
-    print(f"PASS: {name}, CPU={cpu}, RAM={ram} MiB, PCID={mode}, {len(EXPECTED)} checks", flush=True)
-    return mode
+    invpcid = "available" if "INVPCID retirement available." in text else "unavailable"
+    print(f"PASS: {name}, accel={accel}, CPU={cpu}, RAM={ram} MiB, PCID={mode}, INVPCID={invpcid}, {len(EXPECTED)} checks", flush=True)
+    return mode, invpcid
 
 
 def main():
@@ -83,7 +86,13 @@ def main():
              ("no-pcid", "max,pcid=off,invpcid=off", 512),
              ("over-cap", "qemu64", 768), ("repeat", "qemu64", 128)]
     modes = [run(*case) for case in cases]
-    print("PCID hardware-feature path exercised: " + str("enabled" in modes), flush=True)
+    if os.access("/dev/kvm", os.R_OK | os.W_OK):
+        modes.append(run("kvm-host", "host", 128, "kvm"))
+        modes.append(run("kvm-no-invpcid", "host,invpcid=off", 128, "kvm"))
+    else:
+        print("KVM unavailable: no accessible /dev/kvm on this runner", flush=True)
+    print("PCID with INVPCID exercised: " + str(("enabled", "available") in modes), flush=True)
+    print("PCID without INVPCID exercised: " + str(("enabled", "unavailable") in modes), flush=True)
     print("PASS: bounded Stage-1 integration matrix", flush=True)
 
 

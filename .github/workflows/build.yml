@@ -20,6 +20,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc binutils grub-pc-bin grub-common xorriso mtools qemu-system-x86
 
+      - name: Allow runner access to KVM if available
+        run: |
+          if test -c /dev/kvm; then
+            sudo chgrp "$(id -gn)" /dev/kvm
+            sudo chmod g+rw /dev/kvm
+          else
+            echo "No KVM device; matrix will report hardware coverage unavailable."
+          fi
+
       - name: Host boundary tests
         run: make host-test
 
@@ -85,6 +94,7 @@ jobs:
             fi
           }
           # Foundation
+          check "ZEROOS: address-space reuse with displaced frames passed."
           check "ZEROOS: bootstrap IRQ regression passed."
           check "ZEROOS: process execution/reap stress passed."
           check "ZEROOS: process rollback and lifetime stress passed."

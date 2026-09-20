@@ -33,6 +33,7 @@ uint64_t vmm_kernel_page_flags(uint64_t address);
  * because untagged TLB entries survive CR3 changes.
  */
 int vmm_pcid_enabled(void);
+int vmm_invpcid_enabled(void);
 void vmm_load_root(uint64_t root_physical, uint16_t pcid);
 void vmm_flush_tlb(void);
 uint64_t vmm_active_root(void);

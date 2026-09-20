@@ -89,3 +89,12 @@ looping or following an out-of-range size. Validation itself reports failure.
 The header canary detects header damage, not every possible payload overrun.
 Native tests exercise forged and coalesced double frees, zero/overflowed block
 sizes, damaged canaries, and initialization failure at every backing page.
+
+### Hardware context reuse proof
+
+Allocation bookkeeping cannot prove TLB isolation. The guest reuse probe keeps
+B alive, destroys A, reserves and poisons A's retired physical data frame, then
+reuses A's identifier with a different frame at the same VA. Sixty-four cycles
+must read the new value, never the poison. The matrix records actual PCID and
+INVPCID availability and, when KVM exists, runs host features plus a separate
+INVPCID-disabled case. A CPU model name alone is not positive feature evidence.

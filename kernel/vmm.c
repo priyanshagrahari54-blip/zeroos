@@ -65,6 +65,7 @@ static int cpu_has_invpcid(void) {
 }
 
 int vmm_pcid_enabled(void) { return pcid_enabled; }
+int vmm_invpcid_enabled(void) { return invpcid_available; }
 
 uint64_t vmm_active_root(void) { return active_root; }
 
@@ -95,8 +96,8 @@ void vmm_flush_tlb(void) {
 
 /*
  * Load an address-space root. The PCID bits are set only when PCID is
- * enabled; callers must flush the TLB first (vmm_flush_tlb) when PCID is
- * unavailable and the root changes.
+ * enabled. Bit 63 stays clear, so the incoming context is invalidated on
+ * every load, including PCID reuse without INVPCID.
  */
 void vmm_load_root(uint64_t root_physical_value, uint16_t pcid) {
     uint64_t value = root_physical_value;
@@ -149,9 +150,8 @@ static uint64_t *ensure_table(uint64_t *parent,
 }
 
 /*
- * Convert one 2 MiB PDE into a 4 KiB PT.  This keeps huge mappings as the
- * default and pays the extra 4 KiB table only when fine-grained mapping is
- * actually required.
+ * Convert an existing 2 MiB PDE into a 4 KiB PT if one is encountered.
+ * Permanent Stage-1 identity mappings already use base-page leaves.
  *
  * base_virtual is the 2 MiB-aligned virtual base of the PDE being split; it
  * is required to invalidate the exact 4 KiB range in the TLB. The old

@@ -356,6 +356,28 @@ static void vmm_security_self_test(void) {
         if (*(volatile uint64_t *)VMM_SPACE_TEST_VA!=0x2222+i) kernel_panic("B saw foreign translation");
         *(volatile uint64_t *)VMM_SPACE_TEST_VA=0x2223+i;
     }
+    /* Recycle A's identifier but keep its retired data frame allocated and
+     * poisoned, forcing the replacement mapping to use a different frame.
+     * Without INVPCID this specifically depends on the incoming CR3 flush. */
+    for (unsigned i=0;i<64;++i) {
+        uint16_t retired=a.pcid;
+        vmm_load_root(vmm_root(),0);
+        vmm_space_destroy(&a);
+        void *guard=page_alloc_at(pa);
+        if (!guard) kernel_panic("retired-frame guard allocation failed");
+        *(volatile uint64_t *)guard=0xbad;
+        pa=(uint64_t)page_alloc_zero();
+        if (!pa || vmm_space_create(&a) || a.pcid!=retired ||
+            vmm_space_map_page(&a,VMM_SPACE_TEST_VA,pa,flags))
+            kernel_panic("address-space reuse setup failed");
+        *(uint64_t *)pa=0xcafeULL+i;
+        if (vmm_space_activate(&a) ||
+            *(volatile uint64_t *)VMM_SPACE_TEST_VA!=0xcafeULL+i)
+            kernel_panic("reused context exposed retired translation");
+        vmm_load_root(vmm_root(),0);
+        page_free(guard);
+    }
+    serial_write_public("ZEROOS: address-space reuse with displaced frames passed.\n");
     vmm_load_root(vmm_root(),0);
     vmm_space_destroy(&a); vmm_space_destroy(&b);
     pa=(uint64_t)page_alloc_zero();
@@ -1133,6 +1155,11 @@ void kernel_main(uint64_t multiboot_info, uint64_t multiboot_magic) {
         serial_write_public("ZEROOS: PCID TLB isolation enabled.\n");
     else
         serial_write_public("ZEROOS: PCID unavailable; full TLB flush mode.\n");
+
+    if (vmm_invpcid_enabled())
+        serial_write_public("ZEROOS: INVPCID retirement available.\n");
+    else
+        serial_write_public("ZEROOS: CR3-load retirement fallback.\n");
 
     syscall_init();
     serial_write_public("ZEROOS: SYSCALL/SYSRET syscall entry initialized.\n");
