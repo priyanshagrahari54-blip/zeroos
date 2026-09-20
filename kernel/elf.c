@@ -142,6 +142,28 @@ int elf64_load_image(const void *data, uint64_t size,
         elf64_validate_image(data,size,image)!=0)
         return -1;
 
+    uint64_t total_pages = 0;
+
+    /*
+     * Bound total mapping work before touching the allocator. A malformed
+     * executable must not turn the loader into an effectively unbounded
+     * page-allocation loop.
+     */
+    for (uint16_t si=0; si<image->segment_count; ++si) {
+        const struct elf_load_segment *seg=&image->segments[si];
+        uint64_t end, first, last, pages;
+        if (add_overflow_u64(seg->virtual_address,seg->memory_size,&end))
+            return -1;
+        first=seg->virtual_address & ~(VMM_PAGE_SIZE-1ULL);
+        if (end > ~0ULL - (VMM_PAGE_SIZE-1ULL))
+            return -1;
+        last=(end + VMM_PAGE_SIZE-1ULL) & ~(VMM_PAGE_SIZE-1ULL);
+        pages=(last-first)/VMM_PAGE_SIZE;
+        if (pages > ZEROOS_ELF_MAX_LOAD_PAGES-total_pages)
+            return -1;
+        total_pages += pages;
+    }
+
     /*
      * Preflight every destination page before allocating anything. This
      * guarantees rollback cannot accidentally destroy an existing mapping.
@@ -154,7 +176,7 @@ int elf64_load_image(const void *data, uint64_t size,
         uint64_t first=seg->virtual_address & ~(VMM_PAGE_SIZE-1ULL);
         uint64_t last=(end + VMM_PAGE_SIZE-1ULL) & ~(VMM_PAGE_SIZE-1ULL);
         for (uint64_t va=first; va<last; va+=VMM_PAGE_SIZE)
-            if (vmm_space_translate(space,va)!=0)
+            if (vmm_space_is_mapped(space,va))
                 return -1;
     }
 
@@ -209,7 +231,7 @@ fail:
         uint64_t first=seg->virtual_address & ~(VMM_PAGE_SIZE-1ULL);
         uint64_t last=(end + VMM_PAGE_SIZE-1ULL) & ~(VMM_PAGE_SIZE-1ULL);
         for (uint64_t va=first; va<last; va+=VMM_PAGE_SIZE)
-            if (vmm_space_translate(space,va)!=0)
+            if (vmm_space_is_mapped(space,va))
                 (void)vmm_space_unmap_page(space,va);
     }
     return -1;
