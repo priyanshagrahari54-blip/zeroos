@@ -600,7 +600,7 @@ static int vmm_space_create_locked(struct vmm_space *space) {
     void *root = page_alloc_zero();
     if (!root) return -1;
 
-    uint16_t pcid=pcid_enabled ? vmm_pcid_alloc() : 0;
+    uint16_t pcid=pcid_enabled ? vmm_pcid_alloc_locked() : 0;
     if (pcid_enabled && !pcid) { page_free(root); return -1; }
     space->root = (uint64_t *)root;
     space->root_physical = (uint64_t)root;
@@ -703,12 +703,12 @@ static int vmm_space_map_page_locked(struct vmm_space *space, uint64_t virtual_a
         ((flags & VMM_WRITABLE) && !(flags & VMM_NO_EXECUTE)))
         return -1;
 
-    if (vmm_space_own_page(space, physical_address) != 0)
+    if (vmm_space_own_page_locked(space, physical_address) != 0)
         return -1;
 
     uint64_t *pdpt = space_ensure_table(space->root,pml4,flags);
     if (!pdpt) {
-        vmm_space_release_page(space, physical_address);
+        vmm_space_release_page_locked(space, physical_address);
         return -1;
     }
     uint64_t *pd = space_ensure_table(pdpt,pdpt_i,flags);
@@ -731,7 +731,7 @@ static int vmm_space_map_page_locked(struct vmm_space *space, uint64_t virtual_a
     }
 
     if (!(flags&VMM_NO_EXECUTE) && protect_identity(physical_address,0)!=0) {
-        vmm_space_release_page(space,physical_address);
+        vmm_space_release_page_locked(space,physical_address);
         return -1;
     }
     space->owned_pages->virtual_address=virtual_address;
@@ -766,7 +766,7 @@ static int vmm_space_unmap_page_locked(struct vmm_space *space, uint64_t virtual
     pt[idx]=0;
     if (space->root_physical==active_root) invalidate_page(virtual_address);
     if (executable) protect_identity(physical,1);
-    vmm_space_release_page(space, physical);
+    vmm_space_release_page_locked(space, physical);
     return 0;
 }
 
