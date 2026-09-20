@@ -46,7 +46,7 @@ int main(void) {
     ((struct elf64_phdr *)(image+sizeof(struct elf64_ehdr)))->filesz=0x2000;
     assert(elf64_validate_image(image,sizeof(image),&out)==-1);
     make_base();
-    ((struct elf64_phdr *)(image+sizeof(struct elf64_ehdr)))->memsz=0xfffffffffffff000ULL;
+    ((struct elf64_phdr *)(image+sizeof(struct elf64_ehdr)))->memsz=0x40001000ULL;
     assert(elf64_validate_image(image,sizeof(image),&out)==0);
     /* Validation accepts a legal VA range; the loader separately bounds mapping work. */
     puts("PASS: ELF64 executable header/segment/range/entry validation");
