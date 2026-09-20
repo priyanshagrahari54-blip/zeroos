@@ -618,8 +618,23 @@ int task_create(task_entry_t entry, void *argument, uint64_t *task_id) {
  * interrupts taken while in ring 3, via TSS.RSP0); the user-mode stack is
  * part of the process address space and is supplied via user_rsp.
  */
+static int task_user_address_ok(uint64_t address) {
+    /* Stage-1 user ABI: canonical addresses confined to PML4 slot 254. */
+    return address >= 0x00007f0000000000ULL &&
+           address <  0x0000800000000000ULL;
+}
+
 int task_create_user(uint64_t user_rip, uint64_t user_rsp, uint64_t user_arg,
                      uint64_t *task_id) {
+    /*
+     * Do not rely solely on process_spawn() to validate ring-3 entry state.
+     * This boundary is also a public kernel constructor and must reject a
+     * kernel/canonical-address escape before a runnable task is published.
+     */
+    if (!task_user_address_ok(user_rip) ||
+        !task_user_address_ok(user_rsp) ||
+        (user_rsp & 0xfULL) != 8ULL)
+        return -1;
     return task_create_internal(0, 0, 1, user_rip, user_rsp, user_arg, task_id);
 }
 
