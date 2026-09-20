@@ -336,6 +336,32 @@ static void heap_probe(char phase) {
     probe_out((char)('0' + idt_probe()));
 }
 
+static void probe_hex16(uint64_t value) {
+    const char *hex = "0123456789abcdef";
+    for (int i = 15; i >= 0; --i)
+        probe_out(hex[(value >> (i * 4)) & 0xfULL]);
+}
+
+static void probe_kv(char phase, uint64_t value) {
+    probe_out(phase);
+    probe_out((char)('0' + idt_probe()));
+    probe_hex16(value);
+}
+
+/* One byte per 2 MiB PDE of the first 8 GiB: bit set = PDE present. */
+static void probe_pde_presence(void) {
+    uint64_t *pml4 = (uint64_t *)vmm_root();
+    uint64_t *pdpt = (uint64_t *)(pml4[0] & 0x000ffffffffff000ULL);
+    uint64_t *pd = (uint64_t *)(pdpt[0] & 0x000ffffffffff000ULL);
+    uint8_t word = 0;
+    for (uint64_t i = 0; i < 8; ++i)
+        if (pd[i] & 1ULL)
+            word |= (uint8_t)(1U << i);
+    probe_out('P');
+    probe_out((char)word);
+    probe_hex16(pd[1]);
+}
+
 static void heap_self_test(void) {
     uint64_t capacity=heap_capacity_bytes();
     void *p1,*p2,*p3,*big;
@@ -397,14 +423,28 @@ static void heap_self_test(void) {
         kernel_panic("heap huge allocation rejection failed");
     heap_probe('c');
 
+    {
+        uint64_t cr3;
+        __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+        probe_kv('R', cr3);
+    }
+    probe_pde_presence();
+    {
+        uint64_t rspv;
+        __asm__ volatile ("mov %%rsp, %0" : "=r"(rspv));
+        probe_kv('S', rspv);
+    }
+
     /* Near-maximum allocation covering essentially the whole region. */
     big=kmalloc(capacity-ZEROOS_HEAP_MIN_ALLOC);
     if (!big)
         kernel_panic("heap near-maximum allocation failed");
+    probe_kv('d', (uint64_t)big);
     for (uint64_t i=0;i<capacity-ZEROOS_HEAP_MIN_ALLOC;++i) {
         ((uint8_t *)big)[i]=0x5A;
-        if ((i & 0x1FFFFF) == 0x100000 && i != 0)
-            heap_probe((char)('d' + (i >> 20) % 4));
+        if ((i & 0xFFFF) == 0 && i >= 0x10000 && i <= 0xF0000)
+            heap_probe((char)(((i >> 16) < 10) ?
+                '0' + (char)(i >> 16) : 'A' + (char)((i >> 16) - 10)));
     }
     heap_probe('h');
     for (uint64_t i=0;i<capacity-ZEROOS_HEAP_MIN_ALLOC;++i)
