@@ -11,12 +11,24 @@ extern void serial_write_public(const char *text);
 #define HEAP_REGION_PAGES 1024ULL /* up to 4 MiB for Stage 1 */
 #define HEAP_MIN_PAGES 256ULL /* 1 MiB floor */
 
+/*
+ * The header is padded to 32 bytes so that every payload (header + 1
+ * word, i.e. block+32) is 16-byte aligned while block addresses remain
+ * 16-byte aligned. sizeof must stay a 16-byte multiple: heap_round16
+ * and the payload-alignment checks depend on it.
+ */
 struct heap_block {
     uint64_t size;
     uint64_t magic;
     uint64_t canary;
+    uint64_t pad;
     /* payload follows immediately after the header */
 };
+
+/* Compile-time: the header must be a 16-byte multiple or payloads drift
+ * off their 16-byte alignment. */
+typedef char heap_header_multiple_check[
+    (sizeof(struct heap_block) % ZEROOS_HEAP_ALIGN) == 0 ? 1 : -1];
 
 static uint8_t *heap_base;
 static uint8_t *heap_end;
@@ -198,12 +210,37 @@ int kfree(void *pointer) {
         }
         payload_size = block->size - HEAP_HEADER;
 
-        /* Forward coalescing with the physically following block. */
+        /*
+         * Coalescing. The block chain is singly linked (each block's size
+         * points at the physically following block), so the physically
+         * preceding block is found by walking from the region start. The
+         * region is small and interrupts are disabled, so O(n) here is
+         * bounded and deterministic. Merging is looped in both directions
+         * until no adjacent free block remains: after any free, adjacent
+         * free blocks never persist, which keeps the largest contiguous
+         * run available to future allocations.
+         */
+        {
+            uint8_t *walk;
+            struct heap_block *prev = 0;
+            for (walk = heap_base; walk < (uint8_t *)block;
+                 walk += block_at(walk)->size)
+                prev = block_at(walk);
+            if (prev && prev->magic == HEAP_FREE_MAGIC) {
+                /* Absorb this block into the preceding free block; the
+                 * chain then jumps over the absorbed header by size. */
+                prev->size += block->size;
+                block = prev;
+            }
+        }
+
         next_address = (uint8_t *)block + block->size;
-        if (next_address < heap_end) {
+        while (next_address < heap_end) {
             next = block_at(next_address);
-            if (next->magic == HEAP_FREE_MAGIC)
-                block->size += next->size;
+            if (next->magic != HEAP_FREE_MAGIC)
+                break;
+            block->size += next->size;
+            next_address += next->size;
         }
 
         block->magic = HEAP_FREE_MAGIC;

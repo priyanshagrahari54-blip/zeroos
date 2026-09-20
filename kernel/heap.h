@@ -15,10 +15,11 @@
  *   - in-use blocks carry a valid header magic and an intact canary;
  *   - free blocks carry the free magic.
  *
- * Known limitation (Stage 1): coalescing is forward-only; freeing a block
- * only merges with the block that physically follows it. This is documented
- * and exercised by the self-test; a full buddy/region allocator is deferred
- * until a driver or storage layer needs it.
+ * Coalescing: kfree merges the freed block with its physically preceding
+ * block (if free) and with every physically following block (while free),
+ * so adjacent free blocks never persist and the largest contiguous run is
+ * always available. A full buddy/region allocator is deferred until a
+ * driver or storage layer needs one.
  */
 
 #define ZEROOS_HEAP_ALIGN 16ULL

@@ -37,19 +37,33 @@ The allocator itself does not reserve a large heap or create per-page structs, s
 
 ## Kernel heap (Stage 1)
 
-On top of the page allocator ZEROOS now has a small kernel object heap
-(`kernel/heap.{h,c}`). It allocates physical pages from the PMM, extends
-them into the kernel identity region through the VMM (identity mappings
-only exist in the kernel root; PCID-1 TLB entries from user mode are never
-flushed by kernel identity maps), and carves 8-byte-aligned chunks from a
-per-page freelist.
+On top of the page allocator ZEROOS has a small kernel object heap
+(`kernel/heap.{h,c}`). At boot it consumes contiguous physical pages from
+the PMM (a 1 MiB floor, up to 4 MiB) into one strictly linear region that
+is already covered by the kernel's identity mappings, and runs a first-fit
+block allocator over it.
 
-Each chunk stores its size in the low bits of the previous chunk's tail, and
-the heap keeps a generation counter plus a canary region that must survive
-every operation. `heap_self_test()` runs at boot and verifies: allocation
-and free, repeated growth, double free, out-of-range free, canary
-integrity, and freelist corruption detection — all without any page
-allocator or VMM modification.
+Block layout: a 32-byte header (`size`, in-use magic, canary, padding)
+followed by the payload. Blocks are 16-byte multiples and tile the region
+exactly; the padded header keeps every payload 16-byte aligned. `kmalloc`
+splits the first free block that fits (leaving a minimum-size remainder),
+`kcalloc` is overflow-safe and zero-fills, and `kfree` rejects NULL,
+unaligned, out-of-region, and interior pointers, detects double frees, and
+panics on canary corruption (a buffer overflow past the allocated chunk).
+
+Coalescing in `kfree` merges the freed block with its physically preceding
+block (if free) and with every physically following block while free, so
+adjacent free blocks never persist and the largest contiguous run stays
+available.
+
+`heap_self_test()` runs at boot and is fully bounded and deterministic:
+small/odd allocations with full-payload writes, 16-byte alignment,
+negative frees (double free, NULL, unaligned, out-of-region, interior
+pointer), exact-capacity and over-capacity boundaries, a near-maximum
+allocation, kcalloc zero-fill and count-overflow rejection, whole-region
+exhaustion followed by drain, and a bounded interleaved alloc/free stress
+(LCG-driven). `heap_validate()` walks the block chain and is used as a
+post-condition after the exhaustion and stress phases.
 
 ## Next memory layers
 

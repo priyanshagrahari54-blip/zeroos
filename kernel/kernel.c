@@ -190,9 +190,10 @@ static void heap_self_test(void) {
     void *exact=kmalloc(capacity);
     if (!exact)
         kernel_panic("heap exact-capacity allocation failed");
-    if (((uint8_t *)exact)[0]!=0)
-        kernel_panic("heap exact-capacity payload failed");
+    /* kmalloc does not zero memory: verify the payload is writable. */
     ((uint8_t *)exact)[0]=0xC3;
+    if (((uint8_t *)exact)[0]!=0xC3)
+        kernel_panic("heap exact-capacity payload failed");
     if (kfree(exact)!=0)
         kernel_panic("heap exact-capacity free failed");
     if (kmalloc(capacity+1))

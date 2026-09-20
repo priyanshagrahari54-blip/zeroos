@@ -41,38 +41,56 @@ jobs:
           timeout 60s qemu-system-x86_64             -cdrom build/zeroos.iso             -serial file:build/serial.log             -display none             -no-reboot             -no-shutdown             -debugcon file:build/debug.log             -global isa-debugcon.iobase=0xe9             -d guest_errors,cpu_reset             -D build/qemu.log || true
           echo "===== serial tail ====="
           tail -40 build/serial.log || true
+          FAIL=0
+          check() {
+            if grep -q "$1" build/serial.log; then
+              echo "PASS: $1"
+            else
+              echo "MISSING: $1"
+              FAIL=1
+            fi
+          }
+          forbid() {
+            if grep -q "$1" build/serial.log; then
+              echo "FORBIDDEN PRESENT: $1"
+              FAIL=1
+            else
+              echo "PASS (absent): $1"
+            fi
+          }
           # Foundation
-          grep -q "ZEROOS: physical page allocator initialized." build/serial.log
-          grep -q "ZEROOS: heap self-test passed." build/serial.log
-          grep -q "ZEROOS: virtual memory self-test passed." build/serial.log
-          grep -q "ZEROOS: per-address-space VMM self-test passed." build/serial.log
-          grep -q "ZEROOS: GDT extended (user segments) and TSS loaded." build/serial.log
-          grep -q "ZEROOS: IDT installed and interrupts enabled." build/serial.log
-          grep -q "ZEROOS: SYSCALL/SYSRET syscall entry initialized." build/serial.log
-          grep -q "ZEROOS: foundation milestone reached." build/serial.log
+          check "ZEROOS: physical page allocator initialized."
+          check "ZEROOS: heap self-test passed."
+          check "ZEROOS: virtual memory self-test passed."
+          check "ZEROOS: per-address-space VMM self-test passed."
+          check "ZEROOS: GDT extended (user segments) and TSS loaded."
+          check "ZEROOS: IDT installed and interrupts enabled."
+          check "ZEROOS: SYSCALL/SYSRET syscall entry initialized."
+          check "ZEROOS: foundation milestone reached."
           # Scheduler certification
-          grep -q "ZEROOS: timer tick 100." build/serial.log
-          grep -q "ZEROOS: timer-only preemption stress passed." build/serial.log
-          grep -q "ZEROOS: zombie reaping and slot-reuse stress passed." build/serial.log
+          check "ZEROOS: timer tick 100."
+          check "ZEROOS: timer-only preemption stress passed."
+          check "ZEROOS: zombie reaping and slot-reuse stress passed."
           # Stage-1 ring-3 certification
-          grep -q "ZEROOS: ring-3 user program executed." build/serial.log
-          grep -q "ZEROOS: ring-3 hello process verified." build/serial.log
-          grep -q "ZEROOS: user stored marker in data page." build/serial.log
-          grep -q "ZEROOS: user read data page." build/serial.log
-          grep -q "ZEROOS: per-process address-space isolation verified." build/serial.log
-          grep -q "ZEROOS: user fault contained: vector=000000000000000e" build/serial.log
-          grep -q "ZEROOS: ring-3 page-fault containment verified." build/serial.log
-          grep -q "ZEROOS: user fault contained: vector=000000000000000d" build/serial.log
-          grep -q "ZEROOS: ring-3 general-protection containment verified." build/serial.log
-          grep -q "ZEROOS: negative syscall checks rejected as required." build/serial.log
-          grep -q "ZEROOS: user pointer validation verified." build/serial.log
-          grep -q "ZEROOS: stage-1 ring-3 foundation certified." build/serial.log
+          check "ZEROOS: ring-3 user program executed."
+          check "ZEROOS: ring-3 hello process verified."
+          check "ZEROOS: user stored marker in data page."
+          check "ZEROOS: user read data page."
+          check "ZEROOS: per-process address-space isolation verified."
+          check "ZEROOS: user fault contained: vector=000000000000000e"
+          check "ZEROOS: ring-3 page-fault containment verified."
+          check "ZEROOS: user fault contained: vector=000000000000000d"
+          check "ZEROOS: ring-3 general-protection containment verified."
+          check "ZEROOS: negative syscall checks rejected as required."
+          check "ZEROOS: user pointer validation verified."
+          check "ZEROOS: stage-1 ring-3 foundation certified."
           # Failure detection: no panic, no user-program validation failure
-          ! grep -q "ZEROOS PANIC" build/serial.log
-          ! grep -q "ZEROOS: FAIL" build/serial.log
-          test -s build/debug.log
-          grep -q "B" build/debug.log
-          grep -q "L" build/debug.log
+          forbid "ZEROOS PANIC"
+          forbid "ZEROOS: FAIL"
+          test -s build/debug.log || { echo "MISSING: debug.log"; FAIL=1; }
+          grep -q "B" build/debug.log || { echo "MISSING: debug port B"; FAIL=1; }
+          grep -q "L" build/debug.log || { echo "MISSING: debug port L"; FAIL=1; }
+          exit $FAIL
 
       - name: Dump serial log on failure
         if: failure()
@@ -90,4 +108,40 @@ jobs:
             cat build/qemu.log
           else
             echo "qemu.log was not produced"
+          fi
+
+      - name: Archive diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zeroos-diagnostics
+          path: |
+            build/serial.log
+            build/debug.log
+            build/qemu.log
+          if-no-files-found: ignore
+
+      - name: Post diagnostics to tracking issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo
+            echo "### serial.log"
+            echo '```'
+            if test -f build/serial.log; then tail -c 100000 build/serial.log; else echo "(missing)"; fi
+            echo '```'
+            echo
+            echo "### qemu.log (tail)"
+            echo '```'
+            if test -f build/qemu.log; then tail -c 20000 build/qemu.log; else echo "(missing)"; fi
+            echo '```'
+          } > /tmp/zeroos-diag.md
+          ISSUE=$(gh issue list --search "in:title ZEROOS CI diagnostics" --state open --json number -q '.[0].number' 2>/dev/null || true)
+          if [ -n "$ISSUE" ]; then
+            gh issue comment "$ISSUE" --body-file /tmp/zeroos-diag.md
+          else
+            gh issue create --title "ZEROOS CI diagnostics" --body-file /tmp/zeroos-diag.md
           fi
