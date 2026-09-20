@@ -18,10 +18,11 @@ interrupt/timer and scheduler code, distinct process/thread objects,
 per-process page-table roots, ring-3 entry, and the initial syscall set.
 Implementation presence does not imply that every path is tested or secure.
 
-Recent CI evidence verifies heap/VMM boot self-tests; early #UD/#PF frame
+The [first full green run](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/35504197236)
+verifies the current integration suite: heap/VMM boot self-tests; early #UD/#PF frame
 reporting; full-IDT #UD, NMI-gate stack placement and real #DF delivery;
-CPU-without-NX rejection; and CPL3/syscall register preservation. Full
-integration and security work is continuing. In particular, complete W^X,
+CPU-without-NX rejection; and CPL3/syscall register preservation. Scheduler stress, data-page isolation and user-fault containment also pass.
+Broader integration and security work remains. In particular, complete W^X,
 process rollback/PCID lifetime, and extended-register isolation remain open.
 
 Boot milestone messages report individual self-tests, not certification of
@@ -45,8 +46,7 @@ dependencies beyond `gcc`, `ld`, and `grub-mkrescue` (for the ISO).
 make run        # boots the ISO in QEMU with the serial console on stdio
 ```
 
-The integration test requires these messages (not all were present in the
-last verified run; see VALIDATION.md):
+The green integration run includes these required messages:
 
 ```
 ZEROOS: heap self-test passed.

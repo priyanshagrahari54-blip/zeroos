@@ -75,3 +75,44 @@ claim of Stage 1 certification. Temporary PMM/heap progress probes are gone.
 
 Full user/kernel W^X, syscall entry/return validation and per-thread extended
 register ownership still require audit and tests. Stage 1 remains uncertified.
+
+## First complete green integration run
+
+Run [35504197236](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/35504197236)
+at commit `46b032a` completed successfully. Its steps passed:
+
+- Three bounded host suites: user-range permissions/boundaries/stress,
+  syscall dispatch/binary writes/invalid return containment, ownership-list
+  removal/failure handling.
+- ELF checks: early IDT size, error-code stubs and fatal-frame ABI;
+  GDT/TSS/emergency-stack sizes and instructions; syscall save/restore
+  shape; general-register-only kernel image.
+- Six bounded guest cases: early #UD, early #PF, full-IDT #UD, software
+  invocation of the NMI gate on IST2, actual #DF on IST1, no-NX rejection.
+- Normal boot integration: heap/VMM, GDT/TSS/IDT, timer-only preemption,
+  zombie/reuse stress, CPL3/syscall register ABI, per-process data isolation,
+  contained #PF/#GP, and negative user-pointer checks.
+
+The full workflow took 3m4s; that is CI duration, not a kernel performance
+measurement. The green result applies to this specific QEMU configuration,
+not a hardware matrix or proof of security.
+
+### Open certification findings
+
+1. `process_spawn` reserves a PCID before `vmm_space_create` clears the
+   field; destruction then clears PCID state before the process layer can
+   release it. Lifetime/reuse and PCID-capable CPU tests are still needed.
+2. Partial process allocation/map failures can leak pages not yet transferred
+   to the address space. Fault-injected rollback accounting is missing.
+3. Ownership lists do not yet reject the same page owned by a different
+   space at the VMM API boundary; process-side checks alone are insufficient.
+4. Kernel C no longer clobbers SIMD registers, but arbitrary user extended
+   state is not isolated or explicitly disabled per thread.
+5. User leaf W^X checks exist, but the first kernel 2 MiB and writable
+   physical aliases of executable user pages prevent a complete W^X claim.
+6. More adverse user-transition, process-lifecycle and CPU/RAM configuration
+   coverage is required before certifying the complete Stage 1 scope.
+
+The boot message deliberately says `ring-3 integration self-test passed`,
+not `Stage 1 certified`. These findings must be fixed and tested, not waived
+because the existing integration suite is green.

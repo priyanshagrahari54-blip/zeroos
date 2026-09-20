@@ -30,7 +30,7 @@ failing integration runs and have been withdrawn. See VALIDATION.md.
 |---|---|---|
 | Boot and exception boundary | Tested subset | Bounded early #UD/#PF, full #UD, NMI-gate IST2, real #DF IST1, and no-NX rejection passed CI |
 | PMM/VMM/heap | Tested subset | Normal boot self-tests pass; ownership removal regression added; full W^X and rollback remain open |
-| Scheduler | Integration under test | Normal boot reaches runnable kernel/user tasks; full current stress run still required |
+| Scheduler | Current suite passed | Timer-only preemption and zombie/reuse markers passed in run 35504197236; expanded certification remains |
 | Process/thread split | Implemented, incomplete audit | Distinct objects exist; partial-allocation cleanup and PCID lifetime need correction/tests |
 | CPL3 and syscall ABI | Tested subset | CS.RPL, flags, preserved GPRs/RSP and basic call results passed CI; host pointer/dispatcher tests pass |
 | Full Stage 1 security | Not certified | Extended-register isolation, W^X including kernel aliases, adverse transitions, lifetime stress and regression matrix remain |
