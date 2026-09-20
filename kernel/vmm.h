@@ -69,6 +69,7 @@ int vmm_space_map_page(struct vmm_space *space, uint64_t virtual_address,
                        uint64_t physical_address, uint64_t flags);
 int vmm_space_unmap_page(struct vmm_space *space, uint64_t virtual_address);
 uint64_t vmm_space_translate(const struct vmm_space *space, uint64_t virtual_address);
+int vmm_space_is_mapped(const struct vmm_space *space, uint64_t virtual_address);
 int vmm_space_activate(const struct vmm_space *space);
 int vmm_space_is_user_range(const struct vmm_space *space, uint64_t virtual_address,
                             uint64_t length, uint64_t write);
