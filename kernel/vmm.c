@@ -4,15 +4,7 @@
 #include "irq_state.h"
 #include "sync.h"
 
-#ifdef ZEROOS_HOST_TEST
-static inline uint64_t vmm_lock_irqsave(void) { return 0; }
-static inline void vmm_lock_irqrestore(uint64_t flags) { (void)flags; }
-static inline void vmm_lock_init(void) {}
-#else
-static inline uint64_t vmm_lock_irqsave(void) { return spin_lock_irqsave(&vmm_lock); }
-static inline void vmm_lock_irqrestore(uint64_t flags) { spin_unlock_irqrestore(&vmm_lock, flags); }
-static inline void vmm_lock_init(void) { vmm_lock_init(); }
-#endif
+
 
 #define ENTRY_COUNT 512ULL
 #define PAGE_MASK 0x000ffffffffff000ULL
@@ -30,6 +22,16 @@ static uint64_t root_physical;
 
 /* Serializes page-table mutation; IRQs are masked while held. */
 static struct spinlock vmm_lock;
+
+#ifdef ZEROOS_HOST_TEST
+static inline uint64_t vmm_lock_irqsave(void) { return 0; }
+static inline void vmm_lock_irqrestore(uint64_t flags) { (void)flags; }
+static inline void vmm_lock_init(void) {}
+#else
+static inline uint64_t vmm_lock_irqsave(void) { return spin_lock_irqsave(&vmm_lock); }
+static inline void vmm_lock_irqrestore(uint64_t flags) { spin_unlock_irqrestore(&vmm_lock, flags); }
+static inline void vmm_lock_init(void) { spinlock_init(&vmm_lock); }
+#endif
 
 static uint64_t active_root;
 static uint16_t active_pcid;
