@@ -82,6 +82,19 @@ long_mode:
     mov $stack_top, %rsp
     and $-16, %rsp
 
+    # PCID (CPUID.1:ECX[17]): per-address-space TLB tagging. Required for
+    # safe CR3 switching between isolated address spaces; the VMM checks
+    # CPUID independently and falls back to full TLB flushes when absent.
+    xor %eax, %eax
+    mov $1, %eax
+    cpuid
+    bt $17, %ecx
+    jnc 1f
+    mov %cr4, %rax
+    or $0x20000, %rax
+    mov %rax, %cr4
+1:
+
     # Debug-port marker: long mode is active.
     mov $'L', %al
     mov $0xE9, %dx
@@ -131,6 +144,8 @@ pd_table:
 
 .section .bss
 .align 16
+.global stack_bottom
+.global stack_top
 stack_bottom:
     .skip 16384
 stack_top:

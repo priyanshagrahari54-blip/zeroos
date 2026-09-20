@@ -65,9 +65,35 @@
 
 ## Current status
 
-The foundation now has real physical memory discovery/allocation, x86-64
-virtual memory, normalized interrupt entry, IRQ ownership, timer delivery,
-scheduler-independent synchronization, kernel task objects, real x86-64 context switching, wait queues, timed sleep,
+The foundation now has real physical memory discovery/allocation, an x86-64
+virtual memory manager with per-address-space roots, PCID-based TLB
+isolation (with full-flush fallback), a kernel heap with invariant checking,
+normalized interrupt entry, IST-based double-fault/NMI delivery, IRQ
+ownership, timer delivery, scheduler-independent synchronization, kernel
+task objects, real x86-64 context switching, wait queues, timed sleep,
 zombie reclamation, scheduler invariants, and IRQ-exit preemption.
 
-The scheduler layer now includes wait queues, timed sleep, zombie reclamation, cooperative context switching, and timer-driven IRQ-exit preemption. Fresh tasks enter through an assembly trampoline with 264 bytes of interrupt headroom. The next architectural boundary is kernel memory hardening, followed by process/thread separation, user-mode entry, and a syscall ABI.
+Stage 1 additionally implements:
+
+- **Process/thread model**: a `struct process` owns its `vmm_space`, an
+  exclusive set of physical pages (code/data/stack), a PCID, and one main
+  thread (`struct task`). The task owns the CPU context; the process owns
+  the address space and memory.
+- **GDT/TSS**: user code/data segments (DPL 3) and a task state segment
+  whose RSP0 carries ring-3 exceptions/interrupts to the current task's
+  kernel stack.
+- **Ring-3 execution**: user threads start through an assembly entry that
+  `iretq`s into the process address space at CPL 3 with IF enabled, so user
+  code is genuinely timer-preemptible.
+- **SYSCALL/SYSRET syscall ABI** (`docs/SYSCALL_ABI.md`): exit, yield,
+  write, getpid, gettid, with whole-range user-pointer validation before
+  any user byte is copied.
+- **User fault containment**: user-mode page faults and general protections
+  kill the current process and leave the kernel running; kernel-mode
+  exceptions remain fatal.
+- **Address-space isolation**: two processes mapping the same virtual
+  address to different physical pages is verified at boot, as is W^X
+  enforcement and exclusive physical-page ownership.
+
+The next architectural boundary is an ELF loader with a real user init
+process and an expanded syscall set, followed by the VFS/storage layer.

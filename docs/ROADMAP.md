@@ -21,6 +21,17 @@ The detailed product plan remains in ZEROOS_MASTER_ROADMAP.md.
 14. SMP/per-CPU scheduling, high-resolution timers, advanced memory management.
 15. Release engineering: reproducible builds, compatibility matrix, recovery media, long-duration stress and performance certification.
 
+## Execution status (Stage 1)
+
+| # | Item | State | Evidence |
+|---:|---|---|---|
+| 1 | Scheduler certification | Done | 400-tick QEMU stress: timer-only preemption, mixed transitions, register preservation, wait/sleep, lifecycle/reaping, idle fallback; bootstrap tick-race fixed (bootstrap context enters as zombie, scheduler never reselects it) |
+| 2 | Kernel memory hardening | Done | Heap self-test at boot: invariants, overflow/underflow, double free, canary, free-list integrity; per-space VMM self-test; exclusive physical-page ownership; fault diagnostics with vector/error-code/RIP/CR2 |
+| 3 | Process/thread split | Done | `struct process` + `struct task` (pid/tid, parent link); per-process VMM roots with PCID; user code/data/stack owned exclusively by the process |
+| 4 | User-mode transition | Done | GDT user segments + TSS (RSP0 per task, IST for double fault/NMI); SYSCALL/SYSRET ABI; user-pointer validation; user fault containment (see SYSCALL_ABI.md) |
+| 5 | ELF loader and init | Pending | Next: real ELF64 user init replacing the built-in user program, then expanded syscalls |
+| 6+ | Syscall layer / VFS / storage / drivers / ... | Pending | Foundation in place; each stage builds on the process/address-space/syscall layer |
+
 ## Definition of done
 
 Every stage follows:

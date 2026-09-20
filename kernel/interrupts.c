@@ -3,6 +3,7 @@
 #include "timer.h"
 #include "scheduler.h"
 #include "task.h"
+#include "process.h"
 
 struct idt_entry {
     uint16_t offset_low; uint16_t selector; uint8_t ist; uint8_t type_attr;
@@ -74,12 +75,17 @@ static void halt_exception(struct interrupt_frame *frame) {
     for (;;) __asm__ volatile ("cli; hlt");
 }
 
-static void idt_set_gate(uint8_t vector, void *handler) {
+static void idt_set_gate(uint8_t vector, void *handler, uint8_t ist) {
     uint64_t address=(uint64_t)handler;
     idt[vector].offset_low=(uint16_t)(address&0xffff);
     idt[vector].selector=0x08;
+    /*
+     * Gate byte 4 (ist field) is reserved/zero. The IST index occupies the
+     * low three bits of the access/type byte (gate byte 5), which is why it
+     * is ORed into type_attr below.
+     */
     idt[vector].ist=0;
-    idt[vector].type_attr=0x8e;
+    idt[vector].type_attr=(uint8_t)(0x8e | (ist & 7U));
     idt[vector].offset_mid=(uint16_t)((address>>16)&0xffff);
     idt[vector].offset_high=(uint32_t)(address>>32);
     idt[vector].zero=0;
@@ -94,9 +100,61 @@ static void timer_irq_handler(uint8_t irq, struct interrupt_frame *frame, void *
     timer_tick();
 }
 
-uint64_t interrupt_dispatch(struct interrupt_frame *frame) {
-    if (frame->vector < 32)
+/*
+ * User-mode fault containment. Exceptions taken at CPL3 (page fault,
+ * general protection, segment-not-present, stack fault) must not take the
+ * kernel down: the current process is killed, reported, and the scheduler
+ * switches to the next task through the normal IRQ-exit path.
+ * Kernel-mode exceptions remain fatal.
+ */
+static uint64_t user_fault_dispatch(struct interrupt_frame *frame) {
+    /*
+     * User-mode faults arrive with the user RFLAGS, which may have IF set.
+     * The handler marks the current task as a zombie before the IRQ-exit
+     * reschedule runs; a timer tick landing in that window would see a
+     * non-running current task and panic. Disable interrupts for the whole
+     * fault path; the iretq epilogue restores the (new) task's RFLAGS.
+     */
+    __asm__ volatile ("cli" ::: "memory");
+    serial_write_public("ZEROOS: user fault contained: vector=");
+    serial_write_hex(frame->vector);
+    serial_write_public(" rip=");
+    serial_write_hex(frame->rip);
+    if (frame->vector == 14) {
+        serial_write_public(" cr2=");
+        serial_write_hex(read_cr2());
+    }
+    {
+        struct task *task = task_current();
+        if (task) {
+            serial_write_public(" task=");
+            serial_write_hex(task->id);
+        }
+    }
+    serial_write_public("\n");
+
+    struct task *task = task_current();
+    if (!task || !task->process) {
+        /* An RPL3 exception without a user process is an internal
+           invariant break; treat it as fatal. */
         halt_exception(frame);
+    }
+    process_user_fault(frame->rip, frame->vector);
+    return task_reschedule_from_interrupt(frame);
+}
+
+uint64_t interrupt_dispatch(struct interrupt_frame *frame) {
+    if (frame->vector < 32) {
+        /*
+         * In 64-bit mode the CPU always pushes the full five-word frame
+         * (SS, RSP, RFLAGS, CS, RIP), so both the CS and SS words are
+         * valid here. CS.RPL is the privilege of the interrupted code:
+         * 0 for kernel execution, 3 for user execution.
+         */
+        if ((frame->cs & 3) != 0)
+            return user_fault_dispatch(frame);
+        halt_exception(frame);
+    }
 
     if (frame->vector >= 32 && frame->vector < 48) {
         uint8_t irq=(uint8_t)(frame->vector-32);
@@ -135,7 +193,15 @@ void interrupts_init(void) {
     pic_init();
     timer_init();
 
-    for (uint16_t i=0;i<256;++i) idt_set_gate((uint8_t)i,isr_stub_table[i]);
+    for (uint16_t i=0;i<256;++i) idt_set_gate((uint8_t)i,isr_stub_table[i],0);
+
+    /*
+     * Double fault and NMI use IST#0 (TSS.RSP0): a double fault may arrive
+     * with the current stack unusable, so it must land on the task's
+     * dedicated interrupt headroom instead of the corrupting stack.
+     */
+    idt_set_gate(8, isr_stub_table[8], 1);
+    idt_set_gate(2, isr_stub_table[2], 1);
 
     struct idtr descriptor={.limit=(uint16_t)(sizeof(idt)-1),.base=(uint64_t)idt};
     lidt(&descriptor);

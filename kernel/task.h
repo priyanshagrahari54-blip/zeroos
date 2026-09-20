@@ -7,6 +7,7 @@
 #define ZEROOS_TASK_STACK_GUARD 0x5a45524f5441534bULL
 
 struct interrupt_frame;
+struct process;
 typedef void (*task_entry_t)(void *argument);
 
 enum task_state {
@@ -18,6 +19,21 @@ enum task_state {
 };
 
 struct wait_queue;
+
+/*
+ * Ring-3 entry frame for user-mode threads. Filled at task creation and
+ * consumed exactly once by user_task_entry (kernel/context.S), which
+ * iretqs into user mode. Offsets 0-47 are fixed by this struct and are
+ * referenced positionally by the assembly entry.
+ */
+struct user_entry_frame {
+    uint64_t rip;
+    uint64_t cs;
+    uint64_t rflags;
+    uint64_t rsp;
+    uint64_t ss;
+    void *arg;
+};
 
 struct task {
     uint64_t id;
@@ -45,11 +61,23 @@ struct task {
     struct task *sleep_next;
     uint64_t wake_tick;
     uint8_t sleep_armed;
+
+    /*
+     * Non-zero when this task is the main thread of a user-mode process.
+     * The process owns the address space; the task owns the CPU context.
+     */
+    struct process *process;
 };
 
 int task_system_init(void);
 int task_create(task_entry_t entry, void *argument, uint64_t *task_id);
+/* Main thread of a user-mode process; first execution iretqs into ring 3. */
+int task_create_user(uint64_t user_rip, uint64_t user_rsp, uint64_t user_arg,
+                     uint64_t *task_id);
+/* Per-slot ring-3 entry frame; consumed once by the assembly user entry. */
+struct user_entry_frame *task_get_user_frame(struct task *task);
 struct task *task_current(void);
+struct task *task_find_by_id(uint64_t id);
 void task_yield(void);
 int task_prepare_block(void);
 int task_block(void);

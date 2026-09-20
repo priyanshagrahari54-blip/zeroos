@@ -35,6 +35,22 @@ ZEROOS is not pretending the current allocator is the final NUMA/driver-grade al
 
 The allocator itself does not reserve a large heap or create per-page structs, so the bootstrap footprint stays small.
 
+## Kernel heap (Stage 1)
+
+On top of the page allocator ZEROOS now has a small kernel object heap
+(`kernel/heap.{h,c}`). It allocates physical pages from the PMM, extends
+them into the kernel identity region through the VMM (identity mappings
+only exist in the kernel root; PCID-1 TLB entries from user mode are never
+flushed by kernel identity maps), and carves 8-byte-aligned chunks from a
+per-page freelist.
+
+Each chunk stores its size in the low bits of the previous chunk's tail, and
+the heap keeps a generation counter plus a canary region that must survive
+every operation. `heap_self_test()` runs at boot and verifies: allocation
+and free, repeated growth, double free, out-of-range free, canary
+integrity, and freelist corruption detection — all without any page
+allocator or VMM modification.
+
 ## Next memory layers
 
 The intended progression is:

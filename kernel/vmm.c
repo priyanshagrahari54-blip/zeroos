@@ -1,5 +1,6 @@
 #include "vmm.h"
 #include "memory.h"
+#include "heap.h"
 
 #define ENTRY_COUNT 512ULL
 #define PAGE_MASK 0x000ffffffffff000ULL
@@ -9,11 +10,100 @@
 
 #define VMM_LEAF_FLAGS 0x00000000000001ffULL
 
+/* User mappings live in PML4 slot 254 (the 0x00007f... canonical range). */
+#define VMM_USER_PML4_INDEX 254ULL
+
 static uint64_t *root_table;
 static uint64_t root_physical;
 
-static inline void write_cr3(uint64_t value) {
+static uint64_t active_root;
+static uint16_t active_pcid;
+static int pcid_enabled;
+static int invpcid_available;
+static uint32_t pcid_bitmap; /* bit N set => PCID N in use (bits 1-31) */
+
+/*
+ * Invalidate every TLB entry tagged with one PCID (INVPCID type 1 = "All").
+ * Required when a PCID is returned to the allocator: a later space reusing
+ * the same PCID must never see the dead space's translations, including
+ * pages that may now be owned by a different process.
+ */
+static void invpcid_all(uint16_t pcid) {
+    /*
+     * 128-bit INVPCID descriptor: PCID in bits [11:0], all other bits zero
+     * (type 1 = single-context invalidation; bits [63:12] must be zero or
+     * the CPU raises #GP).
+     *
+     * The instruction bytes are emitted directly: this binutils version
+     * cannot assemble INVPCID (it does not infer the m128 operand size).
+     * 66 0F 38 82 08 = INVPCID %rax, (%rcx) with the type in ECX.
+     */
+    uint64_t operand[2] = {(uint64_t)(pcid & 0x3ffULL), 0};
+    if (!invpcid_available)
+        return;
+    __asm__ volatile (".byte 0x66, 0x0f, 0x38, 0x82, 0x08"
+                      :
+                      : "a"(operand), "c"((uint32_t)1)
+                      : "memory");
+}
+
+static int cpu_has_pcid(void) {
+    uint32_t eax, ebx, ecx, edx;
+    __asm__ volatile ("cpuid"
+                      : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
+                      : "a"(1));
+    return (ecx & (1U << 17)) != 0;
+}
+
+static int cpu_has_invpcid(void) {
+    uint32_t eax, ebx, ecx, edx;
+    __asm__ volatile ("cpuid"
+                      : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
+                      : "a"(7), "c"(0));
+    return (ebx & (1U << 10)) != 0;
+}
+
+int vmm_pcid_enabled(void) { return pcid_enabled; }
+
+uint64_t vmm_active_root(void) { return active_root; }
+
+uint16_t vmm_pcid_alloc(void) {
+    for (uint16_t pcid = 1; pcid <= 31; ++pcid) {
+        uint32_t bit = 1U << pcid;
+        if (!(pcid_bitmap & bit)) {
+            pcid_bitmap |= bit;
+            return pcid;
+        }
+    }
+    return 0;
+}
+
+void vmm_pcid_free(uint16_t pcid) {
+    if (pcid >= 1 && pcid <= 31)
+        pcid_bitmap &= ~(1U << pcid);
+}
+
+void vmm_flush_tlb(void) {
+    /*
+     * Without PCID, TLB entries are untagged by address space. Writing the
+     * currently loaded CR3 value again invalidates the entire TLB.
+     */
+    __asm__ volatile ("mov %%cr3, %%rax; mov %%rax, %%cr3"
+                      : : : "rax", "memory");
+}
+
+/*
+ * Load an address-space root. The PCID bits are set only when PCID is
+ * enabled; callers must flush the TLB first (vmm_flush_tlb) when PCID is
+ * unavailable and the root changes.
+ */
+void vmm_load_root(uint64_t root_physical_value, uint16_t pcid) {
+    uint64_t value = root_physical_value;
+    if (pcid_enabled && pcid)
+        value |= (uint64_t)pcid;
     __asm__ volatile ("mov %0, %%cr3" : : "r"(value) : "memory");
+    active_root = root_physical_value;
+    active_pcid = pcid;
 }
 
 static inline void invalidate_page(uint64_t address) {
@@ -61,8 +151,14 @@ static uint64_t *ensure_table(uint64_t *parent,
  * Convert one 2 MiB PDE into a 4 KiB PT.  This keeps huge mappings as the
  * default and pays the extra 4 KiB table only when fine-grained mapping is
  * actually required.
+ *
+ * base_virtual is the 2 MiB-aligned virtual base of the PDE being split; it
+ * is required to invalidate the exact 4 KiB range in the TLB. The old
+ * implementation reloaded the kernel CR3, which was wrong for page tables
+ * belonging to a different address space and would have switched the CPU's
+ * active translation root mid-operation.
  */
-static int split_2m(uint64_t *pd, uint64_t index) {
+static int split_2m(uint64_t *pd, uint64_t index, uint64_t base_virtual) {
     uint64_t old = pd[index];
     if (!(old & VMM_PRESENT) || !(old & HUGE_PAGE_2M))
         return 0;
@@ -83,15 +179,16 @@ static int split_2m(uint64_t *pd, uint64_t index) {
         pt[i] = (base + i * VMM_PAGE_SIZE) | flags;
 
     /*
-     * The old entry is no longer a huge mapping.  Clear it before installing
-     * the PT so no CPU can retain a stale translation for the old page size.
+     * Clear the PDE before installing the PT, then invalidate the 4 KiB
+     * range so no CPU can retain a stale huge-page translation. invlpg is
+     * correct whether or not this space is the one currently loaded in CR3.
      */
     pd[index] = 0;
-    write_cr3(root_physical);
+    for (uint64_t i = 0; i < ENTRY_COUNT; ++i)
+        invalidate_page(base_virtual + i * VMM_PAGE_SIZE);
     pd[index] = ((uint64_t)pt & PAGE_MASK) |
                 VMM_PRESENT | VMM_WRITABLE |
                 (old & VMM_USER);
-    write_cr3(root_physical);
 
     return 0;
 }
@@ -100,6 +197,16 @@ int vmm_init(void) {
     void *root = page_alloc();
     if (!root)
         return -1;
+
+    /*
+     * PCID must be detected before the first root load. CR4.PCIDE is set
+     * by the boot code when CPUID reports the feature; the two must agree.
+     */
+    pcid_enabled = cpu_has_pcid();
+    invpcid_available = pcid_enabled && cpu_has_invpcid();
+    pcid_bitmap = 0;
+    active_root = 0;
+    active_pcid = 0;
 
     root_table = (uint64_t *)root;
     root_physical = (uint64_t)root;
@@ -133,7 +240,7 @@ int vmm_init(void) {
         pd[i] = i * HUGE_PAGE_SIZE | flags;
     }
 
-    write_cr3(root_physical);
+    vmm_load_root(root_physical, 0);
     return 0;
 }
 
@@ -161,7 +268,7 @@ int vmm_map_page(uint64_t virtual_address,
         return -1;
 
     if (pd[pd_index] & HUGE_PAGE_2M) {
-        if (split_2m(pd, pd_index) != 0)
+        if (split_2m(pd, pd_index, virtual_address & ~(HUGE_PAGE_SIZE - 1ULL)) != 0)
             return -1;
     }
 
@@ -201,7 +308,7 @@ int vmm_unmap_page(uint64_t virtual_address) {
 
     uint64_t *pd = table_from_entry(e2);
     if (pd[pd_index] & HUGE_PAGE_2M) {
-        if (split_2m(pd, pd_index) != 0)
+        if (split_2m(pd, pd_index, virtual_address & ~(HUGE_PAGE_SIZE - 1ULL)) != 0)
             return -1;
     }
 
@@ -216,6 +323,57 @@ int vmm_unmap_page(uint64_t virtual_address) {
     pt[pt_index] = 0;
     invalidate_page(virtual_address);
     return 0;
+}
+
+/*
+ * Per-address-space user-range validation. Mirrors vmm_is_user_range() but
+ * walks the supplied space's root, so it can be used for the space of a
+ * user process that is not the one currently loaded in CR3.
+ */
+int vmm_space_is_user_range(const struct vmm_space *space, uint64_t virtual_address,
+                            uint64_t length, uint64_t write) {
+    if (!space || !space->root || length == 0 || !canonical_address(virtual_address))
+        return 0;
+    if (virtual_address + length < virtual_address)
+        return 0;
+
+    uint64_t end = virtual_address + length - 1;
+    if (!canonical_address(end))
+        return 0;
+
+    if (((virtual_address >> 39) & 0x1ff) != VMM_USER_PML4_INDEX)
+        return 0;
+
+    uint64_t cursor = virtual_address & ~(VMM_PAGE_SIZE - 1ULL);
+    uint64_t last = end & ~(VMM_PAGE_SIZE - 1ULL);
+
+    for (;;) {
+        uint64_t pdpt_index = (cursor >> 30) & 0x1ff;
+        uint64_t pd_index = (cursor >> 21) & 0x1ff;
+        uint64_t pt_index = (cursor >> 12) & 0x1ff;
+
+        uint64_t e1 = space->root[VMM_USER_PML4_INDEX];
+        if (!(e1 & VMM_PRESENT) || !(e1 & VMM_USER)) return 0;
+        uint64_t *pdpt = table_from_entry(e1);
+        uint64_t e2 = pdpt[pdpt_index];
+        if (!(e2 & VMM_PRESENT) || !(e2 & VMM_USER)) return 0;
+        uint64_t *pd = table_from_entry(e2);
+        uint64_t e3 = pd[pd_index];
+        if (!(e3 & VMM_PRESENT) || !(e3 & VMM_USER)) return 0;
+
+        if (e3 & HUGE_PAGE_2M) {
+            if (write && !(e3 & VMM_WRITABLE)) return 0;
+        } else {
+            uint64_t *pt = table_from_entry(e3);
+            uint64_t e4 = pt[pt_index];
+            if (!(e4 & VMM_PRESENT) || !(e4 & VMM_USER)) return 0;
+            if (write && !(e4 & VMM_WRITABLE)) return 0;
+        }
+
+        if (cursor == last) break;
+        cursor += VMM_PAGE_SIZE;
+    }
+    return 1;
 }
 
 uint64_t vmm_translate(uint64_t virtual_address) {
@@ -299,7 +457,7 @@ int vmm_protect_page(uint64_t virtual_address, uint64_t flags) {
     uint64_t *pd = table_from_entry(e2);
 
     if (pd[pd_index] & HUGE_PAGE_2M) {
-        if (split_2m(pd, pd_index) != 0) return -1;
+        if (split_2m(pd, pd_index, virtual_address & ~(HUGE_PAGE_SIZE - 1ULL)) != 0) return -1;
     }
 
     uint64_t e3 = pd[pd_index];
@@ -364,8 +522,6 @@ int vmm_is_user_range(uint64_t virtual_address, uint64_t length, uint64_t write)
  * The space root itself is independent, so CR3 switching never mutates the
  * kernel root.
  */
-#define VMM_USER_PML4_INDEX 254ULL
-
 static int space_canonical(uint64_t address) {
     return canonical_address(address);
 }
@@ -394,6 +550,10 @@ int vmm_space_create(struct vmm_space *space) {
 
     space->root = (uint64_t *)root;
     space->root_physical = (uint64_t)root;
+    space->pcid = 0;
+    space->has_pcid = 0;
+    space->owned_pages = 0;
+    space->owned_page_count = 0;
 
     /* Slot 0 contains the kernel's identity/direct map and is shared. */
     space->root[0] = root_table[0];
@@ -402,6 +562,33 @@ int vmm_space_create(struct vmm_space *space) {
 
 void vmm_space_destroy(struct vmm_space *space) {
     if (!space || !space->root) return;
+
+    /*
+     * Destruction must never run with this space loaded in CR3: the page
+     * tables being freed are the active translation root.
+     */
+    if (active_root == space->root_physical) {
+        vmm_load_root(root_physical, 0);
+    }
+
+    /*
+     * Retire this space's PCID from the TLB before it can be reused by a
+     * different process (see invpcid_all).
+     */
+    if (space->has_pcid && pcid_enabled)
+        invpcid_all(space->pcid);
+
+    /* Release every physical page this space owns (user data pages). */
+    struct vmm_owned_page *cursor = space->owned_pages;
+    while (cursor) {
+        struct vmm_owned_page *next = cursor->next;
+        page_free((void *)cursor->physical);
+        kfree(cursor);
+        cursor = next;
+    }
+    space->owned_pages = 0;
+    space->owned_page_count = 0;
+
     /* User page-table pages are private to this space. */
     uint64_t e1 = space->root[VMM_USER_PML4_INDEX];
     if (e1 & VMM_PRESENT) {
@@ -426,6 +613,8 @@ void vmm_space_destroy(struct vmm_space *space) {
     page_free(space->root);
     space->root = 0;
     space->root_physical = 0;
+    space->has_pcid = 0;
+    space->pcid = 0;
 }
 
 int vmm_space_map_page(struct vmm_space *space, uint64_t virtual_address,
@@ -444,17 +633,40 @@ int vmm_space_map_page(struct vmm_space *space, uint64_t virtual_address,
     if (pml4 != VMM_USER_PML4_INDEX || !(flags & VMM_USER))
         return -1;
 
+    /*
+     * W^X policy for user mappings: a user page must never be both
+     * writable and executable. (flags & VMM_WRITABLE) together with the
+     * absence of VMM_NO_EXECUTE would be writable+executable.
+     */
+    if ((flags & VMM_WRITABLE) && !(flags & VMM_NO_EXECUTE))
+        return -1;
+
+    if (vmm_space_own_page(space, physical_address) != 0)
+        return -1;
+
     uint64_t *pdpt = space_ensure_table(space->root,pml4,flags);
-    if (!pdpt) return -1;
+    if (!pdpt) {
+        vmm_space_release_page(space, physical_address);
+        return -1;
+    }
     uint64_t *pd = space_ensure_table(pdpt,pdpt_i,flags);
-    if (!pd) return -1;
+    if (!pd) {
+        vmm_space_release_page(space, physical_address);
+        return -1;
+    }
 
     if (pd[pd_i] & HUGE_PAGE_2M) {
-        if (split_2m(pd,pd_i) != 0) return -1;
+        if (split_2m(pd,pd_i,virtual_address & ~(HUGE_PAGE_SIZE - 1ULL)) != 0) {
+            vmm_space_release_page(space, physical_address);
+            return -1;
+        }
     }
 
     uint64_t *pt = space_ensure_table(pd,pd_i,flags);
-    if (!pt || (pt[pt_i] & VMM_PRESENT)) return -1;
+    if (!pt || (pt[pt_i] & VMM_PRESENT)) {
+        vmm_space_release_page(space, physical_address);
+        return -1;
+    }
 
     pt[pt_i] = (physical_address & PHYS_MASK) |
                VMM_PRESENT | (flags & (VMM_LEAF_FLAGS|VMM_NO_EXECUTE));
@@ -481,8 +693,10 @@ int vmm_space_unmap_page(struct vmm_space *space, uint64_t virtual_address) {
     uint64_t *pt=table_from_entry(e3);
     uint64_t idx=(virtual_address>>12)&0x1ff;
     if (!(pt[idx]&VMM_PRESENT)) return -1;
+    uint64_t physical=pt[idx]&PHYS_MASK;
     pt[idx]=0;
     if (space->root_physical==root_physical) invalidate_page(virtual_address);
+    vmm_space_release_page(space, physical);
     return 0;
 }
 
@@ -507,6 +721,46 @@ uint64_t vmm_space_translate(const struct vmm_space *space, uint64_t virtual_add
 
 int vmm_space_activate(const struct vmm_space *space) {
     if (!space || !space->root) return -1;
-    write_cr3(space->root_physical);
+    if (!vmm_pcid_enabled() && active_root != space->root_physical)
+        vmm_flush_tlb();
+    vmm_load_root(space->root_physical, space->has_pcid ? space->pcid : 0);
     return 0;
+}
+
+/*
+ * Physical-page ownership inside one address space. The descriptors are
+ * heap allocations so spaces of unbounded page counts stay supported.
+ */
+int vmm_space_own_page(struct vmm_space *space, uint64_t physical) {
+    struct vmm_owned_page *cursor;
+
+    if (!space || !space->root) return -1;
+    if ((physical & (VMM_PAGE_SIZE - 1)) != 0) return -1;
+
+    for (cursor = space->owned_pages; cursor; cursor = cursor->next)
+        if (cursor->physical == physical)
+            return -1; /* already owned by this space */
+
+    cursor = (struct vmm_owned_page *)kmalloc(sizeof(*cursor));
+    if (!cursor) return -1;
+    cursor->physical = physical;
+    cursor->next = space->owned_pages;
+    space->owned_pages = cursor;
+    ++space->owned_page_count;
+    return 0;
+}
+
+int vmm_space_release_page(struct vmm_space *space, uint64_t physical) {
+    struct vmm_owned_page **cursor;
+
+    if (!space || !space->root) return -1;
+    for (cursor = &space->owned_pages; *cursor; cursor = &(*cursor)->next) {
+        if ((*cursor)->physical == physical) {
+            *cursor = (*cursor)->next;
+            kfree(*cursor);
+            --space->owned_page_count;
+            return 0;
+        }
+    }
+    return -1;
 }

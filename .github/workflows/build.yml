@@ -24,25 +24,55 @@ jobs:
           test -s build/zeroos.iso
           file build/zeroos.elf build/zeroos.iso
           readelf -h -l build/zeroos.elf
+          readelf -S build/zeroos.elf
           objdump -s -j .multiboot2 build/zeroos.elf
           echo "===== ZEROOS linker symbols ====="
-          nm -n build/zeroos.elf | grep -E '(__kernel_start|__kernel_end|stack_bottom|stack_top|tasks$|task_lock$|next_task_id$|sleep_head$|tick_hook$|ticks$|page_bitmap|free_word_summary)' || true
-          echo "===== ZEROOS memory_init disassembly ====="
-          objdump -d --disassemble=memory_init build/zeroos.elf
-          echo "===== ZEROOS task context disassembly ====="
+          nm -n build/zeroos.elf | grep -E '(__kernel_start|__kernel_end|stack_bottom|stack_top|user_init_code|user_init_end|tss$|gdt$|page_bitmap|free_word_summary)' || true
+          echo "===== ZEROOS user program size ====="
+          nm -n build/zeroos.elf | awk '/user_init_code/{s=strtonum("0x"$1)} /user_init_end/{print "userinit bytes:", strtonum("0x"$1)-s}'
+          echo "===== ZEROOS syscall entry disassembly ====="
+          objdump -d --disassemble=syscall_entry build/zeroos.elf
+          echo "===== ZEROOS user entry disassembly ====="
+          objdump -d --disassemble=user_task_entry build/zeroos.elf
           objdump -d --disassemble=task_trampoline build/zeroos.elf
-          objdump -d --disassemble=switch_to_next build/zeroos.elf
-          objdump -d --disassemble=task_yield build/zeroos.elf
 
       - name: Boot test
         run: |
-          timeout 10s qemu-system-x86_64             -cdrom build/zeroos.iso             -serial file:build/serial.log             -display none             -no-reboot             -no-shutdown             -debugcon file:build/debug.log             -global isa-debugcon.iobase=0xe9             -d guest_errors,cpu_reset             -D build/qemu.log || true
-          grep -q "ZEROOS: foundation milestone reached." build/serial.log
+          timeout 60s qemu-system-x86_64             -cdrom build/zeroos.iso             -serial file:build/serial.log             -display none             -no-reboot             -no-shutdown             -debugcon file:build/debug.log             -global isa-debugcon.iobase=0xe9             -d guest_errors,cpu_reset             -D build/qemu.log || true
+          echo "===== serial tail ====="
+          tail -40 build/serial.log || true
+          # Foundation
           grep -q "ZEROOS: physical page allocator initialized." build/serial.log
+          grep -q "ZEROOS: heap self-test passed." build/serial.log
+          grep -q "ZEROOS: virtual memory self-test passed." build/serial.log
+          grep -q "ZEROOS: per-address-space VMM self-test passed." build/serial.log
+          grep -q "ZEROOS: GDT extended (user segments) and TSS loaded." build/serial.log
+          grep -q "ZEROOS: IDT installed and interrupts enabled." build/serial.log
+          grep -q "ZEROOS: SYSCALL/SYSRET syscall entry initialized." build/serial.log
+          grep -q "ZEROOS: foundation milestone reached." build/serial.log
+          # Scheduler certification
+          grep -q "ZEROOS: timer tick 100." build/serial.log
+          grep -q "ZEROOS: timer-only preemption stress passed." build/serial.log
+          grep -q "ZEROOS: zombie reaping and slot-reuse stress passed." build/serial.log
+          # Stage-1 ring-3 certification
+          grep -q "ZEROOS: ring-3 user program executed." build/serial.log
+          grep -q "ZEROOS: ring-3 hello process verified." build/serial.log
+          grep -q "ZEROOS: user stored marker in data page." build/serial.log
+          grep -q "ZEROOS: user read data page." build/serial.log
+          grep -q "ZEROOS: per-process address-space isolation verified." build/serial.log
+          grep -q "ZEROOS: user fault contained: vector=000000000000000e" build/serial.log
+          grep -q "ZEROOS: ring-3 page-fault containment verified." build/serial.log
+          grep -q "ZEROOS: user fault contained: vector=000000000000000d" build/serial.log
+          grep -q "ZEROOS: ring-3 general-protection containment verified." build/serial.log
+          grep -q "ZEROOS: negative syscall checks rejected as required." build/serial.log
+          grep -q "ZEROOS: user pointer validation verified." build/serial.log
+          grep -q "ZEROOS: stage-1 ring-3 foundation certified." build/serial.log
+          # Failure detection: no panic, no user-program validation failure
+          ! grep -q "ZEROOS PANIC" build/serial.log
+          ! grep -q "ZEROOS: FAIL" build/serial.log
           test -s build/debug.log
           grep -q "B" build/debug.log
           grep -q "L" build/debug.log
-          grep -q "ZEROOS: timer tick 100." build/serial.log
 
       - name: Dump serial log on failure
         if: failure()

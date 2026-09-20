@@ -1,10 +1,14 @@
 #include "types.h"
 #include "memory.h"
+#include "heap.h"
 #include "timer.h"
 #include "vmm.h"
 #include "sync.h"
+#include "gdt.h"
 #include "task.h"
+#include "process.h"
 #include "scheduler.h"
+#include "syscall.h"
 #include "wait.h"
 
 #define COM1 0x3F8
@@ -138,6 +142,130 @@ static void vmm_space_self_test(void) {
     vmm_space_destroy(&space);
     page_free(physical);
     serial_write_public("ZEROOS: per-address-space VMM self-test passed.\n");
+}
+
+static void heap_self_test(void) {
+    uint64_t capacity=heap_capacity_bytes();
+    void *p1,*p2,*p3,*big;
+
+    if (capacity<ZEROOS_HEAP_MIN_ALLOC)
+        kernel_panic("heap capacity self-test failed");
+
+    /* Tiny and odd-sized allocations, 16-byte alignment, full-payload writes. */
+    p1=kmalloc(1); p2=kmalloc(31); p3=kmalloc(1000);
+    if (!p1 || !p2 || !p3 || p1==p2 || p2==p3 || p1==p3)
+        kernel_panic("heap basic allocation failed");
+    if (((uint64_t)p1| (uint64_t)p2 | (uint64_t)p3) & 15ULL)
+        kernel_panic("heap alignment self-test failed");
+    for (uint64_t i=0;i<1;++i) ((uint8_t *)p1)[i]=0xA5;
+    for (uint64_t i=0;i<31;++i) ((uint8_t *)p2)[i]=(uint8_t)i;
+    for (uint64_t i=0;i<1000;++i) ((uint8_t *)p3)[i]=(uint8_t)(i*7);
+    for (uint64_t i=0;i<31;++i) if (((uint8_t *)p2)[i]!=(uint8_t)i)
+        kernel_panic("heap payload content self-test failed");
+    if (kfree(p1)!=0 || kfree(p2)!=0 || kfree(p3)!=0)
+        kernel_panic("heap basic free failed");
+
+    /* Negative tests: double free, NULL, unaligned, out-of-region. */
+    if (kfree(p1)!=-1)
+        kernel_panic("heap double-free detection failed");
+    if (kfree((void *)0)!=-1)
+        kernel_panic("heap NULL free rejection failed");
+    if (kfree((void *)0x1)!=-1)
+        kernel_panic("heap unaligned free rejection failed");
+    if (kfree((void *)0xdeadbeef00ULL)!=-1)
+        kernel_panic("heap out-of-region free rejection failed");
+    p2=kmalloc(32);
+    if (!p2) kernel_panic("heap re-allocation after free failed");
+    if (kfree((uint8_t *)p2+3)!=-1)
+        kernel_panic("heap misaligned pointer free rejection failed");
+    if (kfree(p2)!=0)
+        kernel_panic("heap aligned free after partial reject failed");
+
+    /* Boundary: an allocation that would need more than the whole region. */
+    if (kmalloc(capacity))
+        kernel_panic("heap oversized allocation rejection failed");
+
+    /* Near-maximum allocation covering essentially the whole region. */
+    big=kmalloc(capacity-ZEROOS_HEAP_MIN_ALLOC);
+    if (!big)
+        kernel_panic("heap near-maximum allocation failed");
+    for (uint64_t i=0;i<capacity-ZEROOS_HEAP_MIN_ALLOC;++i)
+        ((uint8_t *)big)[i]=0x5A;
+    for (uint64_t i=0;i<capacity-ZEROOS_HEAP_MIN_ALLOC;++i)
+        if (((uint8_t *)big)[i]!=0x5A)
+            kernel_panic("heap near-maximum payload failed");
+    if (kfree(big)!=0)
+        kernel_panic("heap near-maximum free failed");
+
+    /* kcalloc zero-fill. */
+    void *zeroed=kcalloc(128,8);
+    if (!zeroed) kernel_panic("kcalloc failed");
+    for (uint64_t i=0;i<1024;++i)
+        if (((uint8_t *)zeroed)[i]!=0)
+            kernel_panic("kcalloc zero-fill failed");
+    if (kfree(zeroed)!=0)
+        kernel_panic("kcalloc free failed");
+
+    /* Overflow-safe count: count*size must not wrap. */
+    if (kcalloc(~0ULL,8))
+        kernel_panic("kcalloc overflow rejection failed");
+
+    /*
+     * Exhaustion: fill the whole region with 64-byte blocks (96-byte blocks
+     * including the header), then drain. The hold array is sized for the
+     * maximum 4 MiB region.
+     */
+    static void *exhaust[45000];
+    uint64_t allocated=0;
+    while (allocated<45000) {
+        void *block=kmalloc(64);
+        if (!block) break;
+        ((uint8_t *)block)[0]=(uint8_t)allocated;
+        exhaust[allocated++]=block;
+    }
+    if (allocated<100)
+        kernel_panic("heap exhaustion self-test could not fill region");
+    while (kmalloc(64))
+        kernel_panic("heap exhaustion did not return NULL");
+    for (uint64_t i=0;i<allocated;++i)
+        if (kfree(exhaust[i])!=0)
+            kernel_panic("heap exhaustion drain failed");
+    if (heap_used_bytes()!=0 || heap_validate()!=0)
+        kernel_panic("heap exhaustion accounting failed");
+
+    /* Bounded deterministic stress: interleaved alloc/free (LCG sequence). */
+    static void *live[2048];
+    uint64_t live_count=0, lcg=0x2545F4914F6CDD1DULL;
+    for (uint64_t iter=0;iter<20000;++iter) {
+        lcg=lcg*6364136223846793005ULL+1ULL;
+        uint64_t op=lcg>>58;
+        if (op<52 || live_count==0) {
+            uint64_t size=(lcg>>30)&0x1FF;
+            if (size==0) size=1;
+            void *block=kmalloc(size);
+            if (block) {
+                ((uint8_t *)block)[0]=(uint8_t)iter;
+                if (live_count<2048) live[live_count++]=block;
+                else if (kfree(block)!=0)
+                    kernel_panic("heap stress free failed");
+            }
+        } else {
+            uint64_t slot=(lcg>>30)%live_count;
+            if (kfree(live[slot])!=0)
+                kernel_panic("heap stress free failed");
+            live[slot]=live[--live_count];
+        }
+    }
+    for (uint64_t i=0;i<live_count;++i)
+        if (kfree(live[i])!=0)
+            kernel_panic("heap stress drain failed");
+    if (heap_used_bytes()!=0 || heap_validate()!=0)
+        kernel_panic("heap stress accounting failed");
+
+    serial_write_public("ZEROOS: heap capacity: ");
+    serial_write_u64(capacity);
+    serial_write_public(" bytes.\n");
+    serial_write_public("ZEROOS: heap self-test passed.\n");
 }
 
 static void sync_self_test(void) {
@@ -367,9 +495,131 @@ static void scheduler_probe_monitor(void *argument) {
     }
 }
 
+/*
+ * Stage-1 ring-3 certification. Runs as a kernel task after the scheduler
+ * is live. Each step spawns a deterministic user process, waits for its
+ * termination with a bounded tick budget, and verifies the expected
+ * outcome. Any deviation panics, which fails the QEMU boot test.
+ */
+static uint64_t ring3_failures;
+
+static void ring3_run_case(uint64_t param, uint64_t budget_ticks,
+                           int expect_fault, uint64_t *out_pid) {
+    uint64_t pid=0;
+    if (process_spawn(param,&pid)!=0) {
+        ring3_failures++;
+        kernel_panic("ring-3 case spawn failed");
+    }
+    if (process_wait_ticks(budget_ticks)!=0) {
+        ring3_failures++;
+        kernel_panic("ring-3 case timed out");
+    }
+    struct process *p=process_find(pid);
+    if (!p || p->state!=PROCESS_ZOMBIE) {
+        ring3_failures++;
+        kernel_panic("ring-3 case not zombie after wait");
+    }
+    if (p->exited_by_fault!=((uint8_t)expect_fault)) {
+        ring3_failures++;
+        kernel_panic("ring-3 case fault expectation mismatch");
+    }
+    *out_pid=pid;
+}
+
+static void ring3_orchestrator(void *argument) {
+    (void)argument;
+    uint64_t deadline=timer_ticks()+1200;
+    uint64_t pid=0;
+
+    /* Case 0: hello — prove ring-3 execution and the write/getpid/gettid
+     * syscall path end to end. */
+    ring3_run_case(0,300,0,&pid);
+    {
+        struct process *p=process_find(pid);
+        if (!p || p->exit_code!=0)
+            kernel_panic("ring-3 hello exit code mismatch");
+    }
+    if (process_reap(pid)!=0)
+        kernel_panic("ring-3 hello reap failed");
+    serial_write_public("ZEROOS: ring-3 hello process verified.\n");
+
+    /* Case 1 (A) and case 2 (B): address-space isolation. Both processes
+     * map ZEROOS_USER_DATA_VA to their own physical page. A writes a
+     * marker; B must read its own (zero) page, not A's. */
+    ring3_run_case(1,300,0,&pid);
+    uint64_t pid_a=pid;
+    {
+        struct process *a=process_find(pid_a);
+        uint32_t marker=0;
+        if (!a) kernel_panic("ring-3 process A vanished");
+        marker=*(volatile uint32_t *)(uint64_t)a->data_phys;
+        if (marker!=0xdeadbeef) {
+            ring3_failures++;
+            kernel_panic("ring-3 user store to data page not observed");
+        }
+    }
+
+    ring3_run_case(2,300,0,&pid);
+    uint64_t pid_b=pid;
+    {
+        struct process *a=process_find(pid_a);
+        struct process *b=process_find(pid_b);
+        if (!a || !b) kernel_panic("ring-3 isolation processes vanished");
+        if (a->data_phys==b->data_phys) {
+            ring3_failures++;
+            kernel_panic("ring-3 isolation: two spaces share a physical page");
+        }
+        if (vmm_space_translate(&a->space,ZEROOS_USER_DATA_VA)!=a->data_phys) {
+            ring3_failures++;
+            kernel_panic("ring-3 isolation: A VA->PA mismatch");
+        }
+        if (vmm_space_translate(&b->space,ZEROOS_USER_DATA_VA)!=b->data_phys) {
+            ring3_failures++;
+            kernel_panic("ring-3 isolation: B VA->PA mismatch");
+        }
+        if (b->exited_by_fault || b->exit_code!=0) {
+            ring3_failures++;
+            kernel_panic("ring-3 reader process failed");
+        }
+    }
+    if (process_reap(pid_a)!=0 || process_reap(pid_b)!=0)
+        kernel_panic("ring-3 isolation reap failed");
+    serial_write_public("ZEROOS: per-process address-space isolation verified.\n");
+
+    /* Case 3: contained page fault from ring 3. */
+    ring3_run_case(3,300,1,&pid);
+    if (process_reap(pid)!=0)
+        kernel_panic("ring-3 fault case reap failed");
+    serial_write_public("ZEROOS: ring-3 page-fault containment verified.\n");
+
+    /* Case 4: contained general protection from ring 3. */
+    ring3_run_case(4,300,1,&pid);
+    if (process_reap(pid)!=0)
+        kernel_panic("ring-3 GP case reap failed");
+    serial_write_public("ZEROOS: ring-3 general-protection containment verified.\n");
+
+    /* Case 5: negative syscall validation — kernel pointer and length
+     * overflow must be rejected with -1 while the process survives. */
+    ring3_run_case(5,300,0,&pid);
+    {
+        struct process *p=process_find(pid);
+        if (!p || p->exit_code!=0)
+            kernel_panic("ring-3 negative syscall case failed");
+    }
+    if (process_reap(pid)!=0)
+        kernel_panic("ring-3 negative case reap failed");
+    serial_write_public("ZEROOS: user pointer validation verified.\n");
+
+    if (timer_ticks()>deadline) {
+        ring3_failures++;
+        kernel_panic("ring-3 certification exceeded tick budget");
+    }
+    serial_write_public("ZEROOS: stage-1 ring-3 foundation certified.\n");
+}
+
 static void scheduler_self_test(void) {
     uint64_t worker_id, monitor_id, waiter_id, waker_id, sleeper_id;
-    uint64_t preempt_a_id, preempt_b_id, lifecycle_id;
+    uint64_t preempt_a_id, preempt_b_id, lifecycle_id, ring3_id;
 
     atomic_u64_init(&task_probe_counter,0);
     atomic_u64_init(&wait_probe_state,0);
@@ -405,6 +655,8 @@ static void scheduler_self_test(void) {
         kernel_panic("timer-preemption CPU-B creation failed");
     if (task_create(scheduler_probe_lifecycle_creator,0,&lifecycle_id)!=0)
         kernel_panic("lifecycle creator creation failed");
+    if (task_create(ring3_orchestrator,0,&ring3_id)!=0)
+        kernel_panic("ring-3 orchestrator creation failed");
 
     serial_write_public("ZEROOS: kernel tasks created: ");
     serial_write_u64(task_count());
@@ -468,7 +720,14 @@ void kernel_main(uint64_t multiboot_info, uint64_t multiboot_magic) {
     vmm_self_test();
     vmm_space_self_test();
 
+    if (heap_init()!=0) kernel_panic("kernel heap initialization failed");
+    serial_write_public("ZEROOS: kernel heap initialized.\n");
+    heap_self_test();
+
     sync_self_test();
+
+    gdt_init();
+    serial_write_public("ZEROOS: GDT extended (user segments) and TSS loaded.\n");
 
     interrupts_init();
     serial_write_public("ZEROOS: IDT installed and interrupts enabled.\n");
@@ -476,6 +735,19 @@ void kernel_main(uint64_t multiboot_info, uint64_t multiboot_magic) {
     serial_write_u64(timer_frequency_hz());
     serial_write_public(" Hz.\n");
     serial_write_public("ZEROOS: IRQ ownership layer initialized.\n");
+
+    if (vmm_pcid_enabled())
+        serial_write_public("ZEROOS: PCID TLB isolation enabled.\n");
+    else
+        serial_write_public("ZEROOS: PCID unavailable; full TLB flush mode.\n");
+
+    syscall_init();
+    serial_write_public("ZEROOS: SYSCALL/SYSRET syscall entry initialized.\n");
+
+    if (process_system_init()!=0)
+        kernel_panic("process system initialization failed");
+    serial_write_public("ZEROOS: process system initialized.\n");
+
     serial_write_public("ZEROOS: foundation milestone reached.\n");
 
     scheduler_self_test();

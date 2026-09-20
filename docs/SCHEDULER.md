@@ -12,6 +12,33 @@ links. States are UNUSED, RUNNABLE, RUNNING, BLOCKED, and ZOMBIE.
 Slot zero is the bootstrap execution context. Slot one is a permanent idle task.
 Ordinary kernel tasks use the remaining slots.
 
+## User-mode tasks
+
+A task can be the main thread of a user-mode process. The process owns the
+address space and the process's memory; the task owns the CPU context.
+Such a task is created with a ring-3 entry frame (user RIP/CS/RFLAGS/RSP/SS
+plus a single argument). Its first execution enters through an assembly
+user entry that `iretq`s directly into the process address space at CPL 3
+with IF enabled, so user code is timer-preemptible from the first
+instruction.
+
+Two ownership rules keep the CPU state consistent:
+
+- On every context switch the scheduler loads the target task's address
+  space (CR3, PCID-tagged when available) and sets TSS RSP0 to the target
+  task's interrupt headroom. The address space and the ring-3 stack pointer
+  always belong to the task about to run.
+- A task's live `interrupt_frame` is captured by the IRQ-exit scheduler
+  only when a real switch is committed. On the no-switch paths the frame is
+  consumed by the `iretq` epilogue and is never retained; a retained
+  pointer to a consumed frame would be resumed a second time.
+
+A user task leaves user mode only through a syscall (SYSCALL entry) or by
+taking an exception/interrupt. The `exit` syscall and a contained user
+fault both turn the task into a zombie and switch away through the normal
+switch paths; the process's address space is released later by the process
+layer.
+
 ## Context switching
 
 kernel/context.S saves RBP, RBX, R12-R15 and RSP. The task return address
@@ -99,4 +126,4 @@ descriptor. No heap allocation is used for idle execution or waiters.
 
 ## Next stage
 
-Scheduler certification now covers cooperative switching, callee-saved register preservation, timer-only CPU-bound preemption, wait/wakeup, timed sleep, bounded deadlock detection, zombie reclamation, and slot reuse. The next scheduler stage is long-duration fairness/latency measurement, followed by per-CPU runqueues as part of SMP preparation. Higher-level synchronization can continue to build on the existing wait-queue and preemption boundaries.
+Scheduler certification now covers cooperative switching, callee-saved register preservation, timer-only CPU-bound preemption, mixed cooperative/preemptive transitions, wait/wakeup, timed sleep, zombie reclamation, slot reuse, and timer-driven preemption of ring-3 user tasks. The next scheduler stage is long-duration fairness/latency measurement, followed by per-CPU runqueues as part of SMP preparation. Higher-level synchronization can continue to build on the existing wait-queue and preemption boundaries.

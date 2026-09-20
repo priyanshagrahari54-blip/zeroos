@@ -23,6 +23,48 @@ Exceptions that architecturally push an error code keep that CPU-provided error 
 
 Fatal CPU exceptions report vector, decoded exception name, error code, saved RIP, and CR2 for page faults, then enter a halted panic state.
 
+## IST delivery for double fault and NMI
+
+The double-fault (vector 8) and NMI (vector 2) gates use the TSS interrupt
+stack table (IST index 1). A double fault can arrive with the current stack
+unusable, so it must land on a dedicated, known-good stack instead of the
+stack that faulted. The TSS RSP0 slot is set per task (see below), so an
+IST double fault always lands on the current task's reserved interrupt
+headroom.
+
+Note on gate encoding: the IDT gate's dedicated "ist" byte (offset 4) is
+reserved and must be zero. The IST index actually occupies the low three
+bits of the access/type byte (offset 5). Storing the index in the reserved
+byte silently produces a gate with IST 0, which defeats the whole purpose.
+
+## Ring-3 exception containment
+
+An exception taken while the current task is executing in user mode
+(CPL 3, detected from the saved SS) is contained rather than fatal. The
+current process is killed (marked zombie with a fault-derived exit code),
+the fault is reported, and the scheduler switches to the next task through
+the normal IRQ-exit path. The kernel continues running.
+
+An exception taken while the kernel is executing (CPL 0) remains fatal:
+it is reported and the machine halts.
+
+The fault handler disables interrupts for its duration. A user-mode fault
+arrives with the user's RFLAGS, which may have IF set; if a timer tick
+landed in the window between marking the task a zombie and the scheduler
+switching away, the tick hook would see a non-running current task and
+panic. Disabling interrupts closes that window; the IRETQ epilogue
+restores the (new) task's RFLAGS.
+
+## Ring-3 stack pointer (TSS RSP0)
+
+When an interrupt or exception is taken while a task executes in user
+mode, the CPU loads RSP from TSS RSP0 (a privilege-level 0 stack). Each
+task has a reserved interrupt headroom at the top of its kernel stack, and
+the scheduler updates TSS RSP0 to point at that headroom every time it
+switches to a different task. This guarantees a ring-3 interrupt always
+lands on the current task's own kernel stack, never on a stale or foreign
+stack.
+
 ## IRQ ownership and dispatch
 
 Hardware IRQs are now separated from device-specific handling:
