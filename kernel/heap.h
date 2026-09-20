@@ -33,4 +33,7 @@ uint64_t heap_used_bytes(void);
 uint64_t heap_capacity_bytes(void);
 int heap_validate(void);
 
+#ifdef ZEROOS_TEST_FAULTS
+void heap_test_fail_after(int count);
+#endif
 #endif

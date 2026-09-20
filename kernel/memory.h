@@ -17,4 +17,10 @@ uint64_t memory_total_pages(void);
 uint64_t memory_free_pages(void);
 uint64_t memory_max_physical(void);
 
+/* Exclusive mapping claim. Reserved/free pages and duplicate claims fail. */
+int memory_claim_page(uint64_t address);
+void memory_unclaim_page(uint64_t address);
+#ifdef ZEROOS_TEST_FAULTS
+void memory_test_fail_after(int count);
+#endif
 #endif

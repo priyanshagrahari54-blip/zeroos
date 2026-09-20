@@ -36,6 +36,7 @@ void vmm_load_root(uint64_t root_physical, uint16_t pcid);
 void vmm_flush_tlb(void);
 uint64_t vmm_active_root(void);
 uint16_t vmm_pcid_alloc(void);
+unsigned vmm_pcid_in_use(void);
 void vmm_pcid_free(uint16_t pcid);
 
 struct vmm_owned_page {
@@ -57,6 +58,7 @@ struct vmm_space {
     uint64_t owned_page_count;
 };
 
+/* Create requires a zero-initialized object; destroy returns it to empty. */
 int vmm_space_create(struct vmm_space *space);
 void vmm_space_destroy(struct vmm_space *space);
 int vmm_space_map_page(struct vmm_space *space, uint64_t virtual_address,

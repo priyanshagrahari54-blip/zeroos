@@ -36,6 +36,11 @@ static uint64_t used_bytes;
 static struct spinlock heap_lock;
 static int heap_ready;
 
+#ifdef ZEROOS_TEST_FAULTS
+static int fail_after = -1;
+void heap_test_fail_after(int count) { fail_after=count; }
+#endif
+
 static uint64_t heap_round16(uint64_t value) {
     return (value + (ZEROOS_HEAP_ALIGN - 1)) & ~(ZEROOS_HEAP_ALIGN - 1);
 }
@@ -136,6 +141,10 @@ int heap_init(void) {
 }
 
 void *kmalloc(uint64_t size) {
+#ifdef ZEROOS_TEST_FAULTS
+    if (fail_after == 0) return 0;
+    if (fail_after > 0) --fail_after;
+#endif
     uint64_t need;
     uint64_t flags;
     uint8_t *cursor;

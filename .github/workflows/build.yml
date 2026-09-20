@@ -24,7 +24,7 @@ jobs:
         run: make host-test
 
       - name: Build ZEROOS
-        run: make
+        run: make EXTRA_CFLAGS=-DZEROOS_TEST_FAULTS
 
       - name: Verify kernel image
         run: |
@@ -85,6 +85,7 @@ jobs:
             fi
           }
           # Foundation
+          check "ZEROOS: process rollback and lifetime stress passed."
           check "ZEROOS: physical page allocator initialized."
           check "ZEROOS: heap self-test passed."
           check "ZEROOS: virtual memory self-test passed."

@@ -48,6 +48,7 @@ int process_spawn(uint64_t user_arg, uint64_t *pid) {
     struct process *p = 0;
     uint64_t tid = 0;
     int result = -1;
+    int code_mapped=0, data_mapped=0, stack_mapped=0;
 
     for (int i = 0; i < ZEROOS_MAX_PROCESSES; ++i) {
         if (processes[i].state == PROCESS_UNUSED) {
@@ -58,16 +59,7 @@ int process_spawn(uint64_t user_arg, uint64_t *pid) {
     if (!p)
         goto out;
 
-    uint16_t pcid = vmm_pcid_alloc();
-    if (!pcid)
-        goto out;
-    p->space.pcid = pcid;
-    p->space.has_pcid = 1;
-
-    if (vmm_space_create(&p->space) != 0) {
-        vmm_pcid_free(pcid);
-        goto out;
-    }
+    if (vmm_space_create(&p->space) != 0) goto out;
 
     p->code_phys = (uint64_t)page_alloc_zero();
     p->data_phys = (uint64_t)page_alloc_zero();
@@ -90,12 +82,16 @@ int process_spawn(uint64_t user_arg, uint64_t *pid) {
     if (vmm_space_map_page(&p->space, ZEROOS_USER_CODE_VA, p->code_phys,
                            VMM_USER) != 0)
         goto fail_space;
+    code_mapped=1;
     if (vmm_space_map_page(&p->space, ZEROOS_USER_DATA_VA, p->data_phys,
                            VMM_USER | VMM_WRITABLE | VMM_NO_EXECUTE) != 0)
         goto fail_space;
+    data_mapped=1;
     if (vmm_space_map_page(&p->space, ZEROOS_USER_STACK_VA, p->stack_phys,
                            VMM_USER | VMM_WRITABLE | VMM_NO_EXECUTE) != 0)
         goto fail_space;
+
+    stack_mapped=1;
 
     /*
      * Copy the user program into the code page through the kernel's
@@ -109,7 +105,8 @@ int process_spawn(uint64_t user_arg, uint64_t *pid) {
         ((uint8_t *)p->code_phys)[i] = user_init_code[i];
 
     p->pid = next_pid++;
-    p->parent_pid = 0;
+    struct task *parent=task_current();
+    p->parent_pid = parent && parent->process ? parent->process->pid : 0;
     p->exit_code = 0;
     p->exited_by_fault = 0;
 
@@ -123,8 +120,10 @@ int process_spawn(uint64_t user_arg, uint64_t *pid) {
         goto fail_space;
 
     struct task *thread = task_find_by_id(tid);
-    if (!thread)
-        goto fail_space;
+    if (!thread) {
+        serial_write_public("ZEROOS PANIC: newly created thread missing.\n");
+        for (;;) __asm__ volatile ("cli; hlt");
+    }
     thread->process = p;
     p->thread = thread;
 
@@ -133,15 +132,15 @@ int process_spawn(uint64_t user_arg, uint64_t *pid) {
 
 fail_space:
     if (result != 0) {
+        if (!code_mapped && p->code_phys) page_free((void *)p->code_phys);
+        if (!data_mapped && p->data_phys) page_free((void *)p->data_phys);
+        if (!stack_mapped && p->stack_phys) page_free((void *)p->stack_phys);
         vmm_space_destroy(&p->space);
-        if (p->space.has_pcid)
-            vmm_pcid_free(p->space.pcid);
         process_reset(p);
     }
 out:
+    if (pid && result == 0) *pid = p->pid;
     spin_unlock_irqrestore(&process_lock, flags);
-    if (pid && result == 0)
-        *pid = p->pid;
     return result;
 }
 
@@ -202,6 +201,8 @@ int process_reap(uint64_t pid) {
         struct process *p = &processes[i];
         if (p->state != PROCESS_ZOMBIE || p->pid != pid)
             continue;
+        if (task_current() && task_current()->process == p) break;
+        if (p->thread && p->thread->process == p) p->thread->process=0;
 
         /*
          * Release the address space: page-table pages, every owned data
@@ -209,8 +210,6 @@ int process_reap(uint64_t pid) {
          * mapping is untouched.
          */
         vmm_space_destroy(&p->space);
-        if (p->space.has_pcid)
-            vmm_pcid_free(p->space.pcid);
         process_reset(p);
         result = 0;
         break;
@@ -248,3 +247,20 @@ uint64_t process_zombie_count(void) {
             ++count;
     return count;
 }
+
+#ifdef ZEROOS_TEST_FAULTS
+/* Only the test builder can discard a newly published, never-run process. */
+int process_test_discard(uint64_t pid) {
+    uint64_t flags=spin_lock_irqsave(&process_lock);
+    struct process *p=process_find(pid);
+    int result=-1;
+    if (p && p->state==PROCESS_RUNNING && p->thread &&
+        task_discard_new(p->thread->id)==0) {
+        vmm_space_destroy(&p->space);
+        process_reset(p);
+        result=0;
+    }
+    spin_unlock_irqrestore(&process_lock,flags);
+    return result;
+}
+#endif

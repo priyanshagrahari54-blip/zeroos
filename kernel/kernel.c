@@ -10,6 +10,7 @@
 #include "scheduler.h"
 #include "syscall.h"
 #include "wait.h"
+#include "irq_state.h"
 
 #define COM1 0x3F8
 #define VMM_SELF_TEST_VA 0x00007f0000000000ULL
@@ -298,7 +299,7 @@ static void early_idt_install(void) {
 }
 
 static void vmm_space_self_test(void) {
-    struct vmm_space space;
+    struct vmm_space space={0};
     void *physical=page_alloc_zero();
     if (!physical) kernel_panic("address-space page allocation failed");
     if (vmm_space_create(&space)!=0)
@@ -821,6 +822,54 @@ static void ring3_orchestrator(void *argument) {
     serial_write_public("ZEROOS: ring-3 integration self-test passed.\n");
 }
 
+#ifdef ZEROOS_TEST_FAULTS
+static void process_rollback_self_test(void) {
+    uint64_t irq=irq_save();
+    uint64_t pages=memory_free_pages(), heap=heap_used_bytes(), tasks=task_count();
+    unsigned pcids=vmm_pcid_in_use();
+    for (unsigned kind=0;kind<2;++kind) {
+        unsigned failed=0, completed=0;
+        for (int point=0;point<32;++point) {
+            uint64_t pid=~0ULL;
+            if (kind==0) memory_test_fail_after(point);
+            else heap_test_fail_after(point);
+            int result=process_spawn(99,&pid);
+            memory_test_fail_after(-1);
+            heap_test_fail_after(-1);
+            if (result==0) {
+                if (process_test_discard(pid)!=0) kernel_panic("rollback discard failed");
+                completed=1;
+            } else {
+                if (pid!=~0ULL) kernel_panic("failed spawn published a PID");
+                ++failed;
+            }
+            if (memory_free_pages()!=pages || heap_used_bytes()!=heap ||
+                task_count()!=tasks || vmm_pcid_in_use()!=pcids || heap_validate()!=0)
+                kernel_panic("spawn rollback leaked resources");
+            if (completed) break;
+        }
+        if (!completed || failed<(kind==0 ? 8U : 3U))
+            kernel_panic("spawn failure injection did not cover allocation path");
+    }
+    /* More cycles than either the process, task or PCID slot count. */
+    for (unsigned round=0;round<64;++round) {
+        uint64_t ids[ZEROOS_MAX_PROCESSES];
+        unsigned count=0;
+        for (;count<ZEROOS_MAX_PROCESSES;++count)
+            if (process_spawn(99,&ids[count])!=0) break;
+        if (!count || count==ZEROOS_MAX_PROCESSES)
+            kernel_panic("process capacity boundary not exercised");
+        for (unsigned i=0;i<count;++i)
+            if (process_test_discard(ids[i])!=0) kernel_panic("capacity drain failed");
+        if (memory_free_pages()!=pages || heap_used_bytes()!=heap ||
+            task_count()!=tasks || vmm_pcid_in_use()!=pcids)
+            kernel_panic("process lifetime stress leaked resources");
+    }
+    irq_restore(irq);
+    serial_write_public("ZEROOS: process rollback and lifetime stress passed.\n");
+}
+#endif
+
 static void scheduler_self_test(void) {
     uint64_t worker_id, monitor_id, waiter_id, waker_id, sleeper_id;
     uint64_t preempt_a_id, preempt_b_id, lifecycle_id, ring3_id;
@@ -842,6 +891,9 @@ static void scheduler_self_test(void) {
         kernel_panic("task system initialization failed");
     if (scheduler_init()!=0)
         kernel_panic("scheduler initialization failed");
+#ifdef ZEROOS_TEST_FAULTS
+    process_rollback_self_test();
+#endif
 
     if (task_create(scheduler_probe_worker,0,&worker_id)!=0)
         kernel_panic("scheduler worker creation failed");

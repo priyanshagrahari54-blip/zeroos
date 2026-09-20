@@ -1,4 +1,5 @@
 #include "memory.h"
+#include "irq_state.h"
 
 #define MULTIBOOT_TAG_TYPE_END 0
 #define MULTIBOOT_TAG_TYPE_MMAP 6
@@ -39,6 +40,21 @@ struct multiboot_mmap_entry {
 };
 
 static uint64_t page_bitmap[ZEROOS_BITMAP_WORDS];
+/* Separate runtime allocations from firmware/kernel reservations. */
+static uint64_t allocated_bitmap[ZEROOS_BITMAP_WORDS];
+static uint64_t claimed_bitmap[ZEROOS_BITMAP_WORDS];
+#ifdef ZEROOS_TEST_FAULTS
+static int fail_after = -1;
+void memory_test_fail_after(int count) { fail_after = count; }
+static int allocation_fails(void) {
+    if (fail_after < 0) return 0;
+    if (fail_after == 0) return 1;
+    --fail_after;
+    return 0;
+}
+#else
+static int allocation_fails(void) { return 0; }
+#endif
 static uint64_t free_word_summary[ZEROOS_SUMMARY_WORDS];
 static uint64_t managed_pages;
 static uint64_t free_pages;
@@ -77,8 +93,8 @@ static void reserve_range(uint64_t start, uint64_t end) {
     if (end <= start || start >= ZEROOS_MAX_PHYS_MEM) return;
     if (end > ZEROOS_MAX_PHYS_MEM) end = ZEROOS_MAX_PHYS_MEM;
 
-    uint64_t first = (start + ZEROOS_PAGE_SIZE - 1) / ZEROOS_PAGE_SIZE;
-    uint64_t last = end / ZEROOS_PAGE_SIZE;
+    uint64_t first = start / ZEROOS_PAGE_SIZE;
+    uint64_t last = (end + ZEROOS_PAGE_SIZE - 1) / ZEROOS_PAGE_SIZE;
     if (last > ZEROOS_MAX_PAGES) last = ZEROOS_MAX_PAGES;
 
     for (uint64_t page = first; page < last; ++page) {
@@ -104,17 +120,15 @@ void memory_init(uint64_t multiboot_info) {
 
     for (uint64_t i = 0; i < ZEROOS_BITMAP_WORDS; ++i) {
         page_bitmap[i] = ~0ULL;
+        allocated_bitmap[i] = claimed_bitmap[i] = 0;
     }
-
 
     for (uint64_t i = 0; i < ZEROOS_SUMMARY_WORDS; ++i)
         free_word_summary[i] = 0;
 
-
     managed_pages = 0;
     free_pages = 0;
     available_pages = 0;
-
 
     /* The first two words are total_size and reserved. */
     if (multiboot_info == 0)
@@ -198,7 +212,7 @@ void memory_init(uint64_t multiboot_info) {
         cursor += (tag->size + 7U) & ~7U;
     }
 
-    reserve_range(0, ZEROOS_PAGE_SIZE);
+    reserve_range(0, 0x100000); /* firmware, IVT/BDA, VGA/ROM and trampoline area */
     reserve_range((uint64_t)&__kernel_start,
                   (uint64_t)&__kernel_end);
     reserve_range(multiboot_info, multiboot_info + total_size);
@@ -207,7 +221,8 @@ void memory_init(uint64_t multiboot_info) {
 
 }
 
-void *page_alloc(void) {
+static void *page_alloc_locked(void) {
+    if (allocation_fails()) return 0;
     for (uint64_t summary_word = 0;
          summary_word < ZEROOS_SUMMARY_WORDS;
          ++summary_word) {
@@ -234,6 +249,7 @@ void *page_alloc(void) {
             if (page >= ZEROOS_MAX_PAGES) return (void *)0;
 
             bitmap_set(page);
+            allocated_bitmap[page >> 6] |= 1ULL << (page & 63);
             --free_pages;
             summary_clear_if_full(word);
 
@@ -244,7 +260,7 @@ void *page_alloc(void) {
     return (void *)0;
 }
 
-void page_free(void *address) {
+static void page_free_locked(void *address) {
     uint64_t physical = (uint64_t)address;
 
     if ((physical % ZEROOS_PAGE_SIZE) != 0 ||
@@ -252,8 +268,10 @@ void page_free(void *address) {
         return;
 
     uint64_t page = physical / ZEROOS_PAGE_SIZE;
-    if (!bitmap_test(page)) return;
-
+    uint64_t bit = 1ULL << (page & 63);
+    if (!(allocated_bitmap[page >> 6] & bit) || (claimed_bitmap[page >> 6] & bit))
+        return;
+    allocated_bitmap[page >> 6] &= ~bit;
     bitmap_clear(page);
     ++free_pages;
     summary_set_if_free(page >> 6);
@@ -262,7 +280,6 @@ void page_free(void *address) {
 uint64_t memory_total_pages(void) { return managed_pages; }
 uint64_t memory_free_pages(void) { return free_pages; }
 uint64_t memory_max_physical(void) { return ZEROOS_MAX_PHYS_MEM; }
-
 
 void *page_alloc_zero(void) {
     void *page = page_alloc();
@@ -280,7 +297,8 @@ int memory_is_managed_range(uint64_t address, uint64_t length) {
     return address < ZEROOS_MAX_PHYS_MEM && end <= ZEROOS_MAX_PHYS_MEM;
 }
 
-void *page_alloc_at(uint64_t address) {
+static void *page_alloc_at_locked(uint64_t address) {
+    if (allocation_fails()) return 0;
     if ((address % ZEROOS_PAGE_SIZE) != 0 ||
         address >= ZEROOS_MAX_PHYS_MEM)
         return (void *)0;
@@ -292,6 +310,7 @@ void *page_alloc_at(uint64_t address) {
         return (void *)0;
 
     bitmap_set(page);
+    allocated_bitmap[page >> 6] |= 1ULL << (page & 63);
     --free_pages;
     summary_clear_if_full(page >> 6);
     return (void *)address;
@@ -357,5 +376,45 @@ int memory_page_is_allocated(uint64_t address) {
     if ((address % ZEROOS_PAGE_SIZE) != 0 ||
         address >= ZEROOS_MAX_PHYS_MEM)
         return 0;
-    return bitmap_test(address / ZEROOS_PAGE_SIZE);
+    uint64_t page=address/ZEROOS_PAGE_SIZE;
+    return (allocated_bitmap[page >> 6] >> (page & 63)) & 1U;
+}
+
+void *page_alloc(void) {
+    uint64_t flags=irq_save();
+    void *page=page_alloc_locked();
+    irq_restore(flags);
+    return page;
+}
+void *page_alloc_at(uint64_t address) {
+    uint64_t flags=irq_save();
+    void *page=page_alloc_at_locked(address);
+    irq_restore(flags);
+    return page;
+}
+void page_free(void *address) {
+    uint64_t flags=irq_save();
+    page_free_locked(address);
+    irq_restore(flags);
+}
+int memory_claim_page(uint64_t address) {
+    uint64_t flags=irq_save();
+    int result=-1;
+    if (memory_page_is_allocated(address)) {
+        uint64_t page=address/ZEROOS_PAGE_SIZE, bit=1ULL<<(page&63);
+        if (!(claimed_bitmap[page>>6]&bit)) {
+            claimed_bitmap[page>>6]|=bit;
+            result=0;
+        }
+    }
+    irq_restore(flags);
+    return result;
+}
+void memory_unclaim_page(uint64_t address) {
+    uint64_t flags=irq_save();
+    if (memory_page_is_allocated(address)) {
+        uint64_t page=address/ZEROOS_PAGE_SIZE;
+        claimed_bitmap[page>>6]&=~(1ULL<<(page&63));
+    }
+    irq_restore(flags);
 }

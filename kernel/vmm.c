@@ -1,6 +1,7 @@
 #include "vmm.h"
 #include "memory.h"
 #include "heap.h"
+#include "irq_state.h"
 
 #define ENTRY_COUNT 512ULL
 #define PAGE_MASK 0x000ffffffffff000ULL
@@ -23,7 +24,7 @@ static int invpcid_available;
 static uint32_t pcid_bitmap; /* bit N set => PCID N in use (bits 1-31) */
 
 /*
- * Invalidate every TLB entry tagged with one PCID (INVPCID type 1 = "All").
+ * Invalidate every TLB entry tagged with one PCID (INVPCID type 1 = single context).
  * Required when a PCID is returned to the allocator: a later space reusing
  * the same PCID must never see the dead space's translations, including
  * pages that may now be owned by a different process.
@@ -36,9 +37,9 @@ static void invpcid_all(uint16_t pcid) {
      *
      * The instruction bytes are emitted directly: this binutils version
      * cannot assemble INVPCID (it does not infer the m128 operand size).
-     * 66 0F 38 82 08 = INVPCID %rax, (%rcx) with the type in ECX.
+     * 66 0F 38 82 08: memory descriptor at RAX, type in RCX.
      */
-    uint64_t operand[2] = {(uint64_t)(pcid & 0x3ffULL), 0};
+    uint64_t operand[2] = {(uint64_t)(pcid & 0xfffULL), 0};
     if (!invpcid_available)
         return;
     __asm__ volatile (".byte 0x66, 0x0f, 0x38, 0x82, 0x08"
@@ -67,7 +68,7 @@ int vmm_pcid_enabled(void) { return pcid_enabled; }
 
 uint64_t vmm_active_root(void) { return active_root; }
 
-uint16_t vmm_pcid_alloc(void) {
+static uint16_t vmm_pcid_alloc_locked(void) {
     for (uint16_t pcid = 1; pcid <= 31; ++pcid) {
         uint32_t bit = 1U << pcid;
         if (!(pcid_bitmap & bit)) {
@@ -78,7 +79,7 @@ uint16_t vmm_pcid_alloc(void) {
     return 0;
 }
 
-void vmm_pcid_free(uint16_t pcid) {
+static void vmm_pcid_free_locked(uint16_t pcid) {
     if (pcid >= 1 && pcid <= 31)
         pcid_bitmap &= ~(1U << pcid);
 }
@@ -585,15 +586,17 @@ static uint64_t *space_ensure_table(uint64_t *parent, uint64_t index,
     return (uint64_t *)page;
 }
 
-int vmm_space_create(struct vmm_space *space) {
-    if (!space || !root_table) return -1;
+static int vmm_space_create_locked(struct vmm_space *space) {
+    if (!space || space->root || !root_table) return -1;
     void *root = page_alloc_zero();
     if (!root) return -1;
 
+    uint16_t pcid=pcid_enabled ? vmm_pcid_alloc() : 0;
+    if (pcid_enabled && !pcid) { page_free(root); return -1; }
     space->root = (uint64_t *)root;
     space->root_physical = (uint64_t)root;
-    space->pcid = 0;
-    space->has_pcid = 0;
+    space->pcid = pcid;
+    space->has_pcid = pcid != 0;
     space->owned_pages = 0;
     space->owned_page_count = 0;
 
@@ -602,7 +605,7 @@ int vmm_space_create(struct vmm_space *space) {
     return 0;
 }
 
-void vmm_space_destroy(struct vmm_space *space) {
+static void vmm_space_destroy_locked(struct vmm_space *space) {
     if (!space || !space->root) return;
 
     /*
@@ -624,6 +627,7 @@ void vmm_space_destroy(struct vmm_space *space) {
     struct vmm_owned_page *cursor = space->owned_pages;
     while (cursor) {
         struct vmm_owned_page *next = cursor->next;
+        memory_unclaim_page(cursor->physical);
         page_free((void *)cursor->physical);
         kfree(cursor);
         cursor = next;
@@ -655,11 +659,12 @@ void vmm_space_destroy(struct vmm_space *space) {
     page_free(space->root);
     space->root = 0;
     space->root_physical = 0;
+    if (space->has_pcid) vmm_pcid_free(space->pcid);
     space->has_pcid = 0;
     space->pcid = 0;
 }
 
-int vmm_space_map_page(struct vmm_space *space, uint64_t virtual_address,
+static int vmm_space_map_page_locked(struct vmm_space *space, uint64_t virtual_address,
                        uint64_t physical_address, uint64_t flags) {
     if (!space || !space->root || !space_canonical(virtual_address) ||
         (virtual_address & (VMM_PAGE_SIZE-1)) ||
@@ -712,12 +717,12 @@ int vmm_space_map_page(struct vmm_space *space, uint64_t virtual_address,
 
     pt[pt_i] = (physical_address & PHYS_MASK) |
                VMM_PRESENT | (flags & (VMM_LEAF_FLAGS|VMM_NO_EXECUTE));
-    if (space->root_physical == root_physical)
+    if (space->root_physical == active_root)
         invalidate_page(virtual_address);
     return 0;
 }
 
-int vmm_space_unmap_page(struct vmm_space *space, uint64_t virtual_address) {
+static int vmm_space_unmap_page_locked(struct vmm_space *space, uint64_t virtual_address) {
     if (!space || !space->root ||
         ((virtual_address >> 39) & 0x1ff) != VMM_USER_PML4_INDEX ||
         !space_canonical(virtual_address) ||
@@ -737,7 +742,7 @@ int vmm_space_unmap_page(struct vmm_space *space, uint64_t virtual_address) {
     if (!(pt[idx]&VMM_PRESENT)) return -1;
     uint64_t physical=pt[idx]&PHYS_MASK;
     pt[idx]=0;
-    if (space->root_physical==root_physical) invalidate_page(virtual_address);
+    if (space->root_physical==active_root) invalidate_page(virtual_address);
     vmm_space_release_page(space, physical);
     return 0;
 }
@@ -773,7 +778,7 @@ int vmm_space_activate(const struct vmm_space *space) {
  * Physical-page ownership inside one address space. The descriptors are
  * heap allocations so spaces of unbounded page counts stay supported.
  */
-int vmm_space_own_page(struct vmm_space *space, uint64_t physical) {
+static int vmm_space_own_page_locked(struct vmm_space *space, uint64_t physical) {
     struct vmm_owned_page *cursor;
 
     if (!space || !space->root) return -1;
@@ -783,8 +788,9 @@ int vmm_space_own_page(struct vmm_space *space, uint64_t physical) {
         if (cursor->physical == physical)
             return -1; /* already owned by this space */
 
+    if (memory_claim_page(physical) != 0) return -1;
     cursor = (struct vmm_owned_page *)kmalloc(sizeof(*cursor));
-    if (!cursor) return -1;
+    if (!cursor) { memory_unclaim_page(physical); return -1; }
     cursor->physical = physical;
     cursor->next = space->owned_pages;
     space->owned_pages = cursor;
@@ -792,7 +798,7 @@ int vmm_space_own_page(struct vmm_space *space, uint64_t physical) {
     return 0;
 }
 
-int vmm_space_release_page(struct vmm_space *space, uint64_t physical) {
+static int vmm_space_release_page_locked(struct vmm_space *space, uint64_t physical) {
     struct vmm_owned_page **cursor;
 
     if (!space || !space->root) return -1;
@@ -800,10 +806,71 @@ int vmm_space_release_page(struct vmm_space *space, uint64_t physical) {
         if ((*cursor)->physical == physical) {
             struct vmm_owned_page *removed = *cursor;
             *cursor = removed->next;
+            memory_unclaim_page(physical);
             kfree(removed);
             --space->owned_page_count;
             return 0;
         }
     }
     return -1;
+}
+
+unsigned vmm_pcid_in_use(void) {
+    unsigned count=0;
+    for (unsigned i=1;i<32;++i) count+=(pcid_bitmap>>i)&1U;
+    return count;
+}
+
+int vmm_space_create(struct vmm_space *space) {
+    uint64_t irq=irq_save();
+    int result=vmm_space_create_locked(space);
+    irq_restore(irq);
+    return result;
+}
+
+void vmm_space_destroy(struct vmm_space *space) {
+    uint64_t irq=irq_save();
+    vmm_space_destroy_locked(space);
+    irq_restore(irq);
+}
+
+int vmm_space_map_page(struct vmm_space *space, uint64_t virtual_address, uint64_t physical_address, uint64_t flags) {
+    uint64_t irq=irq_save();
+    int result=vmm_space_map_page_locked(space, virtual_address, physical_address, flags);
+    irq_restore(irq);
+    return result;
+}
+
+int vmm_space_unmap_page(struct vmm_space *space, uint64_t virtual_address) {
+    uint64_t irq=irq_save();
+    int result=vmm_space_unmap_page_locked(space, virtual_address);
+    irq_restore(irq);
+    return result;
+}
+
+int vmm_space_own_page(struct vmm_space *space, uint64_t physical) {
+    uint64_t irq=irq_save();
+    int result=vmm_space_own_page_locked(space, physical);
+    irq_restore(irq);
+    return result;
+}
+
+int vmm_space_release_page(struct vmm_space *space, uint64_t physical) {
+    uint64_t irq=irq_save();
+    int result=vmm_space_release_page_locked(space, physical);
+    irq_restore(irq);
+    return result;
+}
+
+uint16_t vmm_pcid_alloc(void) {
+    uint64_t irq=irq_save();
+    uint16_t result=vmm_pcid_alloc_locked();
+    irq_restore(irq);
+    return result;
+}
+
+void vmm_pcid_free(uint16_t pcid) {
+    uint64_t irq=irq_save();
+    vmm_pcid_free_locked(pcid);
+    irq_restore(irq);
 }

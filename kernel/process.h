@@ -77,4 +77,7 @@ uint64_t process_zombie_count(void);
 /* pid owning a physical page (via its address space), or 0. */
 uint64_t process_phys_owner(uint64_t physical);
 
+#ifdef ZEROOS_TEST_FAULTS
+int process_test_discard(uint64_t pid);
+#endif
 #endif

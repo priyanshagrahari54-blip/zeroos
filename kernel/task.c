@@ -406,6 +406,7 @@ static void reap_zombies_locked(void) {
          * The process object (if any) is owned by the process layer and is
          * reaped separately; drop only the task-side reference.
          */
+        if (task->process) task->process->thread=0;
         task->process=0;
         task->id=0;
         task->state=TASK_UNUSED;
@@ -1058,4 +1059,21 @@ uint64_t task_count(void) {
         if (tasks[i].state!=TASK_UNUSED)
             ++count;
     return count;
+}
+
+/* Cancel only a never-selected thread. Used to roll back an unpublished
+ * process; no live stack, wait queue or interrupt frame may be abandoned. */
+int task_discard_new(uint64_t tid) {
+    uint64_t flags=spin_lock_irqsave(&task_lock);
+    struct task *task=task_find_by_id(tid);
+    int result=-1;
+    if (task && task!=current_task && task->state==TASK_RUNNABLE &&
+        task->context_switches==0 && task->interrupt_frame==0) {
+        page_free((void *)task->stack_base);
+        if (task->process) task->process->thread=0;
+        for (unsigned i=0;i<sizeof(*task);++i) ((uint8_t *)task)[i]=0;
+        result=0;
+    }
+    spin_unlock_irqrestore(&task_lock,flags);
+    return result;
 }
