@@ -434,6 +434,13 @@ static void reap_zombies_locked(void) {
         task->sleep_next=0;
         task->wake_tick=0;
         task->sleep_armed=0;
+        struct user_entry_frame *frame=&user_frames[slot];
+        frame->rip=0;
+        frame->cs=0;
+        frame->rflags=0;
+        frame->rsp=0;
+        frame->ss=0;
+        frame->arg=0;
     }
 }
 
@@ -574,6 +581,10 @@ int task_create_internal(task_entry_t entry, void *argument, int user,
     }
 
     struct task *task=&tasks[slot];
+    if (next_task_id==0) {
+        spin_unlock_irqrestore(&task_lock,flags);
+        return -1;
+    }
     task->id=next_task_id++;
     task->state=TASK_RUNNABLE;
     task->stack_base=(uint64_t)stack;
@@ -1080,10 +1091,12 @@ int task_debug_validate(void) {
 }
 
 uint64_t task_count(void) {
+    uint64_t flags=spin_lock_irqsave(&task_lock);
     uint64_t count=0;
     for (int i=0;i<ZEROOS_MAX_TASKS;++i)
         if (tasks[i].state!=TASK_UNUSED)
             ++count;
+    spin_unlock_irqrestore(&task_lock,flags);
     return count;
 }
 
