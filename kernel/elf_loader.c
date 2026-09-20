@@ -2,7 +2,7 @@
 #include "memory.h"
 #include "vmm.h"
 
-static int elf_loader_elf_loader_add_overflow_u64(uint64_t a, uint64_t b, uint64_t *out) {
+static int elf_loader_add_overflow_u64(uint64_t a, uint64_t b, uint64_t *out) {
     if (b > ~0ULL - a) return 1;
     *out = a + b;
     return 0;
