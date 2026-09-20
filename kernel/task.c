@@ -824,7 +824,9 @@ int task_sleep_until(uint64_t deadline) {
 int task_sleep_ticks(uint64_t ticks) {
     if (ticks==0)
         return 0;
-    return task_sleep_until(timer_ticks()+ticks);
+    uint64_t now=timer_ticks();
+    uint64_t deadline=(~0ULL-now<ticks) ? ~0ULL : now+ticks;
+    return task_sleep_until(deadline);
 }
 
 void task_exit(void) {
