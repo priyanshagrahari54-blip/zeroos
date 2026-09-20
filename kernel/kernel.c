@@ -144,22 +144,21 @@ static void vmm_self_test(void) {
         kernel_panic("VMM map failed");
     if (vmm_translate(VMM_SELF_TEST_VA)!=(uint64_t)physical)
         kernel_panic("VMM translation mismatch");
-    if (vmm_protect_page(VMM_SELF_TEST_VA,VMM_USER|VMM_NO_EXECUTE)!=0)
-        kernel_panic("VMM protection update failed");
-    if (!vmm_is_user_range(VMM_SELF_TEST_VA,VMM_PAGE_SIZE,0))
-        kernel_panic("VMM user-range validation failed");
-    if (vmm_is_user_range(VMM_SELF_TEST_VA,VMM_PAGE_SIZE,1))
-        kernel_panic("VMM write permission validation failed");
+    if (vmm_protect_page(VMM_SELF_TEST_VA,VMM_USER|VMM_NO_EXECUTE)!=-1)
+        kernel_panic("kernel-root VMM API exposed a user mapping");
+    if (vmm_is_user_range(VMM_SELF_TEST_VA,VMM_PAGE_SIZE,0))
+        kernel_panic("kernel-root user-range validation accepted supervisor mapping");
 
     void *range_a=page_alloc();
     void *range_b=page_alloc();
     if (!range_a || !range_b)
         kernel_panic("VMM range self-test allocation failed");
     const uint64_t range_va=VMM_SELF_TEST_VA+0x2000ULL;
-    if (vmm_map_range(range_va,(uint64_t)range_a,2,VMM_USER|VMM_WRITABLE|VMM_NO_EXECUTE)!=0)
+    if (vmm_map_range(range_va,(uint64_t)range_a,2,VMM_WRITABLE|VMM_NO_EXECUTE)!=0)
         kernel_panic("VMM range mapping failed");
-    if (!vmm_is_user_range(range_va,8192,1))
-        kernel_panic("VMM multi-page range validation failed");
+    if (vmm_translate(range_va)!=(uint64_t)range_a ||
+        vmm_translate(range_va+VMM_PAGE_SIZE)!=(uint64_t)range_b)
+        kernel_panic("VMM multi-page translation failed");
     if (vmm_unmap_range(range_va,2)!=0)
         kernel_panic("VMM range unmap failed");
     page_free(range_a);
@@ -311,6 +310,8 @@ static void vmm_space_self_test(void) {
         kernel_panic("address-space user mapping failed");
     if (vmm_space_translate(&space,VMM_SPACE_TEST_VA)!=(uint64_t)physical)
         kernel_panic("address-space translation failed");
+    if (!vmm_space_is_user_range(&space,VMM_SPACE_TEST_VA,VMM_PAGE_SIZE,1))
+        kernel_panic("address-space writable user-range validation failed");
     if (vmm_space_map_page(&space,0x4000000000ULL,(uint64_t)physical,
                            VMM_USER|VMM_WRITABLE)!=-1)
         kernel_panic("address-space accepted unsafe PML4");
@@ -348,6 +349,29 @@ static void vmm_security_self_test(void) {
         vmm_space_map_page(&b,VMM_SPACE_TEST_VA+4096,(uint64_t)&__kernel_text_start,flags)!=-1)
         kernel_panic("foreign/reserved physical page accepted");
     *(uint64_t *)pa=0x1111; *(uint64_t *)pb=0x2222;
+
+    /*
+     * Mutate an inactive address space while B is active. The mutation must
+     * not depend on INVLPG (which operates in the current translation
+     * context); reactivation of A must observe the new page-table state.
+     */
+    if (vmm_space_activate(&b)) kernel_panic("activate B before inactive mutation failed");
+    void *inactive_page=page_alloc_zero();
+    if (!inactive_page ||
+        vmm_space_map_page(&a,VMM_SPACE_TEST_VA+VMM_PAGE_SIZE,
+                           (uint64_t)inactive_page,flags)!=0)
+        kernel_panic("inactive address-space map mutation failed");
+    if (vmm_space_activate(&a) ||
+        vmm_space_translate(&a,VMM_SPACE_TEST_VA+VMM_PAGE_SIZE)!=(uint64_t)inactive_page)
+        kernel_panic("inactive address-space map was not visible after activation");
+    if (vmm_space_activate(&b) ||
+        vmm_space_unmap_page(&a,VMM_SPACE_TEST_VA+VMM_PAGE_SIZE)!=0)
+        kernel_panic("inactive address-space unmap mutation failed");
+    if (vmm_space_activate(&a) ||
+        vmm_space_translate(&a,VMM_SPACE_TEST_VA+VMM_PAGE_SIZE)!=0)
+        kernel_panic("inactive address-space unmap remained stale");
+    page_free(inactive_page);
+
     for (uint64_t i=0;i<64;++i) {
         if (vmm_space_activate(&a)) kernel_panic("activate A failed");
         if (*(volatile uint64_t *)VMM_SPACE_TEST_VA!=0x1111+i) kernel_panic("A saw foreign translation");
