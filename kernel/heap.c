@@ -67,6 +67,24 @@ int heap_validate(void) {
     return cursor == heap_end ? 0 : -1;
 }
 
+/*
+ * CI-only trace on the isa-debugcon (port 0xe9, captured in debug.log):
+ * the region search emits every allocated page as its 5-hex-digit page
+ * index, 'G' at each gap restart, and 'D' when the loop exits. This
+ * traces the exact allocation sequence without depending on the IDT.
+ */
+static void heap_trace_char(char c) {
+    __asm__ volatile ("outb %0, $0xe9" : : "a"(c) : "memory");
+}
+
+static void heap_trace_hex(uint64_t value, int digits) {
+    const char *hex = "0123456789abcdef";
+    for (int i = digits - 1; i >= 0; --i) {
+        char c = hex[(value >> (i * 4)) & 0xfULL];
+        __asm__ volatile ("outb %0, $0xe9" : : "a"(c) : "memory");
+    }
+}
+
 int heap_init(void) {
     uint8_t *region = 0;
     uint64_t pages = 0;
@@ -87,21 +105,27 @@ int heap_init(void) {
      */
     for (;;) {
         uint8_t *next = (uint8_t *)page_alloc_zero();
-        if (!next)
+        if (!next) {
+            heap_trace_char('D');
             break;
+        }
+        heap_trace_hex((uint64_t)next / ZEROOS_PAGE_SIZE, 5);
         if (pages > 0 &&
             (uint64_t)next != (uint64_t)region + pages * ZEROOS_PAGE_SIZE) {
             for (uint64_t i = 0; i < pages; ++i)
                 page_free(region + i * ZEROOS_PAGE_SIZE);
             region = next;
             pages = 1;
+            heap_trace_char('G');
             continue;
         }
         if (!region)
             region = next;
         ++pages;
-        if (pages >= HEAP_REGION_PAGES)
+        if (pages >= HEAP_REGION_PAGES) {
+            heap_trace_char('D');
             break;
+        }
     }
 
     if (!region || pages < HEAP_MIN_PAGES) {
