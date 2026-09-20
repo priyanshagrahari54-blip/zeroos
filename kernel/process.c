@@ -94,7 +94,7 @@ int process_spawn(uint64_t user_arg, uint64_t *pid) {
                          &p->space,&elf_image)!=0)
         goto fail_space;
     p->code_phys=vmm_space_translate(&p->space,ZEROOS_USER_CODE_VA);
-    if (!p->code_phys)
+    if (!vmm_space_is_mapped(&p->space, ZEROOS_USER_CODE_VA))
         goto fail_space;
     code_mapped=1;
 
