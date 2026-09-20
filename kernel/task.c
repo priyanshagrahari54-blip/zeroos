@@ -434,7 +434,7 @@ static void reap_zombies_locked(void) {
         task->sleep_next=0;
         task->wake_tick=0;
         task->sleep_armed=0;
-        struct user_entry_frame *frame=&user_frames[slot];
+        struct user_entry_frame *frame=&user_frames[i];
         frame->rip=0;
         frame->cs=0;
         frame->rflags=0;
@@ -1110,6 +1110,12 @@ int task_discard_new(uint64_t tid) {
         task->context_switches==0 && task->interrupt_frame==0) {
         page_free((void *)task->stack_base);
         if (task->process) task->process->thread=0;
+        uint64_t slot=((uint64_t)task-(uint64_t)&tasks[0])/sizeof(tasks[0]);
+        if (slot<ZEROOS_MAX_TASKS) {
+            struct user_entry_frame *frame=&user_frames[slot];
+            frame->rip=0; frame->cs=0; frame->rflags=0;
+            frame->rsp=0; frame->ss=0; frame->arg=0;
+        }
         for (unsigned i=0;i<sizeof(*task);++i) ((uint8_t *)task)[i]=0;
         result=0;
     }
