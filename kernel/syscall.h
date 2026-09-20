@@ -17,6 +17,7 @@
 #define ZEROOS_SYSCALL_WRITE   2
 #define ZEROOS_SYSCALL_GETPID  3
 #define ZEROOS_SYSCALL_GETTID  4
+/* Reserved Stage-2 slots: exec/wait/fd/process-control will be added here. */
 #define ZEROOS_SYSCALL_MAX     5
 
 #define ZEROOS_SYSCALL_MAX_IO  512
