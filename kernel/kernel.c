@@ -216,6 +216,9 @@ extern void early_stub_29(void);
 extern void early_stub_30(void);
 extern void early_stub_31(void);
 
+static struct early_idt_gate early_gate[32];
+static struct early_idtr early_descriptor;
+
 extern void serial_write_u64_public(uint64_t value);
 
 void early_fatal_dispatch(uint64_t vector, uint64_t error_code,
@@ -246,8 +249,7 @@ static void early_idt_install(void) {
         (void *)early_stub_27, (void *)early_stub_28, (void *)early_stub_29,
         (void *)early_stub_30, (void *)early_stub_31
     };
-    static struct early_idt_gate gate[32];
-    static struct early_idtr descriptor;
+    struct early_idt_gate *gate = early_gate;
 
     for (uint64_t i = 0; i < 32; ++i) {
         uint64_t base = (uint64_t)stub[i];
@@ -258,9 +260,9 @@ static void early_idt_install(void) {
         gate[i].offset_mid = (uint16_t)((base >> 16) & 0xffff);
         gate[i].offset_high = (uint32_t)((base >> 32) & 0xffffffff);
     }
-    descriptor.limit = (uint16_t)(sizeof(gate) - 1);
-    descriptor.base = (uint64_t)gate;
-    __asm__ volatile ("lidt %0" : : "m"(descriptor));
+    early_descriptor.limit = (uint16_t)(sizeof(early_gate) - 1);
+    early_descriptor.base = (uint64_t)early_gate;
+    __asm__ volatile ("lidt %0" : : "m"(early_descriptor));
 
     /*
      * Verify the descriptor the CPU actually holds: a corrupted load
@@ -269,7 +271,8 @@ static void early_idt_install(void) {
      */
     struct early_idtr readback;
     __asm__ volatile ("sidt %0" : "=m"(readback));
-    if (readback.limit != descriptor.limit || readback.base != descriptor.base) {
+    if (readback.limit != early_descriptor.limit ||
+        readback.base != early_descriptor.base) {
         serial_write_public("ZEROOS PANIC: early IDT descriptor mismatch.\n");
         for (;;) __asm__ volatile ("cli; hlt");
     }
@@ -302,12 +305,45 @@ static void vmm_space_self_test(void) {
     serial_write_public("ZEROOS: per-address-space VMM self-test passed.\n");
 }
 
+/*
+ * Temporary diagnostic probes (CI-only): every heap_self_test phase
+ * emits a phase letter, then the IDT integrity code ('0' = IDT intact,
+ * '1'..'7' = which check failed). These pin the exact faulting phase
+ * and test whether the IDT storage is corrupted before the fault.
+ * Removed once the fault is understood.
+ */
+static void probe_out(char c) {
+    __asm__ volatile ("outb %0, $0xe9" : : "a"(c) : "memory");
+}
+
+static int idt_probe(void) {
+    struct early_idtr readback;
+    __asm__ volatile ("sidt %0" : "=m"(readback));
+    if (readback.limit != early_descriptor.limit) return 1;
+    if (readback.base != early_descriptor.base) return 2;
+    if (early_gate[14].type_attr != 0x8E) return 3;
+    if (early_gate[14].selector != 0x08) return 4;
+    if (early_gate[14].offset_low == 0 && early_gate[14].offset_mid == 0 &&
+        early_gate[14].offset_high == 0)
+        return 5;
+    if (early_gate[8].type_attr != 0x8E) return 6;
+    if (early_gate[13].type_attr != 0x8E) return 7;
+    return 0;
+}
+
+static void heap_probe(char phase) {
+    probe_out(phase);
+    probe_out((char)('0' + idt_probe()));
+}
+
 static void heap_self_test(void) {
     uint64_t capacity=heap_capacity_bytes();
     void *p1,*p2,*p3,*big;
 
     if (capacity<ZEROOS_HEAP_MIN_ALLOC)
         kernel_panic("heap capacity self-test failed");
+
+    heap_probe('a');
 
     /* Tiny and odd-sized allocations, 16-byte alignment, full-payload writes. */
     p1=kmalloc(1); p2=kmalloc(31); p3=kmalloc(1000);
@@ -322,6 +358,7 @@ static void heap_self_test(void) {
         kernel_panic("heap payload content self-test failed");
     if (kfree(p1)!=0 || kfree(p2)!=0 || kfree(p3)!=0)
         kernel_panic("heap basic free failed");
+    heap_probe('b');
 
     /* Negative tests: double free, NULL, unaligned, out-of-region. */
     if (kfree(p1)!=-1)
@@ -358,18 +395,24 @@ static void heap_self_test(void) {
         kernel_panic("heap oversized allocation rejection failed");
     if (kmalloc(~0ULL))
         kernel_panic("heap huge allocation rejection failed");
+    heap_probe('c');
 
     /* Near-maximum allocation covering essentially the whole region. */
     big=kmalloc(capacity-ZEROOS_HEAP_MIN_ALLOC);
     if (!big)
         kernel_panic("heap near-maximum allocation failed");
-    for (uint64_t i=0;i<capacity-ZEROOS_HEAP_MIN_ALLOC;++i)
+    for (uint64_t i=0;i<capacity-ZEROOS_HEAP_MIN_ALLOC;++i) {
         ((uint8_t *)big)[i]=0x5A;
+        if ((i & 0x1FFFFF) == 0x100000 && i != 0)
+            heap_probe((char)('d' + (i >> 20) % 4));
+    }
+    heap_probe('h');
     for (uint64_t i=0;i<capacity-ZEROOS_HEAP_MIN_ALLOC;++i)
         if (((uint8_t *)big)[i]!=0x5A)
             kernel_panic("heap near-maximum payload failed");
     if (kfree(big)!=0)
         kernel_panic("heap near-maximum free failed");
+    heap_probe('i');
 
     /* kcalloc zero-fill. */
     void *zeroed=kcalloc(128,8);
@@ -383,6 +426,7 @@ static void heap_self_test(void) {
     /* Overflow-safe count: count*size must not wrap. */
     if (kcalloc(~0ULL,8))
         kernel_panic("kcalloc overflow rejection failed");
+    heap_probe('j');
 
     /*
      * Exhaustion: fill the whole region with 64-byte blocks (96-byte blocks
@@ -406,6 +450,7 @@ static void heap_self_test(void) {
             kernel_panic("heap exhaustion drain failed");
     if (heap_used_bytes()!=0 || heap_validate()!=0)
         kernel_panic("heap exhaustion accounting failed");
+    heap_probe('k');
 
     /* Bounded deterministic stress: interleaved alloc/free (LCG sequence). */
     static void *live[2048];
@@ -435,6 +480,7 @@ static void heap_self_test(void) {
             kernel_panic("heap stress drain failed");
     if (heap_used_bytes()!=0 || heap_validate()!=0)
         kernel_panic("heap stress accounting failed");
+    heap_probe('l');
 
     serial_write_public("ZEROOS: heap capacity: ");
     serial_write_u64(capacity);
