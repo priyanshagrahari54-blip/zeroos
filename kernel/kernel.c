@@ -181,9 +181,24 @@ static void heap_self_test(void) {
     if (kfree(p2)!=0)
         kernel_panic("heap aligned free after partial reject failed");
 
-    /* Boundary: an allocation that would need more than the whole region. */
-    if (kmalloc(capacity))
+    /*
+     * Boundary: an allocation whose header plus payload would exceed the
+     * whole region must be rejected. capacity itself fits exactly
+     * (header + capacity == region size) and must succeed, consuming the
+     * region as one block.
+     */
+    void *exact=kmalloc(capacity);
+    if (!exact)
+        kernel_panic("heap exact-capacity allocation failed");
+    if (((uint8_t *)exact)[0]!=0)
+        kernel_panic("heap exact-capacity payload failed");
+    ((uint8_t *)exact)[0]=0xC3;
+    if (kfree(exact)!=0)
+        kernel_panic("heap exact-capacity free failed");
+    if (kmalloc(capacity+1))
         kernel_panic("heap oversized allocation rejection failed");
+    if (kmalloc(~0ULL))
+        kernel_panic("heap huge allocation rejection failed");
 
     /* Near-maximum allocation covering essentially the whole region. */
     big=kmalloc(capacity-ZEROOS_HEAP_MIN_ALLOC);

@@ -12,9 +12,13 @@ ZEROOS uses the x86-64 SYSCALL / SYSRET pair. The kernel enables
 | `IA32_SFMASK` | `0x10300` (IF, DF, AC) | flags cleared on entry |
 
 On SYSCALL the CPU saves the user RIP into RCX and the user RFLAGS into R11,
-loads RIP from LSTAR, and masks RFLAGS. **RSP is not changed**: the user
-stack is reachable by the kernel through the calling process's address space,
-and the entry trampoline (`kernel/syscall_entry.S`) builds its frame on it.
+loads RIP from LSTAR, and masks RFLAGS (SFMASK clears IF, DF, AC). **RSP is
+not changed** by the instruction itself. The entry trampoline
+(`kernel/syscall_entry.S`) immediately moves to the top of the current task's
+kernel stack — before any memory operation — and builds the syscall frame
+there, so kernel state never lands in user-writable memory. On return the
+trampoline restores the user RSP and sets IF in R11 before SYSRET, so user
+code always resumes with interrupts enabled (DF and AC are cleared).
 
 ## Register convention
 

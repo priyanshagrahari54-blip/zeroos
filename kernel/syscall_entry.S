@@ -96,6 +96,10 @@ syscall_entry:
     popq %rax
     popq %rcx
     popq %r11
+    orl  $0x100, %r11d              /* SYSCALL applied SFMASK (IF cleared)
+                                       to R11; SYSRET then rebuilds RFLAGS
+                                       from R11, so restore IF to keep user
+                                       code timer-preemptible after syscalls */
     popq %r13                       /* user r12                            */
     popq %r12                       /* user rsp                            */
     popq %r14                       /* user r14                            */
