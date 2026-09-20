@@ -3,7 +3,7 @@
 #include <string.h>
 #include "elf.h"
 
-static uint8_t image[4096];
+static uint8_t image[8192];
 
 static void make_base(void) {
     struct elf64_ehdr *eh=(struct elf64_ehdr *)image;
