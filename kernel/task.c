@@ -33,6 +33,15 @@ static struct spinlock task_lock;
 static uint64_t next_task_id;
 static struct task *sleep_head;
 
+static struct task *task_find_by_id_locked(uint64_t id) {
+    if (id==0) return &tasks[0];
+    if (id==1) return &tasks[ZEROOS_IDLE_SLOT];
+    for (int i=2;i<ZEROOS_MAX_TASKS;++i)
+        if (tasks[i].state!=TASK_UNUSED && tasks[i].id==id)
+            return &tasks[i];
+    return 0;
+}
+
 static int task_stack_guard_ok(const struct task *task) {
     return task && task->stack_base &&
            *(const uint64_t *)(uint64_t)task->stack_base == ZEROOS_TASK_STACK_GUARD;
@@ -1082,7 +1091,7 @@ uint64_t task_count(void) {
  * process; no live stack, wait queue or interrupt frame may be abandoned. */
 int task_discard_new(uint64_t tid) {
     uint64_t flags=spin_lock_irqsave(&task_lock);
-    struct task *task=task_find_by_id(tid);
+    struct task *task=task_find_by_id_locked(tid);
     int result=-1;
     if (task && task!=current_task && task->state==TASK_RUNNABLE &&
         task->context_switches==0 && task->interrupt_frame==0) {
