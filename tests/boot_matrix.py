@@ -19,6 +19,9 @@ EXPECTED = [
     "GDT extended (user segments) and TSS loaded.",
     "IDT installed and interrupts enabled.",
     "SYSCALL/SYSRET syscall entry initialized.", "foundation milestone reached.",
+    "synchronization primitives self-test passed.",
+    "wait queue block/wakeup self-test passed.", "wait queue integration verified.",
+    "timed sleep wakeup self-test passed.", "timed sleep integration verified.",
     "timer tick 100.", "timer-only preemption stress passed.",
     "zombie reaping and slot-reuse stress passed.",
     "CPL3 and syscall register ABI verified.", "ring-3 hello process verified.",
@@ -93,6 +96,10 @@ def main():
         print("KVM unavailable: no accessible /dev/kvm on this runner", flush=True)
     print("PCID with INVPCID exercised: " + str(("enabled", "available") in modes), flush=True)
     print("PCID without INVPCID exercised: " + str(("enabled", "unavailable") in modes), flush=True)
+    if os.environ.get("ZEROOS_REQUIRE_PCID") == "1" and not all(
+        mode in modes for mode in [("enabled", "available"), ("enabled", "unavailable")]
+    ):
+        raise RuntimeError("Stage-1 CI requires PCID with and without INVPCID; runner hardware coverage is incomplete")
     print("PASS: bounded Stage-1 integration matrix", flush=True)
 
 

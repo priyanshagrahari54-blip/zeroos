@@ -37,7 +37,7 @@ struct multiboot_mmap_entry {
     uint64_t len;
     uint32_t type;
     uint32_t reserved;
-};
+} __attribute__((packed));
 
 static uint64_t page_bitmap[ZEROOS_BITMAP_WORDS];
 /* Separate runtime allocations from firmware/kernel reservations. */
@@ -130,87 +130,58 @@ void memory_init(uint64_t multiboot_info) {
     free_pages = 0;
     available_pages = 0;
 
-    /* The first two words are total_size and reserved. */
-    if (multiboot_info == 0)
-        return;
+    if (!multiboot_info || (multiboot_info&7ULL)) return;
+    uint32_t total_size=*(uint32_t *)multiboot_info;
+    if (total_size<16 || total_size>0x1000000U || (total_size&7U) ||
+        multiboot_info+total_size<multiboot_info) return;
+    uint8_t *base=(uint8_t *)multiboot_info, *end=base+total_size;
+    struct multiboot_tag *last=(struct multiboot_tag *)(end-8);
+    if (last->type!=MULTIBOOT_TAG_TYPE_END || last->size!=8) return;
 
-    uint32_t total_size = *(uint32_t *)(uint64_t)multiboot_info;
-
-    if (total_size < 16U)
-        return;
-
-    uint8_t *info_base = (uint8_t *)(uint64_t)multiboot_info;
-    uint8_t *cursor = info_base + 8;
-    uint8_t *end = info_base + total_size;
-
-    /* Validate the mandatory end tag boundary before walking variable tags. */
-    if (total_size > 0x1000000U)
-        return;
-
-    while (cursor + sizeof(struct multiboot_tag) <= end) {
-        struct multiboot_tag *tag = (struct multiboot_tag *)cursor;
-
-        if (tag->size < sizeof(struct multiboot_tag) ||
-            cursor + tag->size > end)
-            break;
-
-        if (tag->type == MULTIBOOT_TAG_TYPE_MMAP) {
-
-            struct multiboot_tag_mmap *mmap =
-                (struct multiboot_tag_mmap *)tag;
-
-            if (mmap->size < sizeof(*mmap) ||
-                mmap->entry_size < sizeof(struct multiboot_mmap_entry))
+    /* Validate the entire structure before releasing any frame. Then release
+     * available ranges, followed by non-available reservations. Reserved
+     * entries dominate overlaps regardless of firmware record ordering. */
+    for (unsigned pass=0;pass<3;++pass) {
+        uint8_t *cursor=base+8;
+        int saw_end=0;
+        while (cursor<end) {
+            struct multiboot_tag *tag=(struct multiboot_tag *)cursor;
+            if (tag->size<8 || tag->size>(uint64_t)(end-cursor)) return;
+            if (tag->type==MULTIBOOT_TAG_TYPE_END) {
+                if (tag->size!=8 || cursor!=end-8) return;
+                saw_end=1;
                 break;
-
-            uint8_t *entry_ptr = cursor + sizeof(*mmap);
-            uint8_t *entry_end = cursor + mmap->size;
-
-            while (entry_ptr + mmap->entry_size <= entry_end) {
-                struct multiboot_mmap_entry *entry =
-                    (struct multiboot_mmap_entry *)entry_ptr;
-
-                if (entry->type == MULTIBOOT_MEMORY_AVAILABLE) {
-                    uint64_t start = entry->addr;
-                    uint64_t end_addr;
-
-                    /* Reject wrapped address ranges before doing arithmetic. */
-                    if (entry->len > (~0ULL - start))
-                        end_addr = ~0ULL;
-                    else
-                        end_addr = start + entry->len;
-
-                    if (start < ZEROOS_MAX_PHYS_MEM && end_addr > start) {
-                        if (end_addr > ZEROOS_MAX_PHYS_MEM)
-                            end_addr = ZEROOS_MAX_PHYS_MEM;
-
-                        uint64_t first =
-                            (start + ZEROOS_PAGE_SIZE - 1) / ZEROOS_PAGE_SIZE;
-                        uint64_t last = end_addr / ZEROOS_PAGE_SIZE;
-
-                        if (last > ZEROOS_MAX_PAGES)
-                            last = ZEROOS_MAX_PAGES;
-
-                        for (uint64_t page = first; page < last; ++page) {
-                            if (bitmap_test(page)) {
-                                bitmap_clear(page);
-                                ++free_pages;
-                                ++available_pages;
-                                summary_set(page >> 6);
-                            }
-                        }
+            }
+            if (tag->type==MULTIBOOT_TAG_TYPE_MMAP) {
+                struct multiboot_tag_mmap *map=(struct multiboot_tag_mmap *)tag;
+                if (map->size<sizeof(*map) || map->entry_size<sizeof(struct multiboot_mmap_entry) ||
+                    map->entry_version!=0 || (map->size-sizeof(*map))%map->entry_size) return;
+                uint8_t *entry_end=cursor+map->size;
+                for (uint8_t *p=cursor+sizeof(*map);p<entry_end;p+=map->entry_size) {
+                    struct multiboot_mmap_entry *entry=(struct multiboot_mmap_entry *)p;
+                    uint64_t start=entry->addr;
+                    if (entry->len>~0ULL-start) return;
+                    uint64_t finish=start+entry->len;
+                    if (pass==2 && entry->type!=MULTIBOOT_MEMORY_AVAILABLE)
+                        reserve_range(start,finish);
+                    if (pass!=1 || entry->type!=MULTIBOOT_MEMORY_AVAILABLE ||
+                        start>=ZEROOS_MAX_PHYS_MEM || finish<=start) continue;
+                    if (finish>ZEROOS_MAX_PHYS_MEM) finish=ZEROOS_MAX_PHYS_MEM;
+                    uint64_t first=(start+ZEROOS_PAGE_SIZE-1)/ZEROOS_PAGE_SIZE;
+                    uint64_t limit=finish/ZEROOS_PAGE_SIZE;
+                    for (uint64_t page=first;page<limit;++page) {
+                        if (!bitmap_test(page)) continue;
+                        bitmap_clear(page);
+                        ++free_pages;
+                        summary_set(page>>6);
                     }
                 }
-
-                entry_ptr += mmap->entry_size;
             }
+            cursor+=(tag->size+7U)&~7U;
         }
-
-        if (tag->type == MULTIBOOT_TAG_TYPE_END)
-            break;
-
-        cursor += (tag->size + 7U) & ~7U;
+        if (!saw_end) return;
     }
+    available_pages=free_pages;
 
     reserve_range(0, 0x100000); /* firmware, IVT/BDA, VGA/ROM and trampoline area */
     reserve_range((uint64_t)&__kernel_start,

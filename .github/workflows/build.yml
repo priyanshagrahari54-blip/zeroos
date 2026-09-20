@@ -108,6 +108,11 @@ jobs:
           check "ZEROOS: IDT installed and interrupts enabled."
           check "ZEROOS: SYSCALL/SYSRET syscall entry initialized."
           check "ZEROOS: foundation milestone reached."
+          check "ZEROOS: synchronization primitives self-test passed."
+          check "ZEROOS: wait queue block/wakeup self-test passed."
+          check "ZEROOS: wait queue integration verified."
+          check "ZEROOS: timed sleep wakeup self-test passed."
+          check "ZEROOS: timed sleep integration verified."
           # Scheduler certification
           check "ZEROOS: timer tick 100."
           check "ZEROOS: timer-only preemption stress passed."
@@ -139,7 +144,7 @@ jobs:
           exit $FAIL
 
       - name: CPU and RAM integration matrix
-        run: python3 tests/boot_matrix.py >build/matrix-results.log 2>&1
+        run: ZEROOS_REQUIRE_PCID=1 python3 tests/boot_matrix.py >build/matrix-results.log 2>&1
 
       - name: Dump serial log on failure
         if: failure()

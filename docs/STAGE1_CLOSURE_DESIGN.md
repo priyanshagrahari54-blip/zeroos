@@ -98,3 +98,13 @@ reuses A's identifier with a different frame at the same VA. Sixty-four cycles
 must read the new value, never the poison. The matrix records actual PCID and
 INVPCID availability and, when KVM exists, runs host features plus a separate
 INVPCID-disabled case. A CPU model name alone is not positive feature evidence.
+
+### Boot memory-map trust boundary
+
+No frame may be released from a partially validated handoff. Validate all tag
+sizes, strides, entry versions, range arithmetic and the reachable final end
+tag first. Release complete available pages only after that pass, then reserve
+non-available entries with outward rounding. A reservation dominates an overlap
+regardless of record ordering. This is a hardware-input safety rule, not a
+change to ZEROOS's allocation/claim ownership API. Native malformed, overlap,
+rounding and cap fixtures reproduce the old reservation failure and regress it.

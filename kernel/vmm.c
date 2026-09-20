@@ -25,9 +25,8 @@ static uint32_t pcid_bitmap; /* bit N set => PCID N in use (bits 1-31) */
 
 /*
  * Invalidate every TLB entry tagged with one PCID (INVPCID type 1 = single context).
- * Required when a PCID is returned to the allocator: a later space reusing
- * the same PCID must never see the dead space's translations, including
- * pages that may now be owned by a different process.
+ * Immediate retirement when supported. Mandatory incoming-context flushes
+ * also prevent stale reuse and are sufficient when INVPCID is unavailable.
  */
 static void invpcid_all(uint16_t pcid) {
     /*
@@ -35,9 +34,8 @@ static void invpcid_all(uint16_t pcid) {
      * (type 1 = single-context invalidation; bits [63:12] must be zero or
      * the CPU raises #GP).
      *
-     * The instruction bytes are emitted directly: this binutils version
-     * cannot assemble INVPCID (it does not infer the m128 operand size).
-     * 66 0F 38 82 08: memory descriptor at RAX, type in RCX.
+     * Explicit architectural encoding 66 0F 38 82 08:
+     * memory descriptor at RAX, type in RCX.
      */
     uint64_t operand[2] = {(uint64_t)(pcid & 0xfffULL), 0};
     if (!invpcid_available)
