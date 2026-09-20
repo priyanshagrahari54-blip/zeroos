@@ -1,7 +1,123 @@
 # Stage 1 validation record
 
-Stage 1 is **not certified**. Source-level implementation and serial milestone
-strings are not substitutes for hardware-exercised tests.
+## STAGE 1 CERTIFIED — scoped engineering acceptance
+
+Certified code: **`cc38f8f7635ffbb7d3e0e0dd3016bbbb9a125460`**, 2026-09-20.
+Both final workflows completed successfully:
+
+- Push: [35509533259](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/35509533259)
+- PR: [35509535607](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/35509535607)
+
+All six recorded findings are closed for the scope below. Five native suites,
+ELF boundary checks, nine fault/feature guests, the 60-second integration run,
+and **seven CPU/RAM cases with 31 required checks each** passed. Both positive
+PCID modes executed under KVM and were mandatory for a green final workflow.
+This is ZEROOS's internal Stage-1 acceptance, not external certification,
+production readiness or a claim of universal security. Documentation-only
+follow-up commits do not change the certified executable code.
+
+### Stage acceptance record
+
+| Stage | Boundary | Implemented / tested result |
+|---|---|---|
+| 1.0 | Audit and first-principles design | Actual failures and ownership/transition rules recorded; no documentation-only feature credited as implemented |
+| 1.1 | Boot/CPU/GDT/IDT/exceptions | Validated Multiboot2 input, NX requirement, exact frames/descriptors, distinct emergency stacks; fault guests passed |
+| 1.2 | Physical memory | Reserved/allocated/claimed state, malformed/overlapping maps, rounding, exhaustion and failure boundaries passed |
+| 1.3 | Virtual memory | Effective permissions, claims, protected kernel leaves and context activation/reuse passed |
+| 1.4 | Kernel heap | Exact allocation identity, corruption bounds, initialization rollback, exhaustion and stress passed |
+| 1.5 | Interrupts/timer | IRQ ownership, PIT ticks, bootstrap IRQ regression and normalized delivery passed |
+| 1.6 | Existing scheduler | Cooperative/IRQ-exit preemption, register preservation, wait/sleep, guards and lifetime/reuse passed |
+| 1.7 | Process/thread ownership | Distinct IDs/objects, parent link, atomic publication, rollback and terminal-thread reap passed |
+| 1.8 | Isolated spaces | Same VA/different PA under live CR3, user data isolation and displaced-frame reuse passed |
+| 1.9 | CPL3 | Actual user selectors/flags, TSS stack entry and fault containment passed |
+| 1.10 | Syscall ABI | Five documented calls, register/RSP preservation, binary write bounds and invalid calls passed |
+| 1.11 | User pointers | Whole-range canonicality, overflow, mapping and all-level permissions; no partial rejected copy |
+| 1.12 | Security policy | Runtime W^X including aliases, integer-only state, safe returns, kernel/I/O/unsupported-entry denial passed |
+| 1.13 | Integrated boot | Full required marker set and failure rejection passed in normal and matrix runs |
+| 1.14 | Regression/CI/documentation | Bounded native, fault, stress and CPU/RAM tests; strict PCID coverage; truthful scope/evidence recorded |
+
+## Closure evidence, 2026-09-20
+
+- `8e876f2` implemented kernel/user/physical-alias W^X and integer-only state
+  containment. Its run passed hardware fault regressions but exposed delayed
+  terminal-thread reclamation during the extended user-fault sequence.
+- `a04a15a` fixed terminal-thread reclamation and added CPU/RAM integration,
+  explicit SYSENTER denial and PMM native tests. Push
+  [35508727922](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/35508727922)
+  and PR [35508729878](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/35508729878)
+  passed the complete workflow and five TCG configurations.
+- `dee4d13` fixed heap allocation identity. Against the old code, a second free
+  of a coalesced block returned success and underflowed used-byte accounting to
+  `18446744073709551584`. New native tests reject that stale header and forged
+  payload headers and fail safely on corrupted chain sizes/canaries. Push
+  [35508946160](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/35508946160)
+  and PR [35508948944](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/35508948944)
+  passed all five native suites, static checks, nine fault/feature guests,
+  normal integration and the five-case TCG matrix.
+- `f9b91d4` added displaced-frame identifier-reuse tests and actual KVM paths.
+  Push [35509279217](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/35509279217)
+  and PR [35509281487](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/35509281487)
+  passed. Both **PCID with INVPCID** and **PCID without INVPCID** executed and
+  passed under KVM. This closes the feature-coverage gap left by TCG.
+- `cc38f8f` validates the complete boot memory map before releasing frames and
+  gives reserved records precedence over overlapping available records.
+  The new overlap fixture fails against the preceding implementation and
+  passes after the fix. Malformed tags/end markers, overflow, rounding and
+  physical-cap tests pass locally. PMM and heap suites also pass local
+  ASan/UBSan builds. Both final workflows above passed this candidate. CI
+  requires positive PCID coverage in both modes and explicitly checks
+  synchronization, wait and sleep markers.
+
+### Original finding disposition
+
+| Finding | Resolution and evidence |
+|---|---|
+| PCID lifetime/reuse | Space-owned acquire/release; native exhaustion/reuse; actual KVM with/without INVPCID; displaced retired frames prevent false passes from physical-page reuse |
+| Partial spawn rollback | Builder-vs-space transfer tracking; injected page/heap failures compare page/heap/task/PCID baselines; 64 capacity/drain rounds |
+| Cross-space ownership | PMM exclusive claims reject reserved/free/already-owned frames and free-while-mapped; native and guest negative cases |
+| Extended register state | Explicit integer-only ABI, CR0.TS held set; actual x87/MMX/SSE #NM containment; initial GPR scrub; no FP/vector support claim |
+| Complete runtime W^X | Kernel RX/RO-NX/RW-NX, sealed executable physical aliases, protected root APIs; exact kernel #PF probes and CPL3 forbidden accesses |
+| Adverse transitions/lifecycle/matrix | Bad RSP, privileged I/O, kernel reads, NX/code-write faults, invalid gate/SYSENTER, bootstrap IRQ regression, 64 execution/reap cycles, seven CPU/RAM cases |
+
+### Final CPU/RAM matrix at `cc38f8f`
+
+Every row passed all 31 required integration checks; no panic/triple fault was
+accepted. TCG's `max` CPU did **not** provide PCID. KVM was available on the
+hosted runner and supplied the two positive feature paths.
+
+| Accelerator | CPU | RAM MiB | PCID | INVPCID |
+|---|---|---:|---|---|
+| TCG | qemu64 | 32 | off | unavailable |
+| TCG | max | 128 | off | unavailable |
+| TCG | max,pcid=off,invpcid=off | 512 | off | unavailable |
+| TCG | qemu64 | 768 | off | unavailable |
+| TCG | qemu64, repeated baseline | 128 | off | unavailable |
+| KVM | host | 128 | enabled | available |
+| KVM | host,invpcid=off | 128 | enabled | unavailable |
+
+### Scope, not a production-readiness claim
+
+The target is the single-CPU, integer-only, built-in-image Stage-1 foundation:
+32–768 MiB tested RAM with a 512 MiB managed aperture, fixed resource limits,
+PIC/PIT and architectural user/kernel isolation. Tests are bounded: 5 seconds
+per native suite, 12 per fault guest, 45 per matrix guest, and a 60-second
+normal integration window. CI archives diagnostics and posts bounded reports
+on success as well as failure. Local guest tools were unavailable; the guest
+claims above come from CI, not invented local runs.
+
+No bare-metal/UEFI certification, SMP, floating-point contexts, loader/VFS/
+drivers, indefinite soak, fairness/latency benchmark, speculative-execution
+mitigation or universal memory-safety proof is claimed. Those are outside this
+stage. See BUILD.md for reproducible commands and STAGE1_CLOSURE_DESIGN.md for
+ZEROOS's ownership and boundary rationale.
+
+---
+
+## Historical audit and failure record
+
+The sections below describe earlier commits, not unresolved findings in the
+certified code. They are retained so failures and corrections remain
+traceable instead of being rewritten as an uninterrupted success.
 
 ## Heap-boundary failure, 2026-09-20
 
@@ -73,8 +189,8 @@ list node (the old code freed the successor instead of the removed node).
 The final integration marker has been renamed to a self-test pass, not a
 claim of Stage 1 certification. Temporary PMM/heap progress probes are gone.
 
-Full user/kernel W^X, syscall entry/return validation and per-thread extended
-register ownership still require audit and tests. Stage 1 remains uncertified.
+At this historical point, full user/kernel W^X, return-state validation and
+extended-register ownership remained open. Later closure evidence is above.
 
 ## First complete green integration run
 
@@ -97,7 +213,7 @@ The full workflow took 3m4s; that is CI duration, not a kernel performance
 measurement. The green result applies to this specific QEMU configuration,
 not a hardware matrix or proof of security.
 
-### Open certification findings
+### Findings recorded at `46b032a` (historical)
 
 1. `process_spawn` reserves a PCID before `vmm_space_create` clears the
    field; destruction then clears PCID state before the process layer can
@@ -114,5 +230,6 @@ not a hardware matrix or proof of security.
    coverage is required before certifying the complete Stage 1 scope.
 
 The boot message deliberately says `ring-3 integration self-test passed`,
-not `Stage 1 certified`. These findings must be fixed and tested, not waived
-because the existing integration suite is green.
+not `Stage 1 certified`. The current disposition and expanded evidence are
+recorded at the top of this document; the original green run alone did not
+close these findings.

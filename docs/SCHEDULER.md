@@ -101,9 +101,9 @@ exit can restore their live architectural frame; this prevents a stale
 cooperative return address from being mistaken for the interrupted execution
 point.
 
-The design follows the same architectural principle used by mature kernels:
-interrupt entry/exit and scheduling state are explicit boundaries, and the
-scheduler does not corrupt an in-flight interrupt frame. citeturn3search1turn2search13
+The invariant is that an in-flight interrupt frame remains the authoritative
+continuation until IRETQ consumes it. This follows from frame ownership and
+CPU instruction semantics, independently of scheduling policy.
 
 ## Timed sleep and deadlines
 
@@ -111,11 +111,20 @@ Kernel tasks can sleep for a number of monotonic PIT ticks through `task_sleep_t
 
 The current timer is intentionally tick-granular at 100 Hz: a five-tick sleep has a nominal 50 ms duration and wakeup occurs on the first tick at or after its deadline. Deadline arithmetic uses unsigned 64-bit monotonic ticks with signed-difference ordering, making normal wraparound-safe comparisons possible for deadlines within the representable half-range.
 
-This is deliberately a low-overhead timeout mechanism rather than the final high-resolution timer subsystem. Mature timer architectures separate low-resolution timeout scheduling from high-resolution event timers; ZEROOS can add a clocksource/clockevent layer and high-resolution timers later without changing the task sleep API. citeturn0search0turn0search2
+This tick-granular timeout mechanism is not a high-resolution timer subsystem.
+A future timing design must preserve the distinction between a requested
+wake deadline and the hardware mechanism used to deliver that event.
 
 ## Task lifecycle and reclamation
 
 A task that returns from its entry function becomes `TASK_ZOMBIE`. Its kernel stack cannot be freed by the task itself because execution is still using that stack. The scheduler therefore reclaims zombie stacks from a later timer/scheduler context, resets the descriptor to `TASK_UNUSED`, and returns the physical page to the page allocator. This makes task slots reusable without allocating a separate reaper thread or permanent reaper stack.
+
+A different task reaping a terminal process can also release that process's
+non-current ZOMBIE thread immediately. It does not have to wait for another
+tick: otherwise a fast succession of exits can exhaust slots whose process
+objects have already been destroyed. Both paths clear the process/thread link
+before the descriptor is reused. A 64-process guest execution/reap stress test
+checks that no terminal thread or PCID remains after each reap.
 
 The lifecycle is therefore `UNUSED → RUNNABLE → RUNNING → BLOCKED/RUNNABLE → ZOMBIE → UNUSED`. A blocked task cannot become a zombie until it is explicitly resumed and exits.
 

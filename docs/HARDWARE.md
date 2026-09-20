@@ -2,11 +2,13 @@
 
 ## Current target
 
-ZEROOS currently targets x86-64 machines and QEMU's x86-64 virtual hardware.
+ZEROOS currently targets single-CPU x86-64 with NX. The tested boot path is
+GRUB/Multiboot2 from the BIOS-bootable ISO in QEMU TCG and KVM. This is not a
+bare-metal or UEFI certification. See VALIDATION.md for exact CPU/RAM cases.
 
 ## Boot-critical hardware
 
-- Firmware/BIOS/UEFI-compatible boot path through the project's GRUB/Multiboot2 flow.
+- BIOS/GRUB Multiboot2 handoff; native UEFI loading remains future work.
 - CPU operating in x86-64 long mode.
 - Programmable interrupt controller using the current 8259 PIC layer.
 - PIT channel 0 at the current 100 Hz scheduler/timer frequency.

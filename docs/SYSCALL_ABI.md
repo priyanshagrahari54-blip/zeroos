@@ -1,4 +1,4 @@
-# ZEROOS system-call ABI (Stage 1, implementation under validation)
+# ZEROOS system-call ABI (Stage 1)
 
 ## Boundary and ownership
 
@@ -49,6 +49,24 @@ whole range, copy exactly that length, and emit exactly those bytes (the UART
 adds CR before LF). Embedded NUL does not terminate a write. It is not a
 NUL-terminated string API and never scans beyond the local copy.
 
+## Initial thread state and instruction policy
+
+The built-in image starts with RDI equal to its entry argument and every other
+GPR zero. DS/ES use the user data selector; FS/GS are null. RFLAGS starts at
+`0x202`; the supplied RSP points inside a writable NX stack page. This is not
+an ELF/argc/argv entry contract; no general executable loader exists yet.
+
+Stage 1 is **integer-only**. CR0.TS remains set; x87/MMX/SSE attempts cause a
+contained #NM rather than accessing inherited extended state. Kernel C uses
+general registers only, with an ELF instruction scan as a regression check.
+Future floating-point/vector support must introduce per-thread state ownership
+before relaxing this policy. No FP/vector-preservation ABI is promised today.
+
+SYSCALL is the sole supported system-call instruction. If CPUID advertises
+SYSENTER, its CS/ESP/EIP MSRs are zeroed to prevent an inherited alternate
+entry path. A user SYSENTER or invalid software interrupt is contained as
+#GP/#UD as appropriate for the CPU. These are not alternate syscall APIs.
+
 ## User-pointer rules
 
 `copy_from_user` uses `vmm_space_is_user_range` before copying any byte:
@@ -69,8 +87,8 @@ and containment of invalid RCX/RSP. This is not proof of assembly entry.
 
 The built-in ring-3 program checks CS.RPL, IF/TF, positive return values,
 callee-saved GPR canaries and unchanged RSP across write/getpid/gettid/yield.
-Its CI marker is `CPL3 and syscall register ABI verified`. Hardware results
-are recorded separately in VALIDATION.md; Stage 1 is not yet certified.
-Kernel C uses general registers only, avoiding compiler-generated SIMD
-clobbers in interrupts. Per-thread extended-register isolation and complete
-kernel/user W^X remain separate unfinished security obligations.
+Its CI marker is `CPL3 and syscall register ABI verified`. Additional real
+user cases assert initial register clearing, disabled x87/MMX/SSE, noncanonical
+and kernel-address RSP rejection, RX-code writes, NX data/stack execution,
+kernel reads, port I/O and unsupported entry instructions. Hardware results
+and certification status are recorded separately in VALIDATION.md.

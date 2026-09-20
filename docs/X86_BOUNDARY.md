@@ -32,6 +32,13 @@ The bootstrap fatal IDT is replaced only after the full GDT/TSS is valid.
 - NX is required and enabled before NX entries become reachable. Absence
   of NX causes a controlled boot rejection, not executable data fallback.
 
+- Bootstrap CR4 is set to the explicit four-level/FXSR feature baseline,
+  rather than inheriting LA57, OSXSAVE, FSGSBASE or global-TLB policy.
+- CR0.WP enforces supervisor write protection; permanent CR0.TS implements
+  the integer-only Stage-1 ABI. User extended-state use is contained as a fault.
+- NMI and #DF are fatal even if saved CS indicates CPL3. They are never
+  ordinary user-process exceptions eligible for IRQ-exit rescheduling.
+
 ## Validation and evolution
 
 Compile-time size/offset assertions prevent packing mistakes. Binary checks

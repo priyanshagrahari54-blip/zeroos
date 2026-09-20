@@ -8,22 +8,26 @@ Established standards are used only at interoperability boundaries
 hardware mechanism). Everything ZEROOS controls is designed and
 implemented by ZEROOS.
 
-## Current stage: Stage 1 — integration and security validation
+## Current stage: STAGE 1 CERTIFIED
 
-**Stage 1 is not certified.** See [the validation record](docs/VALIDATION.md)
-for exact commits, QEMU runs, failures, and remaining obligations.
+**Stage 1 passed its scoped engineering acceptance** at code commit `cc38f8f`.
+See [the validation record](docs/VALIDATION.md) for exact CI runs, closed
+findings and limits. This is a single-CPU, integer-only foundation—not a
+production-readiness or universal security claim.
 
 Implemented subsystems include the physical allocator, VMM, kernel heap,
 interrupt/timer and scheduler code, distinct process/thread objects,
 per-process page-table roots, ring-3 entry, and the initial syscall set.
 Implementation presence does not imply that every path is tested or secure.
 
-The [first full green run](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/35504197236)
-verifies the current integration suite: heap/VMM boot self-tests; early #UD/#PF frame
-reporting; full-IDT #UD, NMI-gate stack placement and real #DF delivery;
-CPU-without-NX rejection; and CPL3/syscall register preservation. Scheduler stress, data-page isolation and user-fault containment also pass.
-Broader integration and security work remains. In particular, complete W^X,
-process rollback/PCID lifetime, and extended-register isolation remain open.
+The expanded suite now tests kernel/user/physical-alias W^X, exclusive page
+ownership, failure-atomic process creation, terminal-thread reclamation,
+integer-only state containment, invalid transitions and whole-range pointer
+checks. Five native suites, nine fatal/feature guests, and seven CPU/RAM
+configurations include actual KVM **PCID with and without INVPCID**. Both
+[push](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/35509533259)
+and [PR](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/35509535607)
+workflows passed, including all 31 matrix checks per configuration.
 
 Boot milestone messages report individual self-tests, not certification of
 the entire kernel. No later-stage loader, driver, or application work should
@@ -34,7 +38,7 @@ be inferred from the existing foundation.
 ```sh
 make            # builds build/zeroos.elf and a bootable build/zeroos.iso
 make clean      # removes build artifacts
-make host-test  # bounded native range/dispatcher/ownership regressions
+make host-test  # five bounded native regression suites
 ```
 
 The build is a freestanding, no-stdlib `-Werror` compile with no external
@@ -46,10 +50,14 @@ dependencies beyond `gcc`, `ld`, and `grub-mkrescue` (for the ISO).
 make run        # boots the ISO in QEMU with the serial console on stdio
 ```
 
-The green integration run includes these required messages:
+Integration requires these messages among the complete checked set:
 
 ```
 ZEROOS: heap self-test passed.
+ZEROOS: live-CR3 isolation, ownership and W^X passed.
+ZEROOS: address-space reuse with displaced frames passed.
+ZEROOS: process rollback and lifetime stress passed.
+ZEROOS: process execution/reap stress passed.
 ZEROOS: SYSCALL/SYSRET syscall entry initialized.
 ZEROOS: ring-3 user program executed.
 ZEROOS: per-process address-space isolation verified.
@@ -61,7 +69,7 @@ ZEROOS: ring-3 integration self-test passed.
 
 CI also runs a bounded, deterministic boot self-test sequence
 (positive, negative, boundary, and fault cases) in QEMU; see
-`.github/workflows/build.yml`.
+`.github/workflows/build.yml` and [the build guide](docs/BUILD.md).
 
 ## Layout
 

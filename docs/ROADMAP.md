@@ -23,18 +23,21 @@ The detailed product plan remains in ZEROOS_MASTER_ROADMAP.md.
 
 ## Execution status (Stage 1)
 
-Stage 1 is not certified. The earlier "Done" labels were unsupported by the
-failing integration runs and have been withdrawn. See VALIDATION.md.
+**STAGE 1 CERTIFIED** for the bounded single-CPU, integer-only foundation at
+`cc38f8f`, with both strict CI workflows green. This supersedes earlier
+unsupported "Done" labels with executed evidence. Exact runs, acceptance for
+1.0–1.14, closed findings and limitations are in VALIDATION.md.
 
 | Item | State | Evidence / remaining work |
 |---|---|---|
-| Boot and exception boundary | Tested subset | Bounded early #UD/#PF, full #UD, NMI-gate IST2, real #DF IST1, and no-NX rejection passed CI |
-| PMM/VMM/heap | Tested subset | Normal boot self-tests pass; ownership removal regression added; full W^X and rollback remain open |
-| Scheduler | Current suite passed | Timer-only preemption and zombie/reuse markers passed in run 35504197236; expanded certification remains |
-| Process/thread split | Implemented, incomplete audit | Distinct objects exist; partial-allocation cleanup and PCID lifetime need correction/tests |
-| CPL3 and syscall ABI | Tested subset | CS.RPL, flags, preserved GPRs/RSP and basic call results passed CI; host pointer/dispatcher tests pass |
-| Full Stage 1 security | Not certified | Extended-register isolation, W^X including kernel aliases, adverse transitions, lifetime stress and regression matrix remain |
-| Later stages | Deferred | No loader/VFS/driver/application implementation as part of this task |
+| Boot/CPU/GDT/IDT/exceptions | Implemented and exercised | Exact early/full fault frames, independent IST stacks, real #DF, no-NX rejection; complete boot-map hardening passed strict CI |
+| PMM/VMM/heap | Implemented and exercised | Claims, W^X aliases, live CR3/displaced-frame reuse, rollback, forged/coalesced frees; native sanitizer runs |
+| Scheduler | Expanded suite passed | Cooperative/IRQ-exit switching, timer-only preemption, wait/sleep, guards, bootstrap IRQ, lifetime/slot reuse |
+| Process/thread split | Expanded suite passed | Separate identity/ownership, publication/rollback, optional PCID ownership, immediate terminal-thread reclamation |
+| CPL3/syscall ABI | Expanded suite passed | Stable five-call ABI, register/flags checks, full-range pointers, bad RSP, integer-only policy and forbidden-access/entry tests |
+| CPU/RAM matrix | Seven configurations passed at cc38f8f | TCG 32/128/512/768 MiB; actual KVM PCID with and without INVPCID |
+| Full Stage 1 | Certified within documented scope | Five native suites, nine fault guests, normal integration, seven matrix cases with 31 checks each; both PCID modes required |
+| Later stages | Deferred | No loader/VFS/driver/application/SMP implementation as part of this task |
 
 ## Definition of done
 

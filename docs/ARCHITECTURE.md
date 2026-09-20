@@ -1,99 +1,65 @@
-# ZEROOS Architecture
+# ZEROOS architecture
 
-## Current implemented foundation
+ZEROOS owns its subsystem boundaries, internal APIs, object lifetimes and
+security rules. Multiboot2 and x86-64 define interoperability encodings only.
+The design question is whether each ownership rule remains coherent without
+assuming another operating system exists; familiar terminology is not a
+license to import its architecture or implementation.
 
-    Firmware / GRUB
-          |
-          v
-    x86-64 long-mode entry
-          |
-          v
-    Kernel bootstrap
-          |
-          +--> Serial diagnostics
-          +--> Physical page allocator
-          +--> Virtual memory
-          |       +--> CR3 / PML4
-          |       +--> 2 MiB mappings
-          |       +--> 4 KiB mappings
-          |       +--> huge-page splitting
-          +--> Synchronization
-          |       +--> atomic counters
-          |       +--> spinlocks
-          |       +--> IRQ-safe locking
-          +--> Interrupt subsystem
-          |       +--> IDT
-          |       +--> normalized ISR frames
-          |       +--> exception diagnostics
-          |       +--> IRQ ownership
-          |       +--> timer delivery
-          +--> Task / context layer
-          |       +--> kernel task objects
-          |       +--> kernel stacks
-          |       +--> context switching
-          |       +--> bounded scheduler
-          +--> PIT/8259 bootstrap timer
-          |
-          v
-       Future kernel core
-          +--> blocking/wakeup
-          +--> preemptive scheduler
-          +--> syscall ABI
-          +--> user address spaces
-          +--> driver framework
-          +--> storage/networking/graphics/audio/security
-          |
-          v
-       Userspace
-          +--> ZERO Terminal
-          +--> Desktop/UI
-          +--> Study Center
-          +--> App framework
-          +--> Forge AI bridge
+## Implemented foundation
 
-## Engineering rules
+```text
+GRUB / Multiboot2
+  -> x86-64 bootstrap, serial diagnostics, early fatal IDT
+  -> physical pages: reservations, allocation and exclusive claims
+  -> permanent paging: supervisor RX/RO-NX/RW-NX, isolated user roots
+  -> kernel heap: bounded validated block chains and coalescing
+  -> GDT/TSS/IDT: trusted entry stacks, independent DF/NMI emergency stacks
+  -> PIC/PIT: owned IRQ bindings and a 100 Hz clock
+  -> task/scheduler: contexts, wait/sleep, IRQ-exit preemption, reclamation
+  -> process: identity, parent link, address-space/frame ownership
+  -> CPL3 integer-only execution
+  -> ZEROOS syscall ABI: exit, yield, write-debug, getpid, gettid
+```
 
-- Every subsystem needs a real hardware/software verification path.
-- Avoid temporary APIs that force later callers to depend on implementation details.
-- Prefer compact metadata and bounded fast paths.
-- Use large pages where they materially reduce translation overhead.
-- Keep interrupt handlers minimal.
-- Keep synchronization scheduler-independent until task blocking exists.
-- Keep idle CPUs asleep rather than generating unnecessary periodic work.
-- Keep architecture-specific code isolated from portable kernel logic.
-- Keep scheduling policy separate from task/context mechanics.
+## Resource and execution ownership
 
-## Current status
+A process owns its address space, user frames, identity and parent relationship.
+A thread (`struct task`) owns CPU continuation state and a kernel stack. Stage 1
+has one main thread per user process; a kernel task need not have a process.
+The address space owns its optional PCID, not the process builder separately.
+Spawn publishes only after resources and the thread/process link are complete;
+failure releases both transferred and not-yet-transferred resources.
 
-The foundation now has real physical memory discovery/allocation, an x86-64
-virtual memory manager with per-address-space roots, PCID-based TLB
-isolation (with full-flush fallback), a kernel heap with invariant checking,
-normalized interrupt entry, IST-based double-fault/NMI delivery, IRQ
-ownership, timer delivery, scheduler-independent synchronization, kernel
-task objects, real x86-64 context switching, wait queues, timed sleep,
-zombie reclamation, scheduler invariants, and IRQ-exit preemption.
+A terminal thread cannot free its own executing stack. Timer reclamation or a
+different task reaping its terminal process releases it under the task lock.
+A saved interrupt frame and a cooperative continuation are distinct ownership
+states; IRQ-exit scheduling never substitutes one for the other.
 
-Stage 1 additionally implements:
+## Security boundary
 
-- **Process/thread model**: a `struct process` owns its `vmm_space`, an
-  exclusive set of physical pages (code/data/stack), a PCID, and one main
-  thread (`struct task`). The task owns the CPU context; the process owns
-  the address space and memory.
-- **GDT/TSS**: user code/data segments (DPL 3) and a task state segment
-  whose RSP0 carries ring-3 exceptions/interrupts to the current task's
-  kernel stack.
-- **Ring-3 execution**: user threads start through an assembly entry that
-  `iretq`s into the process address space at CPL 3 with IF enabled, so user
-  code is genuinely timer-preemptible.
-- **SYSCALL/SYSRET syscall ABI** (`docs/SYSCALL_ABI.md`): exit, yield,
-  write, getpid, gettid, with whole-range user-pointer validation before
-  any user byte is copied.
-- **User fault containment**: user-mode page faults and general protections
-  kill the current process and leave the kernel running; kernel-mode
-  exceptions remain fatal.
-- **Address-space isolation**: two processes mapping the same virtual
-  address to different physical pages is verified at boot, as is W^X
-  enforcement and exclusive physical-page ownership.
+User mappings are restricted to one virtual window, with effective permission
+checks through every paging level. Every pointer range is validated before any
+copy. Kernel mappings remain supervisor-only. RX user frames have read-only,
+non-executable physical aliases; exclusive claims prevent another writable
+mapping. Kernel text is RX, constants RO/NX, mutable storage RW/NX after VMM
+initialization. CR0.WP and EFER.NXE are required.
 
-The next architectural boundary is an ELF loader with a real user init
-process and an expanded syscall set, followed by the VFS/storage layer.
+User entry clears GPRs except its entry argument and initializes segment state.
+CR0.TS enforces the explicit integer-only ABI; unsupported extended-register
+instructions fault rather than exposing another thread's state. Syscalls use a
+trusted kernel stack and validate return RIP/RSP/flags before SYSRET. Ordinary
+user exceptions terminate only that process; kernel exceptions, NMI and #DF
+halt. Unimplemented SYSENTER entry is disabled where the CPU implements it.
+
+## Scope and evidence
+
+The current foundation is single-CPU, bounded to a 512 MiB physical aperture,
+base-page mappings and fixed process/task capacities. PCID is optional and
+incoming-context flushes remain mandatory; no PCID performance benefit is
+claimed. [VALIDATION.md](VALIDATION.md) separates implementation, native tests,
+actual guest evidence and outstanding hardware coverage.
+
+No ELF loader, general executable ABI, filesystem, device framework, networking,
+UI, SMP or floating-point context subsystem is implemented by this task.
+Those require their own first-principles designs after Stage 1 closure.
