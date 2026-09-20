@@ -25,7 +25,6 @@ int elf64_validate_image(const void *data, uint64_t size,
                          struct elf_image *out) {
     const uint8_t *bytes=(const uint8_t *)data;
     const struct elf64_ehdr *eh;
-    uint64_t ph_end;
     uint64_t last_end=0;
     int have_exec=0;
 
