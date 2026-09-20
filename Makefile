@@ -29,6 +29,7 @@ C_OBJECTS := \
 A_OBJECTS := \
 	$(BUILD)/boot.o \
 	$(BUILD)/isr.o \
+	$(BUILD)/early_isr.o \
 	$(BUILD)/context.o \
 	$(BUILD)/syscall_entry.o \
 	$(BUILD)/user_init.o

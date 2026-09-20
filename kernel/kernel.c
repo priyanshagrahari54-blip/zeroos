@@ -50,12 +50,40 @@ void serial_write_public(const char *text) {
      * interrupt context (IF already clear) and in user syscalls this is a
      * no-op.
      */
-    __asm__ volatile ("cli" ::: "memory");
+    /*
+     * The write itself is atomic, and the previous interrupt state is
+     * restored (not forced on): callers may run with IF deliberately
+     * clear (locked regions, exception handlers), and an unconditional
+     * sti there would reopen the window the caller closed.
+     */
+    uint64_t flags;
+    __asm__ volatile ("pushf; popq %0; cli" : "=r"(flags) : : "memory");
     while (*text) {
         if (*text=='\n') serial_putc('\r');
         serial_putc(*text++);
     }
-    __asm__ volatile ("sti" ::: "memory");
+    if (flags & 0x200ULL)
+        __asm__ volatile ("sti" ::: "memory");
+}
+
+void serial_write_u64_public(uint64_t value) {
+    /*
+     * Print as 16 zero-padded hex digits. Same atomicity and interrupt
+     * state rules as serial_write_public: the whole number is one
+     * console unit, and the previous IF state is restored.
+     */
+    char buf[17];
+    const char *digits="0123456789abcdef";
+    buf[16]=0;
+    for (int i=15;i>=0;--i) {
+        buf[i]=digits[value&0xf];
+        value>>=4;
+    }
+    uint64_t flags;
+    __asm__ volatile ("pushf; popq %0; cli" : "=r"(flags) : : "memory");
+    for (int i=0;i<16;++i) serial_putc(buf[i]);
+    if (flags & 0x200ULL)
+        __asm__ volatile ("sti" ::: "memory");
 }
 
 extern void interrupts_init(void);
@@ -128,6 +156,112 @@ static void vmm_self_test(void) {
     if (vmm_unmap_page(VMM_SELF_TEST_VA)!=0) kernel_panic("VMM unmap failed");
     page_free(physical);
     serial_write_public("ZEROOS: virtual memory self-test passed.\n");
+}
+
+/*
+ * Early fatal-exception IDT.
+ *
+ * From vmm_init onward the kernel runs under a full paging root, but the
+ * real IDT is only installed by interrupts_init, much later. Any CPU
+ * exception in that window (a page fault, an illegal instruction, ...)
+ * would otherwise triple-fault with no information. Install a minimal
+ * 32-vector IDT first: each stub reports the vector, error code,
+ * faulting RIP and CR2 on the serial console and halts. interrupts_init
+ * replaces this table when it runs.
+ */
+struct early_idt_gate {
+    uint16_t offset_low;
+    uint16_t selector;
+    uint8_t  reserved;
+    uint8_t  type_attr;
+    uint16_t offset_mid;
+    uint32_t offset_high;
+} __attribute__((packed));
+
+struct early_idtr {
+    uint16_t limit;
+    uint64_t base;
+} __attribute__((packed));
+
+extern void early_stub_0(void);
+extern void early_stub_1(void);
+extern void early_stub_2(void);
+extern void early_stub_3(void);
+extern void early_stub_4(void);
+extern void early_stub_5(void);
+extern void early_stub_6(void);
+extern void early_stub_7(void);
+extern void early_stub_8(void);
+extern void early_stub_9(void);
+extern void early_stub_10(void);
+extern void early_stub_11(void);
+extern void early_stub_12(void);
+extern void early_stub_13(void);
+extern void early_stub_14(void);
+extern void early_stub_15(void);
+extern void early_stub_16(void);
+extern void early_stub_17(void);
+extern void early_stub_18(void);
+extern void early_stub_19(void);
+extern void early_stub_20(void);
+extern void early_stub_21(void);
+extern void early_stub_22(void);
+extern void early_stub_23(void);
+extern void early_stub_24(void);
+extern void early_stub_25(void);
+extern void early_stub_26(void);
+extern void early_stub_27(void);
+extern void early_stub_28(void);
+extern void early_stub_29(void);
+extern void early_stub_30(void);
+extern void early_stub_31(void);
+
+extern void serial_write_u64_public(uint64_t value);
+
+void early_fatal_dispatch(uint64_t vector, uint64_t error_code,
+                          uint64_t rip, uint64_t cr2) {
+    serial_write_public("ZEROOS EARLY FATAL: vector=");
+    serial_write_u64_public(vector);
+    serial_write_public(" err=");
+    serial_write_u64_public(error_code);
+    serial_write_public(" rip=");
+    serial_write_u64_public(rip);
+    serial_write_public(" cr2=");
+    serial_write_u64_public(cr2);
+    serial_write_public("\n");
+    for (;;) __asm__ volatile ("cli; hlt");
+}
+
+static void early_idt_install(void) {
+    static void *stub[32] = {
+        (void *)early_stub_0,  (void *)early_stub_1,  (void *)early_stub_2,
+        (void *)early_stub_3,  (void *)early_stub_4,  (void *)early_stub_5,
+        (void *)early_stub_6,  (void *)early_stub_7,  (void *)early_stub_8,
+        (void *)early_stub_9,  (void *)early_stub_10, (void *)early_stub_11,
+        (void *)early_stub_12, (void *)early_stub_13, (void *)early_stub_14,
+        (void *)early_stub_15, (void *)early_stub_16, (void *)early_stub_17,
+        (void *)early_stub_18, (void *)early_stub_19, (void *)early_stub_20,
+        (void *)early_stub_21, (void *)early_stub_22, (void *)early_stub_23,
+        (void *)early_stub_24, (void *)early_stub_25, (void *)early_stub_26,
+        (void *)early_stub_27, (void *)early_stub_28, (void *)early_stub_29,
+        (void *)early_stub_30, (void *)early_stub_31
+    };
+    static struct early_idt_gate gate[32];
+    static struct early_idtr descriptor;
+
+    for (uint64_t i = 0; i < 32; ++i) {
+        uint64_t base = (uint64_t)stub[i];
+        gate[i].offset_low = (uint16_t)(base & 0xffff);
+        gate[i].selector = 0x08;
+        gate[i].reserved = 0;
+        gate[i].type_attr = 0x8E; /* present, DPL0, 64-bit interrupt gate */
+        gate[i].offset_mid = (uint16_t)((base >> 16) & 0xffff);
+        gate[i].offset_high = (uint32_t)((base >> 32) & 0xffffffff);
+    }
+    descriptor.limit = (uint16_t)(sizeof(gate) - 1);
+    descriptor.base = (uint64_t)gate;
+    __asm__ volatile ("lidt %0" : : "m"(descriptor));
+    serial_write_public("ZEROOS: early fatal IDT installed.\n");
 }
 
 static void vmm_space_self_test(void) {
@@ -747,12 +881,21 @@ void kernel_main(uint64_t multiboot_info, uint64_t multiboot_magic) {
     vmm_self_test();
 
     /*
+     * From here the kernel dereferences dynamically allocated memory
+     * (the heap region). Install the early fatal-exception IDT first so
+     * any exception in the pre-IDT window reports itself instead of
+     * triple-faulting silently.
+     */
+    early_idt_install();
+
+    /*
      * The heap must be live before the per-address-space self-test:
      * space page-ownership tracking allocates its descriptors from the
      * heap.
      */
     if (heap_init()!=0) kernel_panic("kernel heap initialization failed");
     serial_write_public("ZEROOS: kernel heap initialized.\n");
+    serial_write_public("ZEROOS: heap self-test starting.\n");
     heap_self_test();
 
     vmm_space_self_test();
