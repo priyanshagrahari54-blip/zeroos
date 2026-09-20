@@ -64,6 +64,13 @@ int elf64_validate_image(const void *data, uint64_t size,
             continue;
         if (ph->memsz==0 || ph->filesz>ph->memsz)
             return -1;
+        if (ph->flags & ~(ZEROOS_PF_R | ZEROOS_PF_W | ZEROOS_PF_X))
+            return -1;
+        /* ZEROOS never loads a writable executable segment; callers must
+         * express code/data separation explicitly at page granularity. */
+        if ((ph->flags & (ZEROOS_PF_W | ZEROOS_PF_X)) ==
+            (ZEROOS_PF_W | ZEROOS_PF_X))
+            return -1;
         if (!range_inside(ph->offset,ph->filesz,size))
             return -1;
         if (!range_end(ph->vaddr,ph->memsz,&vend))
