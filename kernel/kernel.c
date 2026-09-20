@@ -261,6 +261,19 @@ static void early_idt_install(void) {
     descriptor.limit = (uint16_t)(sizeof(gate) - 1);
     descriptor.base = (uint64_t)gate;
     __asm__ volatile ("lidt %0" : : "m"(descriptor));
+
+    /*
+     * Verify the descriptor the CPU actually holds: a corrupted load
+     * would make every exception dispatch #GP into a silent triple
+     * fault, so this must be checked, not assumed.
+     */
+    struct early_idtr readback;
+    __asm__ volatile ("sidt %0" : "=m"(readback));
+    if (readback.limit != descriptor.limit || readback.base != descriptor.base) {
+        serial_write_public("ZEROOS PANIC: early IDT descriptor mismatch.\n");
+        for (;;) __asm__ volatile ("cli; hlt");
+    }
+
     serial_write_public("ZEROOS: early fatal IDT installed.\n");
 }
 
@@ -887,6 +900,7 @@ void kernel_main(uint64_t multiboot_info, uint64_t multiboot_magic) {
      * triple-faulting silently.
      */
     early_idt_install();
+    serial_write_public("ZEROOS: heap init starting.\n");
 
     /*
      * The heap must be live before the per-address-space self-test:

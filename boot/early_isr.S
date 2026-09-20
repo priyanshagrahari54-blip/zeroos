@@ -85,6 +85,31 @@ early_stub_noerr 31
 .global early_common
 .type early_common, @function
 early_common:
+    /*
+     * Fault-proof first report, before any stack read or C call: marker,
+     * vector, then the faulting RIP as 16 hex digits on the isa-debugcon
+     * (port 0xe9), which CI captures in debug.log. A CPU exception cannot
+     * be raised by outb in CPL0, so this cannot re-fault.
+     */
+    movb  $'E', %al
+    outb  %al, $0xe9
+    movzbl 0(%rsp), %eax
+    outb  %al, $0xe9
+    movq  48(%rsp), %r11
+    movq  $16, %r12
+1:  movq  %r11, %r10
+    shrq  $60, %r10
+    andq  $0xf, %r10
+    addq  $'0', %r10
+    cmpq  $'9', %r10
+    jbe   2f
+    addq  $6, %r10
+2:  movq  %r10, %rax
+    outb  %al, $0xe9
+    shrq  $4, %r11
+    decq  %r12
+    jnz   1b
+
     pushq %r15
     pushq %r14
     pushq %r13

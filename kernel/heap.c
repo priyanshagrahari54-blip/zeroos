@@ -115,6 +115,20 @@ int heap_init(void) {
     used_bytes = 0;
     spinlock_init(&heap_lock);
 
+    /*
+     * Report the actual region so a later fault's CR2/RIP can be
+     * cross-referenced against it.
+     */
+    extern void serial_write_public(const char *text);
+    extern void serial_write_u64_public(uint64_t value);
+    serial_write_public("ZEROOS: heap region [");
+    serial_write_u64_public((uint64_t)heap_base);
+    serial_write_public("-");
+    serial_write_u64_public((uint64_t)heap_end);
+    serial_write_public("] pages=");
+    serial_write_u64_public(pages);
+    serial_write_public("\n");
+
     root = block_at(heap_base);
     root->size = (uint64_t)(heap_end - heap_base);
     root->magic = HEAP_FREE_MAGIC;

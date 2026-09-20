@@ -145,6 +145,11 @@ jobs:
             if test -f build/serial.log; then tail -c 100000 build/serial.log; else echo "(missing)"; fi
             echo '```'
             echo
+            echo "### debug.log (hex, isa-debugcon port 0xe9)"
+            echo '```'
+            if test -f build/debug.log; then od -An -tx1 -v build/debug.log | tr -s ' \n' ' ' ; echo; else echo "(missing)"; fi
+            echo '```'
+            echo
             echo "### qemu.log (tail)"
             echo '```'
             if test -f build/qemu.log; then tail -c 20000 build/qemu.log; else echo "(missing)"; fi
