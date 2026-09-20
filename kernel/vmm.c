@@ -690,6 +690,9 @@ static void vmm_space_destroy_locked(struct vmm_space *space) {
     space->pcid = 0;
 }
 
+static int vmm_space_own_page_locked(struct vmm_space *space, uint64_t physical);
+static int vmm_space_release_page_locked(struct vmm_space *space, uint64_t physical);
+
 static int vmm_space_map_page_locked(struct vmm_space *space, uint64_t virtual_address,
                        uint64_t physical_address, uint64_t flags) {
     if (!space || !space->root || !space_canonical(virtual_address) ||
