@@ -478,6 +478,8 @@ static void heap_self_test(void) {
         if ((i & 0xFFFF) == 0 && i >= 0x10000 && i <= 0xF0000)
             heap_probe((char)(((i >> 16) < 10) ?
                 '0' + (char)(i >> 16) : 'A' + (char)((i >> 16) - 10)));
+        if (i > 0x70000 && i < 0x80000 && (i & 0xFFF) == 0)
+            heap_probe((char)('g' + ((i - 0x71000) >> 12)));
         if (i == 0x7FFE0) heap_probe_plain('p');
         else if (i == 0x7FFF0) heap_probe_plain('q');
         else if (i == 0x80000) heap_probe_plain('r');
