@@ -5,8 +5,7 @@ on:
   pull_request:
 
 permissions:
-  contents: write
-  issues: write
+  contents: read
 
 jobs:
   build:
@@ -187,15 +186,13 @@ jobs:
             build/no-nx/serial.log
           if-no-files-found: ignore
 
-      - name: Post validation report to tracking issue
+      - name: Archive final validation summary
         if: always()
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           {
-            echo "Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo "Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
             echo
-            echo "Commit: ${GITHUB_SHA}; preceding steps: ${{ job.status }}"
+            echo "Commit: $GITHUB_SHA"
             echo "### integration matrix"
             echo '```'
             tail -c 8000 build/matrix-results.log 2>/dev/null || true
@@ -204,39 +201,8 @@ jobs:
             echo '```'
             tail -c 4000 build/boot-regressions.log 2>/dev/null || true
             echo '```'
-            echo "### QEMU invocation"
-            echo '```'
-            cat build/qemu-status.txt 2>/dev/null || true
-            tail -c 4000 build/qemu-startup.log 2>/dev/null || true
-            echo '```'
             echo "### check results"
             echo '```'
             if test -f build/check-results.txt; then cat build/check-results.txt; else echo "(missing)"; fi
             echo '```'
-            echo
-            # GitHub comment bodies are capped at 64 KiB, and a
-            # triple-fault reboot loop repeats these logs per boot -
-            # budget each section so the comment always fits.
-            echo "### serial.log (tail)"
-            echo '```'
-            if test -f build/serial.log; then tail -c 12000 build/serial.log; else echo "(missing)"; fi
-            echo '```'
-            echo
-            echo "### debug.log (hex, last 256 bytes of isa-debugcon 0xe9)"
-            echo '```'
-            if test -f build/debug.log; then tail -c 256 build/debug.log | od -An -tx1 -v | tr -s ' \n' ' '; echo; else echo "(missing)"; fi
-            echo '```'
-            echo
-            echo "### qemu.log (tail)"
-            echo '```'
-            if test -f build/qemu.log; then tail -c 8000 build/qemu.log; else echo "(missing)"; fi
-            echo '```'
-          } > /tmp/zeroos-diag.md
-          ISSUE=$(gh issue list --search "in:title ZEROOS CI diagnostics" --state open --json number --jq '.[0].number // empty' 2>/dev/null || true)
-          if [ -n "$ISSUE" ]; then
-            gh issue comment "$ISSUE" --body-file /tmp/zeroos-diag.md || \
-              echo "issue comment failed; diagnostic artifact remains available"
-          else
-            gh issue create --title "ZEROOS CI diagnostics" --body-file /tmp/zeroos-diag.md || \
-              echo "issue create failed; diagnostic artifact remains available"
-          fi
+          } > build/validation-summary.md
