@@ -43,7 +43,21 @@ jobs:
 
       - name: Boot test
         run: |
-          timeout 60s qemu-system-x86_64             -cdrom build/zeroos.iso             -serial file:build/serial.log             -display none             -no-reboot             -no-shutdown             -debugcon file:build/debug.log             -global isa-debugcon.iobase=0xe9             -d guest_errors,cpu_reset,int,in_out             -D build/qemu.log || true
+          set +e
+          timeout 60s qemu-system-x86_64 \
+            -cdrom build/zeroos.iso -serial file:build/serial.log \
+            -display none -no-reboot -no-shutdown \
+            -debugcon file:build/debug.log -global isa-debugcon.iobase=0xe9 \
+            -d guest_errors,cpu_reset,int -D build/qemu.log \
+            >build/qemu-startup.log 2>&1
+          QEMU_STATUS=$?
+          set -e
+          echo "QEMU exit status: $QEMU_STATUS" | tee build/qemu-status.txt
+          cat build/qemu-startup.log
+          # timeout is expected for a kernel that idles rather than exits.
+          if [ "$QEMU_STATUS" -ne 0 ] && [ "$QEMU_STATUS" -ne 124 ]; then
+            exit "$QEMU_STATUS"
+          fi
           echo "===== serial tail ====="
           tail -40 build/serial.log || true
           FAIL=0
@@ -128,6 +142,8 @@ jobs:
             build/debug.log
             build/qemu.log
             build/check-results.txt
+            build/qemu-startup.log
+            build/qemu-status.txt
           if-no-files-found: ignore
 
       - name: Post diagnostics to tracking issue
@@ -138,6 +154,11 @@ jobs:
           {
             echo "Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
             echo
+            echo "### QEMU invocation"
+            echo '```'
+            cat build/qemu-status.txt 2>/dev/null || true
+            tail -c 4000 build/qemu-startup.log 2>/dev/null || true
+            echo '```'
             echo "### check results"
             echo '```'
             if test -f build/check-results.txt; then cat build/check-results.txt; else echo "(missing)"; fi
@@ -169,13 +190,3 @@ jobs:
             gh issue create --title "ZEROOS CI diagnostics" --body-file /tmp/zeroos-diag.md || \
               echo "issue create failed; falling back to branch push"
           fi
-          # Fallback: always also publish the logs on a dedicated branch so
-          # they are retrievable even without issue access.
-          mkdir -p /tmp/diagpush && cd /tmp/diagpush
-          git init -q -b "ci-diag-${GITHUB_RUN_ID}" .
-          cp build/serial.log . 2>/dev/null || true
-          cp build/qemu.log . 2>/dev/null || true
-          cp build/debug.log . 2>/dev/null || true
-          git -c user.name=zeroos-ci -c user.email=ci@zeroos.local add -A
-          git -c user.name=zeroos-ci -c user.email=ci@zeroos.local commit -q -m "CI diagnostics for run ${GITHUB_RUN_ID}"
-          git push -q --force "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/ci-diag-${GITHUB_RUN_ID}"
