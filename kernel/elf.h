@@ -52,6 +52,8 @@ struct elf_load_segment {
 };
 
 #define ZEROOS_ELF_MAX_LOAD_SEGMENTS 16U
+/* Stage-1 bounds executable image mapping work to 1 GiB. */
+#define ZEROOS_ELF_MAX_LOAD_PAGES 262144ULL
 
 struct elf_image {
     uint64_t entry;
