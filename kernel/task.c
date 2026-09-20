@@ -654,10 +654,10 @@ struct task *task_current(void) {
 }
 
 struct task *task_find_by_id(uint64_t id) {
-    for (int i = 0; i < ZEROOS_MAX_TASKS; ++i)
-        if (tasks[i].state != TASK_UNUSED && tasks[i].id == id)
-            return &tasks[i];
-    return 0;
+    uint64_t flags=spin_lock_irqsave(&task_lock);
+    struct task *task=task_find_by_id_locked(id);
+    spin_unlock_irqrestore(&task_lock,flags);
+    return task;
 }
 
 void task_yield(void) {
