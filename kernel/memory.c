@@ -307,8 +307,10 @@ uint64_t memory_find_free_run(uint64_t need_pages) {
         irq_restore(irq_flags);
         return 0;
     }
-    if (need_pages > ZEROOS_MAX_PAGES)
+    if (need_pages > ZEROOS_MAX_PAGES) {
+        irq_restore(irq_flags);
         return ~0ULL;
+    }
 
     if ((need_pages & 63ULL) == 0) {
         uint64_t words_needed = need_pages / 64ULL;
@@ -322,9 +324,10 @@ uint64_t memory_find_free_run(uint64_t need_pages) {
                     break;
                 }
             }
-            if (ok)
+            if (ok) {
                 result = word * 64ULL;
                 goto out;
+            }
         }
         /* No word-aligned run: a run may still start mid-word. */
     }
@@ -340,10 +343,12 @@ uint64_t memory_find_free_run(uint64_t need_pages) {
                 break;
             }
         }
-        if (ok)
+        if (ok) {
             result = page;
             goto out;
+        }
     }
+
     result = ~0ULL;
 
 out:
