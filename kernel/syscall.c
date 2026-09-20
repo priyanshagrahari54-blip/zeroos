@@ -91,9 +91,9 @@ int copy_from_user(void *dest, const struct vmm_space *space,
     uint64_t offset = 0;
     while (offset < length) {
         uint64_t page_virtual = (virtual_address + offset) & ~(VMM_PAGE_SIZE - 1);
-        uint64_t physical = vmm_space_translate(space, page_virtual);
-        if (physical == 0)
+        if (!vmm_space_is_mapped(space, page_virtual))
             return -1;
+        uint64_t physical = vmm_space_translate(space, page_virtual);
         uint64_t page_offset = (virtual_address + offset) & (VMM_PAGE_SIZE - 1);
         uint64_t chunk = VMM_PAGE_SIZE - page_offset;
         if (chunk > length - offset)
