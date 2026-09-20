@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
@@ -18,6 +18,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc binutils grub-pc-bin grub-common xorriso mtools qemu-system-x86
+          gcc --version
+          ld --version | head -1
+          qemu-system-x86_64 --version
+          grub-mkrescue --version
 
       - name: Allow runner access to KVM if available
         run: |
