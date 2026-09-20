@@ -58,7 +58,6 @@ static int allocation_fails(void) { return 0; }
 static uint64_t free_word_summary[ZEROOS_SUMMARY_WORDS];
 static uint64_t managed_pages;
 static uint64_t free_pages;
-static uint64_t available_pages;
 
 extern char __kernel_start;
 extern char __kernel_end;
@@ -128,7 +127,6 @@ void memory_init(uint64_t multiboot_info) {
 
     managed_pages = 0;
     free_pages = 0;
-    available_pages = 0;
 
     if (!multiboot_info || (multiboot_info&7ULL)) return;
     uint32_t total_size=*(uint32_t *)multiboot_info;
@@ -181,8 +179,6 @@ void memory_init(uint64_t multiboot_info) {
         }
         if (!saw_end) return;
     }
-    available_pages=free_pages;
-
     reserve_range(0, 0x100000); /* firmware, IVT/BDA, VGA/ROM and trampoline area */
     reserve_range((uint64_t)&__kernel_start,
                   (uint64_t)&__kernel_end);
