@@ -11,6 +11,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -100,17 +101,19 @@ jobs:
       - name: Dump serial log on failure
         if: failure()
         run: |
+          # A triple-fault reboot loop can make these large; bound every
+          # dump so log streaming cannot stall the job.
           echo "===== ZEROOS serial.log ====="
           if test -f build/serial.log; then
-            cat build/serial.log
+            tail -c 200000 build/serial.log
           else
             echo "serial.log was not produced"
           fi
           echo "===== ZEROOS debug port ====="
-          if test -f build/debug.log; then cat build/debug.log; else echo "debug.log was not produced"; fi
+          if test -f build/debug.log; then tail -c 200000 build/debug.log; else echo "debug.log was not produced"; fi
           echo "===== QEMU diagnostics ====="
           if test -f build/qemu.log; then
-            cat build/qemu.log
+            tail -c 50000 build/qemu.log
           else
             echo "qemu.log was not produced"
           fi
