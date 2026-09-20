@@ -43,6 +43,7 @@ struct process {
     uint64_t stack_phys;
 
     /* Stage 1: one process has exactly one (main) thread. */
+    /* Future stages may add argv/envp metadata without changing the ABI. */
     struct task *thread;
 };
 
