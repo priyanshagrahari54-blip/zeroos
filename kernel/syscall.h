@@ -4,35 +4,13 @@
 #include "types.h"
 #include "vmm.h"
 
-/*
- * ZEROOS system call ABI (Stage 1).
- *
- * Mechanism: SYSCALL / SYSRET (IA32_EFER.SCE).
- *
- *   number : RAX
- *   args   : RDI, RSI, RDX, R10, R8, R9      (SysV calling order)
- *   result : RAX                              (0 or per-call value on
- *                                              success; -1 on failure)
- *
- * On SYSCALL the CPU loads RIP from IA32_LSTAR, saves the user RIP into
- * RCX and the user RFLAGS into R11, and clears RFLAGS according to
- * IA32_SFMASK (IF, DF, AC). RSP is left unchanged, so the entry
- * trampoline first validates that the user RSP lies in the process user
- * region (PML4 slot 254 - the authoritative ring-3 proof, since after
- * SYSCALL CS is always the kernel selector) and moves to the top of the
- * task's kernel stack; the syscall frame is built there, and the user
- * RSP is restored before SYSRET (SYSRET does not touch RSP).
- *
- * Clobbered by every syscall: RAX, RCX, R11. Argument registers (RDI,
- * RSI, RDX, R10, R8, R9) are not preserved. Callee-saved registers
- * (RBX, RBP, R12-R15) are preserved. On entry RSP must follow SysV
- * alignment (8 mod 16 inside a function frame).
- *
- * User-pointer rule: any user-supplied address must be canonical, inside
- * the calling process's user range (PML4 slot 254), mapped for the whole
- * length (address+length overflow included), and carry the access rights
- * the operation requires. The kernel never dereferences a user pointer
- * outside copy_from_user()/copy_to_user() after full-range validation.
+/* ZEROOS Stage-1 ABI: RAX number/result; args RDI, RSI, RDX, R10, R8, R9.
+ * Failure is -1. RAX/RCX/R11 and argument registers may be clobbered;
+ * RBX/RBP/R12-R15 are preserved. User RSP need not be aligned for SYSCALL.
+ * Entry switches to a trusted task stack without dereferencing user RSP.
+ * Return RCX/RSP must be canonical mapped user addresses; RSP writable.
+ * All copy ranges require whole-range validation before any user access.
+ * See docs/SYSCALL_ABI.md for the stable public contract and limitations.
  */
 #define ZEROOS_SYSCALL_EXIT    0
 #define ZEROOS_SYSCALL_YIELD   1
@@ -53,7 +31,12 @@ struct syscall_frame {
     uint64_t r10;
     uint64_t r8;
     uint64_t r9;
+    uint64_t user_rsp;
 };
+
+_Static_assert(sizeof(struct syscall_frame) == 80, "syscall entry frame size");
+_Static_assert(__builtin_offsetof(struct syscall_frame, rax) == 16, "syscall number offset");
+_Static_assert(__builtin_offsetof(struct syscall_frame, user_rsp) == 72, "syscall RSP offset");
 
 void syscall_init(void);
 uint64_t syscall_dispatch(struct syscall_frame *frame);

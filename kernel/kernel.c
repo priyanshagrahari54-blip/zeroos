@@ -66,6 +66,17 @@ void serial_write_public(const char *text) {
         __asm__ volatile ("sti" ::: "memory");
 }
 
+/* Length-delimited debug output: never scan past a copied user buffer. */
+void serial_write_bytes_public(const char *text, uint64_t length) {
+    uint64_t flags;
+    __asm__ volatile ("pushfq; popq %0; cli" : "=r"(flags) : : "memory");
+    for (uint64_t i=0; i<length; ++i) {
+        if (text[i]=='\n') serial_putc('\r');
+        serial_putc(text[i]);
+    }
+    if (flags & 0x200ULL) __asm__ volatile ("sti" ::: "memory");
+}
+
 void serial_write_u64_public(uint64_t value) {
     /*
      * Print as 16 zero-padded hex digits. Same atomicity and interrupt

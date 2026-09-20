@@ -51,8 +51,18 @@ TSS including the I/O-map offset, the descriptor's upper base word, separate
 DF/NMI stacks, and the real IST gate/frame format. Fault images exercise the
 full #UD handler, software invocation of the NMI gate on IST2, and a real
 #DF escalation on IST1. These tests assert frame placement inside the named
-stack, not merely a printed vector. Guest results for this follow-up are
-pending; compile-time assertions and ELF checks pass locally.
+stack, not merely a printed vector. Run [35503752278](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/35503752278)
+at `cc715c4` passed the complete exception/CPU-feature regression step. The
+normal image passed GDT/TSS loading and reached CPL3; it then failed with
+#DB because user RFLAGS was 0x102 (TF), not 0x202 (IF).
+
+## Syscall boundary follow-up
+
+Correct user initial IF/TF, the syscall frame/save/restore sequence, SFMASK
+bits, return-state validation, binary write length, and full-range parent
+permissions. Host tests and ELF entry-shape checks pass locally. The user
+program now asserts CPL3, IF, no TF, preserved GPRs/RSP and call results.
+Post-fix QEMU integration is pending.
 
 Full user/kernel W^X, syscall entry/return validation and per-thread extended
 register ownership still require audit and tests. Stage 1 remains uncertified.

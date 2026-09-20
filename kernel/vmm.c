@@ -367,7 +367,8 @@ int vmm_space_is_user_range(const struct vmm_space *space, uint64_t virtual_addr
     if (!canonical_address(end))
         return 0;
 
-    if (((virtual_address >> 39) & 0x1ff) != VMM_USER_PML4_INDEX)
+    if (((virtual_address >> 39) & 0x1ff) != VMM_USER_PML4_INDEX ||
+        ((end >> 39) & 0x1ff) != VMM_USER_PML4_INDEX)
         return 0;
 
     uint64_t cursor = virtual_address & ~(VMM_PAGE_SIZE - 1ULL);
@@ -380,13 +381,16 @@ int vmm_space_is_user_range(const struct vmm_space *space, uint64_t virtual_addr
 
         uint64_t e1 = space->root[VMM_USER_PML4_INDEX];
         if (!(e1 & VMM_PRESENT) || !(e1 & VMM_USER)) return 0;
+        if ((e1 & HUGE_PAGE_2M) || (write && !(e1 & VMM_WRITABLE))) return 0;
         uint64_t *pdpt = table_from_entry(e1);
         uint64_t e2 = pdpt[pdpt_index];
         if (!(e2 & VMM_PRESENT) || !(e2 & VMM_USER)) return 0;
+        if ((e2 & HUGE_PAGE_2M) || (write && !(e2 & VMM_WRITABLE))) return 0;
         uint64_t *pd = table_from_entry(e2);
         uint64_t e3 = pd[pd_index];
         if (!(e3 & VMM_PRESENT) || !(e3 & VMM_USER)) return 0;
 
+        if (write && !(e3 & VMM_WRITABLE)) return 0;
         if (e3 & HUGE_PAGE_2M) {
             if (write && !(e3 & VMM_WRITABLE)) return 0;
         } else {

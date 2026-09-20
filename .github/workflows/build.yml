@@ -20,6 +20,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc binutils grub-pc-bin grub-common xorriso mtools qemu-system-x86
 
+      - name: Host boundary tests
+        run: make host-test
+
       - name: Build ZEROOS
         run: make
 
@@ -96,13 +99,14 @@ jobs:
           check "ZEROOS: zombie reaping and slot-reuse stress passed."
           # Stage-1 ring-3 certification
           check "ZEROOS: ring-3 user program executed."
+          check "ZEROOS: CPL3 and syscall register ABI verified."
           check "ZEROOS: ring-3 hello process verified."
           check "ZEROOS: user stored marker in data page."
           check "ZEROOS: user read data page."
           check "ZEROOS: per-process address-space isolation verified."
-          check "ZEROOS: user fault contained: vector=000000000000000e"
+          check "ZEROOS: user fault contained: vector=0x000000000000000e"
           check "ZEROOS: ring-3 page-fault containment verified."
-          check "ZEROOS: user fault contained: vector=000000000000000d"
+          check "ZEROOS: user fault contained: vector=0x000000000000000d"
           check "ZEROOS: ring-3 general-protection containment verified."
           check "ZEROOS: negative syscall checks rejected as required."
           check "ZEROOS: user pointer validation verified."

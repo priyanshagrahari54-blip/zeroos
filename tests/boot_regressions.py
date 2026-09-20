@@ -65,6 +65,17 @@ def late_fault_test(vector):
     print(f"PASS: full IDT vector {vector}, correct frame and stack, no triple fault", flush=True)
 
 
+def syscall_entry_checks(elf):
+    code = output("objdump", "-d", "--disassemble=syscall_entry", str(elf))
+    require(re.search(r"pop\s+%rsp\n[^\n]*sysretq", code) is not None,
+            "user RSP must be restored only immediately before SYSRET")
+    require(len(re.findall(r"\bpush\s", code)) == 10, "syscall frame must have ten words")
+    code = output("objdump", "-d", str(elf))
+    require(not re.search(r"%(?:xmm|ymm|zmm)[0-9]", code),
+            "kernel image contains SIMD registers without context ownership")
+    print("PASS: syscall frame shape and general-register-only image", flush=True)
+
+
 def boot(image, directory, cpu="qemu64"):
     directory.mkdir(parents=True, exist_ok=True)
     serial = directory / "serial.log"
@@ -107,6 +118,7 @@ def main():
     args = parser.parse_args()
     static_checks(Path("build/zeroos.elf"))
     descriptor_checks(Path("build/zeroos.elf"))
+    syscall_entry_checks(Path("build/zeroos.elf"))
     if args.static:
         return
     for vector in (6, 14):

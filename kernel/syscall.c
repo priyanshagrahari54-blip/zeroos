@@ -6,15 +6,18 @@
 
 extern void syscall_entry(void);
 extern void serial_write_public(const char *text);
+extern void serial_write_bytes_public(const char *text, uint64_t length);
 
 #define MSR_EFER   0xC0000080
 #define MSR_STAR   0xC0000081
 #define MSR_LSTAR  0xC0000082
 #define MSR_SFMASK 0xC0000084
 
-#define RFLAGS_IF  0x100ULL
-#define RFLAGS_DF  0x200ULL
-#define RFLAGS_AC  0x10000ULL
+#define RFLAGS_IF  (1ULL << 9)
+#define RFLAGS_DF  (1ULL << 10)
+#define RFLAGS_AC  (1ULL << 18)
+#define RFLAGS_TF  (1ULL << 8)
+#define RFLAGS_NT  (1ULL << 14)
 
 static inline void wrmsr(uint32_t index, uint64_t value) {
     __asm__ volatile ("wrmsr"
@@ -30,12 +33,9 @@ static inline uint64_t rdmsr(uint32_t index) {
     return ((uint64_t)hi << 32) | lo;
 }
 
-/*
- * Called from the SYSCALL trampoline when the entry state is invalid:
- * SYSCALL executed in ring 0, or with an RSP outside the user region.
- * After SYSCALL the CS is always the kernel selector from STAR, so the
- * ring of the caller cannot be read from CS; the user-RSP check in the
- * trampoline is the authoritative ring-3 proof.
+/* Missing trusted task/stack state is a kernel invariant failure. The
+ * assembly uses a dedicated emergency stack before calling here. A bad
+ * user return address is instead contained in syscall_dispatch below.
  */
 void syscall_entry_abort(void) {
     serial_write_public("ZEROOS PANIC: syscall entry invalid (kernel-mode SYSCALL or bad user RSP).\n");
@@ -61,7 +61,7 @@ void syscall_init(void) {
 
     /* Mask IF, DF, AC: the kernel entry trampoline runs with interrupts
      * disabled until the task context is fully handled. */
-    wrmsr(MSR_SFMASK, RFLAGS_IF | RFLAGS_DF | RFLAGS_AC);
+    wrmsr(MSR_SFMASK, RFLAGS_IF | RFLAGS_DF | RFLAGS_AC | RFLAGS_TF | RFLAGS_NT);
 }
 
 /*
@@ -107,13 +107,22 @@ uint64_t syscall_dispatch(struct syscall_frame *frame) {
     struct task *task = task_current();
     struct process *process = task ? task->process : 0;
 
-    /*
-     * The trampoline has already proven ring-3 origin (user RSP in PML4
-     * slot 254) and a valid current task. These checks are defense in
-     * depth for the dispatch path itself.
+    /* SYSCALL overwrites CS; a user-looking RSP is NOT proof of CPL3.
+     * This entry is reserved for a live user thread. Validate the return
+     * state before executing a call; never SYSRET to noncanonical RCX.
      */
     if (!task || !process || !process->space.root)
         syscall_security_violation("SYSCALL without a user process");
+    if (!vmm_space_is_user_range(&process->space, frame->rcx, 1, 0) ||
+        !vmm_space_is_user_range(&process->space, frame->user_rsp, 1, 1)) {
+        serial_write_public("ZEROOS: invalid syscall return state contained.\n");
+        process_user_fault(frame->rcx, 13);
+        task_exit();
+        syscall_security_violation("invalid syscall return task resumed");
+    }
+    /* Preserve arithmetic flags only; IF and reserved bit 1 are set.
+     * IOPL, NT, TF, VM, DF, AC and reserved bits never reach SYSRET. */
+    frame->r11 = (frame->r11 & 0x8d5ULL) | 0x202ULL;
 
     switch (frame->rax) {
     case ZEROOS_SYSCALL_EXIT:
@@ -155,7 +164,7 @@ uint64_t syscall_dispatch(struct syscall_frame *frame) {
             frame->rax = -1;
             break;
         }
-        serial_write_public(text);
+        serial_write_bytes_public(text, length);
         frame->rax = length;
         break;
     }

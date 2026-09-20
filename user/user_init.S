@@ -34,14 +34,67 @@ user_init_code:
     jmp .exit_zero
 
 .hello:
-    movq $2, %rax              # write
-    movq $1, %rdi              # stdout (debug console)
+    movw %cs, %ax
+    andl $3, %eax
+    cmpl $3, %eax
+    jne .exit_one
+    pushfq
+    popq %rax
+    testq $0x200, %rax               # user execution must be preemptible
+    jz .exit_one
+    testq $0x100, %rax               # no accidental single-step flag
+    jnz .exit_one
+    movabsq $0x7f0000002010, %rax
+    movq %rsp, (%rax)
+    movq $0x1111, %rbx
+    movq $0x2222, %rbp
+    movq $0x1212, %r12
+    movq $0x1313, %r13
+    movq $0x1414, %r14
+    movq $0x1515, %r15
+    movq $2, %rax
+    movq $1, %rdi
     leaq .hello_msg(%rip), %rsi
     movq $.hello_len, %rdx
+    std                             # entry must establish DF=0 for C
     syscall
-    movq $3, %rax              # getpid (value not consumed; proves ABI path)
+    cmpq $.hello_len, %rax
+    jne .exit_one
+    movq $3, %rax
     syscall
-    movq $4, %rax              # gettid
+    testq %rax, %rax
+    jz .exit_one
+    movq $4, %rax
+    syscall
+    testq %rax, %rax
+    jz .exit_one
+    movq $1, %rax                   # yield, then check preserved state
+    syscall
+    testq %rax, %rax
+    jnz .exit_one
+    cmpq $0x1111, %rbx
+    jne .exit_one
+    cmpq $0x2222, %rbp
+    jne .exit_one
+    cmpq $0x1212, %r12
+    jne .exit_one
+    cmpq $0x1313, %r13
+    jne .exit_one
+    cmpq $0x1414, %r14
+    jne .exit_one
+    cmpq $0x1515, %r15
+    jne .exit_one
+    movabsq $0x7f0000002010, %rax
+    cmpq %rsp, (%rax)
+    jne .exit_one
+    pushfq
+    popq %rax
+    testq $0x400, %rax               # public return policy clears DF
+    jnz .exit_one
+    movq $2, %rax
+    movq $1, %rdi
+    leaq .abi_msg(%rip), %rsi
+    movq $.abi_len, %rdx
     syscall
     jmp .exit_zero
 
@@ -173,6 +226,11 @@ user_init_code:
     syscall
     hlt                              # unreachable
     jmp .
+
+.abi_msg:
+    .ascii "ZEROOS: CPL3 and syscall register ABI verified.\n"
+.abi_end:
+.set .abi_len, .abi_end - .abi_msg
 
 .hello_msg:
     .asciz "ZEROOS: ring-3 user program executed.\n"

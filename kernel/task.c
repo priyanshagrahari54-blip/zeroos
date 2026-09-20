@@ -586,7 +586,7 @@ int task_create_internal(task_entry_t entry, void *argument, int user,
         struct user_entry_frame *frame=&user_frames[slot];
         frame->rip=user_rip;
         frame->cs=ZEROOS_USER_CS_RING3;
-        frame->rflags=0x102ULL; /* IF + PF: user code stays timer-preemptible */
+        frame->rflags=0x202ULL; /* IF + reserved bit 1; TF must be clear */
         frame->rsp=user_rsp;
         frame->ss=ZEROOS_USER_SS_RING3;
         frame->arg=(void *)user_arg;

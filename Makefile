@@ -6,7 +6,7 @@ CC := gcc
 LD := ld
 AS := gcc
 
-CFLAGS := -m64 -mno-red-zone -mcmodel=small -ffreestanding -fno-pic -fno-pie -fno-stack-protector -fno-builtin -nostdinc -Wall -Wextra -Werror -O2
+CFLAGS := -m64 -mno-red-zone -mgeneral-regs-only -mcmodel=small -ffreestanding -fno-pic -fno-pie -fno-stack-protector -fno-builtin -nostdinc -Wall -Wextra -Werror -O2
 ASFLAGS := -m64 -ffreestanding -fno-pic -fno-pie -nostdlib
 LDFLAGS := -m elf_x86_64 -T kernel/linker.ld -nostdlib
 
@@ -47,7 +47,7 @@ all: iso
 $(BUILD):
 	mkdir -p $(BUILD)
 
-$(C_OBJECTS): $(HEADERS)
+$(C_OBJECTS): $(HEADERS) Makefile
 
 $(BUILD)/%.o: %.c | $(BUILD)
 	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -Ikernel -c $< -o $@
@@ -72,3 +72,10 @@ run: iso
 
 clean:
 	rm -rf $(BUILD)
+
+.PHONY: host-test
+host-test: | $(BUILD)
+	$(CC) -O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Ikernel -Wl,--gc-sections tests/user_range.c kernel/vmm.c -o $(BUILD)/test-user-range
+	timeout 5 $(BUILD)/test-user-range
+	$(CC) -O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Ikernel -Wl,--gc-sections tests/syscall_dispatch.c kernel/syscall.c kernel/vmm.c -o $(BUILD)/test-syscall
+	timeout 5 $(BUILD)/test-syscall
