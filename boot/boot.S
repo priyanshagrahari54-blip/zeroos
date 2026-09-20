@@ -55,9 +55,10 @@ _start:
     mov $stack_top, %esp
     mov $pml4_table, %eax
     mov %eax, %cr3
-    mov %cr4, %eax
+    # Establish exactly four-level paging and a known feature baseline;
+    # do not inherit LA57, OSXSAVE, FSGSBASE or global-TLB policy from GRUB.
     # PAE + architectural SSE support; CR0.TS below denies extended-state use.
-    or $0x620, %eax
+    mov $0x620, %eax
     mov %eax, %cr4
     mov $0xC0000080, %ecx
     rdmsr

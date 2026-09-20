@@ -81,3 +81,5 @@ host-test: | $(BUILD)
 	timeout 5 $(BUILD)/test-syscall
 	$(CC) -O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -DZEROOS_HOST_TEST -Ikernel -Wl,--gc-sections tests/page_ownership.c kernel/vmm.c kernel/memory.c -o $(BUILD)/test-page-ownership
 	timeout 5 $(BUILD)/test-page-ownership
+	$(CC) -O2 -Wall -Wextra -Werror -DZEROOS_HOST_TEST -DZEROOS_TEST_FAULTS -Ikernel tests/pmm.c kernel/memory.c -o $(BUILD)/test-pmm
+	timeout 5 $(BUILD)/test-pmm

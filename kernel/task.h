@@ -101,6 +101,7 @@ int task_sleep_until(uint64_t deadline);
 int task_sleep_ticks(uint64_t ticks);
 void task_exit(void);
 int task_discard_new(uint64_t tid);
+int task_reap_finished(uint64_t tid);
 
 /*
  * Called from the common interrupt-exit path.

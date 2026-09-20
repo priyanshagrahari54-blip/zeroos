@@ -68,7 +68,13 @@ user_init_code:
     je .execute_stack
     cmpq $16, %rdi
     je .invalid_gate
+    cmpq $17, %rdi
+    je .sysenter_denied
     jmp .exit_zero
+
+.sysenter_denied:
+    sysenter
+    ud2
 
 .write_code:
     leaq user_init_code(%rip), %rax

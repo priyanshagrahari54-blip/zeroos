@@ -38,11 +38,20 @@ static inline uint64_t rdmsr(uint32_t index) {
  * user return address is instead contained in syscall_dispatch below.
  */
 void syscall_entry_abort(void) {
-    serial_write_public("ZEROOS PANIC: syscall entry invalid (kernel-mode SYSCALL or bad user RSP).\n");
+    serial_write_public("ZEROOS PANIC: syscall entry has no trusted task stack.\n");
     for (;;) __asm__ volatile ("cli; hlt");
 }
 
 void syscall_init(void) {
+    /* SYSENTER is not a ZEROOS entry path. If implemented by the CPU,
+     * a zero selector makes it fault at the caller's CPL before entry. */
+    uint32_t a,b,c,d;
+    __asm__ volatile ("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(1), "c"(0));
+    if (d&(1U<<11)) {
+        wrmsr(0x174,0);
+        wrmsr(0x175,0);
+        wrmsr(0x176,0);
+    }
     /*
      * EFER.SCE enables SYSCALL/SYSRET. LME is already set by the boot code;
      * preserve every other EFER bit.
@@ -59,7 +68,7 @@ void syscall_init(void) {
           ((uint64_t)ZEROOS_STAR_USER_BASE << 48));
     wrmsr(MSR_LSTAR, (uint64_t)syscall_entry);
 
-    /* Mask IF, DF, AC: the kernel entry trampoline runs with interrupts
+    /* Mask IF, DF, AC, TF and NT: the kernel entry trampoline runs with interrupts
      * disabled until the task context is fully handled. */
     wrmsr(MSR_SFMASK, RFLAGS_IF | RFLAGS_DF | RFLAGS_AC | RFLAGS_TF | RFLAGS_NT);
 }

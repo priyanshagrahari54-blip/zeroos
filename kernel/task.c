@@ -399,7 +399,7 @@ static void sleep_queue_wake_expired_locked(uint64_t now) {
 static void reap_zombies_locked(void) {
     for (int i=2;i<ZEROOS_MAX_TASKS;++i) {
         struct task *task=&tasks[i];
-        if (task->state!=TASK_ZOMBIE || !task->stack_base)
+        if (task==current_task || task->state!=TASK_ZOMBIE || !task->stack_base)
             continue;
         page_free((void *)task->stack_base);
         /*
@@ -1071,6 +1071,22 @@ int task_discard_new(uint64_t tid) {
     int result=-1;
     if (task && task!=current_task && task->state==TASK_RUNNABLE &&
         task->context_switches==0 && task->interrupt_frame==0) {
+        page_free((void *)task->stack_base);
+        if (task->process) task->process->thread=0;
+        for (unsigned i=0;i<sizeof(*task);++i) ((uint8_t *)task)[i]=0;
+        result=0;
+    }
+    spin_unlock_irqrestore(&task_lock,flags);
+    return result;
+}
+
+/* A process reaper need not wait for another timer tick to release its
+ * terminal thread. The executing stack is never eligible for reclamation. */
+int task_reap_finished(uint64_t tid) {
+    uint64_t flags=spin_lock_irqsave(&task_lock);
+    struct task *task=task_find_by_id(tid);
+    int result=-1;
+    if (task && task!=current_task && task->state==TASK_ZOMBIE) {
         page_free((void *)task->stack_base);
         if (task->process) task->process->thread=0;
         for (unsigned i=0;i<sizeof(*task);++i) ((uint8_t *)task)[i]=0;

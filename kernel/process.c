@@ -202,7 +202,8 @@ int process_reap(uint64_t pid) {
         if (p->state != PROCESS_ZOMBIE || p->pid != pid)
             continue;
         if (task_current() && task_current()->process == p) break;
-        if (p->thread && p->thread->process == p) p->thread->process=0;
+        if (p->thread && p->thread->process == p &&
+            task_reap_finished(p->thread->id)!=0) break;
 
         /*
          * Release the address space: page-table pages, every owned data

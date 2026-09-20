@@ -895,14 +895,26 @@ static void ring3_orchestrator(void *argument) {
     }
     serial_write_public("ZEROOS: integer-only state and bad-RSP containment passed.\n");
 
-    for (uint64_t test=11;test<=16;++test) {
+    for (uint64_t test=11;test<=17;++test) {
         ring3_run_case(test,100,1,&pid);
         struct process *p=process_find(pid);
-        uint64_t vector=(test==14 || test==16) ? 13 : 14;
+        uint64_t vector=(test==14 || test==16 || test==17) ? 13 : 14;
+        if (test==17 && p && p->exit_code==(0x100ULL|6)) vector=6;
         if (!p || p->exit_code!=(0x100ULL|vector)) kernel_panic("W^X/access fault vector mismatch");
         if (process_reap(pid)!=0) kernel_panic("access fault reap failed");
     }
     serial_write_public("ZEROOS: user W^X, kernel access and I/O denial passed.\n");
+
+    unsigned pcids=vmm_pcid_in_use();
+    for (unsigned i=0;i<64;++i) {
+        ring3_run_case(99,100,0,&pid);
+        struct process *p=process_find(pid);
+        if (!p || p->exit_code!=0) kernel_panic("process execution stress failed");
+        uint64_t tid=p->thread ? p->thread->id : 0;
+        if (process_reap(pid)!=0 || process_find(pid) || (tid && task_find_by_id(tid)) ||
+            vmm_pcid_in_use()!=pcids) kernel_panic("process execution/reap retained resources");
+    }
+    serial_write_public("ZEROOS: process execution/reap stress passed.\n");
 
     if (timer_ticks()>deadline) {
         ring3_failures++;
@@ -981,6 +993,10 @@ static void scheduler_self_test(void) {
     if (scheduler_init()!=0)
         kernel_panic("scheduler initialization failed");
 #ifdef ZEROOS_TEST_FAULTS
+    /* Exercise IRQ exit while slot 0 still owns the bootstrap stack. */
+    uint64_t bootstrap_tick=timer_ticks();
+    while (timer_ticks()-bootstrap_tick<2) __asm__ volatile ("hlt");
+    serial_write_public("ZEROOS: bootstrap IRQ regression passed.\n");
     process_rollback_self_test();
 #endif
 

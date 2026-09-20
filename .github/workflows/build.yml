@@ -85,6 +85,8 @@ jobs:
             fi
           }
           # Foundation
+          check "ZEROOS: bootstrap IRQ regression passed."
+          check "ZEROOS: process execution/reap stress passed."
           check "ZEROOS: process rollback and lifetime stress passed."
           check "ZEROOS: live-CR3 isolation, ownership and W^X passed."
           check "ZEROOS: user W^X, kernel access and I/O denial passed."
@@ -126,6 +128,9 @@ jobs:
           if grep -q "L" build/debug.log 2>/dev/null; then echo "PASS: debug port L" | tee -a build/check-results.txt; else echo "MISSING: debug port L" | tee -a build/check-results.txt; FAIL=1; fi
           exit $FAIL
 
+      - name: CPU and RAM integration matrix
+        run: python3 tests/boot_matrix.py >build/matrix-results.log 2>&1
+
       - name: Dump serial log on failure
         if: failure()
         run: |
@@ -147,11 +152,13 @@ jobs:
           fi
 
       - name: Archive diagnostics
-        if: failure()
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: zeroos-diagnostics
           path: |
+            build/matrix-results.log
+            build/matrix/
             build/serial.log
             build/debug.log
             build/qemu.log
@@ -173,6 +180,10 @@ jobs:
           {
             echo "Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
             echo
+            echo "### integration matrix"
+            echo '```'
+            tail -c 8000 build/matrix-results.log 2>/dev/null || true
+            echo '```'
             echo "### boot regressions"
             echo '```'
             tail -c 4000 build/boot-regressions.log 2>/dev/null || true
@@ -192,12 +203,12 @@ jobs:
             # budget each section so the comment always fits.
             echo "### serial.log (tail)"
             echo '```'
-            if test -f build/serial.log; then tail -c 20000 build/serial.log; else echo "(missing)"; fi
+            if test -f build/serial.log; then tail -c 12000 build/serial.log; else echo "(missing)"; fi
             echo '```'
             echo
             echo "### debug.log (hex, last 6 KiB of isa-debugcon 0xe9)"
             echo '```'
-            if test -f build/debug.log; then tail -c 6000 build/debug.log | od -An -tx1 -v | tr -s ' \n' ' '; echo; else echo "(missing)"; fi
+            if test -f build/debug.log; then tail -c 256 build/debug.log | od -An -tx1 -v | tr -s ' \n' ' '; echo; else echo "(missing)"; fi
             echo '```'
             echo
             echo "### qemu.log (tail)"
