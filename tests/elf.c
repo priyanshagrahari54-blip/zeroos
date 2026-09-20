@@ -39,6 +39,12 @@ int main(void) {
     ((struct elf64_phdr *)(image+sizeof(struct elf64_ehdr)))->align=3;
     assert(elf64_validate_image(image,sizeof(image),&out)==-1);
     make_base();
+    ((struct elf64_phdr *)(image+sizeof(struct elf64_ehdr)))->flags=ZEROOS_PF_R|ZEROOS_PF_W|ZEROOS_PF_X;
+    assert(elf64_validate_image(image,sizeof(image),&out)==-1);
+    make_base();
+    ((struct elf64_phdr *)(image+sizeof(struct elf64_ehdr)))->flags=8;
+    assert(elf64_validate_image(image,sizeof(image),&out)==-1);
+    make_base();
     ((struct elf64_ehdr *)image)->entry=0x00007f0000002000ULL;
     assert(elf64_validate_image(image,sizeof(image),&out)==-1);
     make_base();
