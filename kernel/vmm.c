@@ -673,7 +673,7 @@ static void vmm_space_destroy_locked(struct vmm_space *space) {
     page_free(space->root);
     space->root = 0;
     space->root_physical = 0;
-    if (space->has_pcid) vmm_pcid_free(space->pcid);
+    if (space->has_pcid) vmm_pcid_free_locked(space->pcid);
     space->has_pcid = 0;
     space->pcid = 0;
 }
@@ -891,30 +891,30 @@ int vmm_space_unmap_page(struct vmm_space *space, uint64_t virtual_address) {
 }
 
 int vmm_space_own_page(struct vmm_space *space, uint64_t physical) {
-    uint64_t irq=irq_save();
+    uint64_t flags=spin_lock_irqsave(&vmm_lock);
     int result=vmm_space_own_page_locked(space, physical);
-    irq_restore(irq);
+    spin_unlock_irqrestore(&vmm_lock,flags);
     return result;
 }
 
 int vmm_space_release_page(struct vmm_space *space, uint64_t physical) {
-    uint64_t irq=irq_save();
+    uint64_t flags=spin_lock_irqsave(&vmm_lock);
     int result=vmm_space_release_page_locked(space, physical);
-    irq_restore(irq);
+    spin_unlock_irqrestore(&vmm_lock,flags);
     return result;
 }
 
 uint16_t vmm_pcid_alloc(void) {
-    uint64_t irq=irq_save();
+    uint64_t flags=spin_lock_irqsave(&vmm_lock);
     uint16_t result=vmm_pcid_alloc_locked();
-    irq_restore(irq);
+    spin_unlock_irqrestore(&vmm_lock,flags);
     return result;
 }
 
 void vmm_pcid_free(uint16_t pcid) {
-    uint64_t irq=irq_save();
+    uint64_t flags=spin_lock_irqsave(&vmm_lock);
     vmm_pcid_free_locked(pcid);
-    irq_restore(irq);
+    spin_unlock_irqrestore(&vmm_lock,flags);
 }
 
 int vmm_map_page(uint64_t virtual_address, uint64_t physical_address, uint64_t flags) {
