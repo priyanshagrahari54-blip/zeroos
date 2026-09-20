@@ -316,6 +316,79 @@ int memory_is_managed_range(uint64_t address, uint64_t length) {
     return address < ZEROOS_MAX_PHYS_MEM && end <= ZEROOS_MAX_PHYS_MEM;
 }
 
+void *page_alloc_at(uint64_t address) {
+    if ((address % ZEROOS_PAGE_SIZE) != 0 ||
+        address >= ZEROOS_MAX_PHYS_MEM)
+        return (void *)0;
+
+    uint64_t page = address / ZEROOS_PAGE_SIZE;
+    if (page >= ZEROOS_MAX_PAGES)
+        return (void *)0;
+    if (bitmap_test(page))
+        return (void *)0;
+
+    bitmap_set(page);
+    --free_pages;
+    summary_clear_if_full(page >> 6);
+    return (void *)address;
+}
+
+/*
+ * Find the first physically contiguous free run of need_pages pages.
+ * Returns the start page index, or ~0 if no such run exists.
+ *
+ * This is what the heap (and any future user of large linear regions)
+ * must use instead of racing page_alloc()'s lowest-free-page order:
+ * scattered free pages below a long run would otherwise be handed out
+ * first, and an allocate/free/restart search would cycle on them
+ * forever without ever reaching the long run.
+ *
+ * Fast path (need is a multiple of 64): a run of `need` pages is a
+ * stretch of need/64 fully-free bitmap words, so the search is a scan
+ * over at most ZEROOS_BITMAP_WORDS * (need/64) word reads. The general
+ * page-level fallback covers arbitrary sizes.
+ */
+uint64_t memory_find_free_run(uint64_t need_pages) {
+    if (need_pages == 0)
+        return 0;
+    if (need_pages > ZEROOS_MAX_PAGES)
+        return ~0ULL;
+
+    if ((need_pages & 63ULL) == 0) {
+        uint64_t words_needed = need_pages / 64ULL;
+        for (uint64_t word = 0;
+             word + words_needed <= ZEROOS_BITMAP_WORDS;
+             ++word) {
+            int ok = 1;
+            for (uint64_t i = 0; i < words_needed; ++i) {
+                if (page_bitmap[word + i] != 0) {
+                    ok = 0;
+                    break;
+                }
+            }
+            if (ok)
+                return word * 64ULL;
+        }
+        /* No word-aligned run: a run may still start mid-word. */
+    }
+
+    for (uint64_t page = 0; page + need_pages <= ZEROOS_MAX_PAGES; ++page) {
+        if (page_bitmap[page >> 6] & (1ULL << (page & 63)))
+            continue;
+        int ok = 1;
+        for (uint64_t i = 0; i < need_pages; ++i) {
+            uint64_t p = page + i;
+            if (page_bitmap[p >> 6] & (1ULL << (p & 63))) {
+                ok = 0;
+                break;
+            }
+        }
+        if (ok)
+            return page;
+    }
+    return ~0ULL;
+}
+
 int memory_page_is_allocated(uint64_t address) {
     if ((address % ZEROOS_PAGE_SIZE) != 0 ||
         address >= ZEROOS_MAX_PHYS_MEM)

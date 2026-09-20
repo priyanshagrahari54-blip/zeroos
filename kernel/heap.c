@@ -67,24 +67,6 @@ int heap_validate(void) {
     return cursor == heap_end ? 0 : -1;
 }
 
-/*
- * CI-only trace on the isa-debugcon (port 0xe9, captured in debug.log):
- * the region search emits every allocated page as its 5-hex-digit page
- * index, 'G' at each gap restart, and 'D' when the loop exits. This
- * traces the exact allocation sequence without depending on the IDT.
- */
-static void heap_trace_char(char c) {
-    __asm__ volatile ("outb %0, $0xe9" : : "a"(c) : "memory");
-}
-
-static void heap_trace_hex(uint64_t value, int digits) {
-    const char *hex = "0123456789abcdef";
-    for (int i = digits - 1; i >= 0; --i) {
-        char c = hex[(value >> (i * 4)) & 0xfULL];
-        __asm__ volatile ("outb %0, $0xe9" : : "a"(c) : "memory");
-    }
-}
-
 int heap_init(void) {
     uint8_t *region = 0;
     uint64_t pages = 0;
@@ -94,44 +76,35 @@ int heap_init(void) {
         return 0;
 
     /*
-     * Consume pages from the physical allocator until a strictly linear
-     * window is built. The bitmap allocator hands out pages in address
-     * order. Firmware memory maps are not guaranteed to be contiguous:
-     * on a typical i386 map the low-memory region below the 1 MiB
-     * PCI/BIOS hole is free but not adjacent to the main RAM run, so the
-     * first address-ordered run can be shorter than the minimum. On a
-     * gap the run is restarted at the gap page and the abandoned prefix
-     * is returned to the allocator; the first run long enough is kept.
+     * Find the first physically contiguous free run of the desired
+     * region size (falling back to the minimum) by scanning the PMM
+     * bitmap, then allocate exactly that range.
+     *
+     * This must not be done with page_alloc() and free-on-gap: that
+     * allocator serves the lowest free page first, and scattered free
+     * pages in the low-memory region (below the 1 MiB PCI/BIOS hole,
+     * non-adjacent to each other) would be cycled on forever - every
+     * page is a "gap" against the one-page run it replaces - while the
+     * long main-RAM run is never reached and the search never ends.
      */
-    for (;;) {
-        uint8_t *next = (uint8_t *)page_alloc_zero();
-        if (!next) {
-            heap_trace_char('D');
-            break;
-        }
-        heap_trace_hex((uint64_t)next / ZEROOS_PAGE_SIZE, 5);
-        if (pages > 0 &&
-            (uint64_t)next != (uint64_t)region + pages * ZEROOS_PAGE_SIZE) {
-            for (uint64_t i = 0; i < pages; ++i)
-                page_free(region + i * ZEROOS_PAGE_SIZE);
-            region = next;
-            pages = 1;
-            heap_trace_char('G');
-            continue;
-        }
-        if (!region)
-            region = next;
-        ++pages;
-        if (pages >= HEAP_REGION_PAGES) {
-            heap_trace_char('D');
-            break;
-        }
+    uint64_t start_page = memory_find_free_run(HEAP_REGION_PAGES);
+    pages = HEAP_REGION_PAGES;
+    if (start_page == ~0ULL) {
+        start_page = memory_find_free_run(HEAP_MIN_PAGES);
+        pages = HEAP_MIN_PAGES;
     }
-
-    if (!region || pages < HEAP_MIN_PAGES) {
-        for (uint64_t i = 0; i < pages; ++i)
-            page_free(region + i * ZEROOS_PAGE_SIZE);
+    if (start_page == ~0ULL)
         return -1;
+
+    region = (uint8_t *)(start_page * ZEROOS_PAGE_SIZE);
+    for (uint64_t i = 0; i < pages; ++i) {
+        uint8_t *next = (uint8_t *)page_alloc_at(
+            (start_page + i) * ZEROOS_PAGE_SIZE);
+        if (!next) {
+            for (uint64_t j = 0; j < i; ++j)
+                page_free(region + j * ZEROOS_PAGE_SIZE);
+            return -1;
+        }
     }
 
     heap_base = region;
