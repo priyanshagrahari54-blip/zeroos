@@ -326,9 +326,14 @@ int vmm_unmap_page(uint64_t virtual_address) {
 }
 
 /*
- * Per-address-space user-range validation. Mirrors vmm_is_user_range() but
- * walks the supplied space's root, so it can be used for the space of a
- * user process that is not the one currently loaded in CR3.
+ * Per-address-space user-range validation. Walks the supplied space's root,
+ * so it can be used for the space of a user process that is not the one
+ * currently loaded in CR3. Unlike the kernel-root variant, this requires
+ * the user bit on every intermediate entry as well: process page tables
+ * are writable by the process if the kernel ever exposes a table page, so
+ * the walk must not trust intermediate entries that the kernel would never
+ * create without the user bit (space_ensure_table() always sets it for
+ * user mappings).
  */
 int vmm_space_is_user_range(const struct vmm_space *space, uint64_t virtual_address,
                             uint64_t length, uint64_t write) {
@@ -472,6 +477,17 @@ int vmm_protect_page(uint64_t virtual_address, uint64_t flags) {
     return 0;
 }
 
+/*
+ * Kernel-root user-range validation. Hardware semantics: the MMU ignores
+ * U/S on intermediate (non-leaf) entries, so only presence is required
+ * there; the leaf must be present, user-accessible, and (for write)
+ * writable. This walks the kernel root, which the kernel alone controls.
+ *
+ * Do NOT reuse this for process spaces: vmm_space_is_user_range() is
+ * deliberately stricter (it also requires the user bit on every
+ * intermediate entry) because a process's page tables can be corrupted
+ * by the process itself.
+ */
 int vmm_is_user_range(uint64_t virtual_address, uint64_t length, uint64_t write) {
     if (!root_table || length == 0 || !canonical_address(virtual_address))
         return 0;
@@ -492,15 +508,16 @@ int vmm_is_user_range(uint64_t virtual_address, uint64_t length, uint64_t write)
         uint64_t pt_index = (cursor >> 12) & 0x1ff;
 
         uint64_t e1 = root_table[pml4_index];
-        if (!(e1 & VMM_PRESENT) || !(e1 & VMM_USER)) return 0;
+        if (!(e1 & VMM_PRESENT)) return 0;
         uint64_t *pdpt = table_from_entry(e1);
         uint64_t e2 = pdpt[pdpt_index];
-        if (!(e2 & VMM_PRESENT) || !(e2 & VMM_USER)) return 0;
+        if (!(e2 & VMM_PRESENT)) return 0;
         uint64_t *pd = table_from_entry(e2);
         uint64_t e3 = pd[pd_index];
-        if (!(e3 & VMM_PRESENT) || !(e3 & VMM_USER)) return 0;
+        if (!(e3 & VMM_PRESENT)) return 0;
 
         if (e3 & HUGE_PAGE_2M) {
+            if (!(e3 & VMM_USER)) return 0;
             if (write && !(e3 & VMM_WRITABLE)) return 0;
         } else {
             uint64_t *pt = table_from_entry(e3);

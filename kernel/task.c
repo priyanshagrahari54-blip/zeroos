@@ -475,8 +475,16 @@ static int switch_to_next(struct task *previous, int next) {
     tasks[next].context_switches++;
     current_task=&tasks[next];
 
-    context_switch(&previous->saved_stack,&current_task->saved_stack);
+    /*
+     * Install the target's address space (CR3) and ring-3 stack pointer
+     * (TSS.RSP0) BEFORE the context switch: the target's first
+     * instructions may transition to user mode, and every one of them
+     * must already see the target's translation root. All references in
+     * between (task table, both saved contexts) are kernel memory,
+     * mapped identically in every root.
+     */
     task_update_cpu_state(current_task);
+    context_switch(&previous->saved_stack,&current_task->saved_stack);
     return 1;
 }
 
@@ -691,8 +699,8 @@ static int task_block_locked(uint64_t flags) {
     previous->interrupt_frame=0;
     current_task=&tasks[next];
     task_validate_table("ZEROOS PANIC: task block invariant failed.\n");
-    context_switch(&previous->saved_stack,&current_task->saved_stack);
     task_update_cpu_state(current_task);
+    context_switch(&previous->saved_stack,&current_task->saved_stack);
     task_irq_restore(flags);
     return 0;
 }
@@ -762,8 +770,8 @@ int task_sleep_until(uint64_t deadline) {
     task->interrupt_frame=0;
     current_task=&tasks[next];
     task_validate_table("ZEROOS PANIC: task sleep invariant failed.\n");
-    context_switch(&task->saved_stack,&current_task->saved_stack);
     task_update_cpu_state(current_task);
+    context_switch(&task->saved_stack,&current_task->saved_stack);
     task_irq_restore(flags);
     return 0;
 }
@@ -800,8 +808,8 @@ void task_exit(void) {
     if (!task_saved_context_ok(&tasks[next]))
         task_saved_context_panic(&tasks[next]);
     task_validate_table("ZEROOS PANIC: task exit invariant failed.\n");
-    context_switch(&previous->saved_stack,&current_task->saved_stack);
     task_update_cpu_state(current_task);
+    context_switch(&previous->saved_stack,&current_task->saved_stack);
     task_irq_restore(flags);
 
     for (;;) __asm__ volatile ("cli; hlt");
@@ -1033,8 +1041,8 @@ void task_start_first(void) {
         !task_saved_context_ok(&tasks[next]))
         task_saved_context_panic(&tasks[next]);
     task_validate_table("ZEROOS PANIC: scheduler start invariant failed.\n");
-    context_switch(&tasks[0].saved_stack,&current_task->saved_stack);
     task_update_cpu_state(current_task);
+    context_switch(&tasks[0].saved_stack,&current_task->saved_stack);
 
     for (;;) __asm__ volatile ("cli; hlt");
 }

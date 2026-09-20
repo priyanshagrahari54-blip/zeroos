@@ -41,10 +41,21 @@ static void serial_putc(char c) {
 }
 
 void serial_write_public(const char *text) {
+    /*
+     * One string is one atomic unit of console output. On this single CPU
+     * an IRQ can otherwise preempt a C-context writer between bytes and
+     * interleave its own diagnostics into the middle of a line, corrupting
+     * the console log. Strings are short (microseconds), so disabling
+     * interrupts for the write is the minimal correct serialization; in
+     * interrupt context (IF already clear) and in user syscalls this is a
+     * no-op.
+     */
+    __asm__ volatile ("cli" ::: "memory");
     while (*text) {
         if (*text=='\n') serial_putc('\r');
         serial_putc(*text++);
     }
+    __asm__ volatile ("sti" ::: "memory");
 }
 
 extern void interrupts_init(void);
@@ -734,11 +745,17 @@ void kernel_main(uint64_t multiboot_info, uint64_t multiboot_magic) {
     if (vmm_init()!=0) kernel_panic("virtual memory initialization failed");
     serial_write_public("ZEROOS: virtual memory manager initialized.\n");
     vmm_self_test();
-    vmm_space_self_test();
 
+    /*
+     * The heap must be live before the per-address-space self-test:
+     * space page-ownership tracking allocates its descriptors from the
+     * heap.
+     */
     if (heap_init()!=0) kernel_panic("kernel heap initialization failed");
     serial_write_public("ZEROOS: kernel heap initialized.\n");
     heap_self_test();
+
+    vmm_space_self_test();
 
     sync_self_test();
 
