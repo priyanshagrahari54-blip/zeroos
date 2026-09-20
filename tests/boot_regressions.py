@@ -33,6 +33,38 @@ def static_checks(elf):
     print("PASS: early IDT binary layout and fatal entry ABI", flush=True)
 
 
+def descriptor_checks(elf):
+    symbols = output("nm", "-S", str(elf))
+    for name, size in (("tss", 104), ("double_fault_stack", 16384), ("nmi_stack", 16384)):
+        symbol = re.search(rf"^[0-9a-f]+ ([0-9a-f]+) b {name}$", symbols, re.M)
+        require(symbol and int(symbol[1], 16) == size, f"incorrect size: {name}")
+    code = output("objdump", "-d", "--disassemble=gdt_init", str(elf))
+    require("lgdt" in code and "ltr" in code and "lidt" not in code, "GDT instruction mixup")
+    code = output("objdump", "-d", "--disassemble=isr_stub_2", str(elf))
+    require(len(re.findall(r"\bpush\s", code)) == 2, "NMI needs a synthetic error word")
+    print("PASS: GDT/TSS/emergency-stack binary layout", flush=True)
+
+
+def late_fault_test(vector):
+    directory = Path(f"build/late-fault-{vector}")
+    subprocess.run(["make", f"BUILD={directory}",
+                    f"EXTRA_CFLAGS=-DZEROOS_LATE_FAULT_TEST={vector}", "iso"], check=True)
+    descriptor_checks(directory / "zeroos.elf")
+    text = boot(directory / "zeroos.iso", directory)
+    require(f"vector=0x{vector:016x} error=0x{0:016x}" in text,
+            f"wrong late exception frame: {text!r}")
+    require("kernel halted after fatal exception" in text, "fatal handler did not finish")
+    if vector in (2, 8):
+        name = "nmi_stack" if vector == 2 else "double_fault_stack"
+        symbols = output("nm", "-S", str(directory / "zeroos.elf"))
+        stack = re.search(rf"^([0-9a-f]+) ([0-9a-f]+) b {name}$", symbols, re.M)
+        frame = re.search(r"frame=0x([0-9a-f]+)", text)
+        require(stack and frame, "missing IST stack/frame evidence")
+        base, size = int(stack[1], 16), int(stack[2], 16)
+        require(base <= int(frame[1], 16) <= base + size - 176, "wrong IST stack")
+    print(f"PASS: full IDT vector {vector}, correct frame and stack, no triple fault", flush=True)
+
+
 def boot(image, directory, cpu="qemu64"):
     directory.mkdir(parents=True, exist_ok=True)
     serial = directory / "serial.log"
@@ -74,10 +106,13 @@ def main():
     parser.add_argument("--static", action="store_true")
     args = parser.parse_args()
     static_checks(Path("build/zeroos.elf"))
+    descriptor_checks(Path("build/zeroos.elf"))
     if args.static:
         return
     for vector in (6, 14):
         fault_test(vector)
+    for vector in (2, 6, 8):
+        late_fault_test(vector)
     text = boot(Path("build/zeroos.iso"), Path("build/no-nx"), "qemu64,-nx")
     require("ZEROOS PANIC: virtual memory initialization failed (NX required)" in text,
             "CPU without NX did not fail closed")

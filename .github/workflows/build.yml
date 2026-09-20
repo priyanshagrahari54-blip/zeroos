@@ -41,7 +41,7 @@ jobs:
           objdump -d --disassemble=user_task_entry build/zeroos.elf
           objdump -d --disassemble=task_trampoline build/zeroos.elf
 
-      - name: Early fault and CPU feature regressions
+      - name: Exception and CPU feature regressions
         run: python3 tests/boot_regressions.py >build/boot-regressions.log 2>&1
 
       - name: Boot test
@@ -148,6 +148,7 @@ jobs:
             build/qemu-startup.log
             build/qemu-status.txt
             build/boot-regressions.log
+            build/late-fault-*/serial.log
             build/early-fault-*/serial.log
             build/no-nx/serial.log
           if-no-files-found: ignore

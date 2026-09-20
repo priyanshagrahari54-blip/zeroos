@@ -14,6 +14,12 @@ struct idtr { uint16_t limit; uint64_t base; } __attribute__((packed));
 
 struct irq_binding { irq_handler_t handler; void *context; };
 
+_Static_assert(sizeof(struct idt_entry) == 16, "x86-64 IDT gate size");
+_Static_assert(__builtin_offsetof(struct idt_entry, ist) == 4, "IDT IST offset");
+_Static_assert(__builtin_offsetof(struct idt_entry, type_attr) == 5, "IDT type offset");
+_Static_assert(__builtin_offsetof(struct interrupt_frame, rip) == 136, "ISR RIP offset");
+_Static_assert(sizeof(struct interrupt_frame) == 176, "ISR frame size");
+
 static struct idt_entry idt[256];
 static struct irq_binding irq_bindings[16];
 
@@ -53,7 +59,8 @@ static void exception_name(uint64_t vector) {
 static void halt_exception(struct interrupt_frame *frame) {
     serial_write_public("ZEROOS: exception ");
     exception_name(frame->vector);
-    serial_write_public("\n  vector="); serial_write_hex(frame->vector);
+    serial_write_public("\n  frame="); serial_write_hex((uint64_t)frame);
+    serial_write_public(" vector="); serial_write_hex(frame->vector);
     serial_write_public(" error="); serial_write_hex(frame->error_code);
     serial_write_public(" rip="); serial_write_hex(frame->rip);
     serial_write_public(" cs="); serial_write_hex(frame->cs);
@@ -79,13 +86,8 @@ static void idt_set_gate(uint8_t vector, void *handler, uint8_t ist) {
     uint64_t address=(uint64_t)handler;
     idt[vector].offset_low=(uint16_t)(address&0xffff);
     idt[vector].selector=0x08;
-    /*
-     * Gate byte 4 (ist field) is reserved/zero. The IST index occupies the
-     * low three bits of the access/type byte (gate byte 5), which is why it
-     * is ORed into type_attr below.
-     */
-    idt[vector].ist=0;
-    idt[vector].type_attr=(uint8_t)(0x8e | (ist & 7U));
+    idt[vector].ist=(uint8_t)(ist & 7U);
+    idt[vector].type_attr=0x8e; /* present, DPL0 interrupt gate */
     idt[vector].offset_mid=(uint16_t)((address>>16)&0xffff);
     idt[vector].offset_high=(uint32_t)(address>>32);
     idt[vector].zero=0;
@@ -195,16 +197,32 @@ void interrupts_init(void) {
 
     for (uint16_t i=0;i<256;++i) idt_set_gate((uint8_t)i,isr_stub_table[i],0);
 
-    /*
-     * Double fault and NMI use IST#0 (TSS.RSP0): a double fault may arrive
-     * with the current stack unusable, so it must land on the task's
-     * dedicated interrupt headroom instead of the corrupting stack.
-     */
+    /* Independent, fixed emergency stacks; IST is unrelated to RSP0. */
     idt_set_gate(8, isr_stub_table[8], 1);
-    idt_set_gate(2, isr_stub_table[2], 1);
+    idt_set_gate(2, isr_stub_table[2], 2);
 
     struct idtr descriptor={.limit=(uint16_t)(sizeof(idt)-1),.base=(uint64_t)idt};
     lidt(&descriptor);
+    struct idtr readback;
+    __asm__ volatile ("sidt %0" : "=m"(readback));
+    if (readback.limit != descriptor.limit || readback.base != descriptor.base ||
+        idt[8].ist != 1 || idt[2].ist != 2 ||
+        idt[8].type_attr != 0x8e || idt[2].type_attr != 0x8e) {
+        serial_write_public("ZEROOS PANIC: IDT load verification failed.\n");
+        for (;;) __asm__ volatile ("cli; hlt");
+    }
+
+#if ZEROOS_LATE_FAULT_TEST == 2
+    /* Software invocation exercises the NMI gate and IST2 stack. */
+    __asm__ volatile ("int $2");
+#elif ZEROOS_LATE_FAULT_TEST == 6
+    __asm__ volatile ("ud2");
+#elif ZEROOS_LATE_FAULT_TEST == 8
+    /* A #GP whose handler is not present escalates to #DF. This is a
+     * real double fault, not INT 8 (which would not push an error code). */
+    idt[13].type_attr = 0;
+    __asm__ volatile ("mov $0xffff, %%ax; mov %%ax, %%ss" : : : "rax", "memory");
+#endif
 
     if (irq_register(0,timer_irq_handler,0)!=0) {
         serial_write_public("ZEROOS PANIC: timer IRQ registration failed.\n");

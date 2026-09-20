@@ -33,14 +33,26 @@ Temporary heap probes have been removed; the full-region payload test remains.
 - CI also boots the normal image for at most 60 seconds and checks the
   integration markers. A later subsystem failure still fails the job.
 
-Local build and static checks passed for these fixes. QEMU is not installed in
-the sandbox, and package downloads are unavailable; guest tests run in CI.
-Their post-fix results must be recorded before claiming a boot milestone.
+## Post-fix evidence
 
-## Remaining audit findings
+Run [35503604202](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/35503604202)
+at commit `d12880b` passed the early exception/CPU-feature regression step and
+normal-image heap, per-address-space VMM, and synchronization self-tests.
+The next failure is #GP at LTR with error `0x28`: GDT initialization had loaded
+the GDT address into IDTR using LIDT, leaving the bootstrap GDT active.
+EFER is now `0xD00`, confirming NXE activation. This is progress, not a full
+integration pass.
 
-The later GDT/TSS and interrupt code still needs correction and execution
-validation: GDT loading uses LIDT, user descriptors have wrong access bytes,
-TSS layout is incorrect, and IST handling assumes a nonexistent pushed index.
-These findings are separate from the now-identified heap-boundary failure.
-Full user/kernel W^X and Stage 1 security certification remain outstanding.
+## GDT/TSS/IST follow-up
+
+The hardware-boundary invariants are in [X86_BOUNDARY.md](X86_BOUNDARY.md).
+Corrections cover LGDT/readback, user data/code descriptors, complete 104-byte
+TSS including the I/O-map offset, the descriptor's upper base word, separate
+DF/NMI stacks, and the real IST gate/frame format. Fault images exercise the
+full #UD handler, software invocation of the NMI gate on IST2, and a real
+#DF escalation on IST1. These tests assert frame placement inside the named
+stack, not merely a printed vector. Guest results for this follow-up are
+pending; compile-time assertions and ELF checks pass locally.
+
+Full user/kernel W^X, syscall entry/return validation and per-thread extended
+register ownership still require audit and tests. Stage 1 remains uncertified.

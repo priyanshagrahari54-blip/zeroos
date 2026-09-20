@@ -901,6 +901,11 @@ void kernel_main(uint64_t multiboot_info, uint64_t multiboot_magic) {
                       "early_fault_test_site: mov (%%rax), %%rax"
                       : : : "rax", "memory");
 #endif
+#if ZEROOS_LATE_FAULT_TEST
+    gdt_init();
+    interrupts_init();
+    kernel_panic("late fault test returned");
+#endif
     memory_init(multiboot_info);
     serial_write_public("ZEROOS: physical page allocator initialized.\n");
     serial_write_public("ZEROOS: managed pages: ");

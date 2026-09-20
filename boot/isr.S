@@ -18,12 +18,7 @@ isr_stub_1:
 .global isr_stub_2
 .type isr_stub_2, @function
 isr_stub_2:
-    /*
-     * NMI on an IST gate: the CPU pushes an extra IST-index word where a
-     * hardware error code would be (it has none). Push only the vector so
-     * the IST index occupies the synthetic error-code slot and the frame
-     * layout is identical to the non-IST vectors.
-     */
+    pushq $0
     pushq $2
     jmp isr_common
 
@@ -65,13 +60,6 @@ isr_stub_7:
 .global isr_stub_8
 .type isr_stub_8, @function
 isr_stub_8:
-    /*
-     * Double fault on an IST gate: the CPU pushed a hardware error code
-     * AND an IST index (the index last, i.e. below the error code). The
-     * extra word shifts the architectural frame by one slot relative to
-     * the other vectors; isr_common normalizes the layout after the GPR
-     * saves (see the IST frame shift there).
-     */
     pushq $8
     jmp isr_common
 
@@ -1814,35 +1802,11 @@ isr_common:
     pushq %r14
     pushq %r15
 
-    /*
-     * IST frame normalization. A double fault (vector 8) arrives with an
-     * extra IST-index word pushed below the hardware error code, so its
-     * frame is [vector][IST index][error][RIP][CS][RFLAGS][RSP][SS]
-     * instead of [vector][error][RIP][CS][RFLAGS][RSP][SS]. Shift the
-     * six architectural words down one slot (the word at +176 holds the
-     * old SS copy and is left as dead data).
-     *
-     * This must run AFTER the GPR saves: the shift uses R10-R15 as
-     * scratch, and those registers already hold their values on the
-     * stack, restored by the epilogue below. The vector is at 120(%rsp)
-     * (fifteen 8-byte saves above the vector slot).
-     */
-    cmpq $8, 120(%rsp)
-    jne 1f
-    movq 176(%rsp), %r15
-    movq 168(%rsp), %r14
-    movq 160(%rsp), %r13
-    movq 152(%rsp), %r12
-    movq 144(%rsp), %r11
-    movq 136(%rsp), %r10
-    movq %r10, 128(%rsp)
-    movq %r11, 136(%rsp)
-    movq %r12, 144(%rsp)
-    movq %r13, 152(%rsp)
-    movq %r14, 160(%rsp)
-    movq %r15, 168(%rsp)
-1:
+    /* IST changes the stack, not the frame shape. RAX returned by C is
+     * the resume frame/context, so temporary call alignment is discarded. */
+    cld
     mov %rsp, %rdi
+    andq $-16, %rsp
     call interrupt_dispatch
 
     /*
