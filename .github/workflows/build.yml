@@ -41,6 +41,9 @@ jobs:
           objdump -d --disassemble=user_task_entry build/zeroos.elf
           objdump -d --disassemble=task_trampoline build/zeroos.elf
 
+      - name: Early fault and CPU feature regressions
+        run: python3 tests/boot_regressions.py >build/boot-regressions.log 2>&1
+
       - name: Boot test
         run: |
           set +e
@@ -144,6 +147,9 @@ jobs:
             build/check-results.txt
             build/qemu-startup.log
             build/qemu-status.txt
+            build/boot-regressions.log
+            build/early-fault-*/serial.log
+            build/no-nx/serial.log
           if-no-files-found: ignore
 
       - name: Post diagnostics to tracking issue
@@ -154,6 +160,10 @@ jobs:
           {
             echo "Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
             echo
+            echo "### boot regressions"
+            echo '```'
+            tail -c 4000 build/boot-regressions.log 2>/dev/null || true
+            echo '```'
             echo "### QEMU invocation"
             echo '```'
             cat build/qemu-status.txt 2>/dev/null || true

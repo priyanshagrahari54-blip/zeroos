@@ -176,7 +176,12 @@ struct early_idt_gate {
     uint8_t  type_attr;
     uint16_t offset_mid;
     uint32_t offset_high;
+    uint32_t zero;
 } __attribute__((packed));
+
+_Static_assert(sizeof(struct early_idt_gate) == 16, "x86-64 IDT gate size");
+_Static_assert(__builtin_offsetof(struct early_idt_gate, zero) == 12,
+               "x86-64 IDT reserved word offset");
 
 struct early_idtr {
     uint16_t limit;
@@ -256,6 +261,7 @@ static void early_idt_install(void) {
         gate[i].offset_low = (uint16_t)(base & 0xffff);
         gate[i].selector = 0x08;
         gate[i].reserved = 0;
+        gate[i].zero = 0;
         gate[i].type_attr = 0x8E; /* present, DPL0, 64-bit interrupt gate */
         gate[i].offset_mid = (uint16_t)((base >> 16) & 0xffff);
         gate[i].offset_high = (uint32_t)((base >> 32) & 0xffffffff);
@@ -305,79 +311,6 @@ static void vmm_space_self_test(void) {
     serial_write_public("ZEROOS: per-address-space VMM self-test passed.\n");
 }
 
-/*
- * Temporary diagnostic probes (CI-only): every heap_self_test phase
- * emits a phase letter, then the IDT integrity code ('0' = IDT intact,
- * '1'..'7' = which check failed). These pin the exact faulting phase
- * and test whether the IDT storage is corrupted before the fault.
- * Removed once the fault is understood.
- */
-static void probe_out(char c) {
-    __asm__ volatile ("outb %0, $0xe9" : : "a"(c) : "memory");
-}
-
-static int idt_probe(void) {
-    struct early_idtr readback;
-    __asm__ volatile ("sidt %0" : "=m"(readback));
-    if (readback.limit != early_descriptor.limit) return 1;
-    if (readback.base != early_descriptor.base) return 2;
-    if (early_gate[14].type_attr != 0x8E) return 3;
-    if (early_gate[14].selector != 0x08) return 4;
-    if (early_gate[14].offset_low == 0 && early_gate[14].offset_mid == 0 &&
-        early_gate[14].offset_high == 0)
-        return 5;
-    if (early_gate[8].type_attr != 0x8E) return 6;
-    if (early_gate[13].type_attr != 0x8E) return 7;
-    return 0;
-}
-
-static void probe_hex16(uint64_t value) {
-    const char *hex = "0123456789abcdef";
-    for (int i = 15; i >= 0; --i)
-        probe_out(hex[(value >> (i * 4)) & 0xfULL]);
-}
-
-/*
- * Framed value probe: <phase> 0xFF <16 hex digits> 0xFF. The 0xFF
- * delimiters make the stream unambiguous to parse (hex digits can look
- * like phase letters).
- */
-static void probe_kv(char phase, uint64_t value) {
-    probe_out(phase);
-    probe_out(0xFF);
-    probe_hex16(value);
-    probe_out(0xFF);
-}
-
-/*
- * Dump the first PDEs of the page table whose PML4 is at `pml4`.
- * Defensive: stops at the first non-present entry so a broken chain
- * is reported instead of faulting inside the probe.
- */
-static void probe_pde_chain(char tag, const uint64_t *pml4) {
-    uint64_t e = pml4[0];
-    probe_kv(tag, e);
-    if (!(e & 1ULL))
-        return;
-    const uint64_t *pdpt = (const uint64_t *)(e & 0x000ffffffffff000ULL);
-    e = pdpt[0];
-    probe_kv((char)(tag + 1), e);
-    if (!(e & 1ULL))
-        return;
-    const uint64_t *pd = (const uint64_t *)(e & 0x000ffffffffff000ULL);
-    for (uint64_t i = 0; i < 4; ++i)
-        probe_kv((char)(tag + 2 + i), pd[i]);
-}
-
-static void heap_probe(char phase) {
-    probe_out(phase);
-    probe_out((char)('0' + idt_probe()));
-}
-
-static void heap_probe_plain(char phase) {
-    probe_out(phase);
-}
-
 static void heap_self_test(void) {
     uint64_t capacity=heap_capacity_bytes();
     void *p1,*p2,*p3,*big;
@@ -385,7 +318,6 @@ static void heap_self_test(void) {
     if (capacity<ZEROOS_HEAP_MIN_ALLOC)
         kernel_panic("heap capacity self-test failed");
 
-    heap_probe('a');
 
     /* Tiny and odd-sized allocations, 16-byte alignment, full-payload writes. */
     p1=kmalloc(1); p2=kmalloc(31); p3=kmalloc(1000);
@@ -400,7 +332,6 @@ static void heap_self_test(void) {
         kernel_panic("heap payload content self-test failed");
     if (kfree(p1)!=0 || kfree(p2)!=0 || kfree(p3)!=0)
         kernel_panic("heap basic free failed");
-    heap_probe('b');
 
     /* Negative tests: double free, NULL, unaligned, out-of-region. */
     if (kfree(p1)!=-1)
@@ -437,61 +368,19 @@ static void heap_self_test(void) {
         kernel_panic("heap oversized allocation rejection failed");
     if (kmalloc(~0ULL))
         kernel_panic("heap huge allocation rejection failed");
-    heap_probe('c');
-
-    /*
-     * Control-state and page-table dump: the earlier run read a
-     * suspicious CR3, so read CR3, CR0 and EFER, then dump the page
-     table the CPU actually uses (walked from CR3) next to the table
-     the VMM believes it installed (walked from vmm_root()).
-     */
-    {
-        uint64_t cr3;
-        __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
-        probe_kv('R', cr3);
-        probe_pde_chain('W', (const uint64_t *)(cr3 & ~0xFFFULL));
-    }
-    {
-        uint64_t cr0;
-        __asm__ volatile ("mov %%cr0, %0" : "=r"(cr0));
-        probe_kv('T', cr0);
-    }
-    {
-        uint32_t lo, hi;
-        __asm__ volatile ("rdmsr" : "=a"(lo), "=d"(hi) : "c"(0xc0000080));
-        probe_kv('U', ((uint64_t)hi << 32) | lo);
-    }
-    probe_pde_chain('C', (const uint64_t *)vmm_root());
-    {
-        uint64_t rspv;
-        __asm__ volatile ("mov %%rsp, %0" : "=r"(rspv));
-        probe_kv('S', rspv);
-    }
 
     /* Near-maximum allocation covering essentially the whole region. */
     big=kmalloc(capacity-ZEROOS_HEAP_MIN_ALLOC);
     if (!big)
         kernel_panic("heap near-maximum allocation failed");
-    probe_kv('d', (uint64_t)big);
     for (uint64_t i=0;i<capacity-ZEROOS_HEAP_MIN_ALLOC;++i) {
         ((uint8_t *)big)[i]=0x5A;
-        if ((i & 0xFFFF) == 0 && i >= 0x10000 && i <= 0xF0000)
-            heap_probe((char)(((i >> 16) < 10) ?
-                '0' + (char)(i >> 16) : 'A' + (char)((i >> 16) - 10)));
-        if (i > 0x70000 && i < 0x80000 && (i & 0xFFF) == 0)
-            heap_probe((char)('g' + ((i - 0x71000) >> 12)));
-        if (i == 0x7FFE0) heap_probe_plain('p');
-        else if (i == 0x7FFF0) heap_probe_plain('q');
-        else if (i == 0x80000) heap_probe_plain('r');
-        else if (i == 0x80010) heap_probe_plain('s');
     }
-    heap_probe('t');
     for (uint64_t i=0;i<capacity-ZEROOS_HEAP_MIN_ALLOC;++i)
         if (((uint8_t *)big)[i]!=0x5A)
             kernel_panic("heap near-maximum payload failed");
     if (kfree(big)!=0)
         kernel_panic("heap near-maximum free failed");
-    heap_probe('i');
 
     /* kcalloc zero-fill. */
     void *zeroed=kcalloc(128,8);
@@ -505,7 +394,6 @@ static void heap_self_test(void) {
     /* Overflow-safe count: count*size must not wrap. */
     if (kcalloc(~0ULL,8))
         kernel_panic("kcalloc overflow rejection failed");
-    heap_probe('j');
 
     /*
      * Exhaustion: fill the whole region with 64-byte blocks (96-byte blocks
@@ -529,7 +417,6 @@ static void heap_self_test(void) {
             kernel_panic("heap exhaustion drain failed");
     if (heap_used_bytes()!=0 || heap_validate()!=0)
         kernel_panic("heap exhaustion accounting failed");
-    heap_probe('k');
 
     /* Bounded deterministic stress: interleaved alloc/free (LCG sequence). */
     static void *live[2048];
@@ -559,7 +446,6 @@ static void heap_self_test(void) {
             kernel_panic("heap stress drain failed");
     if (heap_used_bytes()!=0 || heap_validate()!=0)
         kernel_panic("heap stress accounting failed");
-    heap_probe('l');
 
     serial_write_public("ZEROOS: heap capacity: ");
     serial_write_u64(capacity);
@@ -1004,6 +890,17 @@ void kernel_main(uint64_t multiboot_info, uint64_t multiboot_magic) {
     serial_write_u64(multiboot_info);
     serial_write_public("\n");
 
+    /* Cover allocator and VMM initialization as well as the heap. */
+    early_idt_install();
+#if ZEROOS_EARLY_FAULT_TEST == 6
+    __asm__ volatile (".global early_fault_test_site\n"
+                      "early_fault_test_site: ud2");
+#elif ZEROOS_EARLY_FAULT_TEST == 14
+    __asm__ volatile ("movabs $0x4000000000, %%rax\n"
+                      ".global early_fault_test_site\n"
+                      "early_fault_test_site: mov (%%rax), %%rax"
+                      : : : "rax", "memory");
+#endif
     memory_init(multiboot_info);
     serial_write_public("ZEROOS: physical page allocator initialized.\n");
     serial_write_public("ZEROOS: managed pages: ");
@@ -1014,17 +911,10 @@ void kernel_main(uint64_t multiboot_info, uint64_t multiboot_magic) {
 
     memory_self_test();
 
-    if (vmm_init()!=0) kernel_panic("virtual memory initialization failed");
+    if (vmm_init()!=0) kernel_panic("virtual memory initialization failed (NX required)");
     serial_write_public("ZEROOS: virtual memory manager initialized.\n");
     vmm_self_test();
 
-    /*
-     * From here the kernel dereferences dynamically allocated memory
-     * (the heap region). Install the early fatal-exception IDT first so
-     * any exception in the pre-IDT window reports itself instead of
-     * triple-faulting silently.
-     */
-    early_idt_install();
     serial_write_public("ZEROOS: heap init starting.\n");
 
     /*

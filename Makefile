@@ -50,7 +50,7 @@ $(BUILD):
 $(C_OBJECTS): $(HEADERS)
 
 $(BUILD)/%.o: %.c | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -Ikernel -c $< -o $@
 
 $(A_OBJECTS): $(HEADERS)
 

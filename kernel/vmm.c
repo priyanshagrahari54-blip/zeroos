@@ -193,7 +193,28 @@ static int split_2m(uint64_t *pd, uint64_t index, uint64_t base_virtual) {
     return 0;
 }
 
+/* NX is a required security property, not an optional mapping hint.
+ * Check CPUID before touching EFER.NXE; never install NX entries with NXE
+ * clear (bit 63 would be reserved and every access would fault).
+ */
+static int enable_nx(void) {
+    uint32_t a, b, c, d;
+    __asm__ volatile ("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d)
+                      : "a"(0x80000000U), "c"(0));
+    if (a < 0x80000001U) return -1;
+    __asm__ volatile ("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d)
+                      : "a"(0x80000001U), "c"(0));
+    if (!(d & (1U << 20))) return -1;
+    __asm__ volatile ("rdmsr" : "=a"(a), "=d"(d) : "c"(0xc0000080U));
+    a |= 1U << 11;
+    __asm__ volatile ("wrmsr" : : "a"(a), "d"(d), "c"(0xc0000080U)
+                      : "memory");
+    __asm__ volatile ("rdmsr" : "=a"(a), "=d"(d) : "c"(0xc0000080U));
+    return (a & (1U << 11)) ? 0 : -1;
+}
+
 int vmm_init(void) {
+    if (enable_nx() != 0) return -1;
     void *root = page_alloc();
     if (!root)
         return -1;

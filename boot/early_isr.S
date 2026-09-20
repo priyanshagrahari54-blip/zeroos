@@ -68,7 +68,7 @@ early_stub_err   17
 early_stub_noerr 18
 early_stub_noerr 19
 early_stub_noerr 20
-early_stub_noerr 21
+early_stub_err   21
 early_stub_noerr 22
 early_stub_noerr 23
 early_stub_noerr 24
@@ -76,59 +76,26 @@ early_stub_noerr 25
 early_stub_noerr 26
 early_stub_noerr 27
 early_stub_noerr 28
-early_stub_noerr 29
-early_stub_noerr 30
+early_stub_err   29
+early_stub_err   30
 early_stub_noerr 31
 
-/*
- * On entry (uniform for every vector thanks to the stubs), low to high:
- *   [rsp+0]  = vector      (stub-pushed)
- *   [rsp+8]  = error code  (stub-pushed 0 or the hardware code)
- *   [rsp+16] = SS
- *   [rsp+24] = RSP
- *   [rsp+32] = RFLAGS
- *   [rsp+40] = CS
- *   [rsp+48] = RIP
+/* After normalization, low to high: vector, error, RIP, CS, RFLAGS,
+ * RSP, SS. IST does not add a word to the architectural frame.
+ * Fatal-only entry: it never restores the interrupted registers.
  */
 .global early_common
 .type early_common, @function
 early_common:
-    /*
-     * The stub already emitted 'E' + vector fault-free (before any
-     * stack use). Now append the faulting RIP as 16 hex digits on the
-     * isa-debugcon (port 0xe9), which CI captures in debug.log. Reading
-     * the stack can still fault if it is corrupt; the vector is already
-     * recorded in that case.
-     */
-    movq  48(%rsp), %r11
-    movq  $16, %r12
-1:  movq  %r11, %r10
-    shrq  $60, %r10
-    andq  $0xf, %r10
-    addq  $'0', %r10
-    cmpq  $'9', %r10
-    jbe   2f
-    addq  $6, %r10
-2:  movq  %r10, %rax
-    outb  %al, $0xe9
-    shrq  $4, %r11
-    decq  %r12
-    jnz   1b
-
-    pushq %r15
-    pushq %r14
-    pushq %r13
-    pushq %r12
-    pushq %rbx
-    pushq %rbp
-    /* After these six pushes the frame words are at +48. SysV AMD64:
-     * arg1=rdi arg2=rsi arg3=rdx arg4=rcx. */
-    movq  48(%rsp), %rdi   /* vector */
-    movq  56(%rsp), %rsi   /* error code */
-    movq  96(%rsp), %rdx   /* faulting RIP */
-    movq  %cr2, %rcx       /* faulting linear address (#PF; 0 otherwise) */
-    callq early_fatal_dispatch
     cli
-1:  hlt
+    cld
+    movq  0(%rsp), %rdi
+    movq  8(%rsp), %rsi
+    movq 16(%rsp), %rdx
+    movq %cr2, %rcx
+    andq $-16, %rsp
+    callq early_fatal_dispatch
+1:  cli
+    hlt
     jmp 1b
 .section .note.GNU-stack,"",@progbits
