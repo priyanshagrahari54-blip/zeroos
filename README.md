@@ -8,38 +8,32 @@ Established standards are used only at interoperability boundaries
 hardware mechanism). Everything ZEROOS controls is designed and
 implemented by ZEROOS.
 
-## Current stage: Stage 1 — ring-3 foundation
+## Current stage: Stage 1 — integration and security validation
 
-ZEROOS boots from Multiboot2 into a 64-bit protected kernel and provides:
+**Stage 1 is not certified.** See [the validation record](docs/VALIDATION.md)
+for exact commits, QEMU runs, failures, and remaining obligations.
 
-- A physical page allocator over the first 512 MiB of RAM.
-- A 4-level page table manager with a compact 2 MiB identity map for the
-  kernel, 4 KiB fine-grained mapping, and 2 MiB huge-page splitting.
-- A small kernel object heap with invariants, canary checks, and a boot
-  self-test.
-- **Per-process address spaces**: each process owns an independent PML4
-  root, a PCID, and an exclusive set of physical pages. User pages are
-  writable **or** executable, never both (W^X). Two processes may map the
-  same virtual address to different physical pages, and the boot
-  certification verifies isolation in both directions.
-- **Genuine ring-3 user execution**: user code/data GDT segments, a TSS,
-  per-task TSS RSP0, and IST-based double-fault/NMI delivery. User
-  threads enter through an `iretq` at CPL 3 and are timer-preemptible.
-- **A SYSCALL/SYSRET syscall ABI** (`docs/SYSCALL_ABI.md`) with a small,
-  numbered, documented call set (exit, yield, write, getpid, gettid) and
-  whole-range user-pointer validation before any user byte is copied.
-- **User fault containment**: a page fault or general protection taken in
-  user mode kills only the current process and the kernel keeps running.
-  Kernel-mode exceptions remain fatal.
+Implemented subsystems include the physical allocator, VMM, kernel heap,
+interrupt/timer and scheduler code, distinct process/thread objects,
+per-process page-table roots, ring-3 entry, and the initial syscall set.
+Implementation presence does not imply that every path is tested or secure.
 
-The kernel certifies itself at boot and prints a milestone line for each
-verified subsystem over a serial console.
+Recent CI evidence verifies heap/VMM boot self-tests; early #UD/#PF frame
+reporting; full-IDT #UD, NMI-gate stack placement and real #DF delivery;
+CPU-without-NX rejection; and CPL3/syscall register preservation. Full
+integration and security work is continuing. In particular, complete W^X,
+process rollback/PCID lifetime, and extended-register isolation remain open.
+
+Boot milestone messages report individual self-tests, not certification of
+the entire kernel. No later-stage loader, driver, or application work should
+be inferred from the existing foundation.
 
 ## Build
 
 ```sh
 make            # builds build/zeroos.elf and a bootable build/zeroos.iso
 make clean      # removes build artifacts
+make host-test  # bounded native range/dispatcher/ownership regressions
 ```
 
 The build is a freestanding, no-stdlib `-Werror` compile with no external
@@ -51,7 +45,8 @@ dependencies beyond `gcc`, `ld`, and `grub-mkrescue` (for the ISO).
 make run        # boots the ISO in QEMU with the serial console on stdio
 ```
 
-A successful boot prints, among others:
+The integration test requires these messages (not all were present in the
+last verified run; see VALIDATION.md):
 
 ```
 ZEROOS: heap self-test passed.
@@ -61,10 +56,10 @@ ZEROOS: per-process address-space isolation verified.
 ZEROOS: ring-3 page-fault containment verified.
 ZEROOS: ring-3 general-protection containment verified.
 ZEROOS: user pointer validation verified.
-ZEROOS: stage-1 ring-3 foundation certified.
+ZEROOS: ring-3 integration self-test passed.
 ```
 
-The build also runs a bounded, deterministic boot self-test sequence
+CI also runs a bounded, deterministic boot self-test sequence
 (positive, negative, boundary, and fault cases) in QEMU; see
 `.github/workflows/build.yml`.
 
@@ -74,7 +69,7 @@ The build also runs a bounded, deterministic boot self-test sequence
 - `kernel/` — PMM, VMM, heap, GDT/TSS, interrupts, scheduler, process,
   and syscall layers.
 - `user/` — the built-in ring-3 user program used for the Stage-1
-  certification.
+  integration tests.
 - `docs/` — architecture and subsystem documentation.
 
 ## Documentation

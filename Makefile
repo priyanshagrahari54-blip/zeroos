@@ -79,3 +79,5 @@ host-test: | $(BUILD)
 	timeout 5 $(BUILD)/test-user-range
 	$(CC) -O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Ikernel -Wl,--gc-sections tests/syscall_dispatch.c kernel/syscall.c kernel/vmm.c -o $(BUILD)/test-syscall
 	timeout 5 $(BUILD)/test-syscall
+	$(CC) -O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Ikernel -Wl,--gc-sections tests/page_ownership.c kernel/vmm.c -o $(BUILD)/test-page-ownership
+	timeout 5 $(BUILD)/test-page-ownership

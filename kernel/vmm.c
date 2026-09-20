@@ -798,8 +798,9 @@ int vmm_space_release_page(struct vmm_space *space, uint64_t physical) {
     if (!space || !space->root) return -1;
     for (cursor = &space->owned_pages; *cursor; cursor = &(*cursor)->next) {
         if ((*cursor)->physical == physical) {
-            *cursor = (*cursor)->next;
-            kfree(*cursor);
+            struct vmm_owned_page *removed = *cursor;
+            *cursor = removed->next;
+            kfree(removed);
             --space->owned_page_count;
             return 0;
         }

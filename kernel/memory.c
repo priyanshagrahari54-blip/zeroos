@@ -4,29 +4,6 @@
 #define MULTIBOOT_TAG_TYPE_MMAP 6
 #define MULTIBOOT_MEMORY_AVAILABLE 1
 
-static void memory_debug_u64(uint64_t value) {
-    extern void serial_write_public(const char *text);
-    char buffer[21];
-    int pos = 20;
-    buffer[pos] = '\0';
-    if (value == 0) {
-        serial_write_public("0");
-        return;
-    }
-    while (value > 0 && pos > 0) {
-        buffer[--pos] = (char)('0' + (value % 10));
-        value /= 10;
-    }
-    serial_write_public(&buffer[pos]);
-}
-
-static inline void memory_debug(char marker) {
-    __asm__ volatile ("outb %0, $0xe9"
-                      :
-                      : "a"(marker)
-                      : "memory");
-}
-
 /*
  * Early physical-memory policy:
  * - track the first 512 MiB, which is enough for the current low-memory
@@ -119,43 +96,32 @@ static void reserve_range(uint64_t start, uint64_t end) {
 }
 
 void memory_init(uint64_t multiboot_info) {
-    memory_debug('a');
+
     /*
      * Start fully reserved.  We then release only firmware-reported
      * available ranges.  This is safer than assuming RAM is contiguous.
      */
-    memory_debug('1');
-    extern void serial_write_public(const char *text);
-    extern void serial_write_u64_public(uint64_t value);
-    serial_write_public("ZEROOS: bitmap address: ");
-    memory_debug_u64((uint64_t)page_bitmap);
-    serial_write_public("\n");
-    serial_write_public("ZEROOS: bitmap bytes: ");
-    memory_debug_u64((uint64_t)sizeof(page_bitmap));
-    serial_write_public("\n");
+
     for (uint64_t i = 0; i < ZEROOS_BITMAP_WORDS; ++i) {
         page_bitmap[i] = ~0ULL;
-        if ((i & 255ULL) == 255ULL)
-            memory_debug((char)('A' + (i >> 8)));
     }
-    memory_debug('2');
 
-    memory_debug('3');
+
     for (uint64_t i = 0; i < ZEROOS_SUMMARY_WORDS; ++i)
         free_word_summary[i] = 0;
-    memory_debug('4');
+
 
     managed_pages = 0;
     free_pages = 0;
     available_pages = 0;
-    memory_debug('b');
+
 
     /* The first two words are total_size and reserved. */
     if (multiboot_info == 0)
         return;
 
     uint32_t total_size = *(uint32_t *)(uint64_t)multiboot_info;
-    memory_debug('c');
+
     if (total_size < 16U)
         return;
 
@@ -167,7 +133,6 @@ void memory_init(uint64_t multiboot_info) {
     if (total_size > 0x1000000U)
         return;
 
-    memory_debug('d');
     while (cursor + sizeof(struct multiboot_tag) <= end) {
         struct multiboot_tag *tag = (struct multiboot_tag *)cursor;
 
@@ -176,7 +141,7 @@ void memory_init(uint64_t multiboot_info) {
             break;
 
         if (tag->type == MULTIBOOT_TAG_TYPE_MMAP) {
-            memory_debug('m');
+
             struct multiboot_tag_mmap *mmap =
                 (struct multiboot_tag_mmap *)tag;
 
@@ -233,14 +198,13 @@ void memory_init(uint64_t multiboot_info) {
         cursor += (tag->size + 7U) & ~7U;
     }
 
-    memory_debug('e');
     reserve_range(0, ZEROOS_PAGE_SIZE);
     reserve_range((uint64_t)&__kernel_start,
                   (uint64_t)&__kernel_end);
     reserve_range(multiboot_info, multiboot_info + total_size);
 
     managed_pages = available_pages;
-    memory_debug('f');
+
 }
 
 void *page_alloc(void) {

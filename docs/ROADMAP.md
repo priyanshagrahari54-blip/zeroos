@@ -23,14 +23,18 @@ The detailed product plan remains in ZEROOS_MASTER_ROADMAP.md.
 
 ## Execution status (Stage 1)
 
-| # | Item | State | Evidence |
-|---:|---|---|---|
-| 1 | Scheduler certification | Done | 400-tick QEMU stress: timer-only preemption, mixed transitions, register preservation, wait/sleep, lifecycle/reaping, idle fallback; bootstrap tick-race fixed (bootstrap context enters as zombie, scheduler never reselects it) |
-| 2 | Kernel memory hardening | Done | Heap self-test at boot: invariants, overflow/underflow, double free, canary, free-list integrity; per-space VMM self-test; exclusive physical-page ownership; fault diagnostics with vector/error-code/RIP/CR2 |
-| 3 | Process/thread split | Done | `struct process` + `struct task` (pid/tid, parent link); per-process VMM roots with PCID; user code/data/stack owned exclusively by the process |
-| 4 | User-mode transition | Done | GDT user segments + TSS (RSP0 per task, IST for double fault/NMI); SYSCALL/SYSRET ABI; user-pointer validation; user fault containment (see SYSCALL_ABI.md) |
-| 5 | ELF loader and init | Pending | Next: real ELF64 user init replacing the built-in user program, then expanded syscalls |
-| 6+ | Syscall layer / VFS / storage / drivers / ... | Pending | Foundation in place; each stage builds on the process/address-space/syscall layer |
+Stage 1 is not certified. The earlier "Done" labels were unsupported by the
+failing integration runs and have been withdrawn. See VALIDATION.md.
+
+| Item | State | Evidence / remaining work |
+|---|---|---|
+| Boot and exception boundary | Tested subset | Bounded early #UD/#PF, full #UD, NMI-gate IST2, real #DF IST1, and no-NX rejection passed CI |
+| PMM/VMM/heap | Tested subset | Normal boot self-tests pass; ownership removal regression added; full W^X and rollback remain open |
+| Scheduler | Integration under test | Normal boot reaches runnable kernel/user tasks; full current stress run still required |
+| Process/thread split | Implemented, incomplete audit | Distinct objects exist; partial-allocation cleanup and PCID lifetime need correction/tests |
+| CPL3 and syscall ABI | Tested subset | CS.RPL, flags, preserved GPRs/RSP and basic call results passed CI; host pointer/dispatcher tests pass |
+| Full Stage 1 security | Not certified | Extended-register isolation, W^X including kernel aliases, adverse transitions, lifetime stress and regression matrix remain |
+| Later stages | Deferred | No loader/VFS/driver/application implementation as part of this task |
 
 ## Definition of done
 

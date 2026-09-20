@@ -706,11 +706,19 @@ static void ring3_run_case(uint64_t param, uint64_t budget_ticks,
         ring3_failures++;
         kernel_panic("ring-3 case spawn failed");
     }
-    if (process_wait_ticks(budget_ticks)!=0) {
-        ring3_failures++;
-        kernel_panic("ring-3 case timed out");
+    /* Wait for THIS case: the isolation test deliberately keeps process A
+     * zombie while B runs. Waiting for any zombie would finish immediately. */
+    uint64_t start=timer_ticks();
+    struct process *p;
+    for (;;) {
+        p=process_find(pid);
+        if (!p || p->state==PROCESS_ZOMBIE) break;
+        if (timer_ticks()-start >= budget_ticks) {
+            ring3_failures++;
+            kernel_panic("ring-3 case timed out");
+        }
+        task_yield();
     }
-    struct process *p=process_find(pid);
     if (!p || p->state!=PROCESS_ZOMBIE) {
         ring3_failures++;
         kernel_panic("ring-3 case not zombie after wait");
@@ -810,7 +818,7 @@ static void ring3_orchestrator(void *argument) {
         ring3_failures++;
         kernel_panic("ring-3 certification exceeded tick budget");
     }
-    serial_write_public("ZEROOS: stage-1 ring-3 foundation certified.\n");
+    serial_write_public("ZEROOS: ring-3 integration self-test passed.\n");
 }
 
 static void scheduler_self_test(void) {

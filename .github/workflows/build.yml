@@ -110,10 +110,13 @@ jobs:
           check "ZEROOS: ring-3 general-protection containment verified."
           check "ZEROOS: negative syscall checks rejected as required."
           check "ZEROOS: user pointer validation verified."
-          check "ZEROOS: stage-1 ring-3 foundation certified."
+          check "ZEROOS: ring-3 integration self-test passed."
           # Failure detection: no panic, no user-program validation failure
           forbid "ZEROOS PANIC"
           forbid "ZEROOS: FAIL"
+          forbid "ZEROOS EARLY FATAL"
+          forbid "kernel halted after fatal exception"
+          if grep -q "Triple fault" build/qemu.log; then FAIL=1; fi
           if test -s build/debug.log; then echo "PASS: debug.log present" | tee -a build/check-results.txt; else echo "MISSING: debug.log" | tee -a build/check-results.txt; FAIL=1; fi
           if grep -q "B" build/debug.log 2>/dev/null; then echo "PASS: debug port B" | tee -a build/check-results.txt; else echo "MISSING: debug port B" | tee -a build/check-results.txt; FAIL=1; fi
           if grep -q "L" build/debug.log 2>/dev/null; then echo "PASS: debug port L" | tee -a build/check-results.txt; else echo "MISSING: debug port L" | tee -a build/check-results.txt; FAIL=1; fi

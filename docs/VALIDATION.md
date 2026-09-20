@@ -62,7 +62,16 @@ Correct user initial IF/TF, the syscall frame/save/restore sequence, SFMASK
 bits, return-state validation, binary write length, and full-range parent
 permissions. Host tests and ELF entry-shape checks pass locally. The user
 program now asserts CPL3, IF, no TF, preserved GPRs/RSP and call results.
-Post-fix QEMU integration is pending.
+Run [35503986373](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/35503986373)
+at `96bb637` passed host and exception regressions and the CPL3/syscall ABI
+marker. It then exposed an orchestration bug: waiting for any zombie lets
+process A satisfy process B's wait before B has executed. The test now waits
+for its own PID while retaining A for the isolation comparison.
+
+A separate host regression caught and fixes removal of the wrong ownership
+list node (the old code freed the successor instead of the removed node).
+The final integration marker has been renamed to a self-test pass, not a
+claim of Stage 1 certification. Temporary PMM/heap progress probes are gone.
 
 Full user/kernel W^X, syscall entry/return validation and per-thread extended
 register ownership still require audit and tests. Stage 1 remains uncertified.
