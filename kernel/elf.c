@@ -21,6 +21,13 @@ static int range_end(uint64_t start, uint64_t length, uint64_t *end) {
     return !add_overflow_u64(start, length, end);
 }
 
+static int page_ceil_u64(uint64_t value, uint64_t *rounded) {
+    if (value > ~0ULL - (VMM_PAGE_SIZE - 1ULL))
+        return 1;
+    *rounded = (value + VMM_PAGE_SIZE - 1ULL) & ~(VMM_PAGE_SIZE - 1ULL);
+    return 0;
+}
+
 int elf64_validate_image(const void *data, uint64_t size,
                          struct elf_image *out) {
     const uint8_t *bytes=(const uint8_t *)data;
@@ -97,9 +104,10 @@ int elf64_validate_image(const void *data, uint64_t size,
                 out->segments[j].virtual_address < vend)
                 return -1;
             uint64_t a0 = ph->vaddr & ~(VMM_PAGE_SIZE - 1ULL);
-            uint64_t a1 = (vend + VMM_PAGE_SIZE - 1ULL) & ~(VMM_PAGE_SIZE - 1ULL);
-            uint64_t b0 = out->segments[j].virtual_address & ~(VMM_PAGE_SIZE - 1ULL);
-            uint64_t b1 = (other_end + VMM_PAGE_SIZE - 1ULL) & ~(VMM_PAGE_SIZE - 1ULL);
+            uint64_t a1, b0 = out->segments[j].virtual_address & ~(VMM_PAGE_SIZE - 1ULL), b1;
+            if (page_ceil_u64(vend, &a1) ||
+                page_ceil_u64(other_end, &b1))
+                return -1;
             if (a0 < b1 && b0 < a1)
                 return -1;
         }
