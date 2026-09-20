@@ -171,6 +171,12 @@ int process_spawn(uint64_t user_arg, uint64_t *pid) {
 
 fail_space:
     if (result != 0) {
+        /* A newly created runnable thread is not owned by the process layer
+         * until publication succeeds; discard it before destroying the space. */
+        if (tid) {
+            (void)task_discard_new(tid);
+            tid=0;
+        }
         if (!code_mapped && p->code_phys) page_free((void *)p->code_phys);
         if (!data_mapped && p->data_phys) page_free((void *)p->data_phys);
         if (!stack_mapped && p->stack_phys) page_free((void *)p->stack_phys);
