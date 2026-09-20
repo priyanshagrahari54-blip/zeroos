@@ -765,6 +765,23 @@ static int vmm_space_unmap_page_locked(struct vmm_space *space, uint64_t virtual
     return 0;
 }
 
+int vmm_space_is_mapped(const struct vmm_space *space, uint64_t virtual_address) {
+    if (!space || !space->root || !space_canonical(virtual_address) ||
+        (virtual_address & (VMM_PAGE_SIZE - 1ULL)))
+        return 0;
+    uint64_t e1 = space->root[(virtual_address >> 39) & 0x1ff];
+    if (!(e1 & VMM_PRESENT)) return 0;
+    uint64_t *pdpt = table_from_entry(e1);
+    uint64_t e2 = pdpt[(virtual_address >> 30) & 0x1ff];
+    if (!(e2 & VMM_PRESENT)) return 0;
+    uint64_t *pd = table_from_entry(e2);
+    uint64_t e3 = pd[(virtual_address >> 21) & 0x1ff];
+    if (!(e3 & VMM_PRESENT)) return 0;
+    if (e3 & HUGE_PAGE_2M) return 1;
+    uint64_t *pt = table_from_entry(e3);
+    return (pt[(virtual_address >> 12) & 0x1ff] & VMM_PRESENT) != 0;
+}
+
 uint64_t vmm_space_translate(const struct vmm_space *space, uint64_t virtual_address) {
     if (!space || !space->root || !space_canonical(virtual_address)) return 0;
     uint64_t pml4=(virtual_address>>39)&0x1ff;
