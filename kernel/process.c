@@ -113,10 +113,16 @@ int process_spawn(uint64_t user_arg, uint64_t *pid) {
     if (elf64_load_image(builtin_elf,ZEROOS_PAGE_SIZE+blob_size,
                          &p->space,&elf_image)!=0)
         goto fail_space;
-    p->code_phys=vmm_space_translate(&p->space,ZEROOS_USER_CODE_VA);
+    /*
+     * Mapping existence is authoritative; physical address zero is a valid
+     * managed page and must never be used as an "unmapped" sentinel.
+     * Mark ownership before translation so a valid physical-zero mapping can
+     * never be double-freed by the rollback path.
+     */
     if (!vmm_space_is_mapped(&p->space, ZEROOS_USER_CODE_VA))
         goto fail_space;
     code_mapped=1;
+    p->code_phys=vmm_space_translate(&p->space,ZEROOS_USER_CODE_VA);
 
     void *data_page=page_alloc_zero();
     void *stack_page=page_alloc_zero();
