@@ -2,6 +2,7 @@
 #define ZEROOS_ELF_H
 
 #include "types.h"
+#include "vmm.h"
 
 #define ZEROOS_ELF64_CLASS 2
 #define ZEROOS_ELF64_DATA_LSB 1
@@ -64,5 +65,14 @@ struct elf_image {
  */
 int elf64_validate_image(const void *data, uint64_t size,
                          struct elf_image *out);
+
+/*
+ * Load validated PT_LOAD segments into a process address space.
+ * Pages are allocated, zero-filled, populated through the kernel alias,
+ * then published with final W^X permissions. On any failure all mappings
+ * created by this call are rolled back.
+ */
+int elf64_load_image(const void *data, uint64_t size,
+                     struct vmm_space *space, struct elf_image *image);
 
 #endif
