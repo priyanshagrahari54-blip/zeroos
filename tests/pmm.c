@@ -48,6 +48,7 @@ int main(void) {
     map_boundaries();
     test_memory_init();
     uint64_t before=memory_free_pages();
+    assert(memory_total_pages()==before);
     page_free(0); page_free((void *)0x1000); page_free((void *)0x20000000);
     assert(memory_free_pages()==before);
     assert(!page_alloc_at(0) && !page_alloc_at(0x1001));
