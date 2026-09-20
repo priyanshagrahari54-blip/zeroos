@@ -185,6 +185,15 @@ static void task_validate_table(const char *where) {
         if (!task_state_valid(task->state) || !task_identity_ok(task))
             task_context_panic(where,task);
 
+        if (task->state!=TASK_UNUSED && task->id==0)
+            task_context_panic("ZEROOS PANIC: live task has zero ID.\n",task);
+
+        for (int j=i+1;j<ZEROOS_MAX_TASKS;++j) {
+            if (task->state!=TASK_UNUSED && tasks[j].state!=TASK_UNUSED &&
+                task->id==tasks[j].id)
+                task_context_panic("ZEROOS PANIC: duplicate task ID.\n",task);
+        }
+
         /*
          * Slot 0 is the bootstrap task. It intentionally has no allocated
          * task stack; scheduler_start parks it while the first real task runs.
