@@ -53,23 +53,35 @@ static uint8_t *payload_of(struct heap_block *block) {
     return (uint8_t *)(block + 1);
 }
 
-/* Walks the block chain from the region start. Returns 0 on success. */
-int heap_validate(void) {
-    uint8_t *cursor = heap_base;
+static int block_valid(const uint8_t *cursor) {
+    uint64_t remaining=(uint64_t)(heap_end-cursor);
+    if (remaining<HEAP_HEADER) return 0;
+    const struct heap_block *block=(const struct heap_block *)cursor;
+    return block->size>=HEAP_HEADER+ZEROOS_HEAP_MIN_ALLOC &&
+           !(block->size&(ZEROOS_HEAP_ALIGN-1)) && block->size<=remaining &&
+           (block->magic==HEAP_FREE_MAGIC ||
+            (block->magic==HEAP_MAGIC && block->canary==HEAP_CANARY));
+}
 
-    while (cursor < heap_end) {
-        struct heap_block *block = block_at(cursor);
-        if (cursor + sizeof(*block) > heap_end) return -1;
-        if (block->size < HEAP_HEADER + ZEROOS_HEAP_MIN_ALLOC) return -1;
-        if ((block->size & (ZEROOS_HEAP_ALIGN - 1)) != 0) return -1;
-        if (cursor + block->size > heap_end) return -1;
-        if (block->magic != HEAP_MAGIC && block->magic != HEAP_FREE_MAGIC)
-            return -1;
-        if (block->magic == HEAP_MAGIC && block->canary != HEAP_CANARY)
-            return -1;
-        cursor += block->size;
+static void heap_corruption(void) __attribute__((noreturn));
+static void heap_corruption(void) {
+    serial_write_public("ZEROOS PANIC: heap block-chain metadata corrupted.\n");
+    for (;;) __asm__ volatile ("cli; hlt");
+}
+
+/* Every iteration advances by a validated, bounded nonzero block size. */
+int heap_validate(void) {
+    if (!heap_ready) return -1;
+    uint64_t flags=spin_lock_irqsave(&heap_lock);
+    uint8_t *cursor=heap_base;
+    int result=0;
+    while (cursor<heap_end) {
+        if (!block_valid(cursor)) { result=-1; break; }
+        cursor+=block_at(cursor)->size;
     }
-    return cursor == heap_end ? 0 : -1;
+    if (cursor!=heap_end) result=-1;
+    spin_unlock_irqrestore(&heap_lock,flags);
+    return result;
 }
 
 int heap_init(void) {
@@ -168,6 +180,7 @@ void *kmalloc(uint64_t size) {
     flags = spin_lock_irqsave(&heap_lock);
 
     for (cursor = heap_base; cursor < heap_end; cursor += block->size) {
+        if (!block_valid(cursor)) heap_corruption();
         block = block_at(cursor);
         if (block->magic != HEAP_FREE_MAGIC || block->size < need)
             continue;
@@ -211,75 +224,54 @@ void *kcalloc(uint64_t count, uint64_t size) {
 }
 
 int kfree(void *pointer) {
-    uint8_t *payload = (uint8_t *)pointer;
-    uint8_t *next_address;
-    struct heap_block *block;
-    struct heap_block *next;
-    uint64_t payload_size;
-    uint64_t flags;
-    int result = -1;
-
-    if (!heap_ready || !pointer)
-        return -1;
-    if (payload < payload_of(block_at(heap_base)) || payload >= heap_end)
-        return -1;
-    if ((uint64_t)(payload - heap_base) % ZEROOS_HEAP_ALIGN != 0)
-        return -1;
-
-    block = (struct heap_block *)(payload - HEAP_HEADER);
-
-    flags = spin_lock_irqsave(&heap_lock);
-
-    if (block->magic == HEAP_MAGIC) {
-        if (block->canary != HEAP_CANARY) {
-            spin_unlock_irqrestore(&heap_lock, flags);
-            serial_write_public("ZEROOS PANIC: heap canary corrupted (buffer overflow).\n");
-            for (;;) __asm__ volatile ("cli; hlt");
-        }
-        payload_size = block->size - HEAP_HEADER;
-
-        /*
-         * Coalescing. The block chain is singly linked (each block's size
-         * points at the physically following block), so the physically
-         * preceding block is found by walking from the region start. The
-         * region is small and interrupts are disabled, so O(n) here is
-         * bounded and deterministic. Merging is looped in both directions
-         * until no adjacent free block remains: after any free, adjacent
-         * free blocks never persist, which keeps the largest contiguous
-         * run available to future allocations.
-         */
-        {
-            uint8_t *walk;
-            struct heap_block *prev = 0;
-            for (walk = heap_base; walk < (uint8_t *)block;
-                 walk += block_at(walk)->size)
-                prev = block_at(walk);
-            if (prev && prev->magic == HEAP_FREE_MAGIC) {
-                /* Absorb this block into the preceding free block; the
-                 * chain then jumps over the absorbed header by size. */
-                prev->size += block->size;
-                block = prev;
-            }
-        }
-
-        next_address = (uint8_t *)block + block->size;
-        while (next_address < heap_end) {
-            next = block_at(next_address);
-            if (next->magic != HEAP_FREE_MAGIC)
-                break;
-            block->size += next->size;
-            next_address += next->size;
-        }
-
-        block->magic = HEAP_FREE_MAGIC;
-        block->canary = 0;
-        used_bytes -= payload_size;
-        result = 0;
+    uint64_t address=(uint64_t)pointer;
+    if (!heap_ready || address<(uint64_t)heap_base+HEAP_HEADER ||
+        address>=(uint64_t)heap_end || (address&(ZEROOS_HEAP_ALIGN-1))) return -1;
+    uint64_t flags=spin_lock_irqsave(&heap_lock);
+    uint8_t *target=(uint8_t *)(address-HEAP_HEADER), *walk=heap_base;
+    struct heap_block *prev=0;
+    while (walk<target) {
+        if (!block_valid(walk)) heap_corruption();
+        prev=block_at(walk);
+        walk+=prev->size;
     }
-
-    spin_unlock_irqrestore(&heap_lock, flags);
-    return result;
+    /* Magic in a payload or an absorbed header is not a live allocation. */
+    if (walk!=target) { spin_unlock_irqrestore(&heap_lock,flags); return -1; }
+    if (!block_valid(walk)) heap_corruption();
+    struct heap_block *block=block_at(walk);
+    if (block->magic!=HEAP_MAGIC) { spin_unlock_irqrestore(&heap_lock,flags); return -1; }
+    uint64_t payload_size=block->size-HEAP_HEADER;
+    if (payload_size>used_bytes) heap_corruption();
+    block->magic=HEAP_FREE_MAGIC;
+    block->canary=0;
+    if (prev && prev->magic==HEAP_FREE_MAGIC) {
+        prev->size+=block->size;
+        block=prev;
+    }
+    uint8_t *next=(uint8_t *)block+block->size;
+    while (next<heap_end) {
+        if (!block_valid(next)) heap_corruption();
+        if (block_at(next)->magic!=HEAP_FREE_MAGIC) break;
+        block->size+=block_at(next)->size;
+        next=(uint8_t *)block+block->size;
+    }
+    used_bytes-=payload_size;
+    spin_unlock_irqrestore(&heap_lock,flags);
+    return 0;
 }
+
+#ifdef ZEROOS_TEST_FAULTS
+int heap_test_forged_free(void) {
+    uint8_t *p=kmalloc(256);
+    if (!p) return -1;
+    struct heap_block *fake=(struct heap_block *)(p+32);
+    fake->size=64; fake->magic=HEAP_MAGIC; fake->canary=HEAP_CANARY;
+    int rejected=kfree(p+64);
+    int valid=heap_validate();
+    int freed=kfree(p);
+    return rejected==-1 && valid==0 && freed==0 ? 0 : -1;
+}
+#endif
 
 uint64_t heap_used_bytes(void) { return used_bytes; }
 uint64_t heap_capacity_bytes(void) {

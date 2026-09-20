@@ -35,5 +35,6 @@ int heap_validate(void);
 
 #ifdef ZEROOS_TEST_FAULTS
 void heap_test_fail_after(int count);
+int heap_test_forged_free(void);
 #endif
 #endif

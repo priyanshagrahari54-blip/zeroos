@@ -83,3 +83,5 @@ host-test: | $(BUILD)
 	timeout 5 $(BUILD)/test-page-ownership
 	$(CC) -O2 -Wall -Wextra -Werror -DZEROOS_HOST_TEST -DZEROOS_TEST_FAULTS -Ikernel tests/pmm.c kernel/memory.c -o $(BUILD)/test-pmm
 	timeout 5 $(BUILD)/test-pmm
+	$(CC) -O2 -Wall -Wextra -Werror -DZEROOS_TEST_FAULTS -Ikernel tests/heap.c kernel/heap.c -o $(BUILD)/test-heap
+	timeout 5 $(BUILD)/test-heap

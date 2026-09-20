@@ -416,8 +416,11 @@ static void heap_self_test(void) {
         kernel_panic("heap basic free failed");
 
     /* Negative tests: double free, NULL, unaligned, out-of-region. */
-    if (kfree(p1)!=-1)
-        kernel_panic("heap double-free detection failed");
+    if (kfree(p1)!=-1 || kfree(p2)!=-1 || kfree(p3)!=-1)
+        kernel_panic("heap coalesced double-free detection failed");
+#ifdef ZEROOS_TEST_FAULTS
+    if (heap_test_forged_free()!=0) kernel_panic("heap forged interior free accepted");
+#endif
     if (kfree((void *)0)!=-1)
         kernel_panic("heap NULL free rejection failed");
     if (kfree((void *)0x1)!=-1)
@@ -478,21 +481,21 @@ static void heap_self_test(void) {
         kernel_panic("kcalloc overflow rejection failed");
 
     /*
-     * Exhaustion: fill the whole region with 64-byte blocks (96-byte blocks
-     * including the header), then drain. The hold array is sized for the
-     * maximum 4 MiB region.
+     * Exhaustion: fill the region with 1024-byte payloads, then drain.
+     * Larger blocks keep this first-fit test bounded to ~8M chain visits;
+     * small-block fragmentation is covered by the mixed-size stress below.
      */
-    static void *exhaust[45000];
+    static void *exhaust[4096];
     uint64_t allocated=0;
-    while (allocated<45000) {
-        void *block=kmalloc(64);
+    while (allocated<4096) {
+        void *block=kmalloc(1024);
         if (!block) break;
         ((uint8_t *)block)[0]=(uint8_t)allocated;
         exhaust[allocated++]=block;
     }
     if (allocated<100)
         kernel_panic("heap exhaustion self-test could not fill region");
-    while (kmalloc(64))
+    if (kmalloc(1024))
         kernel_panic("heap exhaustion did not return NULL");
     for (uint64_t i=0;i<allocated;++i)
         if (kfree(exhaust[i])!=0)

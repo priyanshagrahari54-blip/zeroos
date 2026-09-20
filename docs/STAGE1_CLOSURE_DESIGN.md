@@ -68,3 +68,24 @@ CI on the ownership change exposed a bootstrap IRQ-exit race. Both the tick
 hook and IRQ-exit scheduler must recognize slot 0's boot-stack context until
 task_start_first parks it; only real tasks undergo task-stack frame checks.
 The fix preserves those checks for every schedulable thread.
+
+### Terminal-thread reclamation
+
+The longer actual user-fault sequence exhausted task slots before the next PIT
+tick: process destruction had detached the thread but deferred its stack/slot
+reclamation to the timer. A process reaper now reclaims its non-current ZOMBIE
+thread under the task lock before releasing the address space. The running
+stack is never eligible. A 64-process execution/reap test exceeds all slot
+counts without depending on a timer arriving between successive exits.
+
+### Heap allocation identity
+
+A header-looking word sequence is not allocation identity. Free must locate
+an exact live block by walking the allocator-owned chain; stale headers inside
+coalesced free blocks and forged headers inside payloads do not authorize a
+free. All walks validate nonzero aligned sizes against the remaining region
+before advancing. Allocation/free fail fatally on chain corruption rather than
+looping or following an out-of-range size. Validation itself reports failure.
+The header canary detects header damage, not every possible payload overrun.
+Native tests exercise forged and coalesced double frees, zero/overflowed block
+sizes, damaged canaries, and initialization failure at every backing page.
