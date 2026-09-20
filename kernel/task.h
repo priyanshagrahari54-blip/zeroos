@@ -69,6 +69,19 @@ struct task {
     struct process *process;
 };
 
+/*
+ * The SYSCALL trampoline (kernel/syscall_entry.S) reads these task fields
+ * by fixed offset (id 0, state 8, saved_stack 16, stack_base 24). The
+ * `state` field is an enum (4 bytes), so saved_stack is padded to an
+ * 8-byte boundary. Fail the build if the layout ever drifts from what the
+ * assembly assumes.
+ */
+typedef char task_syscall_entry_layout_check[
+    (__builtin_offsetof(struct task, id) == 0U &&
+     __builtin_offsetof(struct task, state) == 8U &&
+     __builtin_offsetof(struct task, saved_stack) == 16U &&
+     __builtin_offsetof(struct task, stack_base) == 24U) ? 1 : -1];
+
 int task_system_init(void);
 int task_create(task_entry_t entry, void *argument, uint64_t *task_id);
 /* Main thread of a user-mode process; first execution iretqs into ring 3. */

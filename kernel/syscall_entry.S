@@ -23,7 +23,7 @@
  *      modify RSP.
  *
  * Frame layout on the kernel stack (address ascending, deepest first):
- *   user R15, user R14, user RSP, user R12,
+ *   user R14, user R13, user RSP, user R12,
  *   then struct syscall_frame (r11, rcx, rax, rdi, rsi, rdx, r10, r8, r9)
  * The frame base (&frame[0] = r11) sits 64 bytes above the 13 pushed
  * slots, so the trampoline passes RSP+64 to C. Only this trampoline
@@ -31,9 +31,16 @@
  *
  * Clobbering per the ABI: RAX (result), RCX and R11 (hardware return
  * state). RDI/RSI/RDX/R10/R8/R9 are not preserved by the syscall.
- * Callee-saved registers (RBX, RBP, R12-R15) are all preserved: R12-R15
- * are saved into the frame and restored before SYSRET; RBX/RBP are never
- * used by this code.
+ * Callee-saved registers (RBX, RBP, R12-R15) are all preserved:
+ *   - R12, R13, R14 and the user RSP are saved into the frame and
+ *     restored before SYSRET. R13 is saved BEFORE the prologue
+ *     repurposes the R13 register to carry user R12.
+ *   - R15 is never touched by this trampoline and is preserved by the
+ *     SysV callee-saved contract across the syscall_dispatch call tree.
+ *   - RBX/RBP are never used by this code and are preserved by the same
+ *     SysV contract.
+ * The push count (13) is load-bearing: it leaves RSP 0 mod 16 so the
+ * call below enters C at 8 mod 16 per SysV.
  *
  * Alignment: the ABI requires RSP 8 mod 16 at SYSCALL. The kernel RSP
  * starts 8 bytes below the 4 KiB-aligned stack top; the 13 pushes
@@ -57,10 +64,14 @@ syscall_entry:
     movq current_task(%rip), %rax   /* no call: no push onto user stack    */
     testq %rax, %rax
     je .entry_invalid
-
-    leaq 4088(%rax), %rsp           /* task->stack_base + 4096 - 8         */
-    pushq %r15                      /* user r15 (deepest)                  */
-    pushq %r14                      /* user r14                            */
+    movq 24(%rax), %rax             /* rax <- task->stack_base (task.h:
+                                       id 0, state 8, saved_stack 16,
+                                       stack_base 24)                       */
+    leaq 4088(%rax), %rsp           /* top - 8: 4096 - 8                   */
+    pushq %r14                      /* user r14 (deepest)                  */
+    pushq %r13                      /* user r13: saved BEFORE R13 is       */
+                                    /* repurposed below to carry user r12  */
+    movq %r12, %r13                 /* r13 <- user r12                     */
     pushq %r12                      /* user rsp                            */
     pushq %r13                      /* user r12                            */
     pushq %r11                      /* user rflags                         */
@@ -100,12 +111,13 @@ syscall_entry:
                                        to R11; SYSRET then rebuilds RFLAGS
                                        from R11, so restore IF to keep user
                                        code timer-preemptible after syscalls */
-    popq %r13                       /* user r12                            */
-    popq %r12                       /* user rsp                            */
-    popq %r14                       /* user r14                            */
-    popq %r15                       /* user r15                            */
-    movq %r12, %rsp                 /* SYSRET does not touch RSP           */
-    movq %r13, %r12                 /* restore user r12                    */
+    popq %r13                       /* r13 <- user r12 (temp)              */
+    popq %rsp                       /* RSP <- user rsp (SYSRET does not
+                                       touch RSP)                           */
+    movq %r13, %r12                 /* R12 <- user r12 (before R13 is
+                                       refilled below)                      */
+    popq %r13                       /* R13 <- user r13                     */
+    popq %r14                       /* R14 <- user r14                     */
     sysretq
 
 .entry_invalid:

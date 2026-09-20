@@ -4,6 +4,10 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: write
+  issues: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -42,20 +46,21 @@ jobs:
           echo "===== serial tail ====="
           tail -40 build/serial.log || true
           FAIL=0
+          : > build/check-results.txt
           check() {
             if grep -q "$1" build/serial.log; then
-              echo "PASS: $1"
+              echo "PASS: $1" | tee -a build/check-results.txt
             else
-              echo "MISSING: $1"
+              echo "MISSING: $1" | tee -a build/check-results.txt
               FAIL=1
             fi
           }
           forbid() {
             if grep -q "$1" build/serial.log; then
-              echo "FORBIDDEN PRESENT: $1"
+              echo "FORBIDDEN PRESENT: $1" | tee -a build/check-results.txt
               FAIL=1
             else
-              echo "PASS (absent): $1"
+              echo "PASS (absent): $1" | tee -a build/check-results.txt
             fi
           }
           # Foundation
@@ -87,9 +92,9 @@ jobs:
           # Failure detection: no panic, no user-program validation failure
           forbid "ZEROOS PANIC"
           forbid "ZEROOS: FAIL"
-          test -s build/debug.log || { echo "MISSING: debug.log"; FAIL=1; }
-          grep -q "B" build/debug.log || { echo "MISSING: debug port B"; FAIL=1; }
-          grep -q "L" build/debug.log || { echo "MISSING: debug port L"; FAIL=1; }
+          if test -s build/debug.log; then echo "PASS: debug.log present" | tee -a build/check-results.txt; else echo "MISSING: debug.log" | tee -a build/check-results.txt; FAIL=1; fi
+          if grep -q "B" build/debug.log 2>/dev/null; then echo "PASS: debug port B" | tee -a build/check-results.txt; else echo "MISSING: debug port B" | tee -a build/check-results.txt; FAIL=1; fi
+          if grep -q "L" build/debug.log 2>/dev/null; then echo "PASS: debug port L" | tee -a build/check-results.txt; else echo "MISSING: debug port L" | tee -a build/check-results.txt; FAIL=1; fi
           exit $FAIL
 
       - name: Dump serial log on failure
@@ -119,6 +124,7 @@ jobs:
             build/serial.log
             build/debug.log
             build/qemu.log
+            build/check-results.txt
           if-no-files-found: ignore
 
       - name: Post diagnostics to tracking issue
@@ -128,6 +134,11 @@ jobs:
         run: |
           {
             echo "Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo
+            echo "### check results"
+            echo '```'
+            if test -f build/check-results.txt; then cat build/check-results.txt; else echo "(missing)"; fi
+            echo '```'
             echo
             echo "### serial.log"
             echo '```'
@@ -139,9 +150,21 @@ jobs:
             if test -f build/qemu.log; then tail -c 20000 build/qemu.log; else echo "(missing)"; fi
             echo '```'
           } > /tmp/zeroos-diag.md
-          ISSUE=$(gh issue list --search "in:title ZEROOS CI diagnostics" --state open --json number -q '.[0].number' 2>/dev/null || true)
+          ISSUE=$(gh issue list --search "in:title ZEROOS CI diagnostics" --state open --json number --jq '.[0].number // empty' 2>/dev/null || true)
           if [ -n "$ISSUE" ]; then
-            gh issue comment "$ISSUE" --body-file /tmp/zeroos-diag.md
+            gh issue comment "$ISSUE" --body-file /tmp/zeroos-diag.md || \
+              echo "issue comment failed; falling back to branch push"
           else
-            gh issue create --title "ZEROOS CI diagnostics" --body-file /tmp/zeroos-diag.md
+            gh issue create --title "ZEROOS CI diagnostics" --body-file /tmp/zeroos-diag.md || \
+              echo "issue create failed; falling back to branch push"
           fi
+          # Fallback: always also publish the logs on a dedicated branch so
+          # they are retrievable even without issue access.
+          mkdir -p /tmp/diagpush && cd /tmp/diagpush
+          git init -q -b "ci-diag-${GITHUB_RUN_ID}" .
+          cp build/serial.log . 2>/dev/null || true
+          cp build/qemu.log . 2>/dev/null || true
+          cp build/debug.log . 2>/dev/null || true
+          git -c user.name=zeroos-ci -c user.email=ci@zeroos.local add -A
+          git -c user.name=zeroos-ci -c user.email=ci@zeroos.local commit -q -m "CI diagnostics for run ${GITHUB_RUN_ID}"
+          git push -q --force "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/ci-diag-${GITHUB_RUN_ID}"
