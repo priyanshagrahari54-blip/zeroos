@@ -2,6 +2,7 @@
 #include "memory.h"
 #include "heap.h"
 #include "irq_state.h"
+#include "sync.h"
 
 #define ENTRY_COUNT 512ULL
 #define PAGE_MASK 0x000ffffffffff000ULL
@@ -16,6 +17,9 @@
 
 static uint64_t *root_table;
 static uint64_t root_physical;
+
+/* Serializes page-table mutation; IRQs are masked while held. */
+static struct spinlock vmm_lock;
 
 static uint64_t active_root;
 static uint16_t active_pcid;
@@ -216,6 +220,7 @@ static int enable_nx(void) {
 }
 
 int vmm_init(void) {
+    spinlock_init(&vmm_lock);
     if (enable_nx() != 0) return -1;
     void *root = page_alloc();
     if (!root)
@@ -872,17 +877,21 @@ void vmm_space_destroy(struct vmm_space *space) {
 }
 
 int vmm_space_map_page(struct vmm_space *space, uint64_t virtual_address, uint64_t physical_address, uint64_t flags) {
+    uint64_t vmm_flags=spin_lock_irqsave(&vmm_lock);
     uint64_t irq=irq_save();
     int result=vmm_space_map_page_locked(space, virtual_address, physical_address, flags);
     irq_restore(irq);
     return result;
+    spin_unlock_irqrestore(&vmm_lock,vmm_flags);
 }
 
 int vmm_space_unmap_page(struct vmm_space *space, uint64_t virtual_address) {
+    uint64_t vmm_flags=spin_lock_irqsave(&vmm_lock);
     uint64_t irq=irq_save();
     int result=vmm_space_unmap_page_locked(space, virtual_address);
     irq_restore(irq);
     return result;
+    spin_unlock_irqrestore(&vmm_lock,vmm_flags);
 }
 
 int vmm_space_own_page(struct vmm_space *space, uint64_t physical) {
@@ -913,22 +922,28 @@ void vmm_pcid_free(uint16_t pcid) {
 }
 
 int vmm_map_page(uint64_t virtual_address, uint64_t physical_address, uint64_t flags) {
+    uint64_t vmm_flags=spin_lock_irqsave(&vmm_lock);
     uint64_t irq=irq_save();
     int result=vmm_map_page_locked(virtual_address, physical_address, flags);
     irq_restore(irq);
     return result;
+    spin_unlock_irqrestore(&vmm_lock,vmm_flags);
 }
 
 int vmm_unmap_page(uint64_t virtual_address) {
+    uint64_t vmm_flags=spin_lock_irqsave(&vmm_lock);
     uint64_t irq=irq_save();
     int result=vmm_unmap_page_locked(virtual_address);
     irq_restore(irq);
     return result;
+    spin_unlock_irqrestore(&vmm_lock,vmm_flags);
 }
 
 int vmm_protect_page(uint64_t virtual_address, uint64_t flags) {
+    uint64_t vmm_flags=spin_lock_irqsave(&vmm_lock);
     uint64_t irq=irq_save();
     int result=vmm_protect_page_locked(virtual_address, flags);
     irq_restore(irq);
     return result;
+    spin_unlock_irqrestore(&vmm_lock,vmm_flags);
 }
