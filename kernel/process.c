@@ -14,6 +14,22 @@ static struct spinlock process_lock;
 static uint64_t next_pid;
 static int process_ready;
 
+static struct process *process_find_locked(uint64_t pid) {
+    for (int i = 0; i < ZEROOS_MAX_PROCESSES; ++i) {
+        if (processes[i].state != PROCESS_UNUSED && processes[i].pid == pid)
+            return &processes[i];
+    }
+    return 0;
+}
+
+static uint64_t process_zombie_count_locked(void) {
+    uint64_t count = 0;
+    for (int i = 0; i < ZEROOS_MAX_PROCESSES; ++i)
+        if (processes[i].state == PROCESS_ZOMBIE)
+            ++count;
+    return count;
+}
+
 static void process_reset(struct process *p) {
     for (unsigned i = 0; i < sizeof(*p) / sizeof(uint8_t); ++i)
         ((uint8_t *)p)[i] = 0;
@@ -21,6 +37,8 @@ static void process_reset(struct process *p) {
 }
 
 uint64_t process_phys_owner(uint64_t physical) {
+    uint64_t flags = spin_lock_irqsave(&process_lock);
+    uint64_t owner = 0;
     for (int i = 0; i < ZEROOS_MAX_PROCESSES; ++i) {
         struct process *p = &processes[i];
         if (p->state == PROCESS_UNUSED)
@@ -28,9 +46,11 @@ uint64_t process_phys_owner(uint64_t physical) {
         struct vmm_owned_page *cursor;
         for (cursor = p->space.owned_pages; cursor; cursor = cursor->next)
             if (cursor->physical == physical)
-                return p->pid;
+                { owner = p->pid; goto out; }
     }
-    return 0;
+out:
+    spin_unlock_irqrestore(&process_lock, flags);
+    return owner;
 }
 
 int process_system_init(void) {
@@ -246,19 +266,16 @@ int process_wait_ticks(uint64_t ticks) {
 }
 
 struct process *process_find(uint64_t pid) {
-    for (int i = 0; i < ZEROOS_MAX_PROCESSES; ++i) {
-        if (processes[i].state != PROCESS_UNUSED &&
-            processes[i].pid == pid)
-            return &processes[i];
-    }
-    return 0;
+    uint64_t flags = spin_lock_irqsave(&process_lock);
+    struct process *result = process_find_locked(pid);
+    spin_unlock_irqrestore(&process_lock, flags);
+    return result;
 }
 
 uint64_t process_zombie_count(void) {
-    uint64_t count = 0;
-    for (int i = 0; i < ZEROOS_MAX_PROCESSES; ++i)
-        if (processes[i].state == PROCESS_ZOMBIE)
-            ++count;
+    uint64_t flags = spin_lock_irqsave(&process_lock);
+    uint64_t count = process_zombie_count_locked();
+    spin_unlock_irqrestore(&process_lock, flags);
     return count;
 }
 
@@ -266,7 +283,7 @@ uint64_t process_zombie_count(void) {
 /* Only the test builder can discard a newly published, never-run process. */
 int process_test_discard(uint64_t pid) {
     uint64_t flags=spin_lock_irqsave(&process_lock);
-    struct process *p=process_find(pid);
+    struct process *p=process_find_locked(pid);
     int result=-1;
     if (p && p->state==PROCESS_RUNNING && p->thread &&
         task_discard_new(p->thread->id)==0) {
