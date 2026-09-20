@@ -728,20 +728,20 @@ static int vmm_space_map_page_locked(struct vmm_space *space, uint64_t virtual_a
     }
     uint64_t *pd = space_ensure_table(pdpt,pdpt_i,flags);
     if (!pd) {
-        vmm_space_release_page(space, physical_address);
+        vmm_space_release_page_locked(space, physical_address);
         return -1;
     }
 
     if (pd[pd_i] & HUGE_PAGE_2M) {
         if (split_2m(pd,pd_i,virtual_address & ~(HUGE_PAGE_SIZE - 1ULL)) != 0) {
-            vmm_space_release_page(space, physical_address);
+            vmm_space_release_page_locked(space, physical_address);
             return -1;
         }
     }
 
     uint64_t *pt = space_ensure_table(pd,pd_i,flags);
     if (!pt || (pt[pt_i] & VMM_PRESENT)) {
-        vmm_space_release_page(space, physical_address);
+        vmm_space_release_page_locked(space, physical_address);
         return -1;
     }
 
