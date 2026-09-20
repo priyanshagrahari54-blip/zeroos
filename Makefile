@@ -23,6 +23,7 @@ C_OBJECTS := \
 	$(BUILD)/task.o \
 	$(BUILD)/process.o \
 	$(BUILD)/syscall.o \
+	$(BUILD)/elf.o \
 	$(BUILD)/wait.o \
 	$(BUILD)/scheduler.o
 
@@ -85,3 +86,5 @@ host-test: | $(BUILD)
 	timeout 5 $(BUILD)/test-pmm
 	$(CC) -O2 -Wall -Wextra -Werror -DZEROOS_TEST_FAULTS -Ikernel tests/heap.c kernel/heap.c -o $(BUILD)/test-heap
 	timeout 5 $(BUILD)/test-heap
+	$(CC) -O2 -Wall -Wextra -Werror -DZEROOS_HOST_TEST -Ikernel tests/elf.c kernel/elf.c -o $(BUILD)/test-elf
+	timeout 5 $(BUILD)/test-elf
