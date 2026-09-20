@@ -864,16 +864,16 @@ unsigned vmm_pcid_in_use(void) {
 }
 
 int vmm_space_create(struct vmm_space *space) {
-    uint64_t irq=irq_save();
+    uint64_t vmm_flags=spin_lock_irqsave(&vmm_lock);
     int result=vmm_space_create_locked(space);
-    irq_restore(irq);
+    spin_unlock_irqrestore(&vmm_lock,vmm_flags);
     return result;
 }
 
 void vmm_space_destroy(struct vmm_space *space) {
-    uint64_t irq=irq_save();
+    uint64_t vmm_flags=spin_lock_irqsave(&vmm_lock);
     vmm_space_destroy_locked(space);
-    irq_restore(irq);
+    spin_unlock_irqrestore(&vmm_lock,vmm_flags);
 }
 
 int vmm_space_map_page(struct vmm_space *space, uint64_t virtual_address, uint64_t physical_address, uint64_t flags) {
