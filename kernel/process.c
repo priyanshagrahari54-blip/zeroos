@@ -30,6 +30,22 @@ static uint64_t process_zombie_count_locked(void) {
     return count;
 }
 
+static int process_validate_locked(void) {
+    for (int i=0;i<ZEROOS_MAX_PROCESSES;++i) {
+        struct process *p=&processes[i];
+        if (p->state==PROCESS_UNUSED) continue;
+        if (p->pid==0) return -1;
+        for (int j=i+1;j<ZEROOS_MAX_PROCESSES;++j)
+            if (processes[j].state!=PROCESS_UNUSED && processes[j].pid==p->pid)
+                return -1;
+        if (!p->space.root || !p->space.root_physical) return -1;
+        if (p->state==PROCESS_RUNNING && !p->thread) return -1;
+        if (p->thread && p->thread->process!=p) return -1;
+        if (p->exited_by_fault && p->state!=PROCESS_ZOMBIE) return -1;
+    }
+    return 0;
+}
+
 static void process_reset(struct process *p) {
     for (unsigned i = 0; i < sizeof(*p) / sizeof(uint8_t); ++i)
         ((uint8_t *)p)[i] = 0;
@@ -143,6 +159,7 @@ int process_spawn(uint64_t user_arg, uint64_t *pid) {
         goto fail_space;
     stack_mapped=1;
 
+    if (next_pid==0) goto fail_space;
     p->pid = next_pid++;
     struct task *parent=task_current();
     p->parent_pid = parent && parent->process ? parent->process->pid : 0;
@@ -167,6 +184,7 @@ int process_spawn(uint64_t user_arg, uint64_t *pid) {
     p->thread = thread;
 
     p->state = PROCESS_RUNNING;
+    if (process_validate_locked()!=0) goto fail_space;
     result = 0;
 
 fail_space:
