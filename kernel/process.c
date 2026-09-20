@@ -3,6 +3,7 @@
 #include "memory.h"
 #include "sync.h"
 #include "timer.h"
+#include "elf.h"
 
 extern void serial_write_public(const char *text);
 extern char user_init_code[];
@@ -61,39 +62,52 @@ int process_spawn(uint64_t user_arg, uint64_t *pid) {
 
     if (vmm_space_create(&p->space) != 0) goto out;
 
-    p->code_phys = (uint64_t)page_alloc_zero();
-    p->data_phys = (uint64_t)page_alloc_zero();
-    p->stack_phys = (uint64_t)page_alloc_zero();
-    if (!p->code_phys || !p->data_phys || !p->stack_phys)
-        goto fail_space;
-
-    /*
-     * Freshly allocated pages must not be claimed by any other live space;
-     * a hit here means the physical allocator handed out a page that was
-     * never released from an address space.
-     */
-    if (process_phys_owner(p->code_phys) ||
-        process_phys_owner(p->data_phys) ||
-        process_phys_owner(p->stack_phys)) {
-        serial_write_public("ZEROOS PANIC: process page already owned by another space.\n");
-        for (;;) __asm__ volatile ("cli; hlt");
-    }
-
-    /*
-     * Copy the user program into the code page through the kernel's
-     * writable NX identity alias BEFORE publishing its RX user mapping.
-     * vmm_space_map_page seals that alias read-only before enabling execute.
-     */
     uint64_t blob_size = (uint64_t)user_init_end - (uint64_t)user_init_code;
     if (blob_size > ZEROOS_PAGE_SIZE)
         goto fail_space;
-    for (uint64_t i = 0; i < blob_size; ++i)
-        ((uint8_t *)p->code_phys)[i] = user_init_code[i];
 
-    if (vmm_space_map_page(&p->space, ZEROOS_USER_CODE_VA, p->code_phys,
-                           VMM_USER) != 0)
+    /*
+     * The built-in test program is now fed through the same ELF validation
+     * and transactional segment loader that future filesystem executables
+     * will use. It is wrapped as one RX PT_LOAD at the fixed Stage-1 code VA;
+     * no executable page is published until validation has succeeded.
+     */
+    uint8_t builtin_elf[2 * ZEROOS_PAGE_SIZE];
+    for (uint64_t i=0;i<sizeof(builtin_elf);++i) builtin_elf[i]=0;
+    struct elf64_ehdr *eh=(struct elf64_ehdr *)builtin_elf;
+    struct elf64_phdr *ph=(struct elf64_phdr *)(builtin_elf+sizeof(*eh));
+    eh->ident[0]=0x7f; eh->ident[1]='E'; eh->ident[2]='L'; eh->ident[3]='F';
+    eh->ident[4]=ZEROOS_ELF64_CLASS; eh->ident[5]=ZEROOS_ELF64_DATA_LSB;
+    eh->ident[6]=ZEROOS_ELF_VERSION_CURRENT;
+    eh->type=ZEROOS_ELF_TYPE_EXEC; eh->machine=ZEROOS_ELF_MACHINE_X86_64;
+    eh->version=ZEROOS_ELF_VERSION_CURRENT; eh->entry=ZEROOS_USER_CODE_VA;
+    eh->phoff=sizeof(*eh); eh->ehsize=sizeof(*eh);
+    eh->phentsize=sizeof(*ph); eh->phnum=1;
+    ph->type=ZEROOS_PT_LOAD; ph->flags=ZEROOS_PF_R|ZEROOS_PF_X;
+    ph->offset=ZEROOS_PAGE_SIZE; ph->vaddr=ZEROOS_USER_CODE_VA;
+    ph->filesz=blob_size; ph->memsz=ZEROOS_PAGE_SIZE; ph->align=ZEROOS_PAGE_SIZE;
+    for (uint64_t i=0;i<blob_size;++i)
+        builtin_elf[ZEROOS_PAGE_SIZE+i]=user_init_code[i];
+
+    struct elf_image elf_image;
+    if (elf64_load_image(builtin_elf,ZEROOS_PAGE_SIZE+blob_size,
+                         &p->space,&elf_image)!=0)
+        goto fail_space;
+    p->code_phys=vmm_space_translate(&p->space,ZEROOS_USER_CODE_VA);
+    if (!p->code_phys)
         goto fail_space;
     code_mapped=1;
+
+    void *data_page=page_alloc_zero();
+    void *stack_page=page_alloc_zero();
+    if (!data_page || !stack_page) {
+        if (data_page) page_free(data_page);
+        if (stack_page) page_free(stack_page);
+        goto fail_space;
+    }
+    p->data_phys=(uint64_t)data_page;
+    p->stack_phys=(uint64_t)stack_page;
+
     if (vmm_space_map_page(&p->space, ZEROOS_USER_DATA_VA, p->data_phys,
                            VMM_USER | VMM_WRITABLE | VMM_NO_EXECUTE) != 0)
         goto fail_space;
@@ -101,7 +115,6 @@ int process_spawn(uint64_t user_arg, uint64_t *pid) {
     if (vmm_space_map_page(&p->space, ZEROOS_USER_STACK_VA, p->stack_phys,
                            VMM_USER | VMM_WRITABLE | VMM_NO_EXECUTE) != 0)
         goto fail_space;
-
     stack_mapped=1;
 
     p->pid = next_pid++;
