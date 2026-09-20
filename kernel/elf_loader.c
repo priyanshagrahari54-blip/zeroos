@@ -26,7 +26,7 @@ int elf64_load_image(const void *data, uint64_t size,
     for (uint16_t si=0; si<image->segment_count; ++si) {
         const struct elf_load_segment *seg=&image->segments[si];
         uint64_t end, first, last, pages;
-        if (add_overflow_u64(seg->virtual_address,seg->memory_size,&end))
+        if (elf_loader_add_overflow_u64(seg->virtual_address,seg->memory_size,&end))
             return -1;
         first=seg->virtual_address & ~(VMM_PAGE_SIZE-1ULL);
         if (end > ~0ULL - (VMM_PAGE_SIZE-1ULL))
@@ -45,7 +45,7 @@ int elf64_load_image(const void *data, uint64_t size,
     for (uint16_t si=0; si<image->segment_count; ++si) {
         const struct elf_load_segment *seg=&image->segments[si];
         uint64_t end;
-        if (add_overflow_u64(seg->virtual_address,seg->memory_size,&end))
+        if (elf_loader_add_overflow_u64(seg->virtual_address,seg->memory_size,&end))
             return -1;
         uint64_t first=seg->virtual_address & ~(VMM_PAGE_SIZE-1ULL);
         uint64_t last=(end + VMM_PAGE_SIZE-1ULL) & ~(VMM_PAGE_SIZE-1ULL);
@@ -57,7 +57,7 @@ int elf64_load_image(const void *data, uint64_t size,
     for (uint16_t si=0; si<image->segment_count; ++si) {
         const struct elf_load_segment *seg=&image->segments[si];
         uint64_t end;
-        if (add_overflow_u64(seg->virtual_address,seg->memory_size,&end))
+        if (elf_loader_add_overflow_u64(seg->virtual_address,seg->memory_size,&end))
             goto fail;
         uint64_t first=seg->virtual_address & ~(VMM_PAGE_SIZE-1ULL);
         uint64_t last=(end + VMM_PAGE_SIZE-1ULL) & ~(VMM_PAGE_SIZE-1ULL);
@@ -100,7 +100,7 @@ fail:
     for (uint16_t si=0; si<image->segment_count; ++si) {
         const struct elf_load_segment *seg=&image->segments[si];
         uint64_t end;
-        if (add_overflow_u64(seg->virtual_address,seg->memory_size,&end))
+        if (elf_loader_add_overflow_u64(seg->virtual_address,seg->memory_size,&end))
             continue;
         uint64_t first=seg->virtual_address & ~(VMM_PAGE_SIZE-1ULL);
         uint64_t last=(end + VMM_PAGE_SIZE-1ULL) & ~(VMM_PAGE_SIZE-1ULL);
