@@ -1,4 +1,5 @@
 #include "elf.h"
+#include "memory.h"
 
 static int add_overflow_u64(uint64_t a, uint64_t b, uint64_t *out) {
     if (b > ~0ULL - a)
@@ -85,7 +86,7 @@ int elf64_validate_image(const void *data, uint64_t size,
             vend > 0x0000800000000000ULL)
             return -1;
 
-        /* Load segments must not overlap in virtual memory. */
+        /* Load segments must not overlap in virtual memory or page footprint. */
         for (uint16_t j=0; j<out->segment_count; ++j) {
             uint64_t other_end;
             if (!range_end(out->segments[j].virtual_address,
@@ -93,6 +94,12 @@ int elf64_validate_image(const void *data, uint64_t size,
                 return -1;
             if (ph->vaddr < other_end &&
                 out->segments[j].virtual_address < vend)
+                return -1;
+            uint64_t a0 = ph->vaddr & ~(VMM_PAGE_SIZE - 1ULL);
+            uint64_t a1 = (vend + VMM_PAGE_SIZE - 1ULL) & ~(VMM_PAGE_SIZE - 1ULL);
+            uint64_t b0 = out->segments[j].virtual_address & ~(VMM_PAGE_SIZE - 1ULL);
+            uint64_t b1 = (other_end + VMM_PAGE_SIZE - 1ULL) & ~(VMM_PAGE_SIZE - 1ULL);
+            if (a0 < b1 && b0 < a1)
                 return -1;
         }
 
@@ -124,5 +131,61 @@ int elf64_validate_image(const void *data, uint64_t size,
             out->entry<end)
             return 0;
     }
+    return -1;
+}
+
+int elf64_load_image(const void *data, uint64_t size,
+                     struct vmm_space *space, struct elf_image *image) {
+    const uint8_t *bytes=(const uint8_t *)data;
+    uint64_t mapped[ZEROOS_ELF_MAX_LOAD_SEGMENTS * 4096ULL];
+    uint64_t mapped_count=0;
+
+    if (!data || !space || !space->root || !image ||
+        elf64_validate_image(data,size,image)!=0)
+        return -1;
+
+    for (uint16_t s=0; s<image->segment_count; ++s) {
+        const struct elf_load_segment *seg=&image->segments[s];
+        uint64_t first=seg->virtual_address & ~(VMM_PAGE_SIZE-1ULL);
+        uint64_t last_end;
+        if (add_overflow_u64(seg->virtual_address,seg->memory_size,&last_end))
+            goto fail;
+        uint64_t last=(last_end + VMM_PAGE_SIZE-1ULL) & ~(VMM_PAGE_SIZE-1ULL);
+
+        for (uint64_t va=first; va<last; va+=VMM_PAGE_SIZE) {
+            void *page=page_alloc_zero();
+            if (!page) goto fail;
+
+            uint64_t seg_off=va-seg->virtual_address;
+            uint64_t copy_start=0, copy_len=0;
+            if (va < seg->virtual_address) copy_start=seg->virtual_address-va;
+            uint64_t page_start_in_seg=(va>=seg->virtual_address)?va-seg->virtual_address:0;
+            if (page_start_in_seg < seg->file_size) {
+                copy_len=seg->file_size-page_start_in_seg;
+                if (copy_len > VMM_PAGE_SIZE-copy_start) copy_len=VMM_PAGE_SIZE-copy_start;
+            }
+            if (copy_len)
+                for (uint64_t i=0;i<copy_len;++i)
+                    ((uint8_t *)page)[copy_start+i]=bytes[seg->file_offset+page_start_in_seg];
+
+            uint64_t flags=VMM_USER;
+            if (seg->flags & ZEROOS_PF_W) flags|=VMM_WRITABLE|VMM_NO_EXECUTE;
+            else if (!(seg->flags & ZEROOS_PF_X)) flags|=VMM_NO_EXECUTE;
+            if (seg->flags & ZEROOS_PF_X) {
+                flags=VMM_USER;
+            }
+            if (vmm_space_map_page(space,va,(uint64_t)page,flags)!=0) {
+                page_free(page);
+                goto fail;
+            }
+            if (mapped_count >= sizeof(mapped)/sizeof(mapped[0])) goto fail;
+            mapped[mapped_count++]=va;
+        }
+    }
+    return 0;
+
+fail:
+    while (mapped_count)
+        vmm_space_unmap_page(space,mapped[--mapped_count]);
     return -1;
 }
