@@ -86,6 +86,8 @@ jobs:
           }
           # Foundation
           check "ZEROOS: process rollback and lifetime stress passed."
+          check "ZEROOS: live-CR3 isolation, ownership and W^X passed."
+          check "ZEROOS: user W^X, kernel access and I/O denial passed."
           check "ZEROOS: physical page allocator initialized."
           check "ZEROOS: heap self-test passed."
           check "ZEROOS: virtual memory self-test passed."
@@ -101,6 +103,7 @@ jobs:
           # Stage-1 ring-3 certification
           check "ZEROOS: ring-3 user program executed."
           check "ZEROOS: CPL3 and syscall register ABI verified."
+          check "ZEROOS: integer-only state and bad-RSP containment passed."
           check "ZEROOS: ring-3 hello process verified."
           check "ZEROOS: user stored marker in data page."
           check "ZEROOS: user read data page."
@@ -156,6 +159,7 @@ jobs:
             build/qemu-startup.log
             build/qemu-status.txt
             build/boot-regressions.log
+            build/wx-fault-*/serial.log
             build/late-fault-*/serial.log
             build/early-fault-*/serial.log
             build/no-nx/serial.log

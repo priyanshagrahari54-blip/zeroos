@@ -827,7 +827,9 @@ uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
     int next;
     int dying;
 
-    if (!previous || !frame)
+    /* Bootstrap runs on the boot stack, not a task-owned frame. Timer
+     * delivery is legal between task_system_init and task_start_first. */
+    if (!previous || !frame || previous==&tasks[0])
         return (uint64_t)frame;
     if (!task_pointer_ok(previous))
         task_context_panic("ZEROOS PANIC: invalid current task pointer.\n",previous);

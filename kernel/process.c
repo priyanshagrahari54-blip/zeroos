@@ -79,6 +79,17 @@ int process_spawn(uint64_t user_arg, uint64_t *pid) {
         for (;;) __asm__ volatile ("cli; hlt");
     }
 
+    /*
+     * Copy the user program into the code page through the kernel's
+     * writable NX identity alias BEFORE publishing its RX user mapping.
+     * vmm_space_map_page seals that alias read-only before enabling execute.
+     */
+    uint64_t blob_size = (uint64_t)user_init_end - (uint64_t)user_init_code;
+    if (blob_size > ZEROOS_PAGE_SIZE)
+        goto fail_space;
+    for (uint64_t i = 0; i < blob_size; ++i)
+        ((uint8_t *)p->code_phys)[i] = user_init_code[i];
+
     if (vmm_space_map_page(&p->space, ZEROOS_USER_CODE_VA, p->code_phys,
                            VMM_USER) != 0)
         goto fail_space;
@@ -92,17 +103,6 @@ int process_spawn(uint64_t user_arg, uint64_t *pid) {
         goto fail_space;
 
     stack_mapped=1;
-
-    /*
-     * Copy the user program into the code page through the kernel's
-     * identity mapping. The page is executable only through the process
-     * address space (the identity mapping is non-executable).
-     */
-    uint64_t blob_size = (uint64_t)user_init_end - (uint64_t)user_init_code;
-    if (blob_size > ZEROOS_PAGE_SIZE)
-        goto fail_space;
-    for (uint64_t i = 0; i < blob_size; ++i)
-        ((uint8_t *)p->code_phys)[i] = user_init_code[i];
 
     p->pid = next_pid++;
     struct task *parent=task_current();

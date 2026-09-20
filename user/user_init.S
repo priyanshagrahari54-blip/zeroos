@@ -19,6 +19,21 @@
 
 .global user_init_code
 user_init_code:
+    # Check the complete initial integer-register sanitization contract.
+    orq %rbx, %rax
+    orq %rcx, %rax
+    orq %rdx, %rax
+    orq %rsi, %rax
+    orq %rbp, %rax
+    orq %r8, %rax
+    orq %r9, %rax
+    orq %r10, %rax
+    orq %r11, %rax
+    orq %r12, %rax
+    orq %r13, %rax
+    orq %r14, %rax
+    orq %r15, %rax
+    jnz .exit_one
     testq %rdi, %rdi
     je  .hello
     cmpq $1, %rdi
@@ -31,7 +46,71 @@ user_init_code:
     je  .gp_test
     cmpq $5, %rdi
     je  .bad_syscall
+    cmpq $6, %rdi
+    je .x87_denied
+    cmpq $7, %rdi
+    je .sse_denied
+    cmpq $8, %rdi
+    je .mmx_denied
+    cmpq $9, %rdi
+    je .bad_rsp
+    cmpq $10, %rdi
+    je .noncanonical_rsp
+    cmpq $11, %rdi
+    je .write_code
+    cmpq $12, %rdi
+    je .execute_data
+    cmpq $13, %rdi
+    je .read_kernel
+    cmpq $14, %rdi
+    je .port_io
+    cmpq $15, %rdi
+    je .execute_stack
+    cmpq $16, %rdi
+    je .invalid_gate
     jmp .exit_zero
+
+.write_code:
+    leaq user_init_code(%rip), %rax
+    movb $0, (%rax)
+    jmp .exit_one
+.execute_data:
+    movabsq $0x7f0000002000, %rax
+    movb $0xc3, (%rax)
+    jmp *%rax
+.read_kernel:
+    movq $0x100000, %rax
+    movq (%rax), %rax
+    jmp .exit_one
+.port_io:
+    outb %al, $0xe9
+    jmp .exit_one
+.execute_stack:
+    movb $0xc3, (%rsp)
+    jmp *%rsp
+.invalid_gate:
+    int $0x80
+    jmp .exit_one
+
+.x87_denied:
+    fninit
+    jmp .exit_one
+.sse_denied:
+    pxor %xmm0, %xmm0
+    jmp .exit_one
+.mmx_denied:
+    pxor %mm0, %mm0
+    jmp .exit_one
+.bad_rsp:
+    movq $0x1000, %rsp
+    movq $3, %rax
+    syscall
+    ud2
+.noncanonical_rsp:
+    movabsq $0x800000000000, %rsp
+    movq $3, %rax
+    syscall
+    ud2
 
 .hello:
     movw %cs, %ax

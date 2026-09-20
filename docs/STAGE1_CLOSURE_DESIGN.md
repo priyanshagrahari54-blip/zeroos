@@ -53,3 +53,18 @@ state, integer-register sanitization, and disabled extended state. Run bounded
 normal/fault cases across available CPU features and RAM sizes. Unsupported
 hardware is rejected or follows a documented tested fallback; no green serial
 message alone substitutes for these checks.
+
+## Implementation choices after testing
+
+The direct-map aperture uses preallocated 4 KiB leaves (1 MiB of tables for
+512 MiB). This is a deliberate bounded-memory tradeoff: publication and
+rollback can change one page's permissions without allocating a split table
+mid-transaction. Kernel text/constant boundaries are linker-defined and page
+aligned. The null page is absent. Generic mapping APIs cannot alter identity
+leaves or create executable mappings; user RX publication is the single path
+that seals a physical alias.
+
+CI on the ownership change exposed a bootstrap IRQ-exit race. Both the tick
+hook and IRQ-exit scheduler must recognize slot 0's boot-stack context until
+task_start_first parks it; only real tasks undergo task-stack frame checks.
+The fix preserves those checks for every schedulable thread.

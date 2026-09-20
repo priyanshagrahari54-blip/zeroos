@@ -70,8 +70,8 @@ def syscall_entry_checks(elf):
     require(re.search(r"pop\s+%rsp\n[^\n]*sysretq", code) is not None,
             "user RSP must be restored only immediately before SYSRET")
     require(len(re.findall(r"\bpush\s", code)) == 10, "syscall frame must have ten words")
-    code = output("objdump", "-d", str(elf))
-    require(not re.search(r"%(?:xmm|ymm|zmm)[0-9]", code),
+    code = output("objdump", "-d", "-j", ".text", str(elf))
+    require(not re.search(r"%(?:mm|xmm|ymm|zmm)[0-9]", code),
             "kernel image contains SIMD registers without context ownership")
     print("PASS: syscall frame shape and general-register-only image", flush=True)
 
@@ -112,6 +112,30 @@ def fault_test(vector):
     print(f"PASS: early vector {vector}, exact RIP/error/CR2, no triple fault", flush=True)
 
 
+def wx_fault_test(case):
+    directory = Path(f"build/wx-fault-{case}")
+    subprocess.run(["make", f"BUILD={directory}",
+                    f"EXTRA_CFLAGS=-DZEROOS_WX_FAULT_TEST={case}", "iso"], check=True)
+    text = boot(directory / "zeroos.iso", directory)
+    symbols = output("nm", "-n", str(directory / "zeroos.elf"))
+    def address(name):
+        m = re.search(rf"^([0-9a-f]+) [A-Za-z] {name}$", symbols, re.M)
+        require(m is not None, f"missing {name}")
+        return int(m[1],16)
+    fault = re.search(r"EARLY FATAL: vector=([0-9a-f]+) err=([0-9a-f]+) rip=([0-9a-f]+) cr2=([0-9a-f]+)",text)
+    require(fault is not None, f"missing W^X fault: {text}")
+    vector, error, rip, cr2 = (int(x,16) for x in fault.groups())
+    target = address("serial_write_public") if case==1 else address("wx_nx_target")
+    if case==3:
+        alias = re.search(r"sealed alias=([0-9a-f]+)",text)
+        require(alias is not None, "missing sealed alias")
+        target = int(alias[1],16)
+    require(vector==14 and error==(17 if case==2 else 3) and cr2==target,
+            f"incorrect W^X fault: {fault[0]}")
+    require(rip==(target if case==2 else address("wx_fault_site")), "incorrect fault RIP")
+    print(f"PASS: hardware W^X case {case}, exact RIP/CR2/error",flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--static", action="store_true")
@@ -125,6 +149,8 @@ def main():
         fault_test(vector)
     for vector in (2, 6, 8):
         late_fault_test(vector)
+    for case in (1,2,3):
+        wx_fault_test(case)
     text = boot(Path("build/zeroos.iso"), Path("build/no-nx"), "qemu64,-nx")
     require("ZEROOS PANIC: virtual memory initialization failed (NX required)" in text,
             "CPU without NX did not fail closed")

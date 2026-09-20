@@ -21,6 +21,7 @@ int vmm_protect_page(uint64_t virtual_address, uint64_t flags);
 int vmm_is_user_range(uint64_t virtual_address, uint64_t length, uint64_t write);
 uint64_t vmm_translate(uint64_t virtual_address);
 uint64_t vmm_root(void);
+uint64_t vmm_kernel_page_flags(uint64_t address);
 
 /*
  * CR3 / TLB isolation.
@@ -41,6 +42,8 @@ void vmm_pcid_free(uint16_t pcid);
 
 struct vmm_owned_page {
     uint64_t physical;
+    uint64_t virtual_address;
+    uint8_t executable;
     struct vmm_owned_page *next;
 };
 

@@ -147,6 +147,9 @@ static uint64_t user_fault_dispatch(struct interrupt_frame *frame) {
 
 uint64_t interrupt_dispatch(struct interrupt_frame *frame) {
     if (frame->vector < 32) {
+        /* Emergency-stack faults are fatal regardless of interrupted CPL;
+         * they must never be handed to the task-stack rescheduler. */
+        if (frame->vector==2 || frame->vector==8) halt_exception(frame);
         /*
          * In 64-bit mode the CPU always pushes the full five-word frame
          * (SS, RSP, RFLAGS, CS, RIP), so both the CS and SS words are

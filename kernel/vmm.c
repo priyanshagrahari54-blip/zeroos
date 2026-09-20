@@ -9,7 +9,7 @@
 #define HUGE_PAGE_SIZE 0x200000ULL
 #define PHYS_MASK 0x000ffffffffff000ULL
 
-#define VMM_LEAF_FLAGS 0x00000000000001ffULL
+#define VMM_LEAF_FLAGS 0x01fULL /* P/RW/U/PWT/PCD only; no global or PS */
 
 /* User mappings live in PML4 slot 254 (the 0x00007f... canonical range). */
 #define VMM_USER_PML4_INDEX 254ULL
@@ -242,33 +242,68 @@ int vmm_init(void) {
     if (!pd)
         return -1;
 
-    /*
-     * Keep a compact identity/direct map for the complete physical range
-     * currently managed by the physical allocator.  512 MiB needs only one
-     * 4 KiB page directory (256 x 2 MiB entries).
-     *
-     * The first 2 MiB contains the executable kernel/bootstrap area.
-     * Remaining RAM is writable and non-executable.
-     */
-    uint64_t tracked = memory_max_physical();
-    uint64_t entries = tracked / HUGE_PAGE_SIZE;
-    if (entries > ENTRY_COUNT)
-        entries = ENTRY_COUNT;
-
-    for (uint64_t i = 0; i < entries; ++i) {
-        uint64_t flags = VMM_PRESENT | VMM_WRITABLE | HUGE_PAGE_2M;
-        if (i != 0)
-            flags |= VMM_NO_EXECUTE;
-        pd[i] = i * HUGE_PAGE_SIZE | flags;
+    /* Preallocate 4 KiB identity leaves for the bounded 512 MiB aperture.
+     * This costs 1 MiB of tables, avoids permission-split allocations in
+     * publication/rollback, and makes alias sealing deterministic. */
+    extern char __kernel_start, __kernel_text_start, __kernel_text_end;
+    extern char __kernel_ro_start, __kernel_ro_end;
+    uint64_t tracked=memory_max_physical();
+    uint64_t entries=(tracked+HUGE_PAGE_SIZE-1)/HUGE_PAGE_SIZE;
+    if (entries>ENTRY_COUNT) return -1;
+    for (uint64_t i=0;i<entries;++i) {
+        uint64_t *pt=page_alloc_zero();
+        if (!pt) return -1;
+        pd[i]=(uint64_t)pt|VMM_PRESENT|VMM_WRITABLE;
+        for (uint64_t j=0;j<ENTRY_COUNT;++j) {
+            uint64_t pa=i*HUGE_PAGE_SIZE+j*VMM_PAGE_SIZE;
+            if (!pa || pa>=tracked) continue;
+            uint64_t flags=VMM_PRESENT|VMM_WRITABLE|VMM_NO_EXECUTE;
+            if (pa>=(uint64_t)&__kernel_text_start && pa<(uint64_t)&__kernel_text_end)
+                flags=VMM_PRESENT; /* RX, supervisor only */
+            else if ((pa>=(uint64_t)&__kernel_ro_start && pa<(uint64_t)&__kernel_ro_end) ||
+                     (pa>=(uint64_t)&__kernel_start && pa<(uint64_t)&__kernel_text_start))
+                flags=VMM_PRESENT|VMM_NO_EXECUTE;
+            pt[j]=pa|flags;
+        }
     }
 
     vmm_load_root(root_physical, 0);
     return 0;
 }
 
-int vmm_map_page(uint64_t virtual_address,
+/* Identity leaves are permanent and private to this module. Public map,
+ * unmap and protect cannot weaken kernel/physical-alias permissions. */
+static uint64_t *leaf_entry(uint64_t *root, uint64_t va) {
+    if (!root || !canonical_address(va)) return 0;
+    uint64_t e=root[(va>>39)&511];
+    if (!(e&VMM_PRESENT) || (e&HUGE_PAGE_2M)) return 0;
+    uint64_t *table=table_from_entry(e);
+    e=table[(va>>30)&511];
+    if (!(e&VMM_PRESENT) || (e&HUGE_PAGE_2M)) return 0;
+    table=table_from_entry(e);
+    e=table[(va>>21)&511];
+    if (!(e&VMM_PRESENT) || (e&HUGE_PAGE_2M)) return 0;
+    table=table_from_entry(e);
+    return &table[(va>>12)&511];
+}
+uint64_t vmm_kernel_page_flags(uint64_t va) {
+    uint64_t *leaf=leaf_entry(root_table,va);
+    return leaf ? (*leaf & ~PHYS_MASK) : 0;
+}
+static int protect_identity(uint64_t pa, int writable) {
+    uint64_t *leaf=leaf_entry(root_table,pa);
+    if (!memory_page_is_allocated(pa) || !leaf ||
+        !(*leaf&VMM_PRESENT) || (*leaf&PHYS_MASK)!=pa) return -1;
+    *leaf=pa|VMM_PRESENT|VMM_NO_EXECUTE|(writable ? VMM_WRITABLE : 0);
+    invalidate_page(pa);
+    return 0;
+}
+
+static int vmm_map_page_locked(uint64_t virtual_address,
                  uint64_t physical_address,
                  uint64_t flags) {
+    if (virtual_address < memory_max_physical() || !(flags&VMM_NO_EXECUTE) ||
+        (flags&~(VMM_LEAF_FLAGS|VMM_NO_EXECUTE))) return -1;
     if (!root_table || !canonical_address(virtual_address))
         return -1;
     if ((virtual_address & (VMM_PAGE_SIZE - 1)) != 0)
@@ -301,6 +336,7 @@ int vmm_map_page(uint64_t virtual_address,
     if (pt[pt_index] & VMM_PRESENT)
         return -1;
 
+    if (memory_claim_page(physical_address)!=0) return -1;
     pt[pt_index] = (physical_address & PHYS_MASK) |
                    VMM_PRESENT | (flags & (VMM_LEAF_FLAGS | VMM_NO_EXECUTE));
 
@@ -308,7 +344,8 @@ int vmm_map_page(uint64_t virtual_address,
     return 0;
 }
 
-int vmm_unmap_page(uint64_t virtual_address) {
+static int vmm_unmap_page_locked(uint64_t virtual_address) {
+    if (virtual_address < memory_max_physical()) return -1;
     if (!root_table || !canonical_address(virtual_address))
         return -1;
     if ((virtual_address & (VMM_PAGE_SIZE - 1)) != 0)
@@ -342,20 +379,18 @@ int vmm_unmap_page(uint64_t virtual_address) {
     if (!(pt[pt_index] & VMM_PRESENT))
         return -1;
 
+    uint64_t physical=pt[pt_index]&PHYS_MASK;
     pt[pt_index] = 0;
     invalidate_page(virtual_address);
+    memory_unclaim_page(physical);
     return 0;
 }
 
 /*
  * Per-address-space user-range validation. Walks the supplied space's root,
- * so it can be used for the space of a user process that is not the one
- * currently loaded in CR3. Unlike the kernel-root variant, this requires
- * the user bit on every intermediate entry as well: process page tables
- * are writable by the process if the kernel ever exposes a table page, so
- * the walk must not trust intermediate entries that the kernel would never
- * create without the user bit (space_ensure_table() always sets it for
- * user mappings).
+ * so it can validate a non-current process. U/S and write permission are
+ * effective only when allowed at EVERY level. All table memory remains
+ * supervisor-owned; neither this walker nor the CPU trusts leaf bits alone.
  */
 int vmm_space_is_user_range(const struct vmm_space *space, uint64_t virtual_address,
                             uint64_t length, uint64_t write) {
@@ -470,7 +505,9 @@ int vmm_unmap_range(uint64_t virtual_address, uint64_t page_count) {
     return 0;
 }
 
-int vmm_protect_page(uint64_t virtual_address, uint64_t flags) {
+static int vmm_protect_page_locked(uint64_t virtual_address, uint64_t flags) {
+    if (virtual_address < memory_max_physical() || !(flags&VMM_NO_EXECUTE) ||
+        (flags&~(VMM_LEAF_FLAGS|VMM_NO_EXECUTE))) return -1;
     if (!root_table || !canonical_address(virtual_address) ||
         (virtual_address & (VMM_PAGE_SIZE - 1)) != 0)
         return -1;
@@ -496,6 +533,12 @@ int vmm_protect_page(uint64_t virtual_address, uint64_t flags) {
     uint64_t *pt = table_from_entry(e3);
     if (!(pt[pt_index] & VMM_PRESENT)) return -1;
 
+    if (flags&VMM_USER) {
+        if (pml4_index!=VMM_USER_PML4_INDEX) return -1;
+        root_table[pml4_index]|=VMM_USER;
+        pdpt[pdpt_index]|=VMM_USER;
+        pd[pd_index]|=VMM_USER;
+    }
     pt[pt_index] = (pt[pt_index] & PHYS_MASK) |
                    VMM_PRESENT |
                    (flags & (VMM_LEAF_FLAGS | VMM_NO_EXECUTE));
@@ -503,59 +546,10 @@ int vmm_protect_page(uint64_t virtual_address, uint64_t flags) {
     return 0;
 }
 
-/*
- * Kernel-root user-range validation. Hardware semantics: the MMU ignores
- * U/S on intermediate (non-leaf) entries, so only presence is required
- * there; the leaf must be present, user-accessible, and (for write)
- * writable. This walks the kernel root, which the kernel alone controls.
- *
- * Do NOT reuse this for process spaces: vmm_space_is_user_range() is
- * deliberately stricter (it also requires the user bit on every
- * intermediate entry) because a process's page tables can be corrupted
- * by the process itself.
- */
+/* Kernel-root validation uses the same hardware-effective access walk. */
 int vmm_is_user_range(uint64_t virtual_address, uint64_t length, uint64_t write) {
-    if (!root_table || length == 0 || !canonical_address(virtual_address))
-        return 0;
-    if (virtual_address + length < virtual_address)
-        return 0;
-
-    uint64_t end = virtual_address + length - 1;
-    if (!canonical_address(end))
-        return 0;
-
-    uint64_t cursor = virtual_address & ~(VMM_PAGE_SIZE - 1ULL);
-    uint64_t last = end & ~(VMM_PAGE_SIZE - 1ULL);
-
-    for (;;) {
-        uint64_t pml4_index = (cursor >> 39) & 0x1ff;
-        uint64_t pdpt_index = (cursor >> 30) & 0x1ff;
-        uint64_t pd_index = (cursor >> 21) & 0x1ff;
-        uint64_t pt_index = (cursor >> 12) & 0x1ff;
-
-        uint64_t e1 = root_table[pml4_index];
-        if (!(e1 & VMM_PRESENT)) return 0;
-        uint64_t *pdpt = table_from_entry(e1);
-        uint64_t e2 = pdpt[pdpt_index];
-        if (!(e2 & VMM_PRESENT)) return 0;
-        uint64_t *pd = table_from_entry(e2);
-        uint64_t e3 = pd[pd_index];
-        if (!(e3 & VMM_PRESENT)) return 0;
-
-        if (e3 & HUGE_PAGE_2M) {
-            if (!(e3 & VMM_USER)) return 0;
-            if (write && !(e3 & VMM_WRITABLE)) return 0;
-        } else {
-            uint64_t *pt = table_from_entry(e3);
-            uint64_t e4 = pt[pt_index];
-            if (!(e4 & VMM_PRESENT) || !(e4 & VMM_USER)) return 0;
-            if (write && !(e4 & VMM_WRITABLE)) return 0;
-        }
-
-        if (cursor == last) break;
-        cursor += VMM_PAGE_SIZE;
-    }
-    return 1;
+    struct vmm_space view={.root=root_table};
+    return vmm_space_is_user_range(&view,virtual_address,length,write);
 }
 
 
@@ -627,6 +621,11 @@ static void vmm_space_destroy_locked(struct vmm_space *space) {
     struct vmm_owned_page *cursor = space->owned_pages;
     while (cursor) {
         struct vmm_owned_page *next = cursor->next;
+        if (cursor->virtual_address) {
+            uint64_t *leaf=leaf_entry(space->root,cursor->virtual_address);
+            if (leaf) *leaf=0;
+        }
+        if (cursor->executable) protect_identity(cursor->physical,1);
         memory_unclaim_page(cursor->physical);
         page_free((void *)cursor->physical);
         kfree(cursor);
@@ -685,7 +684,8 @@ static int vmm_space_map_page_locked(struct vmm_space *space, uint64_t virtual_a
      * writable and executable. (flags & VMM_WRITABLE) together with the
      * absence of VMM_NO_EXECUTE would be writable+executable.
      */
-    if ((flags & VMM_WRITABLE) && !(flags & VMM_NO_EXECUTE))
+    if ((flags & ~(VMM_LEAF_FLAGS|VMM_NO_EXECUTE)) ||
+        ((flags & VMM_WRITABLE) && !(flags & VMM_NO_EXECUTE)))
         return -1;
 
     if (vmm_space_own_page(space, physical_address) != 0)
@@ -715,6 +715,12 @@ static int vmm_space_map_page_locked(struct vmm_space *space, uint64_t virtual_a
         return -1;
     }
 
+    if (!(flags&VMM_NO_EXECUTE) && protect_identity(physical_address,0)!=0) {
+        vmm_space_release_page(space,physical_address);
+        return -1;
+    }
+    space->owned_pages->virtual_address=virtual_address;
+    space->owned_pages->executable=!(flags&VMM_NO_EXECUTE);
     pt[pt_i] = (physical_address & PHYS_MASK) |
                VMM_PRESENT | (flags & (VMM_LEAF_FLAGS|VMM_NO_EXECUTE));
     if (space->root_physical == active_root)
@@ -741,8 +747,10 @@ static int vmm_space_unmap_page_locked(struct vmm_space *space, uint64_t virtual
     uint64_t idx=(virtual_address>>12)&0x1ff;
     if (!(pt[idx]&VMM_PRESENT)) return -1;
     uint64_t physical=pt[idx]&PHYS_MASK;
+    int executable=!(pt[idx]&VMM_NO_EXECUTE);
     pt[idx]=0;
     if (space->root_physical==active_root) invalidate_page(virtual_address);
+    if (executable) protect_identity(physical,1);
     vmm_space_release_page(space, physical);
     return 0;
 }
@@ -792,6 +800,8 @@ static int vmm_space_own_page_locked(struct vmm_space *space, uint64_t physical)
     cursor = (struct vmm_owned_page *)kmalloc(sizeof(*cursor));
     if (!cursor) { memory_unclaim_page(physical); return -1; }
     cursor->physical = physical;
+    cursor->virtual_address=0;
+    cursor->executable=0;
     cursor->next = space->owned_pages;
     space->owned_pages = cursor;
     ++space->owned_page_count;
@@ -873,4 +883,25 @@ void vmm_pcid_free(uint16_t pcid) {
     uint64_t irq=irq_save();
     vmm_pcid_free_locked(pcid);
     irq_restore(irq);
+}
+
+int vmm_map_page(uint64_t virtual_address, uint64_t physical_address, uint64_t flags) {
+    uint64_t irq=irq_save();
+    int result=vmm_map_page_locked(virtual_address, physical_address, flags);
+    irq_restore(irq);
+    return result;
+}
+
+int vmm_unmap_page(uint64_t virtual_address) {
+    uint64_t irq=irq_save();
+    int result=vmm_unmap_page_locked(virtual_address);
+    irq_restore(irq);
+    return result;
+}
+
+int vmm_protect_page(uint64_t virtual_address, uint64_t flags) {
+    uint64_t irq=irq_save();
+    int result=vmm_protect_page_locked(virtual_address, flags);
+    irq_restore(irq);
+    return result;
 }

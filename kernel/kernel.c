@@ -323,6 +323,76 @@ static void vmm_space_self_test(void) {
     serial_write_public("ZEROOS: per-address-space VMM self-test passed.\n");
 }
 
+static void vmm_security_self_test(void) {
+    extern char __kernel_text_start, __kernel_text_end, __kernel_ro_start, __kernel_ro_end;
+    uint64_t pages=memory_free_pages(), heap=heap_used_bytes();
+    uint64_t cr0;
+    __asm__ volatile ("mov %%cr0,%0" : "=r"(cr0));
+    if ((cr0&0x10008)!=0x10008) kernel_panic("WP/TS security baseline missing");
+    for (uint64_t va=(uint64_t)&__kernel_text_start;va<(uint64_t)&__kernel_text_end;va+=4096)
+        if ((vmm_kernel_page_flags(va)&(VMM_PRESENT|VMM_WRITABLE|VMM_NO_EXECUTE))!=VMM_PRESENT)
+            kernel_panic("kernel text is not RX");
+    for (uint64_t va=(uint64_t)&__kernel_ro_start;va<(uint64_t)&__kernel_ro_end;va+=4096)
+        if ((vmm_kernel_page_flags(va)&(VMM_PRESENT|VMM_WRITABLE|VMM_NO_EXECUTE))!=
+            (VMM_PRESENT|VMM_NO_EXECUTE)) kernel_panic("kernel constants are not RO/NX");
+    if (vmm_protect_page((uint64_t)&__kernel_text_start,VMM_WRITABLE|VMM_NO_EXECUTE)!=-1)
+        kernel_panic("public VMM API weakened kernel text");
+    struct vmm_space a={0},b={0};
+    uint64_t pa=(uint64_t)page_alloc_zero(), pb=(uint64_t)page_alloc_zero();
+    if (!pa || !pb || vmm_space_create(&a) || vmm_space_create(&b))
+        kernel_panic("isolation test allocation failed");
+    uint64_t flags=VMM_USER|VMM_WRITABLE|VMM_NO_EXECUTE;
+    if (vmm_space_map_page(&a,VMM_SPACE_TEST_VA,pa,flags) ||
+        vmm_space_map_page(&b,VMM_SPACE_TEST_VA,pb,flags)) kernel_panic("isolation mapping failed");
+    if (vmm_space_map_page(&b,VMM_SPACE_TEST_VA+4096,pa,flags)!=-1 ||
+        vmm_space_map_page(&b,VMM_SPACE_TEST_VA+4096,(uint64_t)&__kernel_text_start,flags)!=-1)
+        kernel_panic("foreign/reserved physical page accepted");
+    *(uint64_t *)pa=0x1111; *(uint64_t *)pb=0x2222;
+    for (uint64_t i=0;i<64;++i) {
+        if (vmm_space_activate(&a)) kernel_panic("activate A failed");
+        if (*(volatile uint64_t *)VMM_SPACE_TEST_VA!=0x1111+i) kernel_panic("A saw foreign translation");
+        *(volatile uint64_t *)VMM_SPACE_TEST_VA=0x1112+i;
+        if (vmm_space_activate(&b)) kernel_panic("activate B failed");
+        if (*(volatile uint64_t *)VMM_SPACE_TEST_VA!=0x2222+i) kernel_panic("B saw foreign translation");
+        *(volatile uint64_t *)VMM_SPACE_TEST_VA=0x2223+i;
+    }
+    vmm_load_root(vmm_root(),0);
+    vmm_space_destroy(&a); vmm_space_destroy(&b);
+    pa=(uint64_t)page_alloc_zero();
+    if (!pa || vmm_space_create(&a)) kernel_panic("code alias test allocation failed");
+    *(uint8_t *)pa=0xc3;
+    if (vmm_space_map_page(&a,VMM_SPACE_TEST_VA,pa,VMM_USER)) kernel_panic("RX publication failed");
+    if (vmm_kernel_page_flags(pa)&VMM_WRITABLE) kernel_panic("RX page has writable alias");
+    if (vmm_map_page(VMM_SELF_TEST_VA,pa,VMM_WRITABLE|VMM_NO_EXECUTE)!=-1)
+        kernel_panic("writable second alias accepted");
+    vmm_space_destroy(&a);
+    if (!(vmm_kernel_page_flags(pa)&VMM_WRITABLE)) kernel_panic("code alias not reclaimed");
+    if (memory_free_pages()!=pages || heap_used_bytes()!=heap || heap_validate()!=0)
+        kernel_panic("VMM security tests leaked resources");
+    serial_write_public("ZEROOS: live-CR3 isolation, ownership and W^X passed.\n");
+}
+
+#if ZEROOS_WX_FAULT_TEST
+uint8_t wx_nx_target[16];
+static void wx_fault_test(void) {
+#if ZEROOS_WX_FAULT_TEST == 1
+    __asm__ volatile (".global wx_fault_site\nwx_fault_site: movb $0,(%0)"
+                      : : "r"(serial_write_public) : "memory");
+#elif ZEROOS_WX_FAULT_TEST == 2
+    wx_nx_target[0]=0xc3;
+    __asm__ volatile ("call *%0" : : "r"(wx_nx_target) : "memory");
+#elif ZEROOS_WX_FAULT_TEST == 3
+    struct vmm_space space={0};
+    uint64_t pa=(uint64_t)page_alloc_zero();
+    if (!pa || vmm_space_create(&space) || vmm_space_map_page(&space,VMM_SPACE_TEST_VA,pa,VMM_USER))
+        kernel_panic("alias fault probe setup failed");
+    serial_write_public("ZEROOS: sealed alias="); serial_write_u64_public(pa); serial_write_public("\n");
+    __asm__ volatile (".global wx_fault_site\nwx_fault_site: movb $0,(%0)" : : "r"(pa) : "memory");
+#endif
+    kernel_panic("W^X fault probe unexpectedly returned");
+}
+#endif
+
 static void heap_self_test(void) {
     uint64_t capacity=heap_capacity_bytes();
     void *p1,*p2,*p3,*big;
@@ -815,6 +885,25 @@ static void ring3_orchestrator(void *argument) {
         kernel_panic("ring-3 negative case reap failed");
     serial_write_public("ZEROOS: user pointer validation verified.\n");
 
+    for (uint64_t test=6;test<=10;++test) {
+        ring3_run_case(test,100,1,&pid);
+        struct process *p=process_find(pid);
+        uint64_t vector=test<=8 ? 7 : 13;
+        if (!p || p->exit_code!=(0x100ULL|vector))
+            kernel_panic("register/return containment vector mismatch");
+        if (process_reap(pid)!=0) kernel_panic("register fault reap failed");
+    }
+    serial_write_public("ZEROOS: integer-only state and bad-RSP containment passed.\n");
+
+    for (uint64_t test=11;test<=16;++test) {
+        ring3_run_case(test,100,1,&pid);
+        struct process *p=process_find(pid);
+        uint64_t vector=(test==14 || test==16) ? 13 : 14;
+        if (!p || p->exit_code!=(0x100ULL|vector)) kernel_panic("W^X/access fault vector mismatch");
+        if (process_reap(pid)!=0) kernel_panic("access fault reap failed");
+    }
+    serial_write_public("ZEROOS: user W^X, kernel access and I/O denial passed.\n");
+
     if (timer_ticks()>deadline) {
         ring3_failures++;
         kernel_panic("ring-3 certification exceeded tick budget");
@@ -1001,9 +1090,13 @@ void kernel_main(uint64_t multiboot_info, uint64_t multiboot_magic) {
     if (heap_init()!=0) kernel_panic("kernel heap initialization failed");
     serial_write_public("ZEROOS: kernel heap initialized.\n");
     serial_write_public("ZEROOS: heap self-test starting.\n");
+#if ZEROOS_WX_FAULT_TEST
+    wx_fault_test();
+#endif
     heap_self_test();
 
     vmm_space_self_test();
+    vmm_security_self_test();
 
     sync_self_test();
 
