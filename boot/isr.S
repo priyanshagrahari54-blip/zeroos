@@ -1801,7 +1801,12 @@ isr_common:
     pushq %r13
     pushq %r14
     pushq %r15
+
+    /* IST changes the stack, not the frame shape. RAX returned by C is
+     * the resume frame/context, so temporary call alignment is discarded. */
+    cld
     mov %rsp, %rdi
+    andq $-16, %rsp
     call interrupt_dispatch
 
     /*

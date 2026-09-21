@@ -1,78 +1,90 @@
-# ZEROOS Virtual Memory
+# ZEROOS virtual memory
 
-## Architecture
+## Problem and ownership boundary
 
-ZEROOS uses the x86-64 four-level paging hierarchy:
+Processes need identical virtual layouts without sharing mutable storage.
+ZEROOS assigns each address space a root and an exclusive list of user frames;
+a process owns that space, while a thread owns execution state. The x86-64
+four-level table format is the hardware boundary, not an imported internal API.
+See [the closure design](STAGE1_CLOSURE_DESIGN.md) for transaction invariants.
 
-    Virtual address
-          |
-          v
-        PML4
-          |
-          v
-        PDPT
-          |
-          v
-         PD
-          |
-          +---- 2 MiB huge page
-          |
-          v
-         PT
-          |
-          v
-       4 KiB page
-          |
-          v
-      Physical memory
+## Permanent kernel map
 
-The Intel architecture defines a PDE with PS=1 as a 2 MiB mapping; ordinary PTEs map 4 KiB pages. citeturn2search12turn2search14
+After `vmm_init`, the first 512 MiB aperture uses 4 KiB leaves, with page zero
+absent and every mapping supervisor-only. Linker-aligned regions are:
 
-## Current implementation
-
-- Creates a dedicated PML4 and switches CR3 to it.
-- Builds missing paging levels from physical pages supplied by the allocator.
-- Establishes a compact 2 MiB identity/direct mapping for the current 512 MiB bootstrap physical range.
-- Keeps the first 2 MiB executable for the bootstrap/kernel image.
-- Marks the remaining bootstrap RAM mappings non-executable.
-- Supports 4 KiB map, unmap and software translation.
-- Automatically splits a 2 MiB mapping into a 4 KiB PT when a fine-grained mapping is requested.
-- Uses INVLPG for leaf mapping changes.
-- Uses a CR3 reload when changing a paging-structure level during huge-page splitting, so stale translations cannot survive the page-size transition.
-
-Hierarchical page tables avoid allocating a flat table for unused virtual address space, while large mappings reduce page-table depth and TLB pressure. citeturn3search3turn3search7
-
-## Huge-page policy
-
-ZEROOS does not blindly use 4 KiB pages for everything.
-
-| Mapping | Policy |
+| Region | Permissions |
 |---|---|
-| Kernel/bootstrap | 2 MiB where alignment/layout permit |
-| Large contiguous regions | Prefer 2 MiB mappings |
-| Fine-grained mappings | 4 KiB |
-| Partial huge-page mapping | Split only the affected 2 MiB region |
-| User address spaces | Future per-process policy |
+| Kernel text | read/execute, not writable |
+| Constants and embedded user-image source | read-only, NX |
+| Kernel data, stacks and other direct-map RAM | read/write, NX |
 
-Intel documents 2 MiB and 1 GiB x86 page sizes and notes their TLB/page-walk benefits, while also warning that large mappings must respect memory-type boundaries. citeturn0search0turn6search13
+CR0.WP and EFER.NXE enforce these permissions for the kernel too. Unsupported
+NX CPUs are rejected. The temporary assembly paging used to enter long mode
+precedes this policy; no user thread exists during that bootstrap transition.
+Preallocating the aperture's 256 leaf tables costs 1 MiB and avoids allocation
+or huge-page splitting in permission-publication/rollback transactions.
+General root mapping/protection/unmap APIs cannot alter the aperture or create
+executable aliases. Root and user mutators reject unsupported flag bits.
 
-## TLB discipline
+## User spaces and W^X
 
-Changing a page-table entry without invalidating cached translations can leave the processor using stale mappings. ZEROOS therefore invalidates a changed leaf mapping and performs a full CR3 reload when the page-size level itself changes. Intel documents INVLPG and CR3 reloads as TLB/page-structure invalidation mechanisms. citeturn4search14turn4search15
+Each `vmm_space` has an independent PML4. Slot 0 shares the supervisor kernel
+map; user mappings are confined to slot 254:
+`0x00007f0000000000 .. 0x00007fffffffffff`.
+The initial layout has one RX code page, an RW/NX data page, and an RW/NX
+stack page, separated by unmapped holes. Writable-executable leaves are denied.
 
-## Current limits
+The PMM distinguishes reservations, runtime allocations and exclusive mapping
+claims. Mapping a reserved/free frame or an already claimed frame fails,
+including cross-space duplication. A claim also prevents premature `page_free`.
+Code is filled through an RW/NX physical alias **before** publication. Its
+physical alias is changed to RO/NX before the user RX PTE becomes visible.
+Unmap removes the RX mapping before restoring the physical alias to RW/NX.
+Thus the same frame cannot remain writable through the kernel direct map.
 
-Still intentionally not implemented:
+A successful map transfers responsibility to the space. Unmap returns the
+unclaimed allocation to the caller; destroy frees its remaining user frames,
+private tables, descriptors and optional PCID. A failed map retains caller
+ownership; empty private tables can remain until space destruction. Process
+spawn rollback destroys the entire partial space and frees untransferred pages.
 
-- per-process address-space objects
-- page-fault-driven demand allocation
-- copy-on-write
-- memory-mapped files
-- swap/reclaim
-- page-table page reclamation
-- PCID/INVPCID
-- SMP TLB shootdown
-- 1 GiB mapping policy
-- user/kernel higher-half layout
+## TLB and PCID discipline
 
-These are the next advanced VM layers, not replacements for the current page-table interface.
+PCID is optional and detected from CPUID, not assumed from the CPU model name.
+A space acquires its own ID (1–31) and releases it at destruction. Every CR3
+load clears bit 63: the incoming context is flushed, even with a PCID. No
+GLOBAL mappings are installed and **no retained-TLB performance benefit is
+claimed**. INVPCID is used only if separately supported; safe reuse does not
+depend on it. Non-PCID CPUs use the full-flush fallback.
+
+Current-space leaf changes invalidate cached translations. Every later
+activation flushes the incoming context, including shared-alias permission
+changes made while a different space was active. This is a single-CPU rule;
+SMP will require a separate invalidation/ownership design.
+
+## User range validation
+
+The walker checks canonical endpoints, overflow, the user window, every covered
+page, and effective present/user/write permissions at all paging levels.
+Unsupported upper-level huge entries are rejected rather than dereferenced as
+tables. No user byte is copied before the complete range passes validation.
+The production mapper installs base pages only; software walking of existing
+2 MiB leaves does not imply a user huge-page allocation policy.
+
+## Evidence and limits
+
+Native tests exercise range boundaries, ownership, claim/free ordering,
+allocation failures, and PCID allocation/exhaustion/reuse. Guest tests perform
+64 alternating live-CR3 accesses to the same VA with different physical
+backing, then check resource reclamation. Sixty-four identifier-reuse cycles
+retain and poison the retired data frame while mapping a different frame at
+the same VA, detecting stale translations even when allocator reuse might
+otherwise conceal them. Separate fatal images provoke kernel
+text writes, NX execution, and writes to a sealed executable alias; CPL3 cases
+try code writes, data/stack execution and kernel reads. Exact run results and
+actual PCID hardware coverage are in [VALIDATION.md](VALIDATION.md).
+
+Not implemented: demand allocation, COW, shared user pages, file mappings,
+swap/reclaim, general huge-page policy, SMP shootdown, or higher-half relocation.
+These are future designs, not claims about the current foundation.

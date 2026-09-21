@@ -1,88 +1,66 @@
-# ZEROOS Interrupt Architecture
+# ZEROOS interrupt boundary
 
-Interrupts are the kernel event-delivery mechanism. CPU exceptions and hardware events enter through the IDT and normalized assembly entry stubs.
+The x86-64 IDT/TSS/frame formats are hardware standards. ZEROOS owns the
+normalization, dispatch, fault policy, IRQ binding and scheduling rules.
+See [X86_BOUNDARY.md](X86_BOUNDARY.md) for exact offsets and encodings.
 
-## IDT and entry path
+## Entry and return
 
-ZEROOS creates 256 64-bit IDT gate descriptors.
+There are 256 16-byte IDT gates. The common assembly entry normalizes the
+hardware/software error-code distinction and saves all 15 general registers.
+The 176-byte frame contains GPRs, vector, error, RIP, CS, RFLAGS, RSP and SS.
+In 64-bit mode the CPU frame includes SS:RSP even for same-CPL delivery;
+IRETQ restores them. An IST switch does **not** add an IST-index word.
+Kernel C is compiled general-register-only.
 
-The assembly layer normalizes the interrupt stack into:
+An early fatal IDT precedes allocator/VMM initialization. Both fatal paths
+report vector, error, saved RIP and CR2 for page faults, then halt. QEMU tests
+assert exact fault addresses/codes, not merely the presence of a message.
 
-    saved GPRs
-        |
-    vector
-    error_code
-        |
-    CPU return frame
-        |
-      C dispatcher
+## Emergency stacks
 
-Exceptions that architecturally push an error code keep that CPU-provided error code. Other vectors receive a synthetic zero error code. The common handler saves and restores all general-purpose registers before returning with IRETQ.
+The #DF gate uses IST1; the NMI gate uses IST2. These are separate permanent
+16 KiB stacks, independent of task RSP0. The IST index belongs in the low three
+bits of **gate byte 4**, not the access/type byte. The complete 104-byte TSS
+contains the stack pointers and an I/O-map offset beyond its descriptor limit,
+which denies user port I/O.
 
-## Exception diagnostics
+NMI and #DF are fatal regardless of interrupted CPL. They never become an
+ordinary reschedulable user fault. The CI NMI case invokes the NMI gate in
+software to test its frame/stack path; it does not emulate every asynchronous
+NMI interleaving. A separate case causes a genuine double fault.
 
-Fatal CPU exceptions report vector, decoded exception name, error code, saved RIP, and CR2 for page faults, then enter a halted panic state.
+## User fault containment
 
-## IRQ ownership and dispatch
+For other exceptions, saved **CS.RPL** identifies the interrupted privilege
+level. A CPL3 exception marks the process/thread terminal with a fault-derived
+exit code and requests a switch at IRQ exit. A CPL0 exception is fatal.
+Interrupt gates and the dispatcher keep IRQs disabled while the task becomes
+terminal, avoiding an intermediate non-running current task visible to a tick.
+The selected task's IRETQ frame restores its own flags.
 
-Hardware IRQs are now separated from device-specific handling:
+TSS.RSP0 is updated on every task switch to that task's kernel-stack entry
+point (with 512 bytes of headroom reserved). CPL3 IRQs/exceptions therefore do
+not use a user-supplied stack. Syscalls separately select the thread's trusted
+kernel stack; they do not rely on the SYSCALL instruction to switch RSP.
 
-    hardware IRQ
-         |
-         v
-    IDT vector 32-47
-         |
-         v
-    common ISR entry
-         |
-         v
-    interrupt_dispatch()
-         |
-         +--> IRQ binding
-                |
-                +--> registered handler
-                |
-                +--> PIC EOI
+## IRQ binding and timer
 
-irq_register() installs one owner for each legacy PIC IRQ. irq_unregister()
-requires the same handler/context pair, preventing accidental removal of a
-different binding.
+The 8259 PIC supplies vectors 32–47. `irq_register` binds one handler/context
+pair per IRQ; `irq_unregister` requires that same pair. Dispatch calls the
+bound handler and sends EOI. Device code does not own PIC details.
 
-The interface is controller-independent enough for later Local APIC/IOAPIC
-routing to replace the current 8259 implementation without making drivers own
-PIC details.
+The PIT supplies a 100 Hz bootstrap tick. Its handler accounts ticks and calls
+a bounded tick hook. The scheduler accounts time, wakes expired sleepers,
+reclaims eligible terminal tasks and requests preemption; the actual frame
+switch occurs at common IRQ exit, not inside the timer C call chain.
 
-## Timer
+Before `task_start_first`, slot 0 is a bootstrap context on the boot stack.
+Both the tick hook and IRQ-exit scheduler exempt it from task-stack checks.
+A fault-instrumented boot deliberately receives two ticks in this state to
+regress the previously observed stack-guard panic. Real tasks retain all guard
+and frame checks.
 
-The PIT remains a 100 Hz bootstrap clock. Its IRQ handler only performs tick
-accounting and an optional tiny tick hook. It does not perform logging,
-filesystem I/O, or scheduler policy.
-
-The timer exposes:
-
-- timer_ticks()
-- timer_frequency_hz()
-- timer_register_tick_hook()
-
-The tick hook is the scheduler insertion point. It runs in interrupt context,
-so future scheduler accounting must remain bounded and non-sleeping.
-
-Keeping interrupt work small and separating interrupt-context synchronization
-from task-context sleeping is consistent with established kernel designs.
-citeturn0search1turn0search4
-
-## Production direction
-
-| Current | Advanced direction |
-|---|---|
-| 8259 PIC | Local APIC + IOAPIC |
-| PIT | APIC/HPET/TSC-backed clock-event layer |
-| Global periodic tick | Per-CPU event scheduling / idle tick suppression |
-| Single CPU | SMP-aware interrupt routing |
-| Single IRQ owner | Shared/managed device IRQ registration where required |
-| Hard IRQ handler | Deferred work / threaded device handling |
-| No TLB shootdown | SMP invalidation protocol |
-
-The legacy path remains because it gives ZEROOS a deterministic early-boot
-interrupt mechanism before the modern interrupt controller and scheduler layers
-exist.
+The current scope is one CPU, PIC/PIT, bounded wait/sleep and IRQ-exit
+preemption. APIC routing, SMP, shared IRQ policy, deferred device work and
+high-resolution clocks are future work. See VALIDATION.md for tested scope.

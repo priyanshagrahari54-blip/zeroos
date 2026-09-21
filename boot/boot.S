@@ -55,19 +55,21 @@ _start:
     mov $stack_top, %esp
     mov $pml4_table, %eax
     mov %eax, %cr3
-    mov %cr4, %eax
-    # PAE + OSFXSR + OSXMMEXCPT for compiler-generated SSE instructions.
-    or $0x620, %eax
+    # Establish exactly four-level paging and a known feature baseline;
+    # do not inherit LA57, OSXSAVE, FSGSBASE or global-TLB policy from GRUB.
+    # PAE + architectural SSE support; CR0.TS below denies extended-state use.
+    mov $0x620, %eax
     mov %eax, %cr4
     mov $0xC0000080, %ecx
     rdmsr
     or $0x100, %eax
     wrmsr
-    # Enable paging and establish the x86-64 floating-point/SSE baseline
-    # expected by compiler-generated code in long mode.
+    # Integer-only Stage 1: TS stays set. x87/MMX/SSE access traps (#NM)
+    # instead of exposing a previous thread's extended register state.
+    # Kernel C is compiled with -mgeneral-regs-only.
     mov %cr0, %eax
     and $~0x4, %eax
-    or $0x00010002, %eax
+    or $0x0001000a, %eax
     or $0x80000000, %eax
     mov %eax, %cr0
     lgdt gdt64_ptr
@@ -81,6 +83,19 @@ long_mode:
     mov %ax, %ss
     mov $stack_top, %rsp
     and $-16, %rsp
+
+    # PCID (CPUID.1:ECX[17]): optional address-space TLB tagging.
+    # CR3 loads always invalidate the incoming context; the VMM checks
+    # CPUID independently and falls back to full TLB flushes when absent.
+    xor %eax, %eax
+    mov $1, %eax
+    cpuid
+    bt $17, %ecx
+    jnc 1f
+    mov %cr4, %rax
+    or $0x20000, %rax
+    mov %rax, %cr4
+1:
 
     # Debug-port marker: long mode is active.
     mov $'L', %al
@@ -131,6 +146,8 @@ pd_table:
 
 .section .bss
 .align 16
+.global stack_bottom
+.global stack_top
 stack_bottom:
     .skip 16384
 stack_top:

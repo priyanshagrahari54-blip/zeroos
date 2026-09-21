@@ -21,18 +21,59 @@ int vmm_protect_page(uint64_t virtual_address, uint64_t flags);
 int vmm_is_user_range(uint64_t virtual_address, uint64_t length, uint64_t write);
 uint64_t vmm_translate(uint64_t virtual_address);
 uint64_t vmm_root(void);
+uint64_t vmm_kernel_page_flags(uint64_t address);
+
+/*
+ * CR3 / TLB isolation.
+ *
+ * When PCID is available (CPUID.1:ECX[17], enabled in CR4 by the boot
+ * code), every address space is loaded with its own 16-bit PCID so TLB
+ * entries never leak across address spaces. Without PCID the loader
+ * performs a full TLB flush (write current CR3, then load the new root)
+ * because untagged TLB entries survive CR3 changes.
+ */
+int vmm_pcid_enabled(void);
+int vmm_invpcid_enabled(void);
+void vmm_load_root(uint64_t root_physical, uint16_t pcid);
+void vmm_flush_tlb(void);
+uint64_t vmm_active_root(void);
+uint16_t vmm_pcid_alloc(void);
+unsigned vmm_pcid_in_use(void);
+void vmm_pcid_free(uint16_t pcid);
+
+struct vmm_owned_page {
+    uint64_t physical;
+    uint64_t virtual_address;
+    uint8_t executable;
+    struct vmm_owned_page *next;
+};
 
 struct vmm_space {
     uint64_t root_physical;
     uint64_t *root;
+    uint16_t pcid;
+    uint8_t  has_pcid;
+    /*
+     * Physical pages owned by this address space (user code/data/stack).
+     * Ownership is exclusive: a page owned by one space cannot be mapped
+     * into another, and destruction releases exactly this space's pages.
+     */
+    struct vmm_owned_page *owned_pages;
+    uint64_t owned_page_count;
 };
 
+/* Create requires a zero-initialized object; destroy returns it to empty. */
 int vmm_space_create(struct vmm_space *space);
 void vmm_space_destroy(struct vmm_space *space);
 int vmm_space_map_page(struct vmm_space *space, uint64_t virtual_address,
                        uint64_t physical_address, uint64_t flags);
 int vmm_space_unmap_page(struct vmm_space *space, uint64_t virtual_address);
 uint64_t vmm_space_translate(const struct vmm_space *space, uint64_t virtual_address);
+int vmm_space_is_mapped(const struct vmm_space *space, uint64_t virtual_address);
 int vmm_space_activate(const struct vmm_space *space);
+int vmm_space_is_user_range(const struct vmm_space *space, uint64_t virtual_address,
+                            uint64_t length, uint64_t write);
+int vmm_space_own_page(struct vmm_space *space, uint64_t physical);
+int vmm_space_release_page(struct vmm_space *space, uint64_t physical);
 
 #endif

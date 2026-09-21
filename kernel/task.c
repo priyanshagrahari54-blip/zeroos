@@ -3,24 +3,44 @@
 #include "sync.h"
 #include "interrupts.h"
 #include "timer.h"
+#include "gdt.h"
+#include "process.h"
 
 extern void context_switch(uint64_t *old_sp, uint64_t *new_sp);
 extern void task_trampoline(void);
+extern void user_task_entry(void);
 extern void serial_write_public(const char *text);
 extern char __kernel_start;
 extern char __kernel_end;
 
+/* Per-slot ring-3 entry frames; consumed once by user_task_entry. */
+static struct user_entry_frame user_frames[ZEROOS_MAX_TASKS];
+
 static void task_write_u64(uint64_t value);
-static void task_debug_dump_all(const char *label);
 
 #define ZEROOS_IDLE_SLOT 1
 #define ZEROOS_DEFAULT_TIMESLICE 10U
 
 static struct task tasks[ZEROOS_MAX_TASKS];
-static struct task *current_task;
+/*
+ * Exported (non-static) so the SYSCALL entry trampoline can read the current
+ * task pointer with a plain RIP-relative load: a call would push a return
+ * address onto the user stack, which must not be touched before the entry
+ * has validated it and moved to the kernel stack.
+ */
+struct task *current_task;
 static struct spinlock task_lock;
 static uint64_t next_task_id;
 static struct task *sleep_head;
+
+static struct task *task_find_by_id_locked(uint64_t id) {
+    if (id==0) return &tasks[0];
+    if (id==1) return &tasks[ZEROOS_IDLE_SLOT];
+    for (int i=2;i<ZEROOS_MAX_TASKS;++i)
+        if (tasks[i].state!=TASK_UNUSED && tasks[i].id==id)
+            return &tasks[i];
+    return 0;
+}
 
 static int task_stack_guard_ok(const struct task *task) {
     return task && task->stack_base &&
@@ -166,14 +186,23 @@ static void task_validate_table(const char *where) {
             task_context_panic(where,task);
 
         /*
-         * Slot 0 is the bootstrap task. It intentionally has no allocated
-         * task stack; scheduler_start parks it while the first real task runs.
+         * Slot 0 is the bootstrap task. It intentionally has ID 0 and no
+         * allocated task stack; scheduler_start parks it while the first real
+         * task runs. ID 0 is valid only for this reserved slot.
          */
         if (i==0) {
             if (task->state==TASK_RUNNING)
                 ++running;
             continue;
         }
+
+        if (task->state!=TASK_UNUSED && task->id==0)
+            task_context_panic("ZEROOS PANIC: live task has zero ID.\n",task);
+
+        for (int j=i+1;j<ZEROOS_MAX_TASKS;++j) {
+            if (task->state!=TASK_UNUSED && tasks[j].state!=TASK_UNUSED &&
+                task->id==tasks[j].id)
+                task_context_panic("ZEROOS PANIC: duplicate task ID.\n",task);
 
         if (task->state==TASK_UNUSED)
             continue;
@@ -251,6 +280,37 @@ static void task_stack_guard_panic(const struct task *task) {
     for (;;) __asm__ volatile ("cli; hlt");
 }
 
+struct user_entry_frame *task_get_user_frame(struct task *task) {
+    if (!task) return 0;
+    uint64_t slot = ((uint64_t)task - (uint64_t)&tasks[0]) / sizeof(tasks[0]);
+    if (slot >= ZEROOS_MAX_TASKS) return 0;
+    return &user_frames[slot];
+}
+
+/*
+ * Update the per-CPU state that belongs to the task about to run: its
+ * address space (CR3, PCID-tagged when available) and the ring-3 stack
+ * pointer (TSS.RSP0) used when an exception or interrupt is taken while
+ * that task executes in user mode.
+ */
+static void task_update_cpu_state(struct task *task) {
+    struct process *process = task->process;
+    uint64_t root;
+    uint16_t pcid = 0;
+
+    if (process) {
+        root = process->space.root_physical;
+        pcid = process->space.has_pcid ? process->space.pcid : 0;
+    } else {
+        root = vmm_root();
+    }
+
+    if (!vmm_pcid_enabled() && root != vmm_active_root())
+        vmm_flush_tlb();
+    vmm_load_root(root, pcid);
+    gdt_set_rsp0(task->stack_base + ZEROOS_TASK_STACK_SIZE - 512ULL);
+}
+
 static uint64_t task_irq_save(void) {
     uint64_t flags;
     __asm__ volatile ("pushfq; popq %0; cli"
@@ -288,7 +348,7 @@ void task_trampoline_body(void) {
  * frame is created only by an actual interrupt and is owned exclusively by
  * the IRQ-exit path until that task resumes.
  */
-static void task_prepare_stack(struct task *task) {
+static void task_prepare_stack(struct task *task, int user) {
     uint64_t top=task->stack_base+ZEROOS_TASK_STACK_SIZE;
     uint64_t *sp;
 
@@ -299,10 +359,14 @@ static void task_prepare_stack(struct task *task) {
      * saved stack must be 0 mod 16 so that six 8-byte pops followed by retq
      * leave the assembly task_trampoline wrapper with RSP 8 mod 16. The
      * wrapper then reserves interrupt headroom before calling the C body.
+     *
+     * User-mode tasks resume into user_task_entry instead of the trampoline;
+     * it iretqs into ring 3 and never returns to the kernel directly (the
+     * only exit path is the exit syscall).
      */
     top=(top & ~0xFULL)-8ULL;
     sp=(uint64_t *)top;
-    *--sp=(uint64_t)task_trampoline;
+    *--sp=(uint64_t)(user ? user_task_entry : task_trampoline);
     *--sp=0;
     *--sp=0;
     *--sp=0;
@@ -353,9 +417,15 @@ static void sleep_queue_wake_expired_locked(uint64_t now) {
 static void reap_zombies_locked(void) {
     for (int i=2;i<ZEROOS_MAX_TASKS;++i) {
         struct task *task=&tasks[i];
-        if (task->state!=TASK_ZOMBIE || !task->stack_base)
+        if (task==current_task || task->state!=TASK_ZOMBIE || !task->stack_base)
             continue;
         page_free((void *)task->stack_base);
+        /*
+         * The process object (if any) is owned by the process layer and is
+         * reaped separately; drop only the task-side reference.
+         */
+        if (task->process) task->process->thread=0;
+        task->process=0;
         task->id=0;
         task->state=TASK_UNUSED;
         task->saved_stack=0;
@@ -373,6 +443,13 @@ static void reap_zombies_locked(void) {
         task->sleep_next=0;
         task->wake_tick=0;
         task->sleep_armed=0;
+        struct user_entry_frame *frame=&user_frames[i];
+        frame->rip=0;
+        frame->cs=0;
+        frame->rflags=0;
+        frame->rsp=0;
+        frame->ss=0;
+        frame->arg=0;
     }
 }
 
@@ -424,6 +501,15 @@ static int switch_to_next(struct task *previous, int next) {
     tasks[next].context_switches++;
     current_task=&tasks[next];
 
+    /*
+     * Install the target's address space (CR3) and ring-3 stack pointer
+     * (TSS.RSP0) BEFORE the context switch: the target's first
+     * instructions may transition to user mode, and every one of them
+     * must already see the target's translation root. All references in
+     * between (task table, both saved contexts) are kernel memory,
+     * mapped identically in every root.
+     */
+    task_update_cpu_state(current_task);
     context_switch(&previous->saved_stack,&current_task->saved_stack);
     return 1;
 }
@@ -449,6 +535,15 @@ int task_system_init(void) {
         tasks[i].sleep_next=0;
         tasks[i].wake_tick=0;
         tasks[i].sleep_armed=0;
+        tasks[i].process=0;
+    }
+    for (int i=0;i<ZEROOS_MAX_TASKS;++i) {
+        user_frames[i].rip=0;
+        user_frames[i].cs=0;
+        user_frames[i].rflags=0;
+        user_frames[i].rsp=0;
+        user_frames[i].ss=0;
+        user_frames[i].arg=0;
     }
 
     tasks[0].id=0;
@@ -462,7 +557,7 @@ int task_system_init(void) {
     tasks[ZEROOS_IDLE_SLOT].stack_base=(uint64_t)idle_stack;
     tasks[ZEROOS_IDLE_SLOT].entry=task_idle_entry;
     tasks[ZEROOS_IDLE_SLOT].timeslice_ticks=ZEROOS_DEFAULT_TIMESLICE;
-    task_prepare_stack(&tasks[ZEROOS_IDLE_SLOT]);
+    task_prepare_stack(&tasks[ZEROOS_IDLE_SLOT], 0);
 
     spinlock_init(&task_lock);
     current_task=&tasks[0];
@@ -471,8 +566,10 @@ int task_system_init(void) {
     return 0;
 }
 
-int task_create(task_entry_t entry, void *argument, uint64_t *task_id) {
-    if (!entry) return -1;
+int task_create_internal(task_entry_t entry, void *argument, int user,
+                         uint64_t user_rip, uint64_t user_rsp, uint64_t user_arg,
+                         uint64_t *task_id) {
+    if (!entry && !user) return -1;
 
     uint64_t flags=spin_lock_irqsave(&task_lock);
     int slot=-1;
@@ -493,6 +590,10 @@ int task_create(task_entry_t entry, void *argument, uint64_t *task_id) {
     }
 
     struct task *task=&tasks[slot];
+    if (next_task_id==0) {
+        spin_unlock_irqrestore(&task_lock,flags);
+        return -1;
+    }
     task->id=next_task_id++;
     task->state=TASK_RUNNABLE;
     task->stack_base=(uint64_t)stack;
@@ -508,57 +609,75 @@ int task_create(task_entry_t entry, void *argument, uint64_t *task_id) {
     task->sleep_next=0;
     task->wake_tick=0;
     task->sleep_armed=0;
-    task_prepare_stack(task);
+    task->process=0;
+    task_prepare_stack(task, user);
+
+    if (user) {
+        struct user_entry_frame *frame=&user_frames[slot];
+        frame->rip=user_rip;
+        frame->cs=ZEROOS_USER_CS_RING3;
+        frame->rflags=0x202ULL; /* IF + reserved bit 1; TF must be clear */
+        frame->rsp=user_rsp;
+        frame->ss=ZEROOS_USER_SS_RING3;
+        frame->arg=(void *)user_arg;
+    }
 
     if (!task_saved_context_ok(task))
         task_saved_context_panic(task);
 
     /*
-     * Validate the whole task table after every creation while interrupts are
-     * disabled. This makes a metadata/context overwrite attributable to the
-     * creation boundary instead of a much later scheduler failure.
+     * Validate the whole task table after every creation while interrupts
+     * are disabled. This makes a metadata/context overwrite attributable to
+     * the creation boundary instead of a much later scheduler failure.
      */
     task_validate_table("ZEROOS PANIC: task creation invariant failed.\n");
-    task_debug_dump_all("after task_create");
 
     if (task_id) *task_id=task->id;
     spin_unlock_irqrestore(&task_lock,flags);
     return 0;
 }
 
-static void task_debug_dump_all(const char *label) {
-    serial_write_public("ZEROOS DEBUG: ");
-    serial_write_public(label);
-    serial_write_public("\n");
-
-    for (int i=0;i<ZEROOS_MAX_TASKS;++i) {
-        struct task *task=&tasks[i];
-        if (task->state==TASK_UNUSED)
-            continue;
-
-        serial_write_public("  slot=");
-        task_write_u64((uint64_t)i);
-        serial_write_public(" id=");
-        task_write_u64(task->id);
-        serial_write_public(" state=");
-        task_write_u64((uint64_t)task->state);
-        serial_write_public(" stack=");
-        task_write_u64(task->stack_base);
-        serial_write_public(" saved=");
-        task_write_u64(task->saved_stack);
-
-        if (task->saved_stack &&
-            task->stack_base &&
-            task->saved_stack + 48ULL < task->stack_base + ZEROOS_TASK_STACK_SIZE) {
-            serial_write_public(" rip=");
-            task_write_u64(*(const uint64_t *)(task->saved_stack + 48ULL));
-        }
-        serial_write_public("\n");
-    }
+int task_create(task_entry_t entry, void *argument, uint64_t *task_id) {
+    return task_create_internal(entry, argument, 0, 0, 0, 0, task_id);
 }
+
+/*
+ * Create the main thread of a user-mode process. The task's kernel stack
+ * serves kernel execution on behalf of the user thread (including
+ * interrupts taken while in ring 3, via TSS.RSP0); the user-mode stack is
+ * part of the process address space and is supplied via user_rsp.
+ */
+static int task_user_address_ok(uint64_t address) {
+    /* Stage-1 user ABI: canonical addresses confined to PML4 slot 254. */
+    return address >= 0x00007f0000000000ULL &&
+           address <  0x0000800000000000ULL;
+}
+
+int task_create_user(uint64_t user_rip, uint64_t user_rsp, uint64_t user_arg,
+                     uint64_t *task_id) {
+    /*
+     * Do not rely solely on process_spawn() to validate ring-3 entry state.
+     * This boundary is also a public kernel constructor and must reject a
+     * kernel/canonical-address escape before a runnable task is published.
+     */
+    if (!task_user_address_ok(user_rip) ||
+        !task_user_address_ok(user_rsp) ||
+        (user_rsp & 0xfULL) != 8ULL)
+        return -1;
+    return task_create_internal(0, 0, 1, user_rip, user_rsp, user_arg, task_id);
+}
+
+
 
 struct task *task_current(void) {
     return current_task;
+}
+
+struct task *task_find_by_id(uint64_t id) {
+    uint64_t flags=spin_lock_irqsave(&task_lock);
+    struct task *task=task_find_by_id_locked(id);
+    spin_unlock_irqrestore(&task_lock,flags);
+    return task;
 }
 
 void task_yield(void) {
@@ -625,6 +744,7 @@ static int task_block_locked(uint64_t flags) {
     previous->interrupt_frame=0;
     current_task=&tasks[next];
     task_validate_table("ZEROOS PANIC: task block invariant failed.\n");
+    task_update_cpu_state(current_task);
     context_switch(&previous->saved_stack,&current_task->saved_stack);
     task_irq_restore(flags);
     return 0;
@@ -695,6 +815,7 @@ int task_sleep_until(uint64_t deadline) {
     task->interrupt_frame=0;
     current_task=&tasks[next];
     task_validate_table("ZEROOS PANIC: task sleep invariant failed.\n");
+    task_update_cpu_state(current_task);
     context_switch(&task->saved_stack,&current_task->saved_stack);
     task_irq_restore(flags);
     return 0;
@@ -703,18 +824,21 @@ int task_sleep_until(uint64_t deadline) {
 int task_sleep_ticks(uint64_t ticks) {
     if (ticks==0)
         return 0;
-    return task_sleep_until(timer_ticks()+ticks);
+    uint64_t now=timer_ticks();
+    uint64_t deadline=(~0ULL-now<ticks) ? ~0ULL : now+ticks;
+    return task_sleep_until(deadline);
 }
 
 void task_exit(void) {
     struct task *previous=current_task;
     int next;
+    uint64_t flags;
 
     if (!previous || previous==&tasks[0] ||
         previous==&tasks[ZEROOS_IDLE_SLOT])
         return;
 
-    (void)task_irq_save();
+    flags=task_irq_save();
     previous->state=TASK_ZOMBIE;
     previous->need_resched=0;
     next=find_next_runnable(1);
@@ -731,7 +855,9 @@ void task_exit(void) {
     if (!task_saved_context_ok(&tasks[next]))
         task_saved_context_panic(&tasks[next]);
     task_validate_table("ZEROOS PANIC: task exit invariant failed.\n");
+    task_update_cpu_state(current_task);
     context_switch(&previous->saved_stack,&current_task->saved_stack);
+    task_irq_restore(flags);
 
     for (;;) __asm__ volatile ("cli; hlt");
 }
@@ -745,14 +871,23 @@ void task_exit(void) {
 uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
     struct task *previous=current_task;
     int next;
+    int dying;
 
-    if (!previous || !frame)
+    /* Bootstrap runs on the boot stack, not a task-owned frame. Timer
+     * delivery is legal between task_system_init and task_start_first. */
+    if (!previous || !frame || previous==&tasks[0])
         return (uint64_t)frame;
     if (!task_pointer_ok(previous))
         task_context_panic("ZEROOS PANIC: invalid current task pointer.\n",previous);
     if (!task_identity_ok(previous))
         task_context_panic("ZEROOS PANIC: invalid current task identity.\n",previous);
-    if (previous->state!=TASK_RUNNING)
+    /*
+     * A task may already be ZOMBIE here when a user-mode fault killed its
+     * process before the IRQ-exit path ran; the task is being discarded and
+     * the scheduler must switch away from it unconditionally.
+     */
+    dying=(previous->state==TASK_ZOMBIE);
+    if (previous->state!=TASK_RUNNING && !dying)
         task_context_panic("ZEROOS PANIC: current task is not running.\n",previous);
     if (!task_stack_guard_ok(previous)) task_stack_guard_panic(previous);
     if (!task_frame_ok(previous,frame)) {
@@ -760,18 +895,23 @@ uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
         for (;;) __asm__ volatile ("cli; hlt");
     }
 
-    previous->interrupt_frame=frame;
-
-    if (previous->preempt_count!=0)
+    if (previous->preempt_count!=0 && !dying)
         return (uint64_t)frame;
 
     /*
      * Normal tasks enter the IRQ-exit scheduler only after their time slice
      * expires (or another kernel path explicitly requests rescheduling).
      * Idle is the exception: if runnable work exists, leave idle immediately.
+     *
+     * The frame is only captured as the task's interrupt frame once a real
+     * switch is committed: on the no-switch paths the frame is consumed by
+     * the iretq epilogue and must not be retained (a retained pointer to a
+     * consumed frame would be resumed a second time).
      */
-    if (previous!=&tasks[ZEROOS_IDLE_SLOT] && !previous->need_resched)
+    if (!dying && previous!=&tasks[ZEROOS_IDLE_SLOT] && !previous->need_resched)
         return (uint64_t)frame;
+
+    previous->interrupt_frame=frame;
 
     next=find_next_runnable(0);
 
@@ -783,12 +923,23 @@ uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
          * normal downward-growing stack may overwrite it. Do not retain a
          * pointer to a frame that is no longer live.
          */
-        previous->interrupt_frame=0;
+        if (!dying)
+            previous->interrupt_frame=0;
         return (uint64_t)frame;
     }
 
     previous->need_resched=0;
-    previous->state=TASK_RUNNABLE;
+    if (dying) {
+        /*
+         * The dying task's frame is never resumed (it was captured above
+         * only to satisfy the ownership invariants); clear the reference so
+         * the zombie invariant "zombies retain no context" holds from the
+         * next validation tick.
+         */
+        previous->interrupt_frame=0;
+    } else {
+        previous->state=TASK_RUNNABLE;
+    }
 
     /*
      * Idle is a special non-progressing task. If it was interrupted while
@@ -832,7 +983,11 @@ uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
     /*
      * The target context is now exclusively owned by the IRQ-exit path:
      * target_frame -> iretq, or saved_stack -> cooperative restore + retq.
+     * The CPU's address space and ring-3 stack pointer must already be the
+     * target's before the epilogue returns into that context.
      */
+    task_update_cpu_state(&tasks[next]);
+
     if (target_frame)
         return (uint64_t)target_frame;
 
@@ -843,11 +998,20 @@ void task_scheduler_tick(void) {
     struct task *task=current_task;
     uint64_t now;
 
-    if (task && (task->state!=TASK_RUNNING || task->id==0 ||
-                 task->stack_base==0 || task->saved_stack==0))
-        task_stack_guard_panic(task);
-
     if (!task) return;
+
+    /*
+     * Before task_start_first() parks the bootstrap task, the timer tick
+     * hook is already registered and the bootstrap task (slot 0) is RUNNING
+     * without a task stack. A tick landing in that window is legal, not a
+     * corrupted guard; do nothing until a real task owns the CPU.
+     */
+    if (task == &tasks[0])
+        return;
+
+    if (task->state != TASK_RUNNING || task->stack_base == 0 ||
+        task->saved_stack == 0)
+        task_stack_guard_panic(task);
 
     /*
      * interrupt_frame is a pending resume context only while a task is
@@ -926,6 +1090,7 @@ void task_start_first(void) {
         !task_saved_context_ok(&tasks[next]))
         task_saved_context_panic(&tasks[next]);
     task_validate_table("ZEROOS PANIC: scheduler start invariant failed.\n");
+    task_update_cpu_state(current_task);
     context_switch(&tasks[0].saved_stack,&current_task->saved_stack);
 
     for (;;) __asm__ volatile ("cli; hlt");
@@ -937,9 +1102,50 @@ int task_debug_validate(void) {
 }
 
 uint64_t task_count(void) {
+    uint64_t flags=spin_lock_irqsave(&task_lock);
     uint64_t count=0;
     for (int i=0;i<ZEROOS_MAX_TASKS;++i)
         if (tasks[i].state!=TASK_UNUSED)
             ++count;
+    spin_unlock_irqrestore(&task_lock,flags);
     return count;
+}
+
+/* Cancel only a never-selected thread. Used to roll back an unpublished
+ * process; no live stack, wait queue or interrupt frame may be abandoned. */
+int task_discard_new(uint64_t tid) {
+    uint64_t flags=spin_lock_irqsave(&task_lock);
+    struct task *task=task_find_by_id_locked(tid);
+    int result=-1;
+    if (task && task!=current_task && task->state==TASK_RUNNABLE &&
+        task->context_switches==0 && task->interrupt_frame==0) {
+        page_free((void *)task->stack_base);
+        if (task->process) task->process->thread=0;
+        uint64_t slot=((uint64_t)task-(uint64_t)&tasks[0])/sizeof(tasks[0]);
+        if (slot<ZEROOS_MAX_TASKS) {
+            struct user_entry_frame *frame=&user_frames[slot];
+            frame->rip=0; frame->cs=0; frame->rflags=0;
+            frame->rsp=0; frame->ss=0; frame->arg=0;
+        }
+        for (unsigned i=0;i<sizeof(*task);++i) ((uint8_t *)task)[i]=0;
+        result=0;
+    }
+    spin_unlock_irqrestore(&task_lock,flags);
+    return result;
+}
+
+/* A process reaper need not wait for another timer tick to release its
+ * terminal thread. The executing stack is never eligible for reclamation. */
+int task_reap_finished(uint64_t tid) {
+    uint64_t flags=spin_lock_irqsave(&task_lock);
+    struct task *task=task_find_by_id_locked(tid);
+    int result=-1;
+    if (task && task!=current_task && task->state==TASK_ZOMBIE) {
+        page_free((void *)task->stack_base);
+        if (task->process) task->process->thread=0;
+        for (unsigned i=0;i<sizeof(*task);++i) ((uint8_t *)task)[i]=0;
+        result=0;
+    }
+    spin_unlock_irqrestore(&task_lock,flags);
+    return result;
 }

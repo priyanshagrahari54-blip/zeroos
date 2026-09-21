@@ -1,11 +1,16 @@
 #include "types.h"
 #include "memory.h"
+#include "heap.h"
 #include "timer.h"
 #include "vmm.h"
 #include "sync.h"
+#include "gdt.h"
 #include "task.h"
+#include "process.h"
 #include "scheduler.h"
+#include "syscall.h"
 #include "wait.h"
+#include "irq_state.h"
 
 #define COM1 0x3F8
 #define VMM_SELF_TEST_VA 0x00007f0000000000ULL
@@ -37,10 +42,60 @@ static void serial_putc(char c) {
 }
 
 void serial_write_public(const char *text) {
+    /*
+     * One string is one atomic unit of console output. On this single CPU
+     * an IRQ can otherwise preempt a C-context writer between bytes and
+     * interleave its own diagnostics into the middle of a line, corrupting
+     * the console log. Strings are short (microseconds), so disabling
+     * interrupts for the write is the minimal correct serialization; in
+     * interrupt context (IF already clear) and in user syscalls this is a
+     * no-op.
+     */
+    /*
+     * The write itself is atomic, and the previous interrupt state is
+     * restored (not forced on): callers may run with IF deliberately
+     * clear (locked regions, exception handlers), and an unconditional
+     * sti there would reopen the window the caller closed.
+     */
+    uint64_t flags;
+    __asm__ volatile ("pushf; popq %0; cli" : "=r"(flags) : : "memory");
     while (*text) {
         if (*text=='\n') serial_putc('\r');
         serial_putc(*text++);
     }
+    if (flags & 0x200ULL)
+        __asm__ volatile ("sti" ::: "memory");
+}
+
+/* Length-delimited debug output: never scan past a copied user buffer. */
+void serial_write_bytes_public(const char *text, uint64_t length) {
+    uint64_t flags;
+    __asm__ volatile ("pushfq; popq %0; cli" : "=r"(flags) : : "memory");
+    for (uint64_t i=0; i<length; ++i) {
+        if (text[i]=='\n') serial_putc('\r');
+        serial_putc(text[i]);
+    }
+    if (flags & 0x200ULL) __asm__ volatile ("sti" ::: "memory");
+}
+
+void serial_write_u64_public(uint64_t value) {
+    /*
+     * Print as 16 zero-padded hex digits. Same atomicity and interrupt
+     * state rules as serial_write_public: the whole number is one
+     * console unit, and the previous IF state is restored.
+     */
+    char buf[17];
+    const char *digits="0123456789abcdef";
+    buf[16]=0;
+    for (int i=15;i>=0;--i) {
+        buf[i]=digits[value&0xf];
+        value>>=4;
+    }
+    uint64_t flags;
+    __asm__ volatile ("pushf; popq %0; cli" : "=r"(flags) : : "memory");
+    for (int i=0;i<16;++i) serial_putc(buf[i]);
+    if (flags & 0x200ULL)
+        __asm__ volatile ("sti" ::: "memory");
 }
 
 extern void interrupts_init(void);
@@ -89,22 +144,21 @@ static void vmm_self_test(void) {
         kernel_panic("VMM map failed");
     if (vmm_translate(VMM_SELF_TEST_VA)!=(uint64_t)physical)
         kernel_panic("VMM translation mismatch");
-    if (vmm_protect_page(VMM_SELF_TEST_VA,VMM_USER|VMM_NO_EXECUTE)!=0)
-        kernel_panic("VMM protection update failed");
-    if (!vmm_is_user_range(VMM_SELF_TEST_VA,VMM_PAGE_SIZE,0))
-        kernel_panic("VMM user-range validation failed");
-    if (vmm_is_user_range(VMM_SELF_TEST_VA,VMM_PAGE_SIZE,1))
-        kernel_panic("VMM write permission validation failed");
+    if (vmm_protect_page(VMM_SELF_TEST_VA,VMM_USER|VMM_NO_EXECUTE)!=-1)
+        kernel_panic("kernel-root VMM API exposed a user mapping");
+    if (vmm_is_user_range(VMM_SELF_TEST_VA,VMM_PAGE_SIZE,0))
+        kernel_panic("kernel-root user-range validation accepted supervisor mapping");
 
     void *range_a=page_alloc();
     void *range_b=page_alloc();
     if (!range_a || !range_b)
         kernel_panic("VMM range self-test allocation failed");
     const uint64_t range_va=VMM_SELF_TEST_VA+0x2000ULL;
-    if (vmm_map_range(range_va,(uint64_t)range_a,2,VMM_USER|VMM_WRITABLE|VMM_NO_EXECUTE)!=0)
+    if (vmm_map_range(range_va,(uint64_t)range_a,2,VMM_WRITABLE|VMM_NO_EXECUTE)!=0)
         kernel_panic("VMM range mapping failed");
-    if (!vmm_is_user_range(range_va,8192,1))
-        kernel_panic("VMM multi-page range validation failed");
+    if (vmm_translate(range_va)!=(uint64_t)range_a ||
+        vmm_translate(range_va+VMM_PAGE_SIZE)!=(uint64_t)range_b)
+        kernel_panic("VMM multi-page translation failed");
     if (vmm_unmap_range(range_va,2)!=0)
         kernel_panic("VMM range unmap failed");
     page_free(range_a);
@@ -115,8 +169,136 @@ static void vmm_self_test(void) {
     serial_write_public("ZEROOS: virtual memory self-test passed.\n");
 }
 
+/*
+ * Early fatal-exception IDT.
+ *
+ * From vmm_init onward the kernel runs under a full paging root, but the
+ * real IDT is only installed by interrupts_init, much later. Any CPU
+ * exception in that window (a page fault, an illegal instruction, ...)
+ * would otherwise triple-fault with no information. Install a minimal
+ * 32-vector IDT first: each stub reports the vector, error code,
+ * faulting RIP and CR2 on the serial console and halts. interrupts_init
+ * replaces this table when it runs.
+ */
+struct early_idt_gate {
+    uint16_t offset_low;
+    uint16_t selector;
+    uint8_t  reserved;
+    uint8_t  type_attr;
+    uint16_t offset_mid;
+    uint32_t offset_high;
+    uint32_t zero;
+} __attribute__((packed));
+
+_Static_assert(sizeof(struct early_idt_gate) == 16, "x86-64 IDT gate size");
+_Static_assert(__builtin_offsetof(struct early_idt_gate, zero) == 12,
+               "x86-64 IDT reserved word offset");
+
+struct early_idtr {
+    uint16_t limit;
+    uint64_t base;
+} __attribute__((packed));
+
+extern void early_stub_0(void);
+extern void early_stub_1(void);
+extern void early_stub_2(void);
+extern void early_stub_3(void);
+extern void early_stub_4(void);
+extern void early_stub_5(void);
+extern void early_stub_6(void);
+extern void early_stub_7(void);
+extern void early_stub_8(void);
+extern void early_stub_9(void);
+extern void early_stub_10(void);
+extern void early_stub_11(void);
+extern void early_stub_12(void);
+extern void early_stub_13(void);
+extern void early_stub_14(void);
+extern void early_stub_15(void);
+extern void early_stub_16(void);
+extern void early_stub_17(void);
+extern void early_stub_18(void);
+extern void early_stub_19(void);
+extern void early_stub_20(void);
+extern void early_stub_21(void);
+extern void early_stub_22(void);
+extern void early_stub_23(void);
+extern void early_stub_24(void);
+extern void early_stub_25(void);
+extern void early_stub_26(void);
+extern void early_stub_27(void);
+extern void early_stub_28(void);
+extern void early_stub_29(void);
+extern void early_stub_30(void);
+extern void early_stub_31(void);
+
+static struct early_idt_gate early_gate[32];
+static struct early_idtr early_descriptor;
+
+extern void serial_write_u64_public(uint64_t value);
+
+void early_fatal_dispatch(uint64_t vector, uint64_t error_code,
+                          uint64_t rip, uint64_t cr2) {
+    serial_write_public("ZEROOS EARLY FATAL: vector=");
+    serial_write_u64_public(vector);
+    serial_write_public(" err=");
+    serial_write_u64_public(error_code);
+    serial_write_public(" rip=");
+    serial_write_u64_public(rip);
+    serial_write_public(" cr2=");
+    serial_write_u64_public(cr2);
+    serial_write_public("\n");
+    for (;;) __asm__ volatile ("cli; hlt");
+}
+
+static void early_idt_install(void) {
+    static void *stub[32] = {
+        (void *)early_stub_0,  (void *)early_stub_1,  (void *)early_stub_2,
+        (void *)early_stub_3,  (void *)early_stub_4,  (void *)early_stub_5,
+        (void *)early_stub_6,  (void *)early_stub_7,  (void *)early_stub_8,
+        (void *)early_stub_9,  (void *)early_stub_10, (void *)early_stub_11,
+        (void *)early_stub_12, (void *)early_stub_13, (void *)early_stub_14,
+        (void *)early_stub_15, (void *)early_stub_16, (void *)early_stub_17,
+        (void *)early_stub_18, (void *)early_stub_19, (void *)early_stub_20,
+        (void *)early_stub_21, (void *)early_stub_22, (void *)early_stub_23,
+        (void *)early_stub_24, (void *)early_stub_25, (void *)early_stub_26,
+        (void *)early_stub_27, (void *)early_stub_28, (void *)early_stub_29,
+        (void *)early_stub_30, (void *)early_stub_31
+    };
+    struct early_idt_gate *gate = early_gate;
+
+    for (uint64_t i = 0; i < 32; ++i) {
+        uint64_t base = (uint64_t)stub[i];
+        gate[i].offset_low = (uint16_t)(base & 0xffff);
+        gate[i].selector = 0x08;
+        gate[i].reserved = 0;
+        gate[i].zero = 0;
+        gate[i].type_attr = 0x8E; /* present, DPL0, 64-bit interrupt gate */
+        gate[i].offset_mid = (uint16_t)((base >> 16) & 0xffff);
+        gate[i].offset_high = (uint32_t)((base >> 32) & 0xffffffff);
+    }
+    early_descriptor.limit = (uint16_t)(sizeof(early_gate) - 1);
+    early_descriptor.base = (uint64_t)early_gate;
+    __asm__ volatile ("lidt %0" : : "m"(early_descriptor));
+
+    /*
+     * Verify the descriptor the CPU actually holds: a corrupted load
+     * would make every exception dispatch #GP into a silent triple
+     * fault, so this must be checked, not assumed.
+     */
+    struct early_idtr readback;
+    __asm__ volatile ("sidt %0" : "=m"(readback));
+    if (readback.limit != early_descriptor.limit ||
+        readback.base != early_descriptor.base) {
+        serial_write_public("ZEROOS PANIC: early IDT descriptor mismatch.\n");
+        for (;;) __asm__ volatile ("cli; hlt");
+    }
+
+    serial_write_public("ZEROOS: early fatal IDT installed.\n");
+}
+
 static void vmm_space_self_test(void) {
-    struct vmm_space space;
+    struct vmm_space space={0};
     void *physical=page_alloc_zero();
     if (!physical) kernel_panic("address-space page allocation failed");
     if (vmm_space_create(&space)!=0)
@@ -128,6 +310,8 @@ static void vmm_space_self_test(void) {
         kernel_panic("address-space user mapping failed");
     if (vmm_space_translate(&space,VMM_SPACE_TEST_VA)!=(uint64_t)physical)
         kernel_panic("address-space translation failed");
+    if (!vmm_space_is_user_range(&space,VMM_SPACE_TEST_VA,VMM_PAGE_SIZE,1))
+        kernel_panic("address-space writable user-range validation failed");
     if (vmm_space_map_page(&space,0x4000000000ULL,(uint64_t)physical,
                            VMM_USER|VMM_WRITABLE)!=-1)
         kernel_panic("address-space accepted unsafe PML4");
@@ -138,6 +322,266 @@ static void vmm_space_self_test(void) {
     vmm_space_destroy(&space);
     page_free(physical);
     serial_write_public("ZEROOS: per-address-space VMM self-test passed.\n");
+}
+
+static void vmm_security_self_test(void) {
+    extern char __kernel_text_start, __kernel_text_end, __kernel_ro_start, __kernel_ro_end;
+    uint64_t pages=memory_free_pages(), heap=heap_used_bytes();
+    uint64_t cr0;
+    __asm__ volatile ("mov %%cr0,%0" : "=r"(cr0));
+    if ((cr0&0x10008)!=0x10008) kernel_panic("WP/TS security baseline missing");
+    for (uint64_t va=(uint64_t)&__kernel_text_start;va<(uint64_t)&__kernel_text_end;va+=4096)
+        if ((vmm_kernel_page_flags(va)&(VMM_PRESENT|VMM_WRITABLE|VMM_NO_EXECUTE))!=VMM_PRESENT)
+            kernel_panic("kernel text is not RX");
+    for (uint64_t va=(uint64_t)&__kernel_ro_start;va<(uint64_t)&__kernel_ro_end;va+=4096)
+        if ((vmm_kernel_page_flags(va)&(VMM_PRESENT|VMM_WRITABLE|VMM_NO_EXECUTE))!=
+            (VMM_PRESENT|VMM_NO_EXECUTE)) kernel_panic("kernel constants are not RO/NX");
+    if (vmm_protect_page((uint64_t)&__kernel_text_start,VMM_WRITABLE|VMM_NO_EXECUTE)!=-1)
+        kernel_panic("public VMM API weakened kernel text");
+    struct vmm_space a={0},b={0};
+    uint64_t pa=(uint64_t)page_alloc_zero(), pb=(uint64_t)page_alloc_zero();
+    if (!pa || !pb || vmm_space_create(&a) || vmm_space_create(&b))
+        kernel_panic("isolation test allocation failed");
+    uint64_t flags=VMM_USER|VMM_WRITABLE|VMM_NO_EXECUTE;
+    if (vmm_space_map_page(&a,VMM_SPACE_TEST_VA,pa,flags) ||
+        vmm_space_map_page(&b,VMM_SPACE_TEST_VA,pb,flags)) kernel_panic("isolation mapping failed");
+    if (vmm_space_map_page(&b,VMM_SPACE_TEST_VA+4096,pa,flags)!=-1 ||
+        vmm_space_map_page(&b,VMM_SPACE_TEST_VA+4096,(uint64_t)&__kernel_text_start,flags)!=-1)
+        kernel_panic("foreign/reserved physical page accepted");
+    *(uint64_t *)pa=0x1111; *(uint64_t *)pb=0x2222;
+
+    /*
+     * Mutate an inactive address space while B is active. The mutation must
+     * not depend on INVLPG (which operates in the current translation
+     * context); reactivation of A must observe the new page-table state.
+     */
+    if (vmm_space_activate(&b)) kernel_panic("activate B before inactive mutation failed");
+    void *inactive_page=page_alloc_zero();
+    if (!inactive_page ||
+        vmm_space_map_page(&a,VMM_SPACE_TEST_VA+VMM_PAGE_SIZE,
+                           (uint64_t)inactive_page,flags)!=0)
+        kernel_panic("inactive address-space map mutation failed");
+    if (vmm_space_activate(&a) ||
+        vmm_space_translate(&a,VMM_SPACE_TEST_VA+VMM_PAGE_SIZE)!=(uint64_t)inactive_page)
+        kernel_panic("inactive address-space map was not visible after activation");
+    if (vmm_space_activate(&b) ||
+        vmm_space_unmap_page(&a,VMM_SPACE_TEST_VA+VMM_PAGE_SIZE)!=0)
+        kernel_panic("inactive address-space unmap mutation failed");
+    if (vmm_space_activate(&a) ||
+        vmm_space_translate(&a,VMM_SPACE_TEST_VA+VMM_PAGE_SIZE)!=0)
+        kernel_panic("inactive address-space unmap remained stale");
+    page_free(inactive_page);
+
+    for (uint64_t i=0;i<64;++i) {
+        if (vmm_space_activate(&a)) kernel_panic("activate A failed");
+        if (*(volatile uint64_t *)VMM_SPACE_TEST_VA!=0x1111+i) kernel_panic("A saw foreign translation");
+        *(volatile uint64_t *)VMM_SPACE_TEST_VA=0x1112+i;
+        if (vmm_space_activate(&b)) kernel_panic("activate B failed");
+        if (*(volatile uint64_t *)VMM_SPACE_TEST_VA!=0x2222+i) kernel_panic("B saw foreign translation");
+        *(volatile uint64_t *)VMM_SPACE_TEST_VA=0x2223+i;
+    }
+    /* Recycle A's identifier but keep its retired data frame allocated and
+     * poisoned, forcing the replacement mapping to use a different frame.
+     * Without INVPCID this specifically depends on the incoming CR3 flush. */
+    for (unsigned i=0;i<64;++i) {
+        uint16_t retired=a.pcid;
+        vmm_load_root(vmm_root(),0);
+        vmm_space_destroy(&a);
+        void *guard=page_alloc_at(pa);
+        if (!guard) kernel_panic("retired-frame guard allocation failed");
+        *(volatile uint64_t *)guard=0xbad;
+        pa=(uint64_t)page_alloc_zero();
+        if (!pa || vmm_space_create(&a) || a.pcid!=retired ||
+            vmm_space_map_page(&a,VMM_SPACE_TEST_VA,pa,flags))
+            kernel_panic("address-space reuse setup failed");
+        *(uint64_t *)pa=0xcafeULL+i;
+        if (vmm_space_activate(&a) ||
+            *(volatile uint64_t *)VMM_SPACE_TEST_VA!=0xcafeULL+i)
+            kernel_panic("reused context exposed retired translation");
+        vmm_load_root(vmm_root(),0);
+        page_free(guard);
+    }
+    serial_write_public("ZEROOS: address-space reuse with displaced frames passed.\n");
+    vmm_load_root(vmm_root(),0);
+    vmm_space_destroy(&a); vmm_space_destroy(&b);
+    pa=(uint64_t)page_alloc_zero();
+    if (!pa || vmm_space_create(&a)) kernel_panic("code alias test allocation failed");
+    *(uint8_t *)pa=0xc3;
+    if (vmm_space_map_page(&a,VMM_SPACE_TEST_VA,pa,VMM_USER)) kernel_panic("RX publication failed");
+    if (vmm_kernel_page_flags(pa)&VMM_WRITABLE) kernel_panic("RX page has writable alias");
+    if (vmm_map_page(VMM_SELF_TEST_VA,pa,VMM_WRITABLE|VMM_NO_EXECUTE)!=-1)
+        kernel_panic("writable second alias accepted");
+    vmm_space_destroy(&a);
+    if (!(vmm_kernel_page_flags(pa)&VMM_WRITABLE)) kernel_panic("code alias not reclaimed");
+    if (memory_free_pages()!=pages || heap_used_bytes()!=heap || heap_validate()!=0)
+        kernel_panic("VMM security tests leaked resources");
+    serial_write_public("ZEROOS: live-CR3 isolation, ownership and W^X passed.\n");
+}
+
+#if ZEROOS_WX_FAULT_TEST
+uint8_t wx_nx_target[16];
+static void wx_fault_test(void) {
+#if ZEROOS_WX_FAULT_TEST == 1
+    __asm__ volatile (".global wx_fault_site\nwx_fault_site: movb $0,(%0)"
+                      : : "r"(serial_write_public) : "memory");
+#elif ZEROOS_WX_FAULT_TEST == 2
+    wx_nx_target[0]=0xc3;
+    __asm__ volatile ("call *%0" : : "r"(wx_nx_target) : "memory");
+#elif ZEROOS_WX_FAULT_TEST == 3
+    struct vmm_space space={0};
+    uint64_t pa=(uint64_t)page_alloc_zero();
+    if (!pa || vmm_space_create(&space) || vmm_space_map_page(&space,VMM_SPACE_TEST_VA,pa,VMM_USER))
+        kernel_panic("alias fault probe setup failed");
+    serial_write_public("ZEROOS: sealed alias="); serial_write_u64_public(pa); serial_write_public("\n");
+    __asm__ volatile (".global wx_fault_site\nwx_fault_site: movb $0,(%0)" : : "r"(pa) : "memory");
+#endif
+    kernel_panic("W^X fault probe unexpectedly returned");
+}
+#endif
+
+static void heap_self_test(void) {
+    uint64_t capacity=heap_capacity_bytes();
+    void *p1,*p2,*p3,*big;
+
+    if (capacity<ZEROOS_HEAP_MIN_ALLOC)
+        kernel_panic("heap capacity self-test failed");
+
+
+    /* Tiny and odd-sized allocations, 16-byte alignment, full-payload writes. */
+    p1=kmalloc(1); p2=kmalloc(31); p3=kmalloc(1000);
+    if (!p1 || !p2 || !p3 || p1==p2 || p2==p3 || p1==p3)
+        kernel_panic("heap basic allocation failed");
+    if (((uint64_t)p1| (uint64_t)p2 | (uint64_t)p3) & 15ULL)
+        kernel_panic("heap alignment self-test failed");
+    for (uint64_t i=0;i<1;++i) ((uint8_t *)p1)[i]=0xA5;
+    for (uint64_t i=0;i<31;++i) ((uint8_t *)p2)[i]=(uint8_t)i;
+    for (uint64_t i=0;i<1000;++i) ((uint8_t *)p3)[i]=(uint8_t)(i*7);
+    for (uint64_t i=0;i<31;++i) if (((uint8_t *)p2)[i]!=(uint8_t)i)
+        kernel_panic("heap payload content self-test failed");
+    if (kfree(p1)!=0 || kfree(p2)!=0 || kfree(p3)!=0)
+        kernel_panic("heap basic free failed");
+
+    /* Negative tests: double free, NULL, unaligned, out-of-region. */
+    if (kfree(p1)!=-1 || kfree(p2)!=-1 || kfree(p3)!=-1)
+        kernel_panic("heap coalesced double-free detection failed");
+#ifdef ZEROOS_TEST_FAULTS
+    if (heap_test_forged_free()!=0) kernel_panic("heap forged interior free accepted");
+#endif
+    if (kfree((void *)0)!=-1)
+        kernel_panic("heap NULL free rejection failed");
+    if (kfree((void *)0x1)!=-1)
+        kernel_panic("heap unaligned free rejection failed");
+    if (kfree((void *)0xdeadbeef00ULL)!=-1)
+        kernel_panic("heap out-of-region free rejection failed");
+    p2=kmalloc(32);
+    if (!p2) kernel_panic("heap re-allocation after free failed");
+    if (kfree((uint8_t *)p2+3)!=-1)
+        kernel_panic("heap misaligned pointer free rejection failed");
+    if (kfree(p2)!=0)
+        kernel_panic("heap aligned free after partial reject failed");
+
+    /*
+     * Boundary: an allocation whose header plus payload would exceed the
+     * whole region must be rejected. capacity itself fits exactly
+     * (header + capacity == region size) and must succeed, consuming the
+     * region as one block.
+     */
+    void *exact=kmalloc(capacity);
+    if (!exact)
+        kernel_panic("heap exact-capacity allocation failed");
+    /* kmalloc does not zero memory: verify the payload is writable. */
+    ((uint8_t *)exact)[0]=0xC3;
+    if (((uint8_t *)exact)[0]!=0xC3)
+        kernel_panic("heap exact-capacity payload failed");
+    if (kfree(exact)!=0)
+        kernel_panic("heap exact-capacity free failed");
+    if (kmalloc(capacity+1))
+        kernel_panic("heap oversized allocation rejection failed");
+    if (kmalloc(~0ULL))
+        kernel_panic("heap huge allocation rejection failed");
+
+    /* Near-maximum allocation covering essentially the whole region. */
+    big=kmalloc(capacity-ZEROOS_HEAP_MIN_ALLOC);
+    if (!big)
+        kernel_panic("heap near-maximum allocation failed");
+    for (uint64_t i=0;i<capacity-ZEROOS_HEAP_MIN_ALLOC;++i) {
+        ((uint8_t *)big)[i]=0x5A;
+    }
+    for (uint64_t i=0;i<capacity-ZEROOS_HEAP_MIN_ALLOC;++i)
+        if (((uint8_t *)big)[i]!=0x5A)
+            kernel_panic("heap near-maximum payload failed");
+    if (kfree(big)!=0)
+        kernel_panic("heap near-maximum free failed");
+
+    /* kcalloc zero-fill. */
+    void *zeroed=kcalloc(128,8);
+    if (!zeroed) kernel_panic("kcalloc failed");
+    for (uint64_t i=0;i<1024;++i)
+        if (((uint8_t *)zeroed)[i]!=0)
+            kernel_panic("kcalloc zero-fill failed");
+    if (kfree(zeroed)!=0)
+        kernel_panic("kcalloc free failed");
+
+    /* Overflow-safe count: count*size must not wrap. */
+    if (kcalloc(~0ULL,8))
+        kernel_panic("kcalloc overflow rejection failed");
+
+    /*
+     * Exhaustion: fill the region with 1024-byte payloads, then drain.
+     * Larger blocks keep this first-fit test bounded to ~8M chain visits;
+     * small-block fragmentation is covered by the mixed-size stress below.
+     */
+    static void *exhaust[4096];
+    uint64_t allocated=0;
+    while (allocated<4096) {
+        void *block=kmalloc(1024);
+        if (!block) break;
+        ((uint8_t *)block)[0]=(uint8_t)allocated;
+        exhaust[allocated++]=block;
+    }
+    if (allocated<100)
+        kernel_panic("heap exhaustion self-test could not fill region");
+    if (kmalloc(1024))
+        kernel_panic("heap exhaustion did not return NULL");
+    for (uint64_t i=0;i<allocated;++i)
+        if (kfree(exhaust[i])!=0)
+            kernel_panic("heap exhaustion drain failed");
+    if (heap_used_bytes()!=0 || heap_validate()!=0)
+        kernel_panic("heap exhaustion accounting failed");
+
+    /* Bounded deterministic stress: interleaved alloc/free (LCG sequence). */
+    static void *live[2048];
+    uint64_t live_count=0, lcg=0x2545F4914F6CDD1DULL;
+    for (uint64_t iter=0;iter<20000;++iter) {
+        lcg=lcg*6364136223846793005ULL+1ULL;
+        uint64_t op=lcg>>58;
+        if (op<52 || live_count==0) {
+            uint64_t size=(lcg>>30)&0x1FF;
+            if (size==0) size=1;
+            void *block=kmalloc(size);
+            if (block) {
+                ((uint8_t *)block)[0]=(uint8_t)iter;
+                if (live_count<2048) live[live_count++]=block;
+                else if (kfree(block)!=0)
+                    kernel_panic("heap stress free failed");
+            }
+        } else {
+            uint64_t slot=(lcg>>30)%live_count;
+            if (kfree(live[slot])!=0)
+                kernel_panic("heap stress free failed");
+            live[slot]=live[--live_count];
+        }
+    }
+    for (uint64_t i=0;i<live_count;++i)
+        if (kfree(live[i])!=0)
+            kernel_panic("heap stress drain failed");
+    if (heap_used_bytes()!=0 || heap_validate()!=0)
+        kernel_panic("heap stress accounting failed");
+
+    serial_write_public("ZEROOS: heap capacity: ");
+    serial_write_u64(capacity);
+    serial_write_public(" bytes.\n");
+    serial_write_public("ZEROOS: heap self-test passed.\n");
 }
 
 static void sync_self_test(void) {
@@ -367,9 +811,218 @@ static void scheduler_probe_monitor(void *argument) {
     }
 }
 
+/*
+ * Stage-1 ring-3 certification. Runs as a kernel task after the scheduler
+ * is live. Each step spawns a deterministic user process, waits for its
+ * termination with a bounded tick budget, and verifies the expected
+ * outcome. Any deviation panics, which fails the QEMU boot test.
+ */
+static uint64_t ring3_failures;
+
+static void ring3_run_case(uint64_t param, uint64_t budget_ticks,
+                           int expect_fault, uint64_t *out_pid) {
+    uint64_t pid=0;
+    if (process_spawn(param,&pid)!=0) {
+        ring3_failures++;
+        kernel_panic("ring-3 case spawn failed");
+    }
+    /* Wait for THIS case: the isolation test deliberately keeps process A
+     * zombie while B runs. Waiting for any zombie would finish immediately. */
+    uint64_t start=timer_ticks();
+    struct process *p;
+    for (;;) {
+        p=process_find(pid);
+        if (!p || p->state==PROCESS_ZOMBIE) break;
+        if (timer_ticks()-start >= budget_ticks) {
+            ring3_failures++;
+            kernel_panic("ring-3 case timed out");
+        }
+        task_yield();
+    }
+    if (!p || p->state!=PROCESS_ZOMBIE) {
+        ring3_failures++;
+        kernel_panic("ring-3 case not zombie after wait");
+    }
+    if (p->exited_by_fault!=((uint8_t)expect_fault)) {
+        ring3_failures++;
+        kernel_panic("ring-3 case fault expectation mismatch");
+    }
+    *out_pid=pid;
+}
+
+static void ring3_orchestrator(void *argument) {
+    (void)argument;
+    uint64_t deadline=timer_ticks()+1200;
+    uint64_t pid=0;
+
+    /* Case 0: hello — prove ring-3 execution and the write/getpid/gettid
+     * syscall path end to end. */
+    ring3_run_case(0,300,0,&pid);
+    {
+        struct process *p=process_find(pid);
+        if (!p || p->exit_code!=0)
+            kernel_panic("ring-3 hello exit code mismatch");
+    }
+    if (process_reap(pid)!=0)
+        kernel_panic("ring-3 hello reap failed");
+    serial_write_public("ZEROOS: ring-3 hello process verified.\n");
+
+    /* Case 1 (A) and case 2 (B): address-space isolation. Both processes
+     * map ZEROOS_USER_DATA_VA to their own physical page. A writes a
+     * marker; B must read its own (zero) page, not A's. */
+    ring3_run_case(1,300,0,&pid);
+    uint64_t pid_a=pid;
+    {
+        struct process *a=process_find(pid_a);
+        uint32_t marker=0;
+        if (!a) kernel_panic("ring-3 process A vanished");
+        marker=*(volatile uint32_t *)(uint64_t)a->data_phys;
+        if (marker!=0xdeadbeef) {
+            ring3_failures++;
+            kernel_panic("ring-3 user store to data page not observed");
+        }
+    }
+
+    ring3_run_case(2,300,0,&pid);
+    uint64_t pid_b=pid;
+    {
+        struct process *a=process_find(pid_a);
+        struct process *b=process_find(pid_b);
+        if (!a || !b) kernel_panic("ring-3 isolation processes vanished");
+        if (a->data_phys==b->data_phys) {
+            ring3_failures++;
+            kernel_panic("ring-3 isolation: two spaces share a physical page");
+        }
+        if (vmm_space_translate(&a->space,ZEROOS_USER_DATA_VA)!=a->data_phys) {
+            ring3_failures++;
+            kernel_panic("ring-3 isolation: A VA->PA mismatch");
+        }
+        if (vmm_space_translate(&b->space,ZEROOS_USER_DATA_VA)!=b->data_phys) {
+            ring3_failures++;
+            kernel_panic("ring-3 isolation: B VA->PA mismatch");
+        }
+        if (b->exited_by_fault || b->exit_code!=0) {
+            ring3_failures++;
+            kernel_panic("ring-3 reader process failed");
+        }
+    }
+    if (process_reap(pid_a)!=0 || process_reap(pid_b)!=0)
+        kernel_panic("ring-3 isolation reap failed");
+    serial_write_public("ZEROOS: per-process address-space isolation verified.\n");
+
+    /* Case 3: contained page fault from ring 3. */
+    ring3_run_case(3,300,1,&pid);
+    if (process_reap(pid)!=0)
+        kernel_panic("ring-3 fault case reap failed");
+    serial_write_public("ZEROOS: ring-3 page-fault containment verified.\n");
+
+    /* Case 4: contained general protection from ring 3. */
+    ring3_run_case(4,300,1,&pid);
+    if (process_reap(pid)!=0)
+        kernel_panic("ring-3 GP case reap failed");
+    serial_write_public("ZEROOS: ring-3 general-protection containment verified.\n");
+
+    /* Case 5: negative syscall validation — kernel pointer and length
+     * overflow must be rejected with -1 while the process survives. */
+    ring3_run_case(5,300,0,&pid);
+    {
+        struct process *p=process_find(pid);
+        if (!p || p->exit_code!=0)
+            kernel_panic("ring-3 negative syscall case failed");
+    }
+    if (process_reap(pid)!=0)
+        kernel_panic("ring-3 negative case reap failed");
+    serial_write_public("ZEROOS: user pointer validation verified.\n");
+
+    for (uint64_t test=6;test<=10;++test) {
+        ring3_run_case(test,100,1,&pid);
+        struct process *p=process_find(pid);
+        uint64_t vector=test<=8 ? 7 : 13;
+        if (!p || p->exit_code!=(0x100ULL|vector))
+            kernel_panic("register/return containment vector mismatch");
+        if (process_reap(pid)!=0) kernel_panic("register fault reap failed");
+    }
+    serial_write_public("ZEROOS: integer-only state and bad-RSP containment passed.\n");
+
+    for (uint64_t test=11;test<=17;++test) {
+        ring3_run_case(test,100,1,&pid);
+        struct process *p=process_find(pid);
+        uint64_t vector=(test==14 || test==16 || test==17) ? 13 : 14;
+        if (test==17 && p && p->exit_code==(0x100ULL|6)) vector=6;
+        if (!p || p->exit_code!=(0x100ULL|vector)) kernel_panic("W^X/access fault vector mismatch");
+        if (process_reap(pid)!=0) kernel_panic("access fault reap failed");
+    }
+    serial_write_public("ZEROOS: user W^X, kernel access and I/O denial passed.\n");
+
+    unsigned pcids=vmm_pcid_in_use();
+    for (unsigned i=0;i<64;++i) {
+        ring3_run_case(99,100,0,&pid);
+        struct process *p=process_find(pid);
+        if (!p || p->exit_code!=0) kernel_panic("process execution stress failed");
+        uint64_t tid=p->thread ? p->thread->id : 0;
+        if (process_reap(pid)!=0 || process_find(pid) || (tid && task_find_by_id(tid)) ||
+            vmm_pcid_in_use()!=pcids) kernel_panic("process execution/reap retained resources");
+    }
+    serial_write_public("ZEROOS: process execution/reap stress passed.\n");
+
+    if (timer_ticks()>deadline) {
+        ring3_failures++;
+        kernel_panic("ring-3 certification exceeded tick budget");
+    }
+    serial_write_public("ZEROOS: ring-3 integration self-test passed.\n");
+}
+
+#ifdef ZEROOS_TEST_FAULTS
+static void process_rollback_self_test(void) {
+    uint64_t irq=irq_save();
+    uint64_t pages=memory_free_pages(), heap=heap_used_bytes(), tasks=task_count();
+    unsigned pcids=vmm_pcid_in_use();
+    for (unsigned kind=0;kind<2;++kind) {
+        unsigned failed=0, completed=0;
+        for (int point=0;point<32;++point) {
+            uint64_t pid=~0ULL;
+            if (kind==0) memory_test_fail_after(point);
+            else heap_test_fail_after(point);
+            int result=process_spawn(99,&pid);
+            memory_test_fail_after(-1);
+            heap_test_fail_after(-1);
+            if (result==0) {
+                if (process_test_discard(pid)!=0) kernel_panic("rollback discard failed");
+                completed=1;
+            } else {
+                if (pid!=~0ULL) kernel_panic("failed spawn published a PID");
+                ++failed;
+            }
+            if (memory_free_pages()!=pages || heap_used_bytes()!=heap ||
+                task_count()!=tasks || vmm_pcid_in_use()!=pcids || heap_validate()!=0)
+                kernel_panic("spawn rollback leaked resources");
+            if (completed) break;
+        }
+        if (!completed || failed<(kind==0 ? 8U : 3U))
+            kernel_panic("spawn failure injection did not cover allocation path");
+    }
+    /* More cycles than either the process, task or PCID slot count. */
+    for (unsigned round=0;round<64;++round) {
+        uint64_t ids[ZEROOS_MAX_PROCESSES];
+        unsigned count=0;
+        for (;count<ZEROOS_MAX_PROCESSES;++count)
+            if (process_spawn(99,&ids[count])!=0) break;
+        if (!count || count==ZEROOS_MAX_PROCESSES)
+            kernel_panic("process capacity boundary not exercised");
+        for (unsigned i=0;i<count;++i)
+            if (process_test_discard(ids[i])!=0) kernel_panic("capacity drain failed");
+        if (memory_free_pages()!=pages || heap_used_bytes()!=heap ||
+            task_count()!=tasks || vmm_pcid_in_use()!=pcids)
+            kernel_panic("process lifetime stress leaked resources");
+    }
+    irq_restore(irq);
+    serial_write_public("ZEROOS: process rollback and lifetime stress passed.\n");
+}
+#endif
+
 static void scheduler_self_test(void) {
     uint64_t worker_id, monitor_id, waiter_id, waker_id, sleeper_id;
-    uint64_t preempt_a_id, preempt_b_id, lifecycle_id;
+    uint64_t preempt_a_id, preempt_b_id, lifecycle_id, ring3_id;
 
     atomic_u64_init(&task_probe_counter,0);
     atomic_u64_init(&wait_probe_state,0);
@@ -388,6 +1041,13 @@ static void scheduler_self_test(void) {
         kernel_panic("task system initialization failed");
     if (scheduler_init()!=0)
         kernel_panic("scheduler initialization failed");
+#ifdef ZEROOS_TEST_FAULTS
+    /* Exercise IRQ exit while slot 0 still owns the bootstrap stack. */
+    uint64_t bootstrap_tick=timer_ticks();
+    while (timer_ticks()-bootstrap_tick<2) __asm__ volatile ("hlt");
+    serial_write_public("ZEROOS: bootstrap IRQ regression passed.\n");
+    process_rollback_self_test();
+#endif
 
     if (task_create(scheduler_probe_worker,0,&worker_id)!=0)
         kernel_panic("scheduler worker creation failed");
@@ -405,6 +1065,8 @@ static void scheduler_self_test(void) {
         kernel_panic("timer-preemption CPU-B creation failed");
     if (task_create(scheduler_probe_lifecycle_creator,0,&lifecycle_id)!=0)
         kernel_panic("lifecycle creator creation failed");
+    if (task_create(ring3_orchestrator,0,&ring3_id)!=0)
+        kernel_panic("ring-3 orchestrator creation failed");
 
     serial_write_public("ZEROOS: kernel tasks created: ");
     serial_write_u64(task_count());
@@ -453,6 +1115,22 @@ void kernel_main(uint64_t multiboot_info, uint64_t multiboot_magic) {
     serial_write_u64(multiboot_info);
     serial_write_public("\n");
 
+    /* Cover allocator and VMM initialization as well as the heap. */
+    early_idt_install();
+#if ZEROOS_EARLY_FAULT_TEST == 6
+    __asm__ volatile (".global early_fault_test_site\n"
+                      "early_fault_test_site: ud2");
+#elif ZEROOS_EARLY_FAULT_TEST == 14
+    __asm__ volatile ("movabs $0x4000000000, %%rax\n"
+                      ".global early_fault_test_site\n"
+                      "early_fault_test_site: mov (%%rax), %%rax"
+                      : : : "rax", "memory");
+#endif
+#if ZEROOS_LATE_FAULT_TEST
+    gdt_init();
+    interrupts_init();
+    kernel_panic("late fault test returned");
+#endif
     memory_init(multiboot_info);
     serial_write_public("ZEROOS: physical page allocator initialized.\n");
     serial_write_public("ZEROOS: managed pages: ");
@@ -463,12 +1141,32 @@ void kernel_main(uint64_t multiboot_info, uint64_t multiboot_magic) {
 
     memory_self_test();
 
-    if (vmm_init()!=0) kernel_panic("virtual memory initialization failed");
+    if (vmm_init()!=0) kernel_panic("virtual memory initialization failed (NX required)");
     serial_write_public("ZEROOS: virtual memory manager initialized.\n");
     vmm_self_test();
+
+    serial_write_public("ZEROOS: heap init starting.\n");
+
+    /*
+     * The heap must be live before the per-address-space self-test:
+     * space page-ownership tracking allocates its descriptors from the
+     * heap.
+     */
+    if (heap_init()!=0) kernel_panic("kernel heap initialization failed");
+    serial_write_public("ZEROOS: kernel heap initialized.\n");
+    serial_write_public("ZEROOS: heap self-test starting.\n");
+#if ZEROOS_WX_FAULT_TEST
+    wx_fault_test();
+#endif
+    heap_self_test();
+
     vmm_space_self_test();
+    vmm_security_self_test();
 
     sync_self_test();
+
+    gdt_init();
+    serial_write_public("ZEROOS: GDT extended (user segments) and TSS loaded.\n");
 
     interrupts_init();
     serial_write_public("ZEROOS: IDT installed and interrupts enabled.\n");
@@ -476,6 +1174,24 @@ void kernel_main(uint64_t multiboot_info, uint64_t multiboot_magic) {
     serial_write_u64(timer_frequency_hz());
     serial_write_public(" Hz.\n");
     serial_write_public("ZEROOS: IRQ ownership layer initialized.\n");
+
+    if (vmm_pcid_enabled())
+        serial_write_public("ZEROOS: PCID TLB isolation enabled.\n");
+    else
+        serial_write_public("ZEROOS: PCID unavailable; full TLB flush mode.\n");
+
+    if (vmm_invpcid_enabled())
+        serial_write_public("ZEROOS: INVPCID retirement available.\n");
+    else
+        serial_write_public("ZEROOS: CR3-load retirement fallback.\n");
+
+    syscall_init();
+    serial_write_public("ZEROOS: SYSCALL/SYSRET syscall entry initialized.\n");
+
+    if (process_system_init()!=0)
+        kernel_panic("process system initialization failed");
+    serial_write_public("ZEROOS: process system initialized.\n");
+
     serial_write_public("ZEROOS: foundation milestone reached.\n");
 
     scheduler_self_test();

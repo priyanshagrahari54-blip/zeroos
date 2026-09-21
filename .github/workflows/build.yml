@@ -4,19 +4,39 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
       - name: Install build and QEMU tools
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc binutils grub-pc-bin grub-common xorriso mtools qemu-system-x86
+          gcc --version
+          ld --version | head -1
+          qemu-system-x86_64 --version
+          grub-mkrescue --version
+
+      - name: Allow runner access to KVM if available
+        run: |
+          if test -c /dev/kvm; then
+            sudo chgrp "$(id -gn)" /dev/kvm
+            sudo chmod g+rw /dev/kvm
+          else
+            echo "No KVM device; matrix will report hardware coverage unavailable."
+          fi
+
+      - name: Host boundary tests
+        run: make host-test
 
       - name: Build ZEROOS
-        run: make
+        run: make EXTRA_CFLAGS=-DZEROOS_TEST_FAULTS
 
       - name: Verify kernel image
         run: |
@@ -24,40 +44,171 @@ jobs:
           test -s build/zeroos.iso
           file build/zeroos.elf build/zeroos.iso
           readelf -h -l build/zeroos.elf
+          readelf -S build/zeroos.elf
           objdump -s -j .multiboot2 build/zeroos.elf
           echo "===== ZEROOS linker symbols ====="
-          nm -n build/zeroos.elf | grep -E '(__kernel_start|__kernel_end|stack_bottom|stack_top|tasks$|task_lock$|next_task_id$|sleep_head$|tick_hook$|ticks$|page_bitmap|free_word_summary)' || true
-          echo "===== ZEROOS memory_init disassembly ====="
-          objdump -d --disassemble=memory_init build/zeroos.elf
-          echo "===== ZEROOS task context disassembly ====="
+          nm -n build/zeroos.elf | grep -E '(__kernel_start|__kernel_end|stack_bottom|stack_top|user_init_code|user_init_end|tss$|gdt$|page_bitmap|free_word_summary)' || true
+          echo "===== ZEROOS user program size ====="
+          nm -n build/zeroos.elf | awk '/user_init_code/{s=strtonum("0x"$1)} /user_init_end/{print "userinit bytes:", strtonum("0x"$1)-s}'
+          echo "===== ZEROOS syscall entry disassembly ====="
+          objdump -d --disassemble=syscall_entry build/zeroos.elf
+          echo "===== ZEROOS user entry disassembly ====="
+          objdump -d --disassemble=user_task_entry build/zeroos.elf
           objdump -d --disassemble=task_trampoline build/zeroos.elf
-          objdump -d --disassemble=switch_to_next build/zeroos.elf
-          objdump -d --disassemble=task_yield build/zeroos.elf
+
+      - name: Exception and CPU feature regressions
+        run: python3 tests/boot_regressions.py >build/boot-regressions.log 2>&1
 
       - name: Boot test
         run: |
-          timeout 10s qemu-system-x86_64             -cdrom build/zeroos.iso             -serial file:build/serial.log             -display none             -no-reboot             -no-shutdown             -debugcon file:build/debug.log             -global isa-debugcon.iobase=0xe9             -d guest_errors,cpu_reset             -D build/qemu.log || true
-          grep -q "ZEROOS: foundation milestone reached." build/serial.log
-          grep -q "ZEROOS: physical page allocator initialized." build/serial.log
-          test -s build/debug.log
-          grep -q "B" build/debug.log
-          grep -q "L" build/debug.log
-          grep -q "ZEROOS: timer tick 100." build/serial.log
+          set +e
+          timeout 60s qemu-system-x86_64 \
+            -cdrom build/zeroos.iso -serial file:build/serial.log \
+            -display none -no-reboot -no-shutdown \
+            -debugcon file:build/debug.log -global isa-debugcon.iobase=0xe9 \
+            -d guest_errors,cpu_reset,int -D build/qemu.log \
+            >build/qemu-startup.log 2>&1
+          QEMU_STATUS=$?
+          set -e
+          echo "QEMU exit status: $QEMU_STATUS" | tee build/qemu-status.txt
+          cat build/qemu-startup.log
+          # timeout is expected for a kernel that idles rather than exits.
+          if [ "$QEMU_STATUS" -ne 0 ] && [ "$QEMU_STATUS" -ne 124 ]; then
+            exit "$QEMU_STATUS"
+          fi
+          echo "===== serial tail ====="
+          tail -40 build/serial.log || true
+          FAIL=0
+          : > build/check-results.txt
+          check() {
+            if grep -q "$1" build/serial.log; then
+              echo "PASS: $1" | tee -a build/check-results.txt
+            else
+              echo "MISSING: $1" | tee -a build/check-results.txt
+              FAIL=1
+            fi
+          }
+          forbid() {
+            if grep -q "$1" build/serial.log; then
+              echo "FORBIDDEN PRESENT: $1" | tee -a build/check-results.txt
+              FAIL=1
+            else
+              echo "PASS (absent): $1" | tee -a build/check-results.txt
+            fi
+          }
+          # Foundation
+          check "ZEROOS: address-space reuse with displaced frames passed."
+          check "ZEROOS: bootstrap IRQ regression passed."
+          check "ZEROOS: process execution/reap stress passed."
+          check "ZEROOS: process rollback and lifetime stress passed."
+          check "ZEROOS: live-CR3 isolation, ownership and W^X passed."
+          check "ZEROOS: user W^X, kernel access and I/O denial passed."
+          check "ZEROOS: physical page allocator initialized."
+          check "ZEROOS: heap self-test passed."
+          check "ZEROOS: virtual memory self-test passed."
+          check "ZEROOS: per-address-space VMM self-test passed."
+          check "ZEROOS: GDT extended (user segments) and TSS loaded."
+          check "ZEROOS: IDT installed and interrupts enabled."
+          check "ZEROOS: SYSCALL/SYSRET syscall entry initialized."
+          check "ZEROOS: foundation milestone reached."
+          check "ZEROOS: synchronization primitives self-test passed."
+          check "ZEROOS: wait queue block/wakeup self-test passed."
+          check "ZEROOS: wait queue integration verified."
+          check "ZEROOS: timed sleep wakeup self-test passed."
+          check "ZEROOS: timed sleep integration verified."
+          # Scheduler certification
+          check "ZEROOS: timer tick 100."
+          check "ZEROOS: timer-only preemption stress passed."
+          check "ZEROOS: zombie reaping and slot-reuse stress passed."
+          # Stage-1 ring-3 certification
+          check "ZEROOS: ring-3 user program executed."
+          check "ZEROOS: CPL3 and syscall register ABI verified."
+          check "ZEROOS: integer-only state and bad-RSP containment passed."
+          check "ZEROOS: ring-3 hello process verified."
+          check "ZEROOS: user stored marker in data page."
+          check "ZEROOS: user read data page."
+          check "ZEROOS: per-process address-space isolation verified."
+          check "ZEROOS: user fault contained: vector=0x000000000000000e"
+          check "ZEROOS: ring-3 page-fault containment verified."
+          check "ZEROOS: user fault contained: vector=0x000000000000000d"
+          check "ZEROOS: ring-3 general-protection containment verified."
+          check "ZEROOS: negative syscall checks rejected as required."
+          check "ZEROOS: user pointer validation verified."
+          check "ZEROOS: ring-3 integration self-test passed."
+          # Failure detection: no panic, no user-program validation failure
+          forbid "ZEROOS PANIC"
+          forbid "ZEROOS: FAIL"
+          forbid "ZEROOS EARLY FATAL"
+          forbid "kernel halted after fatal exception"
+          if grep -q "Triple fault" build/qemu.log; then FAIL=1; fi
+          if test -s build/debug.log; then echo "PASS: debug.log present" | tee -a build/check-results.txt; else echo "MISSING: debug.log" | tee -a build/check-results.txt; FAIL=1; fi
+          if grep -q "B" build/debug.log 2>/dev/null; then echo "PASS: debug port B" | tee -a build/check-results.txt; else echo "MISSING: debug port B" | tee -a build/check-results.txt; FAIL=1; fi
+          if grep -q "L" build/debug.log 2>/dev/null; then echo "PASS: debug port L" | tee -a build/check-results.txt; else echo "MISSING: debug port L" | tee -a build/check-results.txt; FAIL=1; fi
+          exit $FAIL
+
+      - name: CPU and RAM integration matrix
+        run: ZEROOS_REQUIRE_PCID=1 python3 tests/boot_matrix.py >build/matrix-results.log 2>&1
 
       - name: Dump serial log on failure
         if: failure()
         run: |
+          # A triple-fault reboot loop can make these large; bound every
+          # dump so log streaming cannot stall the job.
           echo "===== ZEROOS serial.log ====="
           if test -f build/serial.log; then
-            cat build/serial.log
+            tail -c 200000 build/serial.log
           else
             echo "serial.log was not produced"
           fi
           echo "===== ZEROOS debug port ====="
-          if test -f build/debug.log; then cat build/debug.log; else echo "debug.log was not produced"; fi
+          if test -f build/debug.log; then tail -c 200000 build/debug.log; else echo "debug.log was not produced"; fi
           echo "===== QEMU diagnostics ====="
           if test -f build/qemu.log; then
-            cat build/qemu.log
+            tail -c 50000 build/qemu.log
           else
             echo "qemu.log was not produced"
           fi
+
+      - name: Archive final validation summary
+        if: always()
+        run: |
+          {
+            echo "Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo
+            echo "Commit: $GITHUB_SHA"
+            echo "### integration matrix"
+            echo '```'
+            tail -c 8000 build/matrix-results.log 2>/dev/null || true
+            echo '```'
+            echo "### boot regressions"
+            echo '```'
+            tail -c 4000 build/boot-regressions.log 2>/dev/null || true
+            echo '```'
+            echo "### check results"
+            echo '```'
+            if test -f build/check-results.txt; then cat build/check-results.txt; else echo "(missing)"; fi
+            echo '```'
+          } > build/validation-summary.md
+
+      - name: Archive diagnostics
+        if: always()
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4
+        with:
+          name: zeroos-diagnostics
+          path: |
+            build/matrix-results.log
+            build/matrix/
+            build/serial.log
+            build/debug.log
+            build/qemu.log
+            build/check-results.txt
+            build/qemu-startup.log
+            build/qemu-status.txt
+            build/boot-regressions.log
+            build/wx-fault-*/serial.log
+            build/late-fault-*/serial.log
+            build/early-fault-*/serial.log
+            build/no-nx/serial.log
+            build/validation-summary.md
+          if-no-files-found: ignore
+

@@ -6,9 +6,41 @@ CC := gcc
 LD := ld
 AS := gcc
 
-CFLAGS := -m64 -mno-red-zone -mcmodel=small -ffreestanding -fno-pic -fno-pie -fno-stack-protector -fno-builtin -nostdinc -Wall -Wextra -O2
+CFLAGS := -m64 -mno-red-zone -mgeneral-regs-only -mcmodel=small -ffreestanding -fno-pic -fno-pie -fno-stack-protector -fno-builtin -nostdinc -Wall -Wextra -Werror -O2
 ASFLAGS := -m64 -ffreestanding -fno-pic -fno-pie -nostdlib
 LDFLAGS := -m elf_x86_64 -T kernel/linker.ld -nostdlib
+
+C_OBJECTS := \
+	$(BUILD)/kernel.o \
+	$(BUILD)/interrupts.o \
+	$(BUILD)/pic.o \
+	$(BUILD)/timer.o \
+	$(BUILD)/sync.o \
+	$(BUILD)/memory.o \
+	$(BUILD)/heap.o \
+	$(BUILD)/vmm.o \
+	$(BUILD)/gdt.o \
+	$(BUILD)/task.o \
+	$(BUILD)/process.o \
+	$(BUILD)/syscall.o \
+	$(BUILD)/elf.o \
+	$(BUILD)/elf_loader.o \
+	$(BUILD)/wait.o \
+	$(BUILD)/scheduler.o
+
+A_OBJECTS := \
+	$(BUILD)/boot.o \
+	$(BUILD)/isr.o \
+	$(BUILD)/early_isr.o \
+	$(BUILD)/context.o \
+	$(BUILD)/syscall_entry.o \
+	$(BUILD)/user_init.o
+
+OBJECTS := $(C_OBJECTS) $(A_OBJECTS)
+HEADERS := $(wildcard kernel/*.h)
+
+vpath %.c kernel
+vpath %.S boot kernel user
 
 .PHONY: all clean iso run
 
@@ -17,47 +49,18 @@ all: iso
 $(BUILD):
 	mkdir -p $(BUILD)
 
-$(BUILD)/boot.o: boot/boot.S | $(BUILD)
+$(C_OBJECTS): $(HEADERS) Makefile
+
+$(BUILD)/%.o: %.c | $(BUILD)
+	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -Ikernel -c $< -o $@
+
+$(A_OBJECTS): $(HEADERS)
+
+$(BUILD)/%.o: %.S | $(BUILD)
 	$(AS) $(ASFLAGS) -c $< -o $@
 
-$(BUILD)/isr.o: boot/isr.S | $(BUILD)
-	$(AS) $(ASFLAGS) -c $< -o $@
-
-$(BUILD)/context.o: kernel/context.S | $(BUILD)
-	$(AS) $(ASFLAGS) -c $< -o $@
-
-$(BUILD)/kernel.o: kernel/kernel.c kernel/types.h kernel/memory.h kernel/timer.h kernel/vmm.h kernel/sync.h kernel/task.h kernel/scheduler.h kernel/wait.h | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
-
-$(BUILD)/interrupts.o: kernel/interrupts.c kernel/interrupts.h kernel/types.h kernel/pic.h kernel/timer.h | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
-
-$(BUILD)/pic.o: kernel/pic.c kernel/pic.h kernel/types.h | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
-
-$(BUILD)/timer.o: kernel/timer.c kernel/timer.h kernel/types.h kernel/sync.h | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
-
-$(BUILD)/sync.o: kernel/sync.c kernel/sync.h kernel/types.h | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
-
-$(BUILD)/memory.o: kernel/memory.c kernel/memory.h kernel/types.h kernel/linker.ld | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
-
-$(BUILD)/vmm.o: kernel/vmm.c kernel/vmm.h kernel/memory.h kernel/types.h | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
-
-$(BUILD)/task.o: kernel/task.c kernel/task.h kernel/types.h kernel/memory.h kernel/sync.h kernel/timer.h | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
-
-$(BUILD)/wait.o: kernel/wait.c kernel/wait.h kernel/task.h kernel/types.h kernel/sync.h | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -Ikernel -c $< -o $@
-
-$(BUILD)/scheduler.o: kernel/scheduler.c kernel/scheduler.h kernel/task.h kernel/timer.h kernel/sync.h | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
-
-$(KERNEL): $(BUILD)/boot.o $(BUILD)/isr.o $(BUILD)/context.o $(BUILD)/kernel.o $(BUILD)/interrupts.o $(BUILD)/pic.o $(BUILD)/timer.o $(BUILD)/sync.o $(BUILD)/memory.o $(BUILD)/vmm.o $(BUILD)/task.o $(BUILD)/wait.o $(BUILD)/scheduler.o kernel/linker.ld
-	$(LD) $(LDFLAGS) -o $@ $(BUILD)/boot.o $(BUILD)/isr.o $(BUILD)/context.o $(BUILD)/kernel.o $(BUILD)/interrupts.o $(BUILD)/pic.o $(BUILD)/timer.o $(BUILD)/sync.o $(BUILD)/memory.o $(BUILD)/vmm.o $(BUILD)/task.o $(BUILD)/wait.o $(BUILD)/scheduler.o
+$(KERNEL): $(OBJECTS) kernel/linker.ld
+	$(LD) $(LDFLAGS) -o $@ $(OBJECTS)
 
 iso: $(KERNEL)
 	rm -rf $(BUILD)/iso
@@ -71,3 +74,18 @@ run: iso
 
 clean:
 	rm -rf $(BUILD)
+
+.PHONY: host-test
+host-test: | $(BUILD)
+	$(CC) -O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -DZEROOS_HOST_TEST -Ikernel -Wl,--gc-sections tests/user_range.c kernel/vmm.c -o $(BUILD)/test-user-range
+	timeout 5 $(BUILD)/test-user-range
+	$(CC) -O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -DZEROOS_HOST_TEST -Ikernel -Wl,--gc-sections tests/syscall_dispatch.c kernel/syscall.c kernel/vmm.c -o $(BUILD)/test-syscall
+	timeout 5 $(BUILD)/test-syscall
+	$(CC) -O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -DZEROOS_HOST_TEST -Ikernel -Wl,--gc-sections tests/page_ownership.c kernel/vmm.c kernel/memory.c -o $(BUILD)/test-page-ownership
+	timeout 5 $(BUILD)/test-page-ownership
+	$(CC) -O2 -Wall -Wextra -Werror -DZEROOS_HOST_TEST -DZEROOS_TEST_FAULTS -Ikernel tests/pmm.c kernel/memory.c -o $(BUILD)/test-pmm
+	timeout 5 $(BUILD)/test-pmm
+	$(CC) -O2 -Wall -Wextra -Werror -DZEROOS_TEST_FAULTS -Ikernel tests/heap.c kernel/heap.c -o $(BUILD)/test-heap
+	timeout 5 $(BUILD)/test-heap
+	$(CC) -O2 -Wall -Wextra -Werror -DZEROOS_HOST_TEST -Ikernel tests/elf.c kernel/elf.c -o $(BUILD)/test-elf
+	timeout 5 $(BUILD)/test-elf

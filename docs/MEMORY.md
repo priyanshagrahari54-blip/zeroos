@@ -1,49 +1,72 @@
-# ZEROOS Memory Architecture
+# ZEROOS memory ownership
 
-| Layer | Purpose | Current implementation | Production direction |
-|---|---|---|---|
-| Firmware map | Discover RAM and reserved ranges | Multiboot2 memory map | Keep hardware-derived map |
-| Physical allocator | Allocate/free 4 KiB pages | Compact bitmap + summary index | Zones/buddy + per-CPU caches |
-| Allocation search | Find a free page quickly | Hierarchical summary, bounded scan | Per-CPU fast paths |
-| Kernel metadata | Avoid corrupting boot/kernel data | Page 0, kernel image and Multiboot info reserved | Full boot-memory reservation model |
-| Physical range | Keep bootstrap simple | First 512 MiB tracked | Extend from firmware map as higher-memory support lands |
+## Physical pages
 
-## Current allocator
+The PMM starts with all pages unavailable, releases only complete pages from
+Multiboot2 type-1 RAM ranges, then reserves the first 1 MiB, kernel image and
+Multiboot information block. The complete tag/entry/end-marker structure and
+range arithmetic are validated before any frame is released. Non-available
+records dominate overlapping available records regardless of ordering.
+Reservations round outward; available RAM rounds
+inward. The tracked aperture is capped at 512 MiB, independent of installed RAM.
 
-ZEROOS starts with all tracked pages reserved and releases only pages reported as type 1 (available RAM) by the Multiboot2 memory map. The kernel image, page zero and the Multiboot information structure are then reserved again.
+Three bitmaps distinguish unavailable/free pages, runtime allocations, and
+exclusive mapping claims. Each costs 16 KiB for the full aperture; a 256-byte
+summary indexes bitmap words containing free pages. There is no dynamic
+per-allocation PMM metadata. `page_alloc` uses the bounded summary scan;
+`memory_find_free_run` performs a separate bounded contiguous-run search.
 
-The allocator stores one bit per 4 KiB page. The 512 MiB bootstrap range therefore needs 16 KiB for the primary bitmap. A small summary bitmap records which bitmap words still contain free pages.
+A reserved or free page cannot be claimed. A runtime allocation can have one
+claim; a second claim or `page_free` while claimed is rejected. Free also
+rejects invalid alignment, unallocated pages and double frees. Releasing a
+claim does not free the allocation. IRQ save/restore makes bitmap transitions
+atomic on the single CPU and preserves nesting state.
 
-This changes the old first-fit design from potentially scanning all 131,072 pages to scanning at most the small summary hierarchy plus one 64-bit word. Allocation/free accounting remains deterministic and the metadata stays very small.
+This compact representation follows ZEROOS's current bounded ownership needs.
+It does not commit future DMA, NUMA, sharing, or physical-memory growth to any
+other operating system's allocator architecture.
 
-## Why this is an intentional intermediate architecture
+## Kernel object heap
 
-A full production allocator needs zones, fragmentation management, higher-order contiguous allocations and eventually per-CPU caches. Linux, for example, uses zones and a buddy allocator, with per-CPU page sets to keep frequent allocations away from global allocator contention. citeturn1search0turn1search12
+The heap reserves a contiguous 4 MiB run, falling back to 1 MiB. A failed
+backing-page allocation releases every earlier page. It does not repeatedly
+allocate/free disconnected pages hoping they become contiguous.
 
-ZEROOS is not pretending the current allocator is the final NUMA/driver-grade allocator. It is now a fast bootstrap allocator with an interface that can later be backed by those mechanisms without changing callers.
+Blocks tile the region: a 32-byte header (`size`, state, header canary, padding)
+followed by a 16-byte-aligned payload. First-fit allocation splits only when a
+usable remainder remains. `kcalloc` checks multiplication overflow and clears
+the requested bytes. Free merges adjacent free blocks in both directions.
 
-## Resource budget
+Allocation identity comes from the allocator-owned block chain, **not** a
+header-looking word sequence before a supplied pointer. Free rejects NULL,
+unaligned/out-of-region/interior pointers and stale headers absorbed by
+coalescing. Every walk validates nonzero aligned size, remaining bounds and
+state/canary before advancing. Alloc/free panic on corrupt metadata instead
+of looping or walking outside the region; `heap_validate` reports failure.
+IRQ-safe locking covers heap operations and validation.
 
-| Resource | Current cost |
-|---|---:|
-| Tracked physical range | 512 MiB |
-| Base-page size | 4 KiB |
-| Primary bitmap | 16 KiB |
-| Summary bitmap | 256 bytes |
-| Allocation search | Bounded by summary levels |
-| Per-allocation dynamic metadata | None |
+The canary is in the header: it detects header damage, not every possible
+payload overrun. There is no claim of universal buffer-overflow detection.
+`kmalloc(0)` returns a minimum allocation; zero-count/size `kcalloc` returns
+NULL. Allocation remains first-fit and is not a constant-time allocator.
 
-The allocator itself does not reserve a large heap or create per-page structs, so the bootstrap footprint stays small.
+## Validation
 
-## Next memory layers
+The native PMM suite covers malformed and overlapping boot maps, range
+overflow, inward/outward rounding, aperture caps, claims, forbidden frees,
+allocation failures, exhaustion/drain and contiguous-run bounds. Native heap
+tests use real allocator code with a backing-memory/IRQ fixture: failure at
+every initialization page, fallback, exact capacity, overflow, zeroing,
+coalesced double frees, forged interior headers, damaged/zero/overflowed header
+fields, exhaustion and 10,000 deterministic interleaved operations.
 
-The intended progression is:
+Guest boot tests cover actual writable backing, tiny/odd allocations, full
+near-capacity payload writes, invalid frees, calloc, exhaustion/drain and
+20,000 mixed operations. Exhaustion uses 1024-byte payloads to bound first-fit
+chain visits without abandoning whole-region exhaustion. Fault-enabled builds
+also test a forged header. Process failure injection compares page/heap/task/
+PCID baselines at every failed spawn step; lifetime stress repeatedly fills
+and drains fixed capacities. See VALIDATION.md for actual run results.
 
-1. Kernel object allocator for sub-page objects.
-2. Higher-order/contiguous allocation.
-3. Page ownership/reference tracking.
-4. Per-process address spaces.
-5. Demand paging and copy-on-write.
-6. Reclaim/page cache/swap policies where useful.
-
-That keeps the current fast page primitive useful instead of replacing every caller later.
+Demand paging, shared-frame reference counting, reclaim, page cache, swap and
+SMP allocation policy are not part of Stage 1.
