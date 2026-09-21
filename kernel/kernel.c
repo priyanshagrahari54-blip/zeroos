@@ -171,39 +171,57 @@ static struct atomic_u64 scheduler_stress_failures;
 
 static void scheduler_probe_cpu_a(void *argument) {
     (void)argument;
-    atomic_u64_store(&preempt_probe_ticks,timer_ticks());
 
     /*
-     * Deliberately never yield.  CPU-B must still make progress here, proving
-     * timer-only preemption rather than cooperative scheduling.
-     */
-    while (atomic_u64_load(&preempt_probe_b)==0) {
-        atomic_u64_fetch_add(&preempt_probe_a,1);
-        if (timer_ticks() - atomic_u64_load(&preempt_probe_ticks) > 250) {
-            atomic_u64_fetch_add(&scheduler_stress_failures,1);
-            kernel_panic("timer-only preemption failed: CPU-B made no progress");
-        }
-    }
-    atomic_u64_fetch_add(&preempt_probe_done,1);
-
-    /*
-     * Keep callee-saved registers live across repeated preemptions as well as
-     * voluntary switches. The values are checked after CPU-B has run.
+     * Keep callee-saved registers live from the very first CPU-bound loop so
+     * the first timer-only handoff itself is covered by the register test.
      */
     register uint64_t rbx asm("rbx")=0x9e3779b97f4a7c15ULL;
     register uint64_t r12 asm("r12")=0x243f6a8885a308d3ULL;
     register uint64_t r13 asm("r13")=0x13198a2e03707344ULL;
     register uint64_t r14 asm("r14")=0xa4093822299f31d0ULL;
     register uint64_t r15 asm("r15")=0x082efa98ec4e6c89ULL;
-    for (volatile uint64_t i=0;i<2000000ULL;++i) {
+
+    uint64_t start=timer_ticks();
+    atomic_u64_store(&preempt_probe_ticks,start);
+
+    /*
+     * Deliberately never yield. CPU-B must still make progress here, proving
+     * timer-only preemption rather than cooperative scheduling.
+     */
+    while (atomic_u64_load(&preempt_probe_b)==0) {
+        atomic_u64_fetch_add(&preempt_probe_a,1);
         __asm__ volatile ("" : "+r"(rbx), "+r"(r12), "+r"(r13), "+r"(r14), "+r"(r15));
+        if (timer_ticks() - start > 250) {
+            atomic_u64_fetch_add(&scheduler_stress_failures,1);
+            kernel_panic("timer-only preemption failed: CPU-B made no progress");
+        }
     }
-    if (rbx!=0x9e3779b97f4a7c15ULL ||
-        r12!=0x243f6a8885a308d3ULL ||
-        r13!=0x13198a2e03707344ULL ||
-        r14!=0xa4093822299f31d0ULL ||
-        r15!=0x082efa98ec4e6c89ULL)
-        kernel_panic("callee-saved register corruption during preemption");
+
+    /*
+     * Hold CPU-A runnable and CPU-bound for many ticks after CPU-B starts.
+     * This forces multiple timer preemptions while the callee-saved register
+     * set remains live in registers, instead of merely testing one initial
+     * handoff followed by a short non-preempted loop.
+     */
+    uint64_t deadline=timer_ticks()+50;
+    while ((long long)(deadline-timer_ticks())>0) {
+        atomic_u64_fetch_add(&preempt_probe_a,1);
+        __asm__ volatile ("" : "+r"(rbx), "+r"(r12), "+r"(r13), "+r"(r14), "+r"(r15));
+        if (rbx!=0x9e3779b97f4a7c15ULL ||
+            r12!=0x243f6a8885a308d3ULL ||
+            r13!=0x13198a2e03707344ULL ||
+            r14!=0xa4093822299f31d0ULL ||
+            r15!=0x082efa98ec4e6c89ULL)
+            kernel_panic("callee-saved register corruption during preemption");
+    }
+
+    if (timer_ticks()-start < 10) {
+        atomic_u64_fetch_add(&scheduler_stress_failures,1);
+        kernel_panic("timer-only preemption window was too short");
+    }
+
+    atomic_u64_fetch_add(&preempt_probe_done,1);
 }
 
 static void scheduler_probe_cpu_b(void *argument) {
@@ -218,7 +236,14 @@ static void scheduler_probe_cpu_b(void *argument) {
     while (atomic_u64_load(&preempt_probe_done)==0) {
         atomic_u64_fetch_add(&preempt_probe_b,1);
         __asm__ volatile ("" : "+r"(rbx), "+r"(r12), "+r"(r13), "+r"(r14), "+r"(r15));
+        if (rbx!=0xdeadbeefcafebabeULL ||
+            r12!=0x0123456789abcdefULL ||
+            r13!=0xfedcba9876543210ULL ||
+            r14!=0x55aa55aa55aa55aaULL ||
+            r15!=0xaa55aa55aa55aa55ULL)
+            kernel_panic("CPU-B callee-saved register corruption during preemption");
     }
+
     if (rbx!=0xdeadbeefcafebabeULL ||
         r12!=0x0123456789abcdefULL ||
         r13!=0xfedcba9876543210ULL ||
