@@ -312,6 +312,7 @@ static void scheduler_probe_monitor(void *argument) {
     int sleep_reported=0;
     int preempt_reported=0;
     int lifecycle_reported=0;
+    int certification_reported=0;
     uint64_t stress_start=timer_ticks();
 
     for (;;) {
@@ -342,6 +343,23 @@ static void scheduler_probe_monitor(void *argument) {
             atomic_u64_load(&lifecycle_probe_exited)>=6) {
             lifecycle_reported=1;
             serial_write_public("ZEROOS: zombie reaping and slot-reuse stress passed.\n");
+        }
+
+        /*
+         * This marker is the scheduler's explicit certification boundary.
+         * CI keys off it so a booting kernel cannot be mistaken for a fully
+         * passing scheduler: all independent scheduler probes must report
+         * success before the aggregate certificate is emitted.
+         */
+        if (!certification_reported &&
+            context_reported &&
+            wait_reported &&
+            sleep_reported &&
+            preempt_reported &&
+            lifecycle_reported &&
+            atomic_u64_load(&scheduler_stress_failures)==0) {
+            certification_reported=1;
+            serial_write_public("ZEROOS: scheduler certification passed.\n");
         }
 
         if (now>=last_report+100) {
