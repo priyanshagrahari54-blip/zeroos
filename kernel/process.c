@@ -9,6 +9,19 @@
 static struct process processes[ZEROOS_MAX_PROCESSES];
 static struct spinlock process_lock;
 
+static int process_pointer_valid(const struct process *process) {
+    uint64_t address;
+    uint64_t base;
+    uint64_t end;
+
+    if (!process) return 0;
+    address=(uint64_t)process;
+    base=(uint64_t)&processes[0];
+    end=(uint64_t)&processes[ZEROOS_MAX_PROCESSES];
+    return address>=base && address<end &&
+           ((address-base) % sizeof(processes[0]))==0;
+}
+
 static uint64_t process_make_id(uint32_t slot, uint32_t generation) {
     return ((uint64_t)generation << ZEROOS_PROCESS_SLOT_BITS) |
            ((uint64_t)slot + 1ULL);
