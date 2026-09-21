@@ -368,6 +368,7 @@ static void reap_zombies_locked(void) {
         task->preempt_count=0;
         task->need_resched=0;
         task->interrupt_frame=0;
+        task->thread=0;
         task->wait_next=0;
         task->wait_queue=0;
         task->sleep_next=0;
@@ -444,6 +445,7 @@ int task_system_init(void) {
         tasks[i].preempt_count=0;
         tasks[i].need_resched=0;
         tasks[i].interrupt_frame=0;
+        tasks[i].thread=0;
         tasks[i].wait_next=0;
         tasks[i].wait_queue=0;
         tasks[i].sleep_next=0;
@@ -472,6 +474,11 @@ int task_system_init(void) {
 }
 
 int task_create(task_entry_t entry, void *argument, uint64_t *task_id) {
+    return task_create_owned(entry,argument,0,task_id);
+}
+
+int task_create_owned(task_entry_t entry, void *argument,
+                      struct thread *thread, uint64_t *task_id) {
     if (!entry) return -1;
 
     uint64_t flags=spin_lock_irqsave(&task_lock);
@@ -503,6 +510,7 @@ int task_create(task_entry_t entry, void *argument, uint64_t *task_id) {
     task->timeslice_ticks=ZEROOS_DEFAULT_TIMESLICE;
     task->preempt_count=0;
     task->need_resched=0;
+    task->thread=thread;
     task->wait_next=0;
     task->wait_queue=0;
     task->sleep_next=0;
