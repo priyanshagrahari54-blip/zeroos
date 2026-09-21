@@ -779,10 +779,17 @@ uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
         for (;;) __asm__ volatile ("cli; hlt");
     }
 
-    previous->interrupt_frame=frame;
-
+    /*
+     * A preempt-disabled task remains the active CPU owner. The interrupt
+     * frame is consumed immediately by this IRQ return and must not be
+     * published as a resumable task-owned frame. Publishing it here would
+     * leave stale metadata behind and make later scheduler validation confuse
+     * the consumed IRQ frame with a suspended context.
+     */
     if (previous->preempt_count!=0)
         return (uint64_t)frame;
+
+    previous->interrupt_frame=frame;
 
     /*
      * Normal tasks enter the IRQ-exit scheduler only after their time slice
