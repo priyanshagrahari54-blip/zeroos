@@ -2,6 +2,8 @@
 #include "process.h"
 #include "sync.h"
 
+extern void serial_write_public(const char *text);
+
 #define ZEROOS_MAX_THREADS 32U
 #define ZEROOS_THREAD_SLOT_BITS 16U
 #define ZEROOS_THREAD_SLOT_MASK ((1ULL << ZEROOS_THREAD_SLOT_BITS) - 1ULL)
@@ -122,7 +124,7 @@ int thread_create_kernel(struct process *process,
 
     if (slot<0) {
         spin_unlock_irqrestore(&thread_lock,flags);
-        (void)process_thread_reserve(process);
+        (void)process_thread_unreserve(process);
         return -1;
     }
 
@@ -176,9 +178,8 @@ int thread_create_kernel(struct process *process,
          * the task out of the process model only on the impossible ownership
          * failure path and halt rather than creating an orphan runnable task.
          */
-        task_context_panic("ZEROOS PANIC: failed to attach kernel thread.
-",
-                           task_current());
+        serial_write_public("ZEROOS PANIC: failed to attach kernel thread.\n");
+        for (;;) __asm__ volatile ("cli; hlt");
     }
 
     if (tid_out)
@@ -194,10 +195,10 @@ int thread_exit(uint64_t exit_status) {
         thread->state==THREAD_UNUSED)
         return -1;
 
-    thread->state=THREAD_ZOMBIE;
-    thread->scheduler_task_id=0;
     if (process_thread_exited(thread,exit_status)!=0)
         return -1;
+    thread->state=THREAD_ZOMBIE;
+    thread->scheduler_task_id=0;
 
     task_exit();
     return 0;
