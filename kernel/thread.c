@@ -210,6 +210,53 @@ int thread_exit(uint64_t exit_status) {
     return 0;
 }
 
+
+int thread_debug_validate(void) {
+    uint64_t flags=spin_lock_irqsave(&thread_lock);
+
+    for (uint32_t i=0;i<ZEROOS_MAX_THREADS;++i) {
+        struct thread *thread=&threads[i];
+        uint32_t slot;
+        uint32_t generation;
+
+        if (thread->state==THREAD_UNUSED) {
+            if (thread->tid || thread->process || thread->entry ||
+                thread->argument || thread->scheduler_task_id ||
+                thread->exit_status || thread->next_in_process) {
+                spin_unlock_irqrestore(&thread_lock,flags);
+                return -1;
+            }
+            continue;
+        }
+
+        if (thread_decode_id(thread->tid,&slot,&generation)!=0 ||
+            slot!=i || generation!=thread->generation ||
+            thread_lookup_locked(thread->tid)!=thread ||
+            !thread->process ||
+            thread->process->state==PROCESS_UNUSED) {
+            spin_unlock_irqrestore(&thread_lock,flags);
+            return -1;
+        }
+
+        if ((thread->state==THREAD_RUNNING ||
+             thread->state==THREAD_RUNNABLE ||
+             thread->state==THREAD_BLOCKED) &&
+            thread->scheduler_task_id==0) {
+            spin_unlock_irqrestore(&thread_lock,flags);
+            return -1;
+        }
+
+        if (thread->state==THREAD_ZOMBIE &&
+            thread->scheduler_task_id!=0) {
+            spin_unlock_irqrestore(&thread_lock,flags);
+            return -1;
+        }
+    }
+
+    spin_unlock_irqrestore(&thread_lock,flags);
+    return 0;
+}
+
 int thread_reap(struct thread *thread, uint64_t *exit_status_out) {
     uint64_t flags;
 
