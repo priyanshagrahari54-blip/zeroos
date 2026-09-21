@@ -56,12 +56,6 @@ static void gdt_set_tss(uint32_t index, uint64_t base, uint32_t limit) {
     gdt[index+1]=(base >> 32) & 0xffffffffULL;
 }
 
-static uint64_t read_rsp(void) {
-    uint64_t rsp;
-    __asm__ volatile ("mov %%rsp,%0" : "=r"(rsp));
-    return rsp;
-}
-
 static void load_runtime_gdt(void) {
     runtime_gdtr.limit=(uint16_t)(sizeof(gdt)-1U);
     runtime_gdtr.base=(uint64_t)&gdt[0];
