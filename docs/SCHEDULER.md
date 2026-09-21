@@ -18,6 +18,13 @@ kernel/context.S saves RBP, RBX, R12-R15 and RSP. The task return address
 remains on its kernel stack, so restoring the stack and executing RET resumes
 the task at its previous execution point.
 
+The bootstrap task in slot zero is a special pre-scheduler context. It runs on
+the boot stack rather than a task-owned stack page, so a PIT interrupt can
+arrive while task initialization is still in progress. Such interrupts are
+returned through their original architectural frame without entering the task
+scheduler. Once scheduler_start() transfers execution away from slot zero,
+only task-owned contexts participate in scheduler validation and switching.
+
 ## Scheduling policy
 
 The current policy is bounded round-robin over the ordinary task slots. The
@@ -97,6 +104,21 @@ The lifecycle is therefore `UNUSED → RUNNABLE → RUNNING → BLOCKED/RUNNABLE
 The permanent idle task costs one 4 KiB kernel stack page plus one static task
 descriptor. No heap allocation is used for idle execution or waiters.
 
+## Certification gate
+
+The scheduler self-test reports independent success markers for cooperative
+context switching, wait/wakeup, timed sleep, timer-only preemption,
+zombie/slot-reuse lifecycle stress, and finally an aggregate scheduler
+certification passed marker. CI requires all of these markers and fails the
+boot test if a ZEROOS PANIC: is present in the serial log. This makes scheduler
+certification a runtime-tested CI gate rather than a documentation-only claim.
+
 ## Next stage
 
-Scheduler certification now covers cooperative switching, callee-saved register preservation, timer-only CPU-bound preemption, wait/wakeup, timed sleep, bounded deadlock detection, zombie reclamation, and slot reuse. The next scheduler stage is long-duration fairness/latency measurement, followed by per-CPU runqueues as part of SMP preparation. Higher-level synchronization can continue to build on the existing wait-queue and preemption boundaries.
+Scheduler certification now covers cooperative switching, callee-saved register
+preservation, timer-only CPU-bound preemption, wait/wakeup, timed sleep, bounded
+deadlock detection, zombie reclamation, slot reuse, and the pre-scheduler
+bootstrap interrupt boundary. The next scheduler stage is long-duration
+fairness/latency measurement, followed by per-CPU runqueues as part of SMP
+preparation. Higher-level synchronization can continue to build on the
+existing wait-queue and preemption boundaries.
