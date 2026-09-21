@@ -2,6 +2,7 @@
 #include "memory.h"
 #include "timer.h"
 #include "vmm.h"
+#include "gdt.h"
 #include "sync.h"
 #include "task.h"
 #include "thread.h"
@@ -140,6 +141,42 @@ static void vmm_space_self_test(void) {
     vmm_space_destroy(&space);
     page_free(physical);
     serial_write_public("ZEROOS: per-address-space VMM self-test passed.\n");
+}
+
+static void gdt_self_test(void) {
+    struct __attribute__((packed)) gdtr64_test {
+        uint16_t limit;
+        uint64_t base;
+    } gdtr;
+    uint16_t tr;
+    uint16_t cs;
+    uint16_t ds;
+    uint64_t rsp0;
+
+    __asm__ volatile (
+        "sgdt %0\n"
+        "str %1\n"
+        "movw %%cs,%2\n"
+        "movw %%ds,%3\n"
+        : "=m"(gdtr), "=r"(tr), "=r"(cs), "=r"(ds)
+        :
+        : "memory"
+    );
+
+    rsp0=gdt_kernel_stack();
+
+    if (!gdt_is_initialized() ||
+        gdtr.base!=gdt_base() ||
+        gdtr.limit<((7U*8U)-1U) ||
+        tr!=gdt_tss_selector() ||
+        cs!=gdt_kernel_code_selector() ||
+        ds!=gdt_kernel_data_selector() ||
+        gdt_user_code_selector()==gdt_kernel_code_selector() ||
+        gdt_user_data_selector()==gdt_kernel_data_selector() ||
+        rsp0==0 || (rsp0 & 0xfULL)!=0)
+        kernel_panic("GDT/TSS self-test failed");
+
+    serial_write_public("ZEROOS: runtime GDT/TSS self-test passed.\n");
 }
 
 static void sync_self_test(void) {
@@ -703,6 +740,10 @@ void kernel_main(uint64_t multiboot_info, uint64_t multiboot_magic) {
     serial_write_public("\n");
 
     memory_self_test();
+
+    if (gdt_init()!=0)
+        kernel_panic("runtime GDT/TSS initialization failed");
+    gdt_self_test();
 
     if (vmm_init()!=0) kernel_panic("virtual memory initialization failed");
     serial_write_public("ZEROOS: virtual memory manager initialized.\n");
