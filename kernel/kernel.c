@@ -571,6 +571,11 @@ static void scheduler_probe_monitor(void *argument) {
 
         process_thread_probe_monitor_step();
 
+        if (process_debug_validate()!=0)
+            kernel_panic("process table invariant check failed");
+        if (thread_debug_validate()!=0)
+            kernel_panic("thread table invariant check failed");
+
         if (!context_reported && atomic_u64_load(&task_probe_counter)==32) {
             context_reported=1;
             serial_write_public("ZEROOS: task context-switch self-test passed.\n");
