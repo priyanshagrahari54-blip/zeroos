@@ -350,3 +350,72 @@ uint64_t process_live_thread_count(const struct process *process) {
     if (!process) return 0;
     return process->live_thread_count;
 }
+
+int process_debug_validate(void) {
+    uint64_t flags=spin_lock_irqsave(&process_lock);
+
+    for (uint32_t i=0;i<ZEROOS_MAX_PROCESSES;++i) {
+        struct process *process=&processes[i];
+        uint32_t slot;
+        uint32_t generation;
+
+        if (process->state==PROCESS_UNUSED) {
+            if (process->pid || process->parent || process->first_child ||
+                process->next_sibling || process->child_count ||
+                process->first_thread || process->thread_count ||
+                process->live_thread_count || process->creating_threads ||
+                process->address_space.root ||
+                process->address_space.root_physical) {
+                spin_unlock_irqrestore(&process_lock,flags);
+                return -1;
+            }
+            continue;
+        }
+
+        if (process_decode_id(process->pid,&slot,&generation)!=0 ||
+            slot!=i || generation!=process->generation ||
+            process_lookup_locked(process->pid)!=process) {
+            spin_unlock_irqrestore(&process_lock,flags);
+            return -1;
+        }
+
+        if (process->state==PROCESS_ZOMBIE &&
+            (process->live_thread_count ||
+             process->creating_threads ||
+             process->first_child)) {
+            spin_unlock_irqrestore(&process_lock,flags);
+            return -1;
+        }
+
+        if (process->live_thread_count>process->thread_count) {
+            spin_unlock_irqrestore(&process_lock,flags);
+            return -1;
+        }
+
+        if (process->child_count) {
+            uint64_t count=0;
+            struct process *child=process->first_child;
+            while (child) {
+                if (!process_pointer_valid(child) || child->parent!=process) {
+                    spin_unlock_irqrestore(&process_lock,flags);
+                    return -1;
+                }
+                if (++count>ZEROOS_MAX_PROCESSES) {
+                    spin_unlock_irqrestore(&process_lock,flags);
+                    return -1;
+                }
+                child=child->next_sibling;
+            }
+            if (count!=process->child_count) {
+                spin_unlock_irqrestore(&process_lock,flags);
+                return -1;
+            }
+        } else if (process->first_child) {
+            spin_unlock_irqrestore(&process_lock,flags);
+            return -1;
+        }
+    }
+
+    spin_unlock_irqrestore(&process_lock,flags);
+    return 0;
+}
