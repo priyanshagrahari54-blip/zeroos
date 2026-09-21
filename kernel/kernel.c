@@ -515,7 +515,11 @@ static void scheduler_probe_worker(void *argument) {
 
     for (uint64_t i=0;i<32;++i) {
         atomic_u64_fetch_add(&task_probe_counter,1);
+        if (task_debug_validate()!=0)
+            kernel_panic("task scheduler invariant check failed");
         scheduler_yield();
+        if (task_debug_validate()!=0)
+            kernel_panic("task scheduler resume invariant check failed");
         if (rbx!=rbx_value ||
             r12!=r12_value || r13!=r13_value ||
             r14!=r14_value || r15!=r15_value)
