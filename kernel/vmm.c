@@ -294,15 +294,37 @@ int vmm_protect_page(uint64_t virtual_address, uint64_t flags) {
     uint64_t e1 = root_table[pml4_index];
     if (!(e1 & VMM_PRESENT)) return -1;
     uint64_t *pdpt = table_from_entry(e1);
+
+    /*
+     * x86-64 user accessibility is hierarchical: a leaf U/S bit is not
+     * sufficient when any ancestor entry remains supervisor-only.  A page
+     * protected as user therefore has to promote every paging level that
+     * contains it.  This is safe here because the explicit user-space test
+     * address lives in the dedicated user PML4 slot; kernel mappings remain
+     * supervisor-only.
+     */
+    if (flags & VMM_USER)
+        e1 |= VMM_USER;
+    root_table[pml4_index] = e1;
+
     uint64_t e2 = pdpt[pdpt_index];
     if (!(e2 & VMM_PRESENT)) return -1;
     uint64_t *pd = table_from_entry(e2);
+
+    if (flags & VMM_USER)
+        e2 |= VMM_USER;
+    pdpt[pdpt_index] = e2;
 
     if (pd[pd_index] & HUGE_PAGE_2M) {
         if (split_2m(pd, pd_index) != 0) return -1;
     }
 
     uint64_t e3 = pd[pd_index];
+    if (!(e3 & VMM_PRESENT)) return -1;
+    if (flags & VMM_USER) {
+        e3 |= VMM_USER;
+        pd[pd_index] = e3;
+    }
     if (!(e3 & VMM_PRESENT)) return -1;
     uint64_t *pt = table_from_entry(e3);
     if (!(pt[pt_index] & VMM_PRESENT)) return -1;
