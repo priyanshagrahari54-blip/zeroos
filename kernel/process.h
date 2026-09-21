@@ -53,5 +53,6 @@ int process_reap(struct process *process, uint64_t *exit_status_out);
 uint64_t process_child_count(const struct process *process);
 uint64_t process_thread_count(const struct process *process);
 uint64_t process_live_thread_count(const struct process *process);
+int process_debug_validate(void);
 
 #endif
