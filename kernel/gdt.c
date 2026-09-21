@@ -32,10 +32,16 @@ static struct gdtr64 runtime_gdtr;
 static void *runtime_entry_stack;
 static int initialized;
 
-static void gdt_set_code_data(uint32_t index, uint32_t access) {
+static void gdt_set_code(uint32_t index, uint32_t access) {
+    /* Long-mode code: G=1, L=1, D=0. */
+    gdt[index]=0x00a000000000ffffULL |
+               ((uint64_t)(access & 0xffU) << 40);
+}
+
+static void gdt_set_data(uint32_t index, uint32_t access) {
+    /* Data segment: G=1, D/B=1, L=0. */
     gdt[index]=0x00cf00000000ffffULL |
-               ((uint64_t)(access & 0xffU) << 40) |
-               0x0020000000000000ULL;
+               ((uint64_t)(access & 0xffU) << 40);
 }
 
 static void gdt_set_tss(uint32_t index, uint64_t base, uint32_t limit) {
@@ -94,10 +100,10 @@ int gdt_init(void) {
     stack_top &= ~0xFULL;
 
     gdt[0]=0;
-    gdt_set_code_data(1,0x9aU);
-    gdt_set_code_data(2,0x92U);
-    gdt_set_code_data(3,0xfaU);
-    gdt_set_code_data(4,0xf2U);
+    gdt_set_code(1,0x9aU);
+    gdt_set_data(2,0x92U);
+    gdt_set_code(3,0xfaU);
+    gdt_set_data(4,0xf2U);
 
     runtime_tss.rsp0=stack_top;
     runtime_tss.iomap_base=(uint16_t)sizeof(runtime_tss);
