@@ -754,6 +754,17 @@ uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
         task_context_panic("ZEROOS PANIC: invalid current task identity.\n",previous);
     if (previous->state!=TASK_RUNNING)
         task_context_panic("ZEROOS PANIC: current task is not running.\n",previous);
+
+    /*
+     * Slot 0 is the pre-scheduler bootstrap context and runs on the boot
+     * stack, not a task-owned stack page. Interrupts are enabled before
+     * scheduler_start(), so a PIT tick can legitimately arrive here. Return
+     * the architectural frame unchanged; bootstrap is not preemptible into
+     * the task scheduler yet.
+     */
+    if (previous==&tasks[0])
+        return (uint64_t)frame;
+
     if (!task_stack_guard_ok(previous)) task_stack_guard_panic(previous);
     if (!task_frame_ok(previous,frame)) {
         serial_write_public("ZEROOS PANIC: invalid current IRQ frame.\n");
@@ -843,29 +854,38 @@ void task_scheduler_tick(void) {
     struct task *task=current_task;
     uint64_t now;
 
-    if (task && (task->state!=TASK_RUNNING || task->id==0 ||
-                 task->stack_base==0 || task->saved_stack==0))
-        task_stack_guard_panic(task);
+    if (task && task->state!=TASK_RUNNING)
+        task_context_panic("ZEROOS PANIC: timer observed non-running current task.\n",
+                           task);
 
     if (!task) return;
 
     /*
-     * interrupt_frame is a pending resume context only while a task is
-     * suspended. A RUNNING task is executing on the CPU; its current hardware
-     * IRQ frame belongs to the active interrupt path and will be captured by
-     * task_reschedule_from_interrupt() after the timer hook returns. If a
-     * previous resume frame was left behind, retire that stale metadata before
-     * validating the task table.
+     * Slot 0 is the boot-time bootstrap context. It has no task stack page
+     * and therefore no task stack guard or saved cooperative context to
+     * validate. The scheduler tick still services global timeout/reclamation
+     * state, but bootstrap itself is never time-slice preempted.
      */
-    if (task->state==TASK_RUNNING && task->interrupt_frame) {
-        serial_write_public("ZEROOS: retiring stale IRQ frame from running task ");
-        task_write_u64(task->id);
-        serial_write_public(".\n");
-        task->interrupt_frame=0;
+    if (task!=&tasks[0]) {
+        /*
+         * interrupt_frame is a pending resume context only while a task is
+         * suspended. A RUNNING task is executing on the CPU; its current
+         * hardware IRQ frame belongs to the active interrupt path and will be
+         * captured by task_reschedule_from_interrupt() after the timer hook
+         * returns. If a previous resume frame was left behind, retire that
+         * stale metadata before validating the task table.
+         */
+        if (task->state==TASK_RUNNING && task->interrupt_frame) {
+            serial_write_public("ZEROOS: retiring stale IRQ frame from running task ");
+            task_write_u64(task->id);
+            serial_write_public(".\n");
+            task->interrupt_frame=0;
+        }
+
+        if (!task_stack_guard_ok(task)) task_stack_guard_panic(task);
     }
 
     now=timer_ticks();
-    if (!task_stack_guard_ok(task)) task_stack_guard_panic(task);
     {
         uint64_t flags=spin_lock_irqsave(&task_lock);
         sleep_queue_wake_expired_locked(now);
@@ -875,7 +895,10 @@ void task_scheduler_tick(void) {
 
     task_validate_table("ZEROOS PANIC: scheduler table invariant failed.\n");
 
-    if (task->state==TASK_RUNNING && task!=&tasks[ZEROOS_IDLE_SLOT]) {
+    if (task==&tasks[0])
+        return;
+
+    if (task!=&tasks[ZEROOS_IDLE_SLOT]) {
         ++task->runtime_ticks;
         if (task->timeslice_ticks==0 ||
             task->runtime_ticks % task->timeslice_ticks==0)
