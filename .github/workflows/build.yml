@@ -51,6 +51,8 @@ jobs:
           grep -q "ZEROOS: timer-only preemption stress passed." build/serial.log
           grep -q "ZEROOS: zombie reaping and slot-reuse stress passed." build/serial.log
           grep -q "ZEROOS: scheduler certification passed." build/serial.log
+          grep -q "ZEROOS: process/thread object model self-test passed." build/serial.log
+          grep -q "ZEROOS: PID/TID reuse protection self-test passed." build/serial.log
 
           if grep -q "ZEROOS PANIC:" build/serial.log; then
             echo "ZEROOS scheduler/runtime panic detected:"
