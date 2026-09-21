@@ -42,6 +42,7 @@ int process_create(struct process *parent, process_id_t *pid_out);
 struct process *process_lookup(process_id_t pid);
 
 int process_thread_reserve(struct process *process);
+int process_thread_unreserve(struct process *process);
 int process_thread_attach(struct process *process, struct thread *thread);
 int process_thread_started(struct thread *thread);
 int process_thread_exited(struct thread *thread, uint64_t exit_status);
