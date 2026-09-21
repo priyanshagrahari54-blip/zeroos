@@ -7,6 +7,7 @@
 #define ZEROOS_TASK_STACK_GUARD 0x5a45524f5441534bULL
 
 struct interrupt_frame;
+struct thread;
 typedef void (*task_entry_t)(void *argument);
 
 enum task_state {
@@ -40,6 +41,9 @@ struct task {
      */
     struct interrupt_frame *interrupt_frame;
 
+    /* Canonical higher-level owner; null for legacy kernel tasks. */
+    struct thread *thread;
+
     struct task *wait_next;
     struct wait_queue *wait_queue;
     struct task *sleep_next;
@@ -49,6 +53,8 @@ struct task {
 
 int task_system_init(void);
 int task_create(task_entry_t entry, void *argument, uint64_t *task_id);
+int task_create_owned(task_entry_t entry, void *argument, struct thread *thread,
+                      uint64_t *task_id);
 struct task *task_current(void);
 void task_yield(void);
 int task_prepare_block(void);
