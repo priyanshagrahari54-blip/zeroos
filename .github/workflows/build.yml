@@ -44,6 +44,20 @@ jobs:
           grep -q "L" build/debug.log
           grep -q "ZEROOS: timer tick 100." build/serial.log
 
+          echo "===== ZEROOS scheduler certification gates ====="
+          grep -q "ZEROOS: task context-switch self-test passed." build/serial.log
+          grep -q "ZEROOS: wait queue integration verified." build/serial.log
+          grep -q "ZEROOS: timed sleep integration verified." build/serial.log
+          grep -q "ZEROOS: timer-only preemption stress passed." build/serial.log
+          grep -q "ZEROOS: zombie reaping and slot-reuse stress passed." build/serial.log
+          grep -q "ZEROOS: scheduler certification passed." build/serial.log
+
+          if grep -q "ZEROOS PANIC:" build/serial.log; then
+            echo "ZEROOS scheduler/runtime panic detected:"
+            grep "ZEROOS PANIC:" build/serial.log
+            exit 1
+          fi
+
       - name: Dump serial log on failure
         if: failure()
         run: |
