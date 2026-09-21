@@ -45,5 +45,6 @@ int thread_create_kernel(struct process *process,
 
 int thread_exit(uint64_t exit_status);
 int thread_reap(struct thread *thread, uint64_t *exit_status_out);
+int thread_debug_validate(void);
 
 #endif
