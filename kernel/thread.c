@@ -64,8 +64,11 @@ static void thread_bootstrap(void *argument) {
         return;
     }
 
+    if (process_thread_started(thread)!=0) {
+        task_exit();
+        return;
+    }
     thread->state=THREAD_RUNNING;
-    (void)process_thread_started(thread);
     thread->entry(thread->argument);
     (void)thread_exit(0);
 
@@ -132,7 +135,7 @@ int thread_create_kernel(struct process *process,
     uint32_t generation=thread->generation+1U;
     if (generation==0) {
         spin_unlock_irqrestore(&thread_lock,flags);
-        (void)process_thread_reserve(process);
+        (void)process_thread_unreserve(process);
         return -1;
     }
 
@@ -153,10 +156,13 @@ int thread_create_kernel(struct process *process,
      * for already-running kernel threads; the bootstrap user-thread path will
      * get an explicit creation primitive later.
      */
-    if (task_preempt_disable()!=0) {
+    struct task *current=task_current();
+    if (!current || current->id==0 || current->state!=TASK_RUNNING ||
+        task_preempt_disable()!=0) {
         flags=spin_lock_irqsave(&thread_lock);
         thread_reset_locked(thread);
         spin_unlock_irqrestore(&thread_lock,flags);
+        (void)process_thread_unreserve(process);
         return -1;
     }
 
@@ -165,7 +171,7 @@ int thread_create_kernel(struct process *process,
         flags=spin_lock_irqsave(&thread_lock);
         thread_reset_locked(thread);
         spin_unlock_irqrestore(&thread_lock,flags);
-        (void)process_thread_reserve(process);
+        (void)process_thread_unreserve(process);
         return -1;
     }
 
