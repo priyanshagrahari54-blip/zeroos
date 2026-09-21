@@ -174,6 +174,18 @@ static void process_thread_unreserve_locked(struct process *process) {
         --process->creating_threads;
 }
 
+int process_thread_unreserve(struct process *process) {
+    uint64_t flags=spin_lock_irqsave(&process_lock);
+    if (!process || process_lookup_locked(process->pid)!=process ||
+        process->creating_threads==0) {
+        spin_unlock_irqrestore(&process_lock,flags);
+        return -1;
+    }
+    process_thread_unreserve_locked(process);
+    spin_unlock_irqrestore(&process_lock,flags);
+    return 0;
+}
+
 int process_thread_attach(struct process *process, struct thread *thread) {
     uint64_t flags=spin_lock_irqsave(&process_lock);
 
