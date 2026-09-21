@@ -86,6 +86,7 @@ int process_create(struct process *parent, process_id_t *pid_out) {
     int slot=-1;
 
     if (parent && (parent->state==PROCESS_UNUSED ||
+                   parent->state==PROCESS_ZOMBIE ||
                    process_lookup_locked(parent->pid)!=parent)) {
         spin_unlock_irqrestore(&process_lock,flags);
         return -1;
