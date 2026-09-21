@@ -32,6 +32,16 @@
           |       +--> kernel stacks
           |       +--> context switching
           |       +--> bounded scheduler
+          +--> Process / thread layer
+          |       +--> process containers
+          |       +--> generation-tagged PID/TID
+          |       +--> parent/child ownership
+          |       +--> per-process address spaces
+          |       +--> thread lifecycle/reaping
+          +--> Runtime GDT / TSS
+          |       +--> kernel/user selectors
+          |       +--> TSS.RSP0
+          |       +--> future per-thread entry stacks
           +--> PIT/8259 bootstrap timer
           |
           v
@@ -70,4 +80,4 @@ virtual memory, normalized interrupt entry, IRQ ownership, timer delivery,
 scheduler-independent synchronization, kernel task objects, real x86-64 context switching, wait queues, timed sleep,
 zombie reclamation, scheduler invariants, and IRQ-exit preemption.
 
-The scheduler layer now includes wait queues, timed sleep, zombie reclamation, cooperative context switching, and timer-driven IRQ-exit preemption. Fresh tasks enter through an assembly trampoline with 264 bytes of interrupt headroom. The next architectural boundary is kernel memory hardening, followed by process/thread separation, user-mode entry, and a syscall ABI.
+The scheduler layer now includes wait queues, timed sleep, zombie reclamation, cooperative context switching, and timer-driven IRQ-exit preemption. Fresh tasks enter through an assembly trampoline with 264 bytes of interrupt headroom. The process/thread layer now provides explicit process containers, generation-tagged PID/TID identity, parent/child ownership, private per-process address-space roots, and explicit thread/process reaping. The runtime GDT/TSS layer is installed and self-tested, with a dedicated initial TSS.RSP0 entry stack. The next architectural boundary is per-user-thread kernel stacks and the Ring-3 entry/return path.
