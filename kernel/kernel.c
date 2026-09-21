@@ -4,6 +4,8 @@
 #include "vmm.h"
 #include "sync.h"
 #include "task.h"
+#include "thread.h"
+#include "process.h"
 #include "scheduler.h"
 #include "wait.h"
 
@@ -168,6 +170,189 @@ static struct atomic_u64 lifecycle_probe_done;
 static struct atomic_u64 lifecycle_probe_created;
 static struct atomic_u64 lifecycle_probe_exited;
 static struct atomic_u64 scheduler_stress_failures;
+
+/* Process/thread model certification state. */
+static struct atomic_u64 process_thread_probe_phase;
+static struct atomic_u64 process_thread_probe_parent_ran;
+static struct atomic_u64 process_thread_probe_child_ran;
+static struct atomic_u64 process_thread_probe_reuse_ran;
+static struct atomic_u64 process_thread_probe_failures;
+
+static struct process *process_probe_parent;
+static struct process *process_probe_child;
+static struct process *process_probe_reuse;
+
+static struct thread *thread_probe_parent;
+static struct thread *thread_probe_child;
+static struct thread *thread_probe_reuse;
+
+static process_id_t process_probe_parent_pid;
+static process_id_t process_probe_child_pid;
+static process_id_t process_probe_reuse_pid;
+static thread_id_t thread_probe_parent_tid;
+static thread_id_t thread_probe_child_tid;
+static thread_id_t thread_probe_reuse_tid;
+
+static struct atomic_u64 process_thread_probe_allow_parent_exit;
+
+static void process_thread_probe_parent_entry(void *argument) {
+    (void)argument;
+    while (atomic_u64_load(&process_thread_probe_allow_parent_exit)==0)
+        scheduler_yield();
+    atomic_u64_store(&process_thread_probe_parent_ran,1);
+}
+
+static void process_thread_probe_child_entry(void *argument) {
+    (void)argument;
+    atomic_u64_store(&process_thread_probe_child_ran,1);
+}
+
+static void process_thread_probe_reuse_entry(void *argument) {
+    (void)argument;
+    atomic_u64_store(&process_thread_probe_reuse_ran,1);
+}
+
+static void process_thread_probe_fail(const char *message) {
+    atomic_u64_fetch_add(&process_thread_probe_failures,1);
+    kernel_panic(message);
+}
+
+static void process_thread_probe_monitor_step(void) {
+    uint64_t phase=atomic_u64_load(&process_thread_probe_phase);
+
+    if (phase==0) {
+        if (process_create(0,&process_probe_parent_pid)!=0)
+            process_thread_probe_fail("process/thread parent creation failed");
+        process_probe_parent=process_lookup(process_probe_parent_pid);
+        if (!process_probe_parent ||
+            process_probe_parent->state!=PROCESS_NEW)
+            process_thread_probe_fail("process lookup/state validation failed");
+
+        if (thread_create_kernel(process_probe_parent,
+                                  process_thread_probe_parent_entry,0,
+                                  &thread_probe_parent_tid)!=0)
+            process_thread_probe_fail("parent kernel thread creation failed");
+        thread_probe_parent=thread_lookup(thread_probe_parent_tid);
+        if (!thread_probe_parent ||
+            thread_probe_parent->process!=process_probe_parent)
+            process_thread_probe_fail("parent thread ownership validation failed");
+
+        if (process_create(process_probe_parent,&process_probe_child_pid)!=0)
+            process_thread_probe_fail("child process creation failed");
+        process_probe_child=process_lookup(process_probe_child_pid);
+        if (!process_probe_child ||
+            process_probe_child->parent!=process_probe_parent ||
+            process_child_count(process_probe_parent)!=1)
+            process_thread_probe_fail("parent/child relationship validation failed");
+
+        if (thread_create_kernel(process_probe_child,
+                                  process_thread_probe_child_entry,0,
+                                  &thread_probe_child_tid)!=0)
+            process_thread_probe_fail("child kernel thread creation failed");
+        thread_probe_child=thread_lookup(thread_probe_child_tid);
+        if (!thread_probe_child ||
+            thread_probe_child->process!=process_probe_child)
+            process_thread_probe_fail("child thread ownership validation failed");
+
+        if (thread_probe_parent->tid==thread_probe_child->tid ||
+            process_probe_parent->pid==process_probe_child->pid)
+            process_thread_probe_fail("PID/TID uniqueness validation failed");
+
+        /*
+         * Both processes own dedicated address-space roots. They should start
+         * with no user mapping at the same virtual address.
+         */
+        if (vmm_space_translate(&process_probe_parent->address_space,
+                                VMM_SPACE_TEST_VA)!=0 ||
+            vmm_space_translate(&process_probe_child->address_space,
+                                VMM_SPACE_TEST_VA)!=0)
+            process_thread_probe_fail("process address-space isolation validation failed");
+
+        atomic_u64_store(&process_thread_probe_allow_parent_exit,1);
+        atomic_u64_store(&process_thread_probe_phase,1);
+        return;
+    }
+
+    if (phase==1 &&
+        atomic_u64_load(&process_thread_probe_parent_ran)==1 &&
+        atomic_u64_load(&process_thread_probe_child_ran)==1 &&
+        thread_probe_parent->state==THREAD_ZOMBIE &&
+        thread_probe_child->state==THREAD_ZOMBIE &&
+        process_probe_parent->state==PROCESS_ZOMBIE &&
+        process_probe_child->state==PROCESS_ZOMBIE) {
+
+        uint64_t parent_status=0xffffffffULL;
+        uint64_t child_status=0xffffffffULL;
+
+        if (thread_reap(thread_probe_child,&child_status)!=0 ||
+            child_status!=0)
+            process_thread_probe_fail("child thread reap failed");
+        if (process_thread_count(process_probe_child)!=0)
+            process_thread_probe_fail("child thread count did not reach zero");
+        if (process_reap(process_probe_child,&child_status)!=0 ||
+            child_status!=0)
+            process_thread_probe_fail("child process reap failed");
+        if (process_child_count(process_probe_parent)!=0 ||
+            process_lookup(process_probe_child_pid)!=0)
+            process_thread_probe_fail("child process unlink/stale PID validation failed");
+
+        if (thread_reap(thread_probe_parent,&parent_status)!=0 ||
+            parent_status!=0)
+            process_thread_probe_fail("parent thread reap failed");
+        if (process_thread_count(process_probe_parent)!=0)
+            process_thread_probe_fail("parent thread count did not reach zero");
+        if (process_reap(process_probe_parent,&parent_status)!=0 ||
+            parent_status!=0)
+            process_thread_probe_fail("parent process reap failed");
+
+        if (thread_lookup(thread_probe_child_tid)!=0 ||
+            thread_lookup(thread_probe_parent_tid)!=0 ||
+            process_lookup(process_probe_child_pid)!=0 ||
+            process_lookup(process_probe_parent_pid)!=0)
+            process_thread_probe_fail("stale PID/TID remained visible after reap");
+
+        if (process_create(0,&process_probe_reuse_pid)!=0)
+            process_thread_probe_fail("PID reuse test process creation failed");
+        process_probe_reuse=process_lookup(process_probe_reuse_pid);
+        if (!process_probe_reuse)
+            process_thread_probe_fail("PID reuse test lookup failed");
+
+        if (thread_create_kernel(process_probe_reuse,
+                                  process_thread_probe_reuse_entry,0,
+                                  &thread_probe_reuse_tid)!=0)
+            process_thread_probe_fail("TID reuse test thread creation failed");
+        thread_probe_reuse=thread_lookup(thread_probe_reuse_tid);
+        if (!thread_probe_reuse)
+            process_thread_probe_fail("TID reuse test lookup failed");
+
+        if (process_probe_reuse_pid==process_probe_parent_pid ||
+            thread_probe_reuse_tid==thread_probe_parent_tid)
+            process_thread_probe_fail("generation-tagged PID/TID reuse protection failed");
+
+        atomic_u64_store(&process_thread_probe_phase,2);
+        return;
+    }
+
+    if (phase==2 &&
+        atomic_u64_load(&process_thread_probe_reuse_ran)==1 &&
+        thread_probe_reuse->state==THREAD_ZOMBIE &&
+        process_probe_reuse->state==PROCESS_ZOMBIE) {
+
+        uint64_t status=0xffffffffULL;
+
+        if (thread_reap(thread_probe_reuse,&status)!=0 || status!=0)
+            process_thread_probe_fail("reused thread reap failed");
+        if (process_reap(process_probe_reuse,&status)!=0 || status!=0)
+            process_thread_probe_fail("reused process reap failed");
+        if (thread_lookup(thread_probe_reuse_tid)!=0 ||
+            process_lookup(process_probe_reuse_pid)!=0)
+            process_thread_probe_fail("reused PID/TID remained visible after reap");
+
+        serial_write_public("ZEROOS: process/thread object model self-test passed.\n");
+        serial_write_public("ZEROOS: PID/TID reuse protection self-test passed.\n");
+        atomic_u64_store(&process_thread_probe_phase,3);
+    }
+}
 
 static void scheduler_probe_cpu_a(void *argument) {
     (void)argument;
@@ -343,6 +528,8 @@ static void scheduler_probe_monitor(void *argument) {
     for (;;) {
         uint64_t now=timer_ticks();
 
+        process_thread_probe_monitor_step();
+
         if (!context_reported && atomic_u64_load(&task_probe_counter)==32) {
             context_reported=1;
             serial_write_public("ZEROOS: task context-switch self-test passed.\n");
@@ -400,7 +587,8 @@ static void scheduler_probe_monitor(void *argument) {
         if (now-stress_start>400 &&
             (!preempt_reported || !lifecycle_reported ||
              atomic_u64_load(&sleep_probe_state)!=2 ||
-             atomic_u64_load(&wait_probe_state)!=2)) {
+             atomic_u64_load(&wait_probe_state)!=2 ||
+             atomic_u64_load(&process_thread_probe_phase)!=3)) {
             atomic_u64_fetch_add(&scheduler_stress_failures,1);
             kernel_panic("scheduler stress certification timed out");
         }
@@ -425,12 +613,22 @@ static void scheduler_self_test(void) {
     atomic_u64_init(&lifecycle_probe_created,0);
     atomic_u64_init(&lifecycle_probe_exited,0);
     atomic_u64_init(&scheduler_stress_failures,0);
+    atomic_u64_init(&process_thread_probe_phase,0);
+    atomic_u64_init(&process_thread_probe_parent_ran,0);
+    atomic_u64_init(&process_thread_probe_child_ran,0);
+    atomic_u64_init(&process_thread_probe_reuse_ran,0);
+    atomic_u64_init(&process_thread_probe_failures,0);
+    atomic_u64_init(&process_thread_probe_allow_parent_exit,0);
     wait_queue_init(&wait_probe_queue);
 
     if (task_system_init()!=0)
         kernel_panic("task system initialization failed");
     if (scheduler_init()!=0)
         kernel_panic("scheduler initialization failed");
+    if (process_system_init()!=0)
+        kernel_panic("process system initialization failed");
+    if (thread_system_init()!=0)
+        kernel_panic("thread system initialization failed");
 
     if (task_create(scheduler_probe_worker,0,&worker_id)!=0)
         kernel_panic("scheduler worker creation failed");
