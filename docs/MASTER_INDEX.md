@@ -145,6 +145,7 @@ Before merging a major subsystem:
 
 ### Existing detailed subsystem documents
 - BOOT_SPEC.md
+- CPU_ARCHITECTURE.md
 - HARDWARE.md
 - GDT_TSS.md
 - INTERRUPTS.md

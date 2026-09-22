@@ -10,9 +10,11 @@ CFLAGS := -m64 -mno-red-zone -mcmodel=small -ffreestanding -fno-pic -fno-pie -fn
 ASFLAGS := -m64 -ffreestanding -fno-pic -fno-pie -nostdlib
 LDFLAGS := -m elf_x86_64 -T kernel/linker.ld -nostdlib
 
-.PHONY: all clean iso run
+.PHONY: all clean elf iso run
 
 all: iso
+
+elf: $(KERNEL)
 
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -26,22 +28,28 @@ $(BUILD)/isr.o: boot/isr.S | $(BUILD)
 $(BUILD)/context.o: kernel/context.S | $(BUILD)
 	$(AS) $(ASFLAGS) -c $< -o $@
 
-$(BUILD)/kernel.o: kernel/kernel.c kernel/types.h kernel/memory.h kernel/timer.h kernel/vmm.h kernel/gdt.h kernel/sync.h kernel/task.h kernel/thread.h kernel/process.h kernel/scheduler.h kernel/wait.h | $(BUILD)
+$(BUILD)/kernel.o: kernel/kernel.c kernel/types.h kernel/cpu.h kernel/apic.h kernel/memory.h kernel/timer.h kernel/vmm.h kernel/gdt.h kernel/sync.h kernel/task.h kernel/thread.h kernel/process.h kernel/scheduler.h kernel/wait.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
-$(BUILD)/interrupts.o: kernel/interrupts.c kernel/interrupts.h kernel/types.h kernel/pic.h kernel/timer.h | $(BUILD)
+$(BUILD)/interrupts.o: kernel/interrupts.c kernel/interrupts.h kernel/types.h kernel/cpu.h kernel/apic.h kernel/pic.h kernel/timer.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
 $(BUILD)/pic.o: kernel/pic.c kernel/pic.h kernel/types.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
-$(BUILD)/timer.o: kernel/timer.c kernel/timer.h kernel/types.h kernel/sync.h | $(BUILD)
+$(BUILD)/timer.o: kernel/timer.c kernel/timer.h kernel/types.h kernel/cpu.h kernel/sync.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
 $(BUILD)/sync.o: kernel/sync.c kernel/sync.h kernel/types.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
-$(BUILD)/memory.o: kernel/memory.c kernel/memory.h kernel/types.h kernel/linker.ld | $(BUILD)
+$(BUILD)/memory.o: kernel/memory.c kernel/memory.h kernel/types.h kernel/sync.h kernel/linker.ld | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(BUILD)/cpu.o: kernel/cpu.c kernel/cpu.h kernel/types.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(BUILD)/apic.o: kernel/apic.c kernel/apic.h kernel/cpu.h kernel/types.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
 $(BUILD)/gdt.o: kernel/gdt.c kernel/gdt.h kernel/memory.h kernel/types.h | $(BUILD)
@@ -65,8 +73,8 @@ $(BUILD)/process.o: kernel/process.c kernel/process.h kernel/thread.h kernel/vmm
 $(BUILD)/scheduler.o: kernel/scheduler.c kernel/scheduler.h kernel/task.h kernel/timer.h kernel/sync.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
-$(KERNEL): $(BUILD)/boot.o $(BUILD)/isr.o $(BUILD)/context.o $(BUILD)/kernel.o $(BUILD)/interrupts.o $(BUILD)/pic.o $(BUILD)/timer.o $(BUILD)/sync.o $(BUILD)/memory.o $(BUILD)/gdt.o $(BUILD)/vmm.o $(BUILD)/task.o $(BUILD)/wait.o $(BUILD)/scheduler.o $(BUILD)/thread.o $(BUILD)/process.o kernel/linker.ld
-	$(LD) $(LDFLAGS) -o $@ $(BUILD)/boot.o $(BUILD)/isr.o $(BUILD)/context.o $(BUILD)/kernel.o $(BUILD)/interrupts.o $(BUILD)/pic.o $(BUILD)/timer.o $(BUILD)/sync.o $(BUILD)/memory.o $(BUILD)/gdt.o $(BUILD)/vmm.o $(BUILD)/task.o $(BUILD)/wait.o $(BUILD)/scheduler.o $(BUILD)/thread.o $(BUILD)/process.o
+$(KERNEL): $(BUILD)/boot.o $(BUILD)/isr.o $(BUILD)/context.o $(BUILD)/kernel.o $(BUILD)/cpu.o $(BUILD)/apic.o $(BUILD)/interrupts.o $(BUILD)/pic.o $(BUILD)/timer.o $(BUILD)/sync.o $(BUILD)/memory.o $(BUILD)/gdt.o $(BUILD)/vmm.o $(BUILD)/task.o $(BUILD)/wait.o $(BUILD)/scheduler.o $(BUILD)/thread.o $(BUILD)/process.o kernel/linker.ld
+	$(LD) $(LDFLAGS) -o $@ $(BUILD)/boot.o $(BUILD)/isr.o $(BUILD)/context.o $(BUILD)/kernel.o $(BUILD)/cpu.o $(BUILD)/apic.o $(BUILD)/interrupts.o $(BUILD)/pic.o $(BUILD)/timer.o $(BUILD)/sync.o $(BUILD)/memory.o $(BUILD)/gdt.o $(BUILD)/vmm.o $(BUILD)/task.o $(BUILD)/wait.o $(BUILD)/scheduler.o $(BUILD)/thread.o $(BUILD)/process.o
 
 iso: $(KERNEL)
 	rm -rf $(BUILD)/iso

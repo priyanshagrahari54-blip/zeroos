@@ -1,4 +1,6 @@
 #include "interrupts.h"
+#include "cpu.h"
+#include "apic.h"
 #include "pic.h"
 #include "timer.h"
 #include "scheduler.h"
@@ -95,6 +97,9 @@ static void timer_irq_handler(uint8_t irq, struct interrupt_frame *frame, void *
 }
 
 uint64_t interrupt_dispatch(struct interrupt_frame *frame) {
+    uint64_t result=(uint64_t)frame;
+    cpu_irq_enter();
+
     if (frame->vector < 32)
         halt_exception(frame);
 
@@ -104,16 +109,19 @@ uint64_t interrupt_dispatch(struct interrupt_frame *frame) {
         if (binding->handler)
             binding->handler(irq, frame, binding->context);
         pic_send_eoi(irq);
+        if (apic_controller()==ZEROOS_IRQ_CONTROLLER_LAPIC_IOAPIC)
+            apic_eoi();
 
         /*
          * Scheduling is deliberately deferred until after the device EOI
          * and handler return. The assembly epilogue then restores either
          * this frame or another task's complete frame.
          */
-        return task_reschedule_from_interrupt(frame);
+        result=task_reschedule_from_interrupt(frame);
     }
 
-    return (uint64_t)frame;
+    cpu_irq_exit();
+    return result;
 }
 
 int irq_register(uint8_t irq, irq_handler_t handler, void *context) {

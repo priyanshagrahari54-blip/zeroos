@@ -1,4 +1,6 @@
 #include "types.h"
+#include "cpu.h"
+#include "apic.h"
 #include "memory.h"
 #include "timer.h"
 #include "vmm.h"
@@ -73,7 +75,11 @@ static void memory_self_test(void) {
     if (!a || !b || a==b) kernel_panic("physical page allocator self-test failed");
     page_free(b); page_free(a);
     if (memory_free_pages()!=before) kernel_panic("physical page allocator accounting failed");
-    if (!memory_is_managed_range((uint64_t)a,ZEROOS_PAGE_SIZE) ||
+    /* A reserved page must never become free through an invalid page_free(). */
+    page_free((void *)0);
+    if (memory_free_pages()!=before ||
+        !memory_is_usable_range((uint64_t)a,ZEROOS_PAGE_SIZE) ||
+        !memory_is_managed_range((uint64_t)a,ZEROOS_PAGE_SIZE) ||
         memory_page_is_allocated((uint64_t)a))
         kernel_panic("physical allocator ownership validation failed");
     void *z=page_alloc_zero();
@@ -88,6 +94,9 @@ static void memory_self_test(void) {
 static void vmm_self_test(void) {
     void *physical=page_alloc();
     if (!physical) kernel_panic("VMM self-test could not allocate a page");
+    if (vmm_map_page(VMM_SELF_TEST_VA+0x4000ULL,(uint64_t)physical,VMM_WRITABLE)==0 ||
+        vmm_map_range(~0ULL-0x1000ULL,(uint64_t)physical,2,VMM_USER|VMM_NO_EXECUTE)==0)
+        kernel_panic("VMM W^X/overflow validation failed");
     if (vmm_map_page(VMM_SELF_TEST_VA,(uint64_t)physical,VMM_WRITABLE|VMM_NO_EXECUTE)!=0)
         kernel_panic("VMM map failed");
     if (vmm_translate(VMM_SELF_TEST_VA)!=(uint64_t)physical)
@@ -181,15 +190,27 @@ static void gdt_self_test(void) {
 
 static void sync_self_test(void) {
     struct spinlock lock;
+    struct rwlock rw;
     struct atomic_u64 counter;
     uint64_t flags;
     spinlock_init(&lock);
     atomic_u64_init(&counter,41);
     flags=spin_lock_irqsave(&lock);
+    if (spin_try_lock(&lock)==0 || spin_lock_bounded(&lock,1)==0)
+        kernel_panic("spinlock contention/try contract failed");
     atomic_u64_fetch_add(&counter,1);
     spin_unlock_irqrestore(&lock,flags);
-    if (atomic_u64_load(&counter)!=42)
+    if (atomic_u64_load(&counter)!=42 || spinlock_contention_count(&lock)==0)
         kernel_panic("synchronization primitive self-test failed");
+
+    rwlock_init(&rw);
+    rwlock_read_lock(&rw);
+    rwlock_read_unlock(&rw);
+    rwlock_write_lock(&rw);
+    rwlock_write_unlock(&rw);
+    if (rwlock_try_write(&rw)!=0)
+        kernel_panic("rwlock writer self-test failed");
+    rwlock_write_unlock(&rw);
     serial_write_public("ZEROOS: synchronization primitives self-test passed.\n");
 }
 
@@ -733,6 +754,11 @@ static void scheduler_self_test(void) {
     serial_write_public(").\n");
 
     task_debug_validate();
+    if (task_set_priority(task_current(),ZEROOS_TASK_PRIORITY_DEFAULT)!=0 ||
+        task_set_affinity(task_current(),1ULL)!=0 ||
+        task_set_affinity(task_current(),2ULL)==0)
+        kernel_panic("scheduler policy/affinity self-test failed");
+    serial_write_public("ZEROOS: scheduler policy and affinity self-test passed.\n");
 
     if (timer_register_tick_hook(scheduler_tick)!=0)
         kernel_panic("scheduler timer hook registration failed");
@@ -752,6 +778,19 @@ void kernel_main(uint64_t multiboot_info, uint64_t multiboot_magic) {
     serial_write_public("ZEROOS: entered x86-64 long mode.\n");
     serial_write_public("ZEROOS: serial console initialized.\n");
 
+    if (cpu_init()!=0)
+        kernel_panic("CPU feature initialization failed");
+    {
+        const struct cpu_info *info=cpu_info();
+        serial_write_public("ZEROOS: CPU capabilities detected (APIC=");
+        serial_write_u64((info->features & ZEROOS_CPU_FEATURE_APIC)!=0);
+        serial_write_public(", NX=");
+        serial_write_u64((info->features & ZEROOS_CPU_FEATURE_NX)!=0);
+        serial_write_public(", physical-address-bits=");
+        serial_write_u64(info->physical_address_bits);
+        serial_write_public(").\n");
+    }
+
     if ((uint32_t)multiboot_magic==0x36d76289)
         serial_write_public("ZEROOS: Multiboot2 handoff verified.\n");
     else
@@ -762,6 +801,8 @@ void kernel_main(uint64_t multiboot_info, uint64_t multiboot_magic) {
     serial_write_public("\n");
 
     memory_init(multiboot_info);
+    if (memory_total_pages()==0)
+        kernel_panic("Multiboot memory map contained no usable pages");
     serial_write_public("ZEROOS: physical page allocator initialized.\n");
     serial_write_public("ZEROOS: managed pages: ");
     serial_write_u64(memory_total_pages());
@@ -775,6 +816,14 @@ void kernel_main(uint64_t multiboot_info, uint64_t multiboot_magic) {
         kernel_panic("runtime GDT/TSS initialization failed");
     gdt_self_test();
 
+    if (apic_init()!=0)
+        kernel_panic("interrupt-controller capability probe failed");
+    {
+        const struct apic_info *info=apic_info();
+        serial_write_public("ZEROOS: IRQ controller capability: ");
+        serial_write_public(info->local_apic_present ? "LAPIC detected, PIC backend active.\n" : "legacy PIC fallback.\n");
+    }
+
     if (vmm_init()!=0) kernel_panic("virtual memory initialization failed");
     serial_write_public("ZEROOS: virtual memory manager initialized.\n");
     vmm_self_test();
@@ -786,7 +835,12 @@ void kernel_main(uint64_t multiboot_info, uint64_t multiboot_magic) {
     serial_write_public("ZEROOS: IDT installed and interrupts enabled.\n");
     serial_write_public("ZEROOS: PIT timer configured at ");
     serial_write_u64(timer_frequency_hz());
-    serial_write_public(" Hz.\n");
+    serial_write_public(" Hz (clocksource=");
+    serial_write_public(timer_clocksource());
+    serial_write_public(").\n");
+    serial_write_public("ZEROOS: wall-clock sample: ");
+    serial_write_u64(timer_wallclock_unix_seconds());
+    serial_write_public(".\n");
     serial_write_public("ZEROOS: IRQ ownership layer initialized.\n");
     serial_write_public("ZEROOS: foundation milestone reached.\n");
 

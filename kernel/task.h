@@ -5,6 +5,10 @@
 #define ZEROOS_MAX_TASKS 16
 #define ZEROOS_TASK_STACK_SIZE 4096ULL
 #define ZEROOS_TASK_STACK_GUARD 0x5a45524f5441534bULL
+#define ZEROOS_TASK_PRIORITY_MIN 0U
+#define ZEROOS_TASK_PRIORITY_DEFAULT 16U
+#define ZEROOS_TASK_PRIORITY_MAX 31U
+#define ZEROOS_TASK_AFFINITY_ANY (~0ULL)
 
 struct interrupt_frame;
 struct thread;
@@ -59,6 +63,11 @@ struct task {
     uint32_t timeslice_ticks;
     uint32_t preempt_count;
     uint8_t need_resched;
+    uint8_t priority;
+    uint8_t base_priority;
+    uint8_t reserved_scheduler;
+    uint64_t cpu_affinity;
+    uint64_t runnable_age;
 
     /*
      * Active architectural interrupt frame while suspended by preemption.
@@ -113,6 +122,10 @@ uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame);
 void task_scheduler_tick(void);
 int task_preempt_disable(void);
 int task_preempt_enable(void);
+int task_set_priority(struct task *task, uint8_t priority);
+int task_set_affinity(struct task *task, uint64_t affinity);
+uint8_t task_priority(const struct task *task);
+uint64_t task_affinity(const struct task *task);
 uint32_t task_preempt_count(void);
 uint8_t task_need_resched(void);
 

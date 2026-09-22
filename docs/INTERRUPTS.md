@@ -60,29 +60,44 @@ filesystem I/O, or scheduler policy.
 
 The timer exposes:
 
-- timer_ticks()
-- timer_frequency_hz()
-- timer_register_tick_hook()
+- `timer_ticks()` for monotonic scheduler deadlines;
+- `timer_frequency_hz()`;
+- `timer_monotonic_ns()`, using invariant TSC when CPUID frequency data is
+  valid and PIT fallback otherwise;
+- `timer_wallclock_unix_seconds()`, sourced from a stable CMOS RTC sample;
+- `timer_clocksource()` for diagnostics;
+- `timer_register_tick_hook()`.
 
 The tick hook is the scheduler insertion point. It runs in interrupt context,
-so future scheduler accounting must remain bounded and non-sleeping.
+so scheduler accounting remains bounded and non-sleeping. Wall-clock changes
+never affect monotonic timeout ordering.
 
 Keeping interrupt work small and separating interrupt-context synchronization
 from task-context sleeping is consistent with established kernel designs.
 citeturn0search1turn0search4
 
+## Controller capability boundary
+
+`kernel/apic.c` probes the Local APIC MSR and version register and exposes a
+controller-neutral capability record. It deliberately keeps the 8259 PIC as
+the active backend until ACPI MADT data can describe IOAPIC redirection and
+interrupt ownership. A guessed APIC route is not considered support.
+
+The active Stage 1 matrix therefore has an explicit legacy-PIC fallback, while
+the LAPIC EOI and controller-selection interface is ready for the ACPI/APIC
+stage. Per-CPU interrupt nesting and count are tracked in `struct cpu_local`.
+
 ## Production direction
 
-| Current | Advanced direction |
+| Current verified boundary | Next production boundary |
 |---|---|
-| 8259 PIC | Local APIC + IOAPIC |
-| PIT | APIC/HPET/TSC-backed clock-event layer |
+| 8259 PIC with capability probe | Local APIC + ACPI MADT + IOAPIC |
+| PIT + invariant-TSC clocksource | APIC/HPET/TSC clock-event layer |
 | Global periodic tick | Per-CPU event scheduling / idle tick suppression |
-| Single CPU | SMP-aware interrupt routing |
+| One online CPU with per-CPU shape | AP startup and SMP interrupt routing |
 | Single IRQ owner | Shared/managed device IRQ registration where required |
 | Hard IRQ handler | Deferred work / threaded device handling |
 | No TLB shootdown | SMP invalidation protocol |
 
 The legacy path remains because it gives ZEROOS a deterministic early-boot
-interrupt mechanism before the modern interrupt controller and scheduler layers
-exist.
+interrupt mechanism while unsupported modern routing is reported explicitly.

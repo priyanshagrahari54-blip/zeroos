@@ -15,9 +15,16 @@ ZEROOS currently targets x86-64 machines and QEMU's x86-64 virtual hardware.
 
 ## Current implementation boundary
 
-Implemented hardware-facing layers include boot handoff validation, physical page discovery/allocation, x86-64 page-table management, IDT/ISR entry, 8259 IRQ routing, PIT timer delivery, and serial diagnostics.
+Implemented hardware-facing layers include boot handoff validation, physical
+page discovery/allocation with reserved-page protection, x86-64 page-table
+management with W^X/range validation, CPUID/MSR capability discovery, IDT/ISR
+entry, 8259 IRQ routing, Local APIC capability probing, PIT delivery,
+invariant-TSC/CMOS clock abstractions and serial diagnostics.
 
-Not yet implemented as production hardware abstractions: PCI/PCIe enumeration, APIC/IOAPIC, HPET/TSC clocksource selection, DMA/IOMMU, storage controllers, USB, GPU/display drivers, audio, ACPI power management, and SMP.
+Not yet implemented as production hardware abstractions: ACPI MADT/IOAPIC
+activation, PCI/PCIe enumeration, DMA/IOMMU, storage controllers, USB,
+GPU/display drivers, audio, ACPI power management, and AP/SMP startup. Those
+boundaries are explicit; no unsupported device is silently treated as active.
 
 ## Engineering rule
 

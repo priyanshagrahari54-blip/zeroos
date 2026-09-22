@@ -202,6 +202,12 @@ static void task_validate_table_at(const char *where,
         if (task->state==TASK_UNUSED)
             continue;
 
+        if (task->priority>ZEROOS_TASK_PRIORITY_MAX ||
+            task->base_priority>ZEROOS_TASK_PRIORITY_MAX ||
+            task->cpu_affinity==0)
+            task_context_panic("ZEROOS PANIC: scheduler policy metadata invalid.\n",
+                               task);
+
         if (!task->stack_base ||
             (task->stack_base & (ZEROOS_PAGE_SIZE-1ULL))!=0 ||
             task->stack_base>=memory_max_physical())
@@ -401,6 +407,11 @@ static void reap_zombies_locked(void) {
         task->timeslice_ticks=ZEROOS_DEFAULT_TIMESLICE;
         task->preempt_count=0;
         task->need_resched=0;
+        task->priority=ZEROOS_TASK_PRIORITY_DEFAULT;
+        task->base_priority=ZEROOS_TASK_PRIORITY_DEFAULT;
+        task->reserved_scheduler=0;
+        task->cpu_affinity=ZEROOS_TASK_AFFINITY_ANY;
+        task->runnable_age=0;
         task->interrupt_frame=0;
         task->thread=0;
         task->wait_next=0;
@@ -418,21 +429,51 @@ static void reap_zombies_locked(void) {
  * frame-suspended task is never skipped by cooperative dispatch and a
  * blocking task can always find a successor.
  */
+static uint8_t effective_priority(const struct task *task) {
+    uint64_t aging=task->runnable_age/4ULL;
+    uint64_t value=(uint64_t)task->priority+aging;
+    if (value>ZEROOS_TASK_PRIORITY_MAX)
+        value=ZEROOS_TASK_PRIORITY_MAX;
+    return (uint8_t)value;
+}
+
+static int task_can_run_on_boot_cpu(const struct task *task) {
+    return (task->cpu_affinity & 1ULL)!=0;
+}
+
 static int find_next_runnable(void) {
     int start=-1;
-    int index;
+    int selected=-1;
+    uint8_t selected_priority=0;
 
     for (int i=0;i<ZEROOS_MAX_TASKS;++i)
         if (&tasks[i]==current_task) { start=i; break; }
 
+    /*
+     * Bounded priority-aware round robin. Aging promotes a runnable task
+     * after bounded wait time, preventing starvation without introducing a
+     * second scheduler policy that would later need replacement by SMP
+     * runqueues. Equal effective priorities retain deterministic slot order.
+     */
     for (int step=1;step<=ZEROOS_MAX_TASKS;++step) {
-        index=(start+step)%ZEROOS_MAX_TASKS;
-        if (index!=0 && index!=ZEROOS_IDLE_SLOT &&
-            tasks[index].state==TASK_RUNNABLE)
-            return index;
+        int index=(start+step)%ZEROOS_MAX_TASKS;
+        struct task *candidate=&tasks[index];
+        if (index==0 || index==ZEROOS_IDLE_SLOT ||
+            candidate->state!=TASK_RUNNABLE ||
+            !task_can_run_on_boot_cpu(candidate))
+            continue;
+        uint8_t priority=effective_priority(candidate);
+        if (selected<0 || priority>selected_priority) {
+            selected=index;
+            selected_priority=priority;
+        }
     }
 
-    if (tasks[ZEROOS_IDLE_SLOT].state==TASK_RUNNABLE)
+    if (selected>=0)
+        return selected;
+
+    if (tasks[ZEROOS_IDLE_SLOT].state==TASK_RUNNABLE &&
+        task_can_run_on_boot_cpu(&tasks[ZEROOS_IDLE_SLOT]))
         return ZEROOS_IDLE_SLOT;
 
     return -1;
@@ -476,6 +517,7 @@ static void dispatch_locked(struct task *previous, int next,
     }
 
     target->state=TASK_RUNNING;
+    target->runnable_age=0;
     ++target->context_switches;
     current_task=target;
 
@@ -506,6 +548,11 @@ int task_system_init(void) {
         tasks[i].timeslice_ticks=ZEROOS_DEFAULT_TIMESLICE;
         tasks[i].preempt_count=0;
         tasks[i].need_resched=0;
+        tasks[i].priority=ZEROOS_TASK_PRIORITY_DEFAULT;
+        tasks[i].base_priority=ZEROOS_TASK_PRIORITY_DEFAULT;
+        tasks[i].reserved_scheduler=0;
+        tasks[i].cpu_affinity=ZEROOS_TASK_AFFINITY_ANY;
+        tasks[i].runnable_age=0;
         tasks[i].interrupt_frame=0;
         tasks[i].thread=0;
         tasks[i].wait_next=0;
@@ -573,6 +620,11 @@ int task_create_owned(task_entry_t entry, void *argument,
     task->timeslice_ticks=ZEROOS_DEFAULT_TIMESLICE;
     task->preempt_count=0;
     task->need_resched=0;
+    task->priority=ZEROOS_TASK_PRIORITY_DEFAULT;
+    task->base_priority=ZEROOS_TASK_PRIORITY_DEFAULT;
+    task->reserved_scheduler=0;
+    task->cpu_affinity=ZEROOS_TASK_AFFINITY_ANY;
+    task->runnable_age=0;
     task->thread=thread;
     task->wait_next=0;
     task->wait_queue=0;
@@ -931,6 +983,7 @@ uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
     }
 
     target->state=TASK_RUNNING;
+    target->runnable_age=0;
     ++target->context_switches;
     current_task=target;
     task_validate_table("ZEROOS PANIC: IRQ dispatch invariant failed.\n");
@@ -969,6 +1022,15 @@ void task_scheduler_tick(void) {
     {
         uint64_t flags=spin_lock_irqsave(&task_lock);
         sleep_queue_wake_expired_locked(now);
+        for (int i=2;i<ZEROOS_MAX_TASKS;++i) {
+            struct task *candidate=&tasks[i];
+            if (candidate->state==TASK_RUNNABLE) {
+                if (candidate->runnable_age!=~0ULL)
+                    ++candidate->runnable_age;
+            } else if (candidate->state==TASK_RUNNING) {
+                candidate->runnable_age=0;
+            }
+        }
         reap_zombies_locked();
         spin_unlock_irqrestore(&task_lock,flags);
     }
@@ -1006,6 +1068,42 @@ int task_preempt_enable(void) {
     if (task->preempt_count==0 && task->need_resched)
         task_yield();
     return 0;
+}
+
+int task_set_priority(struct task *task, uint8_t priority) {
+    if (!task_pointer_ok(task) || priority>ZEROOS_TASK_PRIORITY_MAX)
+        return -1;
+    uint64_t flags=spin_lock_irqsave(&task_lock);
+    if (task->state==TASK_UNUSED || !task_identity_ok(task)) {
+        spin_unlock_irqrestore(&task_lock,flags);
+        return -1;
+    }
+    task->priority=priority;
+    task->base_priority=priority;
+    task->runnable_age=0;
+    spin_unlock_irqrestore(&task_lock,flags);
+    return 0;
+}
+
+int task_set_affinity(struct task *task, uint64_t affinity) {
+    if (!task_pointer_ok(task) || !(affinity & 1ULL))
+        return -1;
+    uint64_t flags=spin_lock_irqsave(&task_lock);
+    if (task->state==TASK_UNUSED || !task_identity_ok(task)) {
+        spin_unlock_irqrestore(&task_lock,flags);
+        return -1;
+    }
+    task->cpu_affinity=affinity;
+    spin_unlock_irqrestore(&task_lock,flags);
+    return 0;
+}
+
+uint8_t task_priority(const struct task *task) {
+    return task && task_pointer_ok(task) ? task->priority : 0;
+}
+
+uint64_t task_affinity(const struct task *task) {
+    return task && task_pointer_ok(task) ? task->cpu_affinity : 0;
 }
 
 uint32_t task_preempt_count(void) {

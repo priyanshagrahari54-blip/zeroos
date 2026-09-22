@@ -10,6 +10,7 @@ void *page_alloc(void);
 void *page_alloc_zero(void);
 void page_free(void *address);
 int memory_is_managed_range(uint64_t address, uint64_t length);
+int memory_is_usable_range(uint64_t address, uint64_t length);
 int memory_page_is_allocated(uint64_t address);
 uint64_t memory_total_pages(void);
 uint64_t memory_free_pages(void);

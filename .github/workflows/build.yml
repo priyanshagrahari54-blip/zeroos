@@ -26,7 +26,7 @@ jobs:
           readelf -h -l build/zeroos.elf
           objdump -s -j .multiboot2 build/zeroos.elf
           echo "===== ZEROOS linker symbols ====="
-          nm -n build/zeroos.elf | grep -E '(__kernel_start|__kernel_end|stack_bottom|stack_top|tasks$|task_lock$|next_task_id$|sleep_head$|frame_resume_count$|tick_hook$|ticks$|page_bitmap|free_word_summary|memory_lock$)' || true
+          nm -n build/zeroos.elf | grep -E '(__kernel_start|__kernel_end|stack_bottom|stack_top|tasks$|task_lock$|next_task_id$|sleep_head$|frame_resume_count$|tick_hook$|ticks$|page_bitmap|usable_bitmap|free_word_summary|memory_lock$|boot_cpu$|boot_cpu_local$|state$)' || true
           echo "===== ZEROOS memory_init disassembly ====="
           objdump -d --disassemble=memory_init build/zeroos.elf
           echo "===== ZEROOS task context disassembly ====="
@@ -45,8 +45,12 @@ jobs:
             echo "===== ZEROOS boot certification iteration ${iteration} ====="
             timeout 10s qemu-system-x86_64             -cdrom build/zeroos.iso             -serial file:build/serial.log             -display none             -no-reboot             -no-shutdown             -debugcon file:build/debug.log             -global isa-debugcon.iobase=0xe9             -d guest_errors,cpu_reset             -D build/qemu.log || true
             grep -q "ZEROOS: foundation milestone reached." build/serial.log
+            grep -q "ZEROOS: CPU capabilities detected" build/serial.log
             grep -q "ZEROOS: physical page allocator initialized." build/serial.log
             grep -q "ZEROOS: runtime GDT/TSS self-test passed." build/serial.log
+            grep -q "ZEROOS: IRQ controller capability:" build/serial.log
+            grep -q "ZEROOS: PIT timer configured at .*clocksource=" build/serial.log
+            grep -q "ZEROOS: synchronization primitives self-test passed." build/serial.log
             test -s build/debug.log
             grep -q "B" build/debug.log
             grep -q "L" build/debug.log
@@ -56,6 +60,7 @@ jobs:
             grep -q "ZEROOS: task context-switch self-test passed." build/serial.log
             grep -q "ZEROOS: wait queue integration verified." build/serial.log
             grep -q "ZEROOS: timed sleep integration verified." build/serial.log
+            grep -q "ZEROOS: scheduler policy and affinity self-test passed." build/serial.log
             grep -q "ZEROOS: timer-only preemption stress passed." build/serial.log
             grep -q "ZEROOS: zombie reaping and slot-reuse stress passed." build/serial.log
             grep -q "ZEROOS: interrupt-frame ownership invariant verified." build/serial.log

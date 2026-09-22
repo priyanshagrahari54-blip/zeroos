@@ -5,21 +5,31 @@ Version: 1.0
 This document defines physical memory, virtual memory, process memory, caches, dormant feature state, memory pressure and persistence rules.
 
 ## 2. Physical Memory
-The physical allocator owns available page frames.
-Boot-reserved memory includes kernel image, boot information and required early structures.
-Initial implementation may use a bitmap/bootstrap strategy; it must evolve toward scalable allocation for larger machines.
+The physical allocator owns only firmware-reported available page frames.
+Boot-reserved memory includes the kernel image, boot information and required
+early structures. The current supported matrix bounds the bootstrap allocator
+to the first 512 MiB and reports that boundary explicitly rather than treating
+higher memory as usable.
 
-Required metadata:
-- frame state,
-- owner/type,
-- allocation site in debug builds,
-- reference count when shared,
-- zeroed/nonzeroed state where relevant.
+The allocator maintains separate usable and allocation bitmaps plus a summary
+bitmap. `page_free()` rejects reserved pages and double frees; allocation and
+accounting are serialized by `memory_lock`.
+
+Required mature metadata remains:
+- frame state;
+- owner/type;
+- allocation site in debug builds;
+- reference count when shared;
+- zeroed/nonzeroed state where relevant;
+- eventual per-CPU/scalable allocation path.
 
 ## 3. Virtual Memory
 Each process owns an address-space root.
 Kernel mappings are controlled and consistent.
-User mappings have explicit read/write/execute permissions.
+User mappings have explicit read/write/execute permissions. Explicit leaf
+mapping APIs reject writable-and-executable mappings, reject physical pages
+outside the usable allocator range and validate range arithmetic before any
+partial mapping is attempted.
 Page faults are classified as:
 - valid lazy allocation,
 - copy-on-write,
@@ -147,15 +157,22 @@ used, free, reclaimable, cached, compressed, mapped, shared, per-process residen
 Do not mislead users by treating cache as permanently unavailable memory.
 
 ## 19. Testing
-Stress:
-- allocation/free churn,
-- process creation,
-- address-space destruction,
-- page faults,
-- concurrent mapping,
-- memory pressure,
-- cache eviction,
-- suspend/resume,
+Current Stage 1 certification covers:
+- allocation/free churn;
+- reserved-page release rejection;
+- double-free accounting protection;
+- process creation;
+- address-space destruction;
+- W^X mapping rejection;
+- mapping range-overflow rejection;
+- repeated QEMU scheduler/process boots.
+
+The following remain later production gates:
+- page-fault demand allocation;
+- concurrent mapping;
+- memory pressure and reclaim;
+- cache eviction;
+- suspend/resume;
 - compatibility runtime load/unload.
 
 ## 20. Invariants

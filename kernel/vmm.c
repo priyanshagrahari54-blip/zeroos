@@ -12,6 +12,19 @@
 static uint64_t *root_table;
 static uint64_t root_physical;
 
+static int mapping_flags_valid(uint64_t flags) {
+    /* ZEROOS enforces W^X for all explicit leaf mappings. */
+    if ((flags & VMM_WRITABLE) && !(flags & VMM_NO_EXECUTE))
+        return 0;
+    return (flags & ~(VMM_USER | VMM_WRITABLE | VMM_WRITE_THROUGH |
+                      VMM_CACHE_DISABLE | VMM_NO_EXECUTE))==0;
+}
+
+static int physical_page_valid(uint64_t physical_address) {
+    return memory_is_usable_range(physical_address,VMM_PAGE_SIZE) &&
+           memory_page_is_allocated(physical_address);
+}
+
 static inline void write_cr3(uint64_t value) {
     __asm__ volatile ("mov %0, %%cr3" : : "r"(value) : "memory");
 }
@@ -144,7 +157,9 @@ int vmm_map_page(uint64_t virtual_address,
         return -1;
     if ((virtual_address & (VMM_PAGE_SIZE - 1)) != 0)
         return -1;
-    if ((physical_address & (VMM_PAGE_SIZE - 1)) != 0)
+    if ((physical_address & (VMM_PAGE_SIZE - 1)) != 0 ||
+        !physical_page_valid(physical_address) ||
+        !mapping_flags_valid(flags))
         return -1;
 
     uint64_t pml4_index = (virtual_address >> 39) & 0x1ff;
@@ -260,12 +275,20 @@ uint64_t vmm_root(void) {
 
 int vmm_map_range(uint64_t virtual_address, uint64_t physical_address,
                    uint64_t page_count, uint64_t flags) {
-    for (uint64_t i = 0; i < page_count; ++i) {
-        if (vmm_map_page(virtual_address + i * VMM_PAGE_SIZE,
-                         physical_address + i * VMM_PAGE_SIZE, flags) != 0) {
-            while (i > 0) {
+    if (page_count==0)
+        return 0;
+    if (page_count > (~0ULL/VMM_PAGE_SIZE) ||
+        virtual_address > ~0ULL-(page_count-1ULL)*VMM_PAGE_SIZE ||
+        physical_address > ~0ULL-(page_count-1ULL)*VMM_PAGE_SIZE ||
+        !mapping_flags_valid(flags))
+        return -1;
+
+    for (uint64_t i=0; i<page_count; ++i) {
+        if (vmm_map_page(virtual_address+i*VMM_PAGE_SIZE,
+                         physical_address+i*VMM_PAGE_SIZE,flags)!=0) {
+            while (i>0) {
                 --i;
-                vmm_unmap_page(virtual_address + i * VMM_PAGE_SIZE);
+                vmm_unmap_page(virtual_address+i*VMM_PAGE_SIZE);
             }
             return -1;
         }
@@ -274,8 +297,13 @@ int vmm_map_range(uint64_t virtual_address, uint64_t physical_address,
 }
 
 int vmm_unmap_range(uint64_t virtual_address, uint64_t page_count) {
-    for (uint64_t i = 0; i < page_count; ++i) {
-        if (vmm_unmap_page(virtual_address + i * VMM_PAGE_SIZE) != 0)
+    if (page_count==0)
+        return 0;
+    if (page_count > (~0ULL/VMM_PAGE_SIZE) ||
+        virtual_address > ~0ULL-(page_count-1ULL)*VMM_PAGE_SIZE)
+        return -1;
+    for (uint64_t i=0; i<page_count; ++i) {
+        if (vmm_unmap_page(virtual_address+i*VMM_PAGE_SIZE)!=0)
             return -1;
     }
     return 0;
@@ -283,7 +311,8 @@ int vmm_unmap_range(uint64_t virtual_address, uint64_t page_count) {
 
 int vmm_protect_page(uint64_t virtual_address, uint64_t flags) {
     if (!root_table || !canonical_address(virtual_address) ||
-        (virtual_address & (VMM_PAGE_SIZE - 1)) != 0)
+        (virtual_address & (VMM_PAGE_SIZE - 1)) != 0 ||
+        !mapping_flags_valid(flags))
         return -1;
 
     uint64_t pml4_index = (virtual_address >> 39) & 0x1ff;
@@ -454,7 +483,9 @@ int vmm_space_map_page(struct vmm_space *space, uint64_t virtual_address,
                        uint64_t physical_address, uint64_t flags) {
     if (!space || !space->root || !space_canonical(virtual_address) ||
         (virtual_address & (VMM_PAGE_SIZE-1)) ||
-        (physical_address & (VMM_PAGE_SIZE-1)))
+        (physical_address & (VMM_PAGE_SIZE-1)) ||
+        !physical_page_valid(physical_address) ||
+        !mapping_flags_valid(flags))
         return -1;
 
     uint64_t pml4 = (virtual_address >> 39) & 0x1ff;

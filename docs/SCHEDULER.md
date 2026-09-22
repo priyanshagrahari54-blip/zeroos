@@ -60,11 +60,17 @@ only task-owned contexts participate in scheduler validation and switching.
 
 ## Scheduling policy
 
-The current policy is bounded round-robin over the ordinary task slots. The
-idle task is excluded from normal round-robin selection and is chosen only when
-no ordinary task is runnable. The task/context mechanics remain separate from
-policy so later fairness, latency, or per-CPU runqueue work can evolve without
-replacing task stacks and context state.
+The current UP policy is a bounded priority-aware round-robin over the
+ordinary task slots. Priorities are explicit (0–31), CPU affinity is an
+explicit bitmask, and equal effective priorities retain deterministic slot
+order. Runnable aging promotes a waiting task after bounded wait time, which
+prevents starvation without a polling worker or an unbounded queue.
+
+The idle task is excluded from normal selection and is chosen only when no
+ordinary task is runnable. Task mechanics remain separate from policy so the
+verified task stacks and context ownership can move to per-CPU runqueues
+without an ABI rewrite. `task_set_priority()` and `task_set_affinity()` reject
+unsupported CPU masks rather than silently claiming an offline CPU.
 
 ## Idle execution
 
@@ -127,11 +133,19 @@ scheduler does not corrupt an in-flight interrupt frame. citeturn3search1�
 
 ## Timed sleep and deadlines
 
-Kernel tasks can sleep for a number of monotonic PIT ticks through `task_sleep_ticks()` / `scheduler_sleep_ticks()`. Sleeping tasks are kept in a time-ordered intrusive list using their task descriptor, so the common case requires no heap allocation. The timer path wakes all expired deadlines before the scheduler considers preemption.
+Kernel tasks can sleep for a number of monotonic PIT ticks through
+`task_sleep_ticks()` / `scheduler_sleep_ticks()`. Sleeping tasks are kept in
+a time-ordered intrusive list using their task descriptor, so the common case
+requires no heap allocation. The timer path wakes all expired deadlines
+before the scheduler considers preemption.
 
-The current timer is intentionally tick-granular at 100 Hz: a five-tick sleep has a nominal 50 ms duration and wakeup occurs on the first tick at or after its deadline. Deadline arithmetic uses unsigned 64-bit monotonic ticks with signed-difference ordering, making normal wraparound-safe comparisons possible for deadlines within the representable half-range.
-
-This is deliberately a low-overhead timeout mechanism rather than the final high-resolution timer subsystem. Mature timer architectures separate low-resolution timeout scheduling from high-resolution event timers; ZEROOS can add a clocksource/clockevent layer and high-resolution timers later without changing the task sleep API. citeturn0search0turn0search2
+The scheduler deadline unit remains tick-granular at 100 Hz for deterministic
+wakeup semantics. `timer_monotonic_ns()` additionally exposes a high-resolution
+clocksource for measurement and future clock-event programming; wall-clock RTC
+samples are deliberately separate from deadline time. Deadline arithmetic uses
+unsigned 64-bit monotonic ticks with signed-difference ordering, making normal
+wraparound-safe comparisons possible for deadlines within the representable
+half-range.
 
 ## Task lifecycle and reclamation
 

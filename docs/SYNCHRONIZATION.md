@@ -13,10 +13,19 @@ This is intended for tiny critical sections that may be touched by both kernel
 code and interrupt handlers. Sleeping locks are deliberately absent because
 sleeping requires task/blocking state.
 
-## Atomic counters
+## Atomic counters and lock diagnostics
 
 The atomic_u64 primitive provides load, store, fetch-add and fetch-sub with
 explicit memory ordering. The timer uses it for tick accounting.
+
+Spinlocks expose try-lock, bounded-acquisition and contention-count APIs for
+negative tests and watchdog/diagnostic consumers. Unbounded `spin_lock()` is
+reserved for short kernel-critical sections whose lock ordering is already
+proven.
+
+A writer-preference `rwlock` is available for read-mostly metadata. It is a
+non-sleeping primitive; callers that may block must use a wait queue around a
+higher-level condition instead of spinning indefinitely.
 
 ## Lock order
 
