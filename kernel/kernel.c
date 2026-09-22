@@ -802,6 +802,9 @@ static void scheduler_self_test(void) {
     serial_write_public("ZEROOS: entering kernel task scheduler.\n");
     scheduler_start();
 
+    if (!task_current() || gdt_kernel_stack()!=task_current()->kernel_stack_top)
+        kernel_panic("scheduler/TSS kernel-stack handoff validation failed");
+    serial_write_public("ZEROOS: per-task kernel-stack/TSS handoff self-test passed.\n");
     serial_write_public("ZEROOS: returned to bootstrap task.\n");
 }
 
