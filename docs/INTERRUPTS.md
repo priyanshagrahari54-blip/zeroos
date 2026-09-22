@@ -83,10 +83,13 @@ from task-context sleeping is consistent with established kernel designs.
 
 ## Controller capability boundary
 
-`kernel/apic.c` probes the Local APIC MSR and version register and exposes a
-controller-neutral capability record. It deliberately keeps the 8259 PIC as
-the active backend until ACPI MADT data can describe IOAPIC redirection and
-interrupt ownership. A guessed APIC route is not considered support.
+`kernel/acpi.c` validates the Multiboot2 ACPI RSDP, root table and MADT
+before exposing processor, IOAPIC and interrupt-override counts. `kernel/apic.c`
+then probes the Local APIC MSR and version register and exposes a
+controller-neutral capability record. Discovery is observation-only: the 8259
+PIC remains the active backend until IOAPIC redirection, LAPIC MMIO mapping and
+interrupt ownership are all installed. A guessed APIC route is not considered
+support.
 
 The active Stage 1 matrix therefore has an explicit legacy-PIC fallback, while
 the LAPIC EOI and controller-selection interface is ready for the ACPI/APIC
@@ -96,7 +99,7 @@ stage. Per-CPU interrupt nesting and count are tracked in `struct cpu_local`.
 
 | Current verified boundary | Next production boundary |
 |---|---|
-| 8259 PIC with capability probe | Local APIC + ACPI MADT + IOAPIC |
+| 8259 PIC with LAPIC capability and ACPI MADT discovery | Local APIC + IOAPIC redirection |
 | PIT + invariant-TSC clocksource | APIC/HPET/TSC clock-event layer |
 | Global periodic tick | Per-CPU event scheduling / idle tick suppression |
 | One online CPU with per-CPU shape | AP startup and SMP interrupt routing |

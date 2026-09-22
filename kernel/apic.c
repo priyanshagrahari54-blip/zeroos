@@ -14,7 +14,7 @@ static volatile uint32_t *apic_register(uint64_t base, uint32_t offset) {
     return (volatile uint32_t *)(uint64_t)(base+offset);
 }
 
-int apic_init(void) {
+int apic_init(uint64_t multiboot_info) {
     state=(struct apic_info){
         .controller=ZEROOS_IRQ_CONTROLLER_PIC,
         .local_apic_base=0,
@@ -22,9 +22,25 @@ int apic_init(void) {
         .local_apic_version=0,
         .local_apic_present=0,
         .local_apic_enabled=0,
+        .acpi_valid=0,
         .ioapic_discovered=0,
-        .initialized=0
+        .initialized=0,
+        .acpi_processor_count=0,
+        .acpi_ioapic_count=0,
+        .acpi_interrupt_override_count=0,
+        .acpi_local_apic_address=0
     };
+
+    (void)acpi_discover(multiboot_info);
+    {
+        const struct acpi_info *firmware=acpi_info();
+        state.acpi_valid=firmware->valid;
+        state.ioapic_discovered=firmware->valid && firmware->ioapic_count!=0;
+        state.acpi_processor_count=firmware->processor_count;
+        state.acpi_ioapic_count=firmware->ioapic_count;
+        state.acpi_interrupt_override_count=firmware->interrupt_override_count;
+        state.acpi_local_apic_address=firmware->local_apic_address;
+    }
 
     if (!cpu_has(ZEROOS_CPU_FEATURE_APIC)) {
         state.initialized=1;

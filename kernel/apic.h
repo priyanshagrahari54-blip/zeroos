@@ -2,6 +2,7 @@
 #define ZEROOS_APIC_H
 
 #include "types.h"
+#include "acpi.h"
 
 enum irq_controller_kind {
     ZEROOS_IRQ_CONTROLLER_PIC=0,
@@ -15,8 +16,13 @@ struct apic_info {
     uint32_t local_apic_version;
     uint8_t local_apic_present;
     uint8_t local_apic_enabled;
+    uint8_t acpi_valid;
     uint8_t ioapic_discovered;
     uint8_t initialized;
+    uint32_t acpi_processor_count;
+    uint32_t acpi_ioapic_count;
+    uint32_t acpi_interrupt_override_count;
+    uint64_t acpi_local_apic_address;
 };
 
 /*
@@ -25,7 +31,7 @@ struct apic_info {
  * guessed IOAPIC topology. The capability and activation boundary is stable
  * for the APIC/IOAPIC driver that follows.
  */
-int apic_init(void);
+int apic_init(uint64_t multiboot_info);
 const struct apic_info *apic_info(void);
 int apic_available(void);
 enum irq_controller_kind apic_controller(void);

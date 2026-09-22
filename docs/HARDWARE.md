@@ -21,10 +21,13 @@ management with W^X/range validation, CPUID/MSR capability discovery, IDT/ISR
 entry, 8259 IRQ routing, Local APIC capability probing, PIT delivery,
 invariant-TSC/CMOS clock abstractions and serial diagnostics.
 
-Not yet implemented as production hardware abstractions: ACPI MADT/IOAPIC
+ACPI RSDP/root-table/MADT discovery is implemented with checksum, length,
+physical-window and entry-boundary validation. MADT routing is still
+observation-only: production IOAPIC redirection programming, LAPIC MMIO
 activation, PCI/PCIe enumeration, DMA/IOMMU, storage controllers, USB,
-GPU/display drivers, audio, ACPI power management, and AP/SMP startup. Those
-boundaries are explicit; no unsupported device is silently treated as active.
+GPU/display drivers, audio, ACPI power management, and AP/SMP startup remain
+unsupported. Those boundaries are explicit; no unsupported device is silently
+treated as active.
 
 ## Engineering rule
 

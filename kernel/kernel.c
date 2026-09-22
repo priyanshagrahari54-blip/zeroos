@@ -855,10 +855,27 @@ void kernel_main(uint64_t multiboot_info, uint64_t multiboot_magic) {
         kernel_panic("runtime GDT/TSS initialization failed");
     gdt_self_test();
 
-    if (apic_init()!=0)
+    if (apic_init(multiboot_info)!=0)
         kernel_panic("interrupt-controller capability probe failed");
     {
         const struct apic_info *info=apic_info();
+        const struct acpi_info *firmware=acpi_info();
+        if (!firmware->initialized ||
+            (firmware->valid &&
+             (!firmware->madt_physical || !firmware->local_apic_address ||
+              firmware->processor_count==0)))
+            kernel_panic("ACPI routing discovery invariant failed");
+        serial_write_public("ZEROOS: ACPI routing discovery: ");
+        serial_write_public(info->acpi_valid ? "MADT valid" : "MADT unavailable");
+        serial_write_public(" (processors=");
+        serial_write_u64(info->acpi_processor_count);
+        serial_write_public(", ioapics=");
+        serial_write_u64(info->acpi_ioapic_count);
+        serial_write_public(", overrides=");
+        serial_write_u64(info->acpi_interrupt_override_count);
+        serial_write_public(", error=");
+        serial_write_u64(firmware->error);
+        serial_write_public(").\n");
         serial_write_public("ZEROOS: IRQ controller capability: ");
         serial_write_public(info->local_apic_present ? "LAPIC detected, PIC backend active.\n" : "legacy PIC fallback.\n");
     }
