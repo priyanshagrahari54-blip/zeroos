@@ -42,24 +42,31 @@ truncation.
 
 ## Activation boundary
 
-The parser does not program IOAPIC redirection entries, mask the PIC, enable
-LAPIC delivery, or claim AP startup. Activation requires, at minimum:
+The parser remains observation-only: it never programs firmware-described
+hardware. After the kernel VMM is live, `apic_init()` maps the validated LAPIC
+and IOAPIC pages into a reserved supervisor MMIO window, validates the LAPIC
+and IOAPIC version registers, and retains the mappings only when all accesses
+are within the discovered topology. `apic_activate_timer()` then owns the
+narrow first activation boundary:
 
-- runtime virtual mappings for LAPIC and every IOAPIC MMIO window;
-- verified MMIO read/write behavior;
-- a routing ownership table covering legacy IRQs and future GSIs;
-- PIC quiescence and EOI ordering;
-- per-CPU interrupt-controller state;
-- failure rollback to a safe controller state.
+- it resolves the PIT IRQ through the MADT source-override table;
+- programs one masked IOAPIC redirection to the bootstrap LAPIC;
+- enables the LAPIC with a known spurious vector and task-priority state;
+- unmasks the timer only after the destination and trigger fields are valid;
+- masks the legacy PIC before publishing the LAPIC/IOAPIC backend state.
 
-Until that boundary is implemented, `apic_controller()` deliberately returns
-`ZEROOS_IRQ_CONTROLLER_PIC`, even when a valid MADT is discovered.
+If any validation fails, activation is not published and the PIC remains the
+safe backend. Non-timer legacy IRQ routing, per-CPU controller state, AP
+startup, and full rollback for a future multi-route transition remain separate
+Stage 1 gates.
 
 ## Diagnostics and validation
 
 Boot diagnostics report MADT validity, enabled processor count, IOAPIC count,
 source-override count and the parser error code. The boot invariant rejects a
 record marked valid unless it has a MADT, a Local-APIC address and at least one
-enabled processor. QEMU and supported-hardware validation must still cover
-missing ACPI, malformed checksums, truncated records, multiple IOAPICs and
-source overrides before APIC activation is considered production-ready.
+enabled processor. The QEMU gate also requires an explicit timer-routing
+outcome, whether validated LAPIC/IOAPIC activation succeeds or the legacy PIC
+fallback is retained. Supported-hardware validation must still cover missing
+ACPI, malformed checksums, truncated records, multiple IOAPICs and source
+overrides before broader APIC activation is production-ready.

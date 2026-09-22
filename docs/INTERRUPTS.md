@@ -51,9 +51,9 @@ Hardware IRQs are now separated from device-specific handling:
                 |
                 +--> registered handler
                 |
-                +--> PIC EOI
+                +--> controller EOI (PIC fallback or LAPIC)
 
-irq_register() installs one owner for each legacy PIC IRQ. irq_unregister()
+irq_register() installs one owner for each legacy PIC/IOAPIC timer IRQ. irq_unregister()
 requires the same handler/context pair, preventing accidental removal of a
 different binding.
 
@@ -88,22 +88,23 @@ from task-context sleeping is consistent with established kernel designs.
 ## Controller capability boundary
 
 `kernel/acpi.c` validates the Multiboot2 ACPI RSDP, root table and MADT
-before exposing processor, IOAPIC and interrupt-override counts. `kernel/apic.c`
-then probes the Local APIC MSR and version register and exposes a
-controller-neutral capability record. Discovery is observation-only: the 8259
-PIC remains the active backend until IOAPIC redirection, LAPIC MMIO mapping and
-interrupt ownership are all installed. A guessed APIC route is not considered
-support.
+before exposing processor, IOAPIC and interrupt-override counts. After VMM
+initialization, `kernel/apic.c` maps the validated LAPIC/IOAPIC MMIO pages,
+checks their version registers, resolves the PIT GSI, and can activate one
+masked-then-unmasked timer redirection. The PIC is masked only after the LAPIC
+and IOAPIC route is fully programmed; any failure retains the PIC backend.
+A guessed APIC route is never considered support.
 
-The active Stage 1 matrix therefore has an explicit legacy-PIC fallback, while
-the LAPIC EOI and controller-selection interface is ready for the ACPI/APIC
-stage. Per-CPU interrupt nesting and count are tracked in `struct cpu_local`.
+The active Stage 1 matrix therefore has an explicit legacy-PIC fallback and a
+validated LAPIC/IOAPIC timer path. Non-timer IRQ ownership, AP startup,
+per-CPU interrupt-controller state and multi-CPU routing remain separate gates.
+Per-CPU interrupt nesting and count are tracked in `struct cpu_local`.
 
 ## Production direction
 
 | Current verified boundary | Next production boundary |
 |---|---|
-| 8259 PIC with LAPIC capability and ACPI MADT discovery | Local APIC + IOAPIC redirection |
+| 8259 PIC fallback or validated LAPIC + IOAPIC timer route | Full Local APIC + IOAPIC IRQ ownership |
 | PIT + invariant-TSC clocksource | APIC/HPET/TSC clock-event layer |
 | Global periodic tick | Per-CPU event scheduling / idle tick suppression |
 | One online CPU with per-CPU shape | AP startup and SMP interrupt routing |
@@ -111,5 +112,6 @@ stage. Per-CPU interrupt nesting and count are tracked in `struct cpu_local`.
 | Hard IRQ handler | Deferred work / threaded device handling |
 | No TLB shootdown | SMP invalidation protocol |
 
-The legacy path remains because it gives ZEROOS a deterministic early-boot
-interrupt mechanism while unsupported modern routing is reported explicitly.
+The legacy path remains as a deterministic rollback when firmware, MMIO
+mapping, or timer-route validation is unavailable. Boot diagnostics report
+which controller path was actually published.

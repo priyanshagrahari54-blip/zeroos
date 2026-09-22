@@ -66,8 +66,8 @@ Every physical page and major kernel object needs ownership/lifetime semantics.
 `CPU_ARCHITECTURE.md` defines capability discovery, the SSE2/FPU baseline,
 NX enablement, invariant-TSC measurement and the per-CPU ownership record.
 The current supported matrix is one online x86-64 CPU with a capability-probed
-legacy PIC path; APIC/IOAPIC activation requires ACPI routing data and is not
-guessed.
+legacy PIC fallback or a validated LAPIC/IOAPIC timer path; APIC/IOAPIC
+activation requires ACPI routing data and is never guessed.
 
 ## 6. Execution Architecture
 ### Tasks
@@ -87,7 +87,7 @@ Interrupt-return context and voluntary context-switch context must not be confla
 
 ## 7. Interrupt Architecture
 IDT dispatches exceptions and IRQs.
-PIC is an early platform mechanism; future APIC/IOAPIC support is required for modern multiprocessor systems.
+PIC is the validated rollback path; the current APIC/IOAPIC implementation owns only the validated timer route. Full modern multiprocessor support still requires AP startup, non-timer routing and SMP coordination.
 Timer interrupts drive scheduling/timers.
 IRQ registration must separate hardware delivery from device-driver work.
 

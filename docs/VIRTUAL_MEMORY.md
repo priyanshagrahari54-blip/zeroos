@@ -45,6 +45,7 @@ The Intel architecture defines a PDE with PS=1 as a 2 MiB mapping; ordinary PTEs
 - Explicit leaf mappings require a usable, currently allocated physical page, retain a frame reference and enforce W^X flags; unmap/space teardown release the mapping reference.
 - Each isolated address space tracks owned mapped pages and an explicit nonzero page ceiling; the process mapping wrappers use this counter for quota enforcement and cross-check it during teardown.
 - Isolated user-range validation walks the space's own page tables and checks present, user and writable permissions without trusting the active kernel root.
+- Validated supervisor MMIO pages can be mapped without pretending device registers are allocator-owned RAM; the reserved high-half MMIO window is used by the LAPIC/IOAPIC activation path and is unmapped on failed setup.
 
 Hierarchical page tables avoid allocating a flat table for unused virtual address space, while large mappings reduce page-table depth and TLB pressure. citeturn3search3turn3search7
 

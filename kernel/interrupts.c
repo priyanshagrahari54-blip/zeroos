@@ -140,9 +140,10 @@ uint64_t interrupt_dispatch(struct interrupt_frame *frame) {
         struct irq_binding *binding=&irq_bindings[irq];
         if (binding->handler)
             binding->handler(irq, frame, binding->context);
-        pic_send_eoi(irq);
         if (apic_controller()==ZEROOS_IRQ_CONTROLLER_LAPIC_IOAPIC)
             apic_eoi();
+        else
+            pic_send_eoi(irq);
 
         /*
          * Scheduling is deliberately deferred until after the device EOI
@@ -184,5 +185,10 @@ void interrupts_init(void) {
         serial_write_public("ZEROOS PANIC: timer IRQ registration failed.\n");
         for (;;) __asm__ volatile ("cli; hlt");
     }
+
+    if (apic_activate_timer()==0)
+        serial_write_public("ZEROOS: LAPIC/IOAPIC timer routing activated.\n");
+    else
+        serial_write_public("ZEROOS: legacy PIC timer routing retained.\n");
     __asm__ volatile ("sti");
 }

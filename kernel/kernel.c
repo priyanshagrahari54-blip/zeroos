@@ -138,6 +138,18 @@ static void vmm_self_test(void) {
     page_free(range_b);
 
     if (vmm_unmap_page(VMM_SELF_TEST_VA)!=0) kernel_panic("VMM unmap failed");
+
+    /* Device registers are not allocator-owned RAM: exercise the dedicated
+     * supervisor MMIO mapping contract without dereferencing a fake device. */
+    const uint64_t mmio_va=VMM_MMIO_BASE+0x100000ULL;
+    const uint64_t mmio_pa=0xfec00000ULL;
+    if (vmm_map_mmio_page(mmio_va,mmio_pa,
+                          VMM_WRITABLE|VMM_CACHE_DISABLE|VMM_NO_EXECUTE)!=0 ||
+        vmm_translate(mmio_va)!=mmio_pa ||
+        vmm_unmap_mmio_page(mmio_va)!=0 ||
+        vmm_translate(mmio_va)!=0)
+        kernel_panic("VMM MMIO ownership validation failed");
+
     page_free(physical);
     serial_write_public("ZEROOS: virtual memory self-test passed.\n");
 }
@@ -907,6 +919,11 @@ void kernel_main(uint64_t multiboot_info, uint64_t multiboot_magic) {
         kernel_panic("runtime GDT/TSS initialization failed");
     gdt_self_test();
 
+    if (vmm_init()!=0) kernel_panic("virtual memory initialization failed");
+    serial_write_public("ZEROOS: virtual memory manager initialized.\n");
+    vmm_self_test();
+    vmm_space_self_test();
+
     if (apic_init(multiboot_info)!=0)
         kernel_panic("interrupt-controller capability probe failed");
     {
@@ -929,13 +946,10 @@ void kernel_main(uint64_t multiboot_info, uint64_t multiboot_magic) {
         serial_write_u64(firmware->error);
         serial_write_public(").\n");
         serial_write_public("ZEROOS: IRQ controller capability: ");
-        serial_write_public(info->local_apic_present ? "LAPIC detected, PIC backend active.\n" : "legacy PIC fallback.\n");
+        serial_write_public(info->local_apic_present ?
+                            "LAPIC detected, IOAPIC activation pending.\n" :
+                            "legacy PIC fallback.\n");
     }
-
-    if (vmm_init()!=0) kernel_panic("virtual memory initialization failed");
-    serial_write_public("ZEROOS: virtual memory manager initialized.\n");
-    vmm_self_test();
-    vmm_space_self_test();
 
     sync_self_test();
 

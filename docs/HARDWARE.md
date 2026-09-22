@@ -22,12 +22,13 @@ entry, 8259 IRQ routing, Local APIC capability probing, PIT delivery,
 invariant-TSC/CMOS clock abstractions and serial diagnostics.
 
 ACPI RSDP/root-table/MADT discovery is implemented with checksum, length,
-physical-window and entry-boundary validation. MADT routing is still
-observation-only: production IOAPIC redirection programming, LAPIC MMIO
-activation, PCI/PCIe enumeration, DMA/IOMMU, storage controllers, USB,
-GPU/display drivers, audio, ACPI power management, and AP/SMP startup remain
-unsupported. Those boundaries are explicit; no unsupported device is silently
-treated as active.
+physical-window and entry-boundary validation. The validated controller path
+maps LAPIC/IOAPIC MMIO and owns one PIT timer redirection, with an explicit PIC
+rollback when validation or activation fails. Full non-timer IOAPIC routing,
+PCI/PCIe enumeration, DMA/IOMMU, storage controllers, USB, GPU/display
+drivers, audio, ACPI power management, and AP/SMP startup remain unsupported.
+Those boundaries are explicit; no unsupported device is silently treated as
+active.
 
 ## Engineering rule
 

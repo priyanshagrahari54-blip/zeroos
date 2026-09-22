@@ -59,13 +59,13 @@ scheduler deadlines.
 `kernel/acpi.c` validates the Multiboot2 ACPI RSDP, RSDT/XSDT and MADT
 checksum/length chains and records enabled processors, IOAPICs and interrupt
 source overrides. `kernel/apic.c` probes the Local APIC MSR and version
-register without switching delivery away from the legacy PIC. The discovery
-record retains bounded processor, IOAPIC and source-override descriptors, not
-just aggregate counts, so later routing can be built from validated firmware
-records. APIC/IOAPIC activation remains gated on the validated MADT data plus
-MMIO mapping and redirection ownership; guessing an IOAPIC topology would be
-unsafe. The current supported controller is therefore the 8259 PIC, while the
-controller-neutral capability interface and LAPIC EOI hook are in place.
+register, maps validated controller MMIO pages after VMM initialization, and
+publishes a timer-only LAPIC/IOAPIC route only after GSI and redirection
+validation. The discovery record retains bounded processor, IOAPIC and
+source-override descriptors, not just aggregate counts, so routing is built
+from validated firmware records. A failed activation retains the 8259 PIC;
+AP startup, non-timer routes and per-CPU controller ownership remain
+unsupported until their own gates pass.
 
 ## Security and failure policy
 
@@ -88,7 +88,7 @@ The boot certification checks:
 
 ## Remaining Stage 1 boundary
 
-IOAPIC redirection programming, LAPIC MMIO mapping, AP startup, per-CPU
+Full IOAPIC IRQ ownership beyond the timer route, AP startup, per-CPU
 runqueues, TLB shootdowns and extended FPU state switching remain required
 before claiming SMP hardware support. They are deliberately isolated behind
 this contract rather than represented by a fake single-CPU success path.

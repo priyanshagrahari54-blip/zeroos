@@ -19,6 +19,9 @@ struct apic_info {
     uint8_t acpi_valid;
     uint8_t ioapic_discovered;
     uint8_t initialized;
+    uint8_t backend_active;
+    uint8_t timer_route_ready;
+    uint64_t local_apic_virtual;
     uint32_t acpi_processor_count;
     uint32_t acpi_ioapic_count;
     uint32_t acpi_interrupt_override_count;
@@ -32,6 +35,8 @@ struct apic_info {
  * for the APIC/IOAPIC driver that follows.
  */
 int apic_init(uint64_t multiboot_info);
+/* Map and activate the validated LAPIC/IOAPIC topology for the PIT timer. */
+int apic_activate_timer(void);
 const struct apic_info *apic_info(void);
 int apic_available(void);
 enum irq_controller_kind apic_controller(void);
