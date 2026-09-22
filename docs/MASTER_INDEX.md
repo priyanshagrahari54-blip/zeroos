@@ -5,16 +5,17 @@ This file is the navigation layer for the ZEROOS documentation set.
 
 ## Source-of-truth hierarchy
 
-1. `ZEROOS_MASTER_BLUEPRINT.md` — what ZEROOS is and the target system architecture.
-2. `ZEROOS_MASTER_ROADMAP.md` — execution order and current engineering priority.
-3. `PRD.md` — product requirements and feature acceptance.
-4. `ARCHITECTURE.md` — subsystem boundaries and ownership.
-5. `TECHSPEC.md` — technical contracts and implementation requirements.
-6. `RULES.md` — non-negotiable engineering rules.
-7. `AGENTS.md` — instructions for AI/human implementation agents.
-8. `PHASES.md` — phase/stage/substage development plan.
-9. `MEMORY.md` — memory/state/resource lifecycle contract.
-10. Existing subsystem specifications — detailed contracts for boot, scheduler, processes, interrupts, synchronization, virtual memory, GDT/TSS and hardware.
+1. `ZEROOS_MASTER_IMPLEMENTATION_PROMPT.md` — canonical implementation-agent execution contract.
+2. `ZEROOS_MASTER_BLUEPRINT.md` — what ZEROOS is and the target system architecture.
+3. `ZEROOS_MASTER_ROADMAP.md` — execution order and current engineering priority.
+4. `PRD.md` — product requirements and feature acceptance.
+5. `ARCHITECTURE.md` — subsystem boundaries and ownership.
+6. `TECHSPEC.md` — technical contracts and implementation requirements.
+7. `RULES.md` — non-negotiable engineering rules.
+8. `AGENTS.md` — instructions for AI/human implementation agents.
+9. `PHASES.md` — phase/stage/substage development plan.
+10. `MEMORY.md` — memory/state/resource lifecycle contract.
+11. Existing subsystem specifications — detailed contracts for boot, scheduler, processes, interrupts, synchronization, virtual memory, GDT/TSS and hardware.
 
 ## Current implementation priority
 
