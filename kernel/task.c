@@ -1013,6 +1013,9 @@ uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
     target->runnable_age=0;
     ++target->context_switches;
     current_task=target;
+    if (gdt_set_kernel_stack(target->kernel_stack_top)!=0)
+        task_context_panic("ZEROOS PANIC: IRQ target kernel stack publication failed.\n",
+                           target);
     task_validate_table("ZEROOS PANIC: IRQ dispatch invariant failed.\n");
     spin_unlock(&task_lock);
 
