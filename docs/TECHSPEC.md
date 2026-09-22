@@ -200,3 +200,63 @@ Targets are benchmark goals, not guarantees:
 - no unnecessary polling,
 - measurable wake latency,
 - foreground workload protected from background maintenance.
+
+
+## 26. Production-Grade Technical Maturity
+
+Stage order does not permit intentionally simplified technical contracts.
+
+### Kernel
+
+Production technical targets include:
+- SMP/per-CPU architecture;
+- APIC/IOAPIC and MSI/MSI-X readiness;
+- scheduler run queues, priorities, fairness/latency controls, affinity and load balancing;
+- robust process/thread/address-space separation;
+- demand paging, COW, reclaim and controlled swap where supported;
+- hardened user/kernel memory validation;
+- structured kernel diagnostics.
+
+### Storage
+
+Production storage targets include:
+- queued block I/O;
+- HDD/SSD/NVMe-aware scheduling;
+- DMA;
+- VFS lifetime correctness;
+- page cache and writeback;
+- crash consistency;
+- filesystem recovery;
+- snapshots;
+- integrity/encryption architecture.
+
+### Hardware
+
+Production hardware targets include:
+- PCI/PCIe capabilities;
+- ACPI;
+- DMA/IOMMU architecture;
+- USB;
+- HID;
+- display/GPU;
+- audio;
+- networking;
+- power/thermal;
+- suspend/resume;
+- hotplug where supported.
+
+### Desktop
+
+Production desktop targets include:
+- isolated graphics service;
+- compositor with retained scene/damage tracking;
+- frame pacing;
+- window ownership/focus;
+- multi-monitor/DPI;
+- accessibility tree;
+- crash isolation;
+- adaptive resource policy.
+
+### Testing
+
+Each production subsystem must have an explicit validation matrix covering normal, boundary, failure, stress, resource and recovery behavior. Unsupported hardware must be reported rather than silently treated as supported.
