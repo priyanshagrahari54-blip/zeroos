@@ -11,6 +11,7 @@
 
 static uint64_t *root_table;
 static uint64_t root_physical;
+static uint64_t active_root_physical;
 
 static int mapping_flags_valid(uint64_t flags) {
     /* ZEROOS enforces W^X for all explicit leaf mappings. */
@@ -36,6 +37,13 @@ static inline void invalidate_page(uint64_t address) {
 static void zero_page(uint64_t *page) {
     for (uint64_t i = 0; i < ENTRY_COUNT; ++i)
         page[i] = 0;
+}
+
+static int page_table_empty(const uint64_t *table) {
+    for (uint64_t i=0; i<ENTRY_COUNT; ++i)
+        if (table[i] & VMM_PRESENT)
+            return 0;
+    return 1;
 }
 
 static uint64_t *table_from_entry(uint64_t entry) {
@@ -147,6 +155,7 @@ int vmm_init(void) {
     }
 
     write_cr3(root_physical);
+    active_root_physical=root_physical;
     return 0;
 }
 
@@ -452,7 +461,9 @@ int vmm_space_create(struct vmm_space *space) {
 }
 
 void vmm_space_destroy(struct vmm_space *space) {
-    if (!space || !space->root) return;
+    if (!space || !space->root ||
+        space->root_physical==active_root_physical)
+        return;
     /* User page-table pages are private to this space. */
     uint64_t e1 = space->root[VMM_USER_PML4_INDEX];
     if (e1 & VMM_PRESENT) {
@@ -517,25 +528,47 @@ int vmm_space_map_page(struct vmm_space *space, uint64_t virtual_address,
 }
 
 int vmm_space_unmap_page(struct vmm_space *space, uint64_t virtual_address) {
-    if (!space || !space->root ||
-        ((virtual_address >> 39) & 0x1ff) != VMM_USER_PML4_INDEX ||
+    uint64_t pml4_index=(virtual_address>>39)&0x1ff;
+    uint64_t pdpt_index=(virtual_address>>30)&0x1ff;
+    uint64_t pd_index=(virtual_address>>21)&0x1ff;
+    uint64_t pt_index=(virtual_address>>12)&0x1ff;
+
+    if (!space || !space->root || pml4_index!=VMM_USER_PML4_INDEX ||
         !space_canonical(virtual_address) ||
         (virtual_address & (VMM_PAGE_SIZE-1)))
         return -1;
 
-    uint64_t *pdpt=table_from_entry(space->root[VMM_USER_PML4_INDEX]);
-    if (!(space->root[VMM_USER_PML4_INDEX]&VMM_PRESENT)) return -1;
-    uint64_t e2=pdpt[(virtual_address>>30)&0x1ff];
-    if (!(e2&VMM_PRESENT)) return -1;
+    uint64_t e1=space->root[pml4_index];
+    if (!(e1&VMM_PRESENT)) return -1;
+    uint64_t *pdpt=table_from_entry(e1);
+    uint64_t e2=pdpt[pdpt_index];
+    if (!(e2&VMM_PRESENT) || (e2&HUGE_PAGE_2M)) return -1;
     uint64_t *pd=table_from_entry(e2);
-    uint64_t e3=pd[(virtual_address>>21)&0x1ff];
-    if (!(e3&VMM_PRESENT)) return -1;
-    if (e3&HUGE_PAGE_2M) return -1;
+    uint64_t e3=pd[pd_index];
+    if (!(e3&VMM_PRESENT) || (e3&HUGE_PAGE_2M)) return -1;
     uint64_t *pt=table_from_entry(e3);
-    uint64_t idx=(virtual_address>>12)&0x1ff;
-    if (!(pt[idx]&VMM_PRESENT)) return -1;
-    pt[idx]=0;
-    if (space->root_physical==root_physical) invalidate_page(virtual_address);
+    if (!(pt[pt_index]&VMM_PRESENT)) return -1;
+
+    pt[pt_index]=0;
+    int active=space->root_physical==active_root_physical;
+    if (active)
+        invalidate_page(virtual_address);
+
+    /* Reclaim empty private paging levels immediately. */
+    if (page_table_empty(pt)) {
+        page_free(pt);
+        pd[pd_index]=0;
+        if (page_table_empty(pd)) {
+            page_free(pd);
+            pdpt[pdpt_index]=0;
+            if (page_table_empty(pdpt)) {
+                page_free(pdpt);
+                space->root[pml4_index]=0;
+            }
+        }
+    }
+    if (active)
+        write_cr3(active_root_physical);
     return 0;
 }
 
@@ -559,7 +592,9 @@ uint64_t vmm_space_translate(const struct vmm_space *space, uint64_t virtual_add
 }
 
 int vmm_space_activate(const struct vmm_space *space) {
-    if (!space || !space->root) return -1;
+    if (!space || !space->root || space->root_physical==0)
+        return -1;
     write_cr3(space->root_physical);
+    active_root_physical=space->root_physical;
     return 0;
 }

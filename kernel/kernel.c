@@ -136,6 +136,7 @@ static void vmm_space_self_test(void) {
         kernel_panic("address-space creation failed");
     if (vmm_space_translate(&space,VMM_SPACE_TEST_VA)!=0)
         kernel_panic("fresh address-space is not empty");
+    uint64_t space_free_before_map=memory_free_pages();
     if (vmm_space_map_page(&space,VMM_SPACE_TEST_VA,(uint64_t)physical,
                            VMM_USER|VMM_WRITABLE|VMM_NO_EXECUTE)!=0)
         kernel_panic("address-space user mapping failed");
@@ -146,8 +147,9 @@ static void vmm_space_self_test(void) {
         kernel_panic("address-space accepted unsafe PML4");
     if (vmm_space_unmap_page(&space,VMM_SPACE_TEST_VA)!=0)
         kernel_panic("address-space unmap failed");
-    if (vmm_space_translate(&space,VMM_SPACE_TEST_VA)!=0)
-        kernel_panic("address-space unmap translation failed");
+    if (vmm_space_translate(&space,VMM_SPACE_TEST_VA)!=0 ||
+        memory_free_pages()!=space_free_before_map)
+        kernel_panic("address-space table reclamation failed");
     vmm_space_destroy(&space);
     page_free(physical);
     serial_write_public("ZEROOS: per-address-space VMM self-test passed.\n");
