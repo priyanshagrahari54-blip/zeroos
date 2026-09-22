@@ -688,3 +688,29 @@ A subsystem is complete only when:
 - recovery behavior defined
 - CI covers critical paths
 - documentation matches code
+
+
+## Advanced-First Production Standard
+
+All subsystem targets in this blueprint are production architecture targets, not future polish. Stage/dependency ordering must never be interpreted as permission to ship intentionally basic implementations.
+
+For each subsystem, implementation must include its intended ownership, lifecycle, concurrency, security, resource, diagnostics and recovery contracts as early as dependencies allow.
+
+A subsystem remains PARTIAL/EXPERIMENTAL until its required implementation, negative testing, stress testing, resource validation, recovery behavior and supported-hardware verification are complete.
+
+## Production Maturity Matrix
+
+| Domain | Production expectations |
+|---|---|
+| Kernel | SMP-safe architecture, hardened memory/interrupt paths, mature scheduler, diagnostics and recovery |
+| Memory | ownership/refcounts, demand paging, COW, reclaim, protection, pressure handling |
+| Scheduler | runqueues, priorities/fairness, affinity, load balancing, latency accounting and tracing |
+| Storage | queued I/O, cache/writeback, consistency, recovery, snapshots/integrity |
+| Drivers | lifecycle, DMA/IRQ, hotplug/power/error recovery and capability detection |
+| Networking | complete protocol/service boundary, firewall, diagnostics and failure handling |
+| Graphics | acceleration/fallback, compositor, frame pacing, damage tracking, accessibility |
+| Desktop | isolated services, original shell, search/settings/notifications and adaptive resource policy |
+| Security | privilege separation, permissions/capabilities, secure updates and auditability |
+| Recovery | detection, isolation, repair, rollback and user-visible diagnostics |
+
+No row is considered production merely because a happy-path demo works.
