@@ -197,3 +197,44 @@ Telemetry must be opt-in where it leaves the device. Local diagnostics should be
 - A feature must have a lifecycle.
 - A public ABI cannot change silently.
 - Recovery paths are part of the feature, not post-processing.
+
+
+## 22. Advanced-First Architecture Maturity
+
+The architecture is designed for production maturity from the outset. Stage ordering is dependency ordering, not a justification for simplistic subsystem implementations.
+
+### Kernel
+
+The production kernel architecture must be able to evolve toward:
+- SMP/per-CPU execution;
+- robust scheduling classes;
+- scalable memory allocation;
+- demand paging/COW/reclaim;
+- robust object lifetime;
+- hardened user/kernel boundaries;
+- structured diagnostics;
+- driver isolation.
+
+### Storage
+
+The production storage boundary must support:
+- queued I/O;
+- device-specific scheduling;
+- page cache/writeback;
+- filesystem consistency;
+- recovery;
+- snapshots;
+- encryption/integrity;
+- safe update integration.
+
+### Drivers
+
+Drivers are capability-oriented, lifecycle-managed and failure-aware. DMA, IRQ, hotplug, suspend/resume and error recovery are first-class concerns.
+
+### Graphics/Desktop
+
+Graphics must separate hardware, graphics service, compositor, shell and application UI. Frame scheduling, damage tracking, resource ownership, accessibility and crash isolation are architectural requirements.
+
+### Production Boundary Rule
+
+No compatibility runtime, AI subsystem, desktop component or native application may become a hidden dependency of the kernel. Conversely, kernel contracts must be sufficiently mature that userspace does not depend on undocumented implementation details.
