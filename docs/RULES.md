@@ -106,3 +106,38 @@ Do not collect data merely because it is technically possible. Minimize, explain
 
 ## R30 — Definition of Done
 Code + tests + diagnostics + documentation + resource behavior + recovery path = done.
+
+
+## R31 — Advanced-First Implementation
+
+Stages define dependency order, not maturity. Do not implement intentionally basic/throwaway versions.
+
+## R32 — Production Gate
+
+A subsystem cannot be called PRODUCTION without appropriate:
+- correctness;
+- ownership/lifetime;
+- concurrency;
+- security;
+- resource;
+- diagnostics;
+- failure/recovery;
+- negative/stress/fault testing;
+- CI;
+- QEMU/hardware verification.
+
+## R33 — Final Architecture First
+
+When dependencies block a feature, define its final production contract first and implement the maximum production-complete portion that does not depend on the blocked component.
+
+## R34 — No Placeholder Completion
+
+A stub, partial driver, mock service or demo path must retain PARTIAL/EXPERIMENTAL status. It must never be represented as production functionality.
+
+## R35 — Evidence-Based Stability
+
+“Stable”, “production”, “fast”, “low memory” and similar claims require actual evidence from tests, measurements or supported hardware matrices.
+
+## R36 — Recovery Is Part of Implementation
+
+Failure detection, isolation, diagnostics, recovery and user-visible status are part of the feature itself, not optional post-release work.
