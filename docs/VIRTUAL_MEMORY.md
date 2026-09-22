@@ -35,10 +35,13 @@ The Intel architecture defines a PDE with PS=1 as a 2 MiB mapping; ordinary PTEs
 - Establishes a compact 2 MiB identity/direct mapping for the current 512 MiB bootstrap physical range.
 - Keeps the first 2 MiB executable for the bootstrap/kernel image.
 - Marks the remaining bootstrap RAM mappings non-executable.
-- Supports 4 KiB map, unmap and software translation.
+- Supports 4 KiB map, unmap and software translation for isolated address-space objects.
 - Automatically splits a 2 MiB mapping into a 4 KiB PT when a fine-grained mapping is requested.
-- Uses INVLPG for leaf mapping changes.
+- Tracks the root loaded in CR3 and rejects destruction of the active address space.
+- Uses INVLPG for active leaf mapping changes and a CR3 reload after active unmap/pruning.
 - Uses a CR3 reload when changing a paging-structure level during huge-page splitting, so stale translations cannot survive the page-size transition.
+- Reclaims empty private PT, PD and PDPT pages after an unmap; the root is retained until the address space is destroyed.
+- Explicit leaf mappings require a usable, currently allocated physical page and enforce W^X flags.
 
 Hierarchical page tables avoid allocating a flat table for unused virtual address space, while large mappings reduce page-table depth and TLB pressure. citeturn3search3turn3search7
 
@@ -58,21 +61,20 @@ Intel documents 2 MiB and 1 GiB x86 page sizes and notes their TLB/page-walk ben
 
 ## TLB discipline
 
-Changing a page-table entry without invalidating cached translations can leave the processor using stale mappings. ZEROOS therefore invalidates a changed leaf mapping and performs a full CR3 reload when the page-size level itself changes. Intel documents INVLPG and CR3 reloads as TLB/page-structure invalidation mechanisms. citeturn4search14turn4search15
+Changing a page-table entry without invalidating cached translations can leave the processor using stale mappings. ZEROOS tracks the active CR3 root: active leaf changes use INVLPG, active unmaps use a CR3 reload after table pruning, and active root switches update the tracker only after loading CR3. Non-active address spaces are modified without local TLB invalidation; they must be activated before execution. SMP shootdown remains a required later contract. Intel documents INVLPG and CR3 reloads as TLB/page-structure invalidation mechanisms. citeturn4search14turn4search15
 
 ## Current limits
 
 Still intentionally not implemented:
 
-- per-process address-space objects
 - page-fault-driven demand allocation
-- copy-on-write
+- copy-on-write and physical-page reference ownership
 - memory-mapped files
 - swap/reclaim
-- page-table page reclamation
 - PCID/INVPCID
 - SMP TLB shootdown
 - 1 GiB mapping policy
 - user/kernel higher-half layout
+- complete per-process VM lifetime integration and fault recovery
 
 These are the next advanced VM layers, not replacements for the current page-table interface.
