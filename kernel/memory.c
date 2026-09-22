@@ -43,6 +43,8 @@ struct multiboot_mmap_entry {
 static uint64_t page_bitmap[ZEROOS_BITMAP_WORDS];
 static uint64_t usable_bitmap[ZEROOS_BITMAP_WORDS];
 static uint64_t free_word_summary[ZEROOS_SUMMARY_WORDS];
+/* A frame remains allocated until every owner/mapping reference releases it. */
+static uint32_t page_references[ZEROOS_MAX_PAGES];
 static uint64_t managed_pages;
 static uint64_t free_pages;
 
@@ -168,6 +170,8 @@ void memory_init(uint64_t multiboot_info) {
         page_bitmap[i]=~0ULL;
         usable_bitmap[i]=0;
     }
+    for (uint64_t i=0; i<ZEROOS_MAX_PAGES; ++i)
+        page_references[i]=0;
     for (uint64_t i=0; i<ZEROOS_SUMMARY_WORDS; ++i)
         free_word_summary[i]=0;
 
@@ -314,6 +318,7 @@ void *page_alloc(void) {
             }
 
             bitmap_set(page);
+            page_references[page]=1;
             if (free_pages)
                 --free_pages;
             summary_refresh(word);
@@ -327,22 +332,54 @@ void *page_alloc(void) {
 }
 
 void page_free(void *address) {
-    uint64_t physical=(uint64_t)address;
+    (void)memory_page_release((uint64_t)address);
+}
+
+int memory_page_retain(uint64_t physical) {
     if ((physical%ZEROOS_PAGE_SIZE)!=0 || physical>=ZEROOS_MAX_PHYS_MEM)
-        return;
+        return -1;
 
     uint64_t flags=spin_lock_irqsave(&memory_lock);
     uint64_t page=physical/ZEROOS_PAGE_SIZE;
-    /* Reject reserved pages and double frees; neither mutates accounting. */
-    if (!usable_test(page) || !bitmap_test(page)) {
+    if (!usable_test(page) || !bitmap_test(page) ||
+        page_references[page]==0 || page_references[page]==0xffffffffU) {
         spin_unlock_irqrestore(&memory_lock,flags);
-        return;
+        return -1;
+    }
+    ++page_references[page];
+    spin_unlock_irqrestore(&memory_lock,flags);
+    return 0;
+}
+
+int memory_page_release(uint64_t physical) {
+    if ((physical%ZEROOS_PAGE_SIZE)!=0 || physical>=ZEROOS_MAX_PHYS_MEM)
+        return -1;
+
+    uint64_t flags=spin_lock_irqsave(&memory_lock);
+    uint64_t page=physical/ZEROOS_PAGE_SIZE;
+    /* Reserved, unallocated and already-released frames are never mutated. */
+    if (!usable_test(page) || !bitmap_test(page) || page_references[page]==0) {
+        spin_unlock_irqrestore(&memory_lock,flags);
+        return -1;
     }
 
-    bitmap_clear(page);
-    ++free_pages;
-    summary_refresh(page>>6);
+    --page_references[page];
+    if (page_references[page]==0) {
+        bitmap_clear(page);
+        ++free_pages;
+        summary_refresh(page>>6);
+    }
     spin_unlock_irqrestore(&memory_lock,flags);
+    return 0;
+}
+
+uint32_t memory_page_references(uint64_t physical) {
+    if ((physical%ZEROOS_PAGE_SIZE)!=0 || physical>=ZEROOS_MAX_PHYS_MEM)
+        return 0;
+    uint64_t flags=spin_lock_irqsave(&memory_lock);
+    uint32_t references=page_references[physical/ZEROOS_PAGE_SIZE];
+    spin_unlock_irqrestore(&memory_lock,flags);
+    return references;
 }
 
 void *page_alloc_zero(void) {

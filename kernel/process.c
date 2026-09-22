@@ -342,6 +342,18 @@ int process_reap(struct process *process, uint64_t *exit_status_out) {
         *exit_status_out=process->exit_status;
 
     parent=process->parent;
+
+    /*
+     * The process lock intentionally excludes only process-table mutations.
+     * Refuse to publish the reap until the private root has been destroyed;
+     * an active root must first be switched away with vmm_activate_kernel().
+     * This prevents a failed address-space teardown from silently losing the
+     * root and leaking all of its page-table pages.
+     */
+    if (vmm_space_destroy(&process->address_space)!=0) {
+        spin_unlock_irqrestore(&process_lock,flags);
+        return -1;
+    }
     if (parent) {
         struct process **cursor=&parent->first_child;
         while (*cursor && *cursor!=process)
@@ -352,13 +364,6 @@ int process_reap(struct process *process, uint64_t *exit_status_out) {
                 --parent->child_count;
         }
     }
-
-    /*
-     * The process lock intentionally excludes only process-table mutations.
-     * vmm_space_destroy() does not acquire process_lock, so destroying the
-     * private address-space root here cannot deadlock the process manager.
-     */
-    vmm_space_destroy(&process->address_space);
     process_reset_locked(process);
     spin_unlock_irqrestore(&process_lock,flags);
     return 0;

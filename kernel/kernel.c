@@ -76,6 +76,20 @@ static void memory_self_test(void) {
     if (!a || !b || a==b) kernel_panic("physical page allocator self-test failed");
     page_free(b); page_free(a);
     if (memory_free_pages()!=before) kernel_panic("physical page allocator accounting failed");
+
+    void *shared=page_alloc();
+    if (!shared || memory_page_retain((uint64_t)shared)!=0 ||
+        memory_page_references((uint64_t)shared)!=2)
+        kernel_panic("physical page reference acquisition failed");
+    page_free(shared);
+    if (memory_page_references((uint64_t)shared)!=1 ||
+        memory_free_pages()!=before-1)
+        kernel_panic("physical page reference release failed");
+    if (memory_page_release((uint64_t)shared)!=0 ||
+        memory_page_references((uint64_t)shared)!=0 ||
+        memory_free_pages()!=before)
+        kernel_panic("physical page reference finalization failed");
+
     /* A reserved page must never become free through an invalid page_free(). */
     page_free((void *)0);
     if (memory_free_pages()!=before ||
@@ -140,17 +154,22 @@ static void vmm_space_self_test(void) {
     if (vmm_space_map_page(&space,VMM_SPACE_TEST_VA,(uint64_t)physical,
                            VMM_USER|VMM_WRITABLE|VMM_NO_EXECUTE)!=0)
         kernel_panic("address-space user mapping failed");
-    if (vmm_space_translate(&space,VMM_SPACE_TEST_VA)!=(uint64_t)physical)
-        kernel_panic("address-space translation failed");
+    if (vmm_space_translate(&space,VMM_SPACE_TEST_VA)!=(uint64_t)physical ||
+        memory_page_references((uint64_t)physical)!=2)
+        kernel_panic("address-space translation/ownership failed");
     if (vmm_space_map_page(&space,0x4000000000ULL,(uint64_t)physical,
                            VMM_USER|VMM_WRITABLE)!=-1)
         kernel_panic("address-space accepted unsafe PML4");
     if (vmm_space_unmap_page(&space,VMM_SPACE_TEST_VA)!=0)
         kernel_panic("address-space unmap failed");
     if (vmm_space_translate(&space,VMM_SPACE_TEST_VA)!=0 ||
+        memory_page_references((uint64_t)physical)!=1 ||
         memory_free_pages()!=space_free_before_map)
         kernel_panic("address-space table reclamation failed");
-    vmm_space_destroy(&space);
+    if (vmm_space_activate(&space)!=0 || vmm_space_destroy(&space)==0)
+        kernel_panic("active address-space destruction guard failed");
+    if (vmm_activate_kernel()!=0 || vmm_space_destroy(&space)!=0)
+        kernel_panic("kernel-root address-space teardown failed");
     page_free(physical);
     serial_write_public("ZEROOS: per-address-space VMM self-test passed.\n");
 }

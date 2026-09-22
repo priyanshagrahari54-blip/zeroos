@@ -37,11 +37,12 @@ The Intel architecture defines a PDE with PS=1 as a 2 MiB mapping; ordinary PTEs
 - Marks the remaining bootstrap RAM mappings non-executable.
 - Supports 4 KiB map, unmap and software translation for isolated address-space objects.
 - Automatically splits a 2 MiB mapping into a 4 KiB PT when a fine-grained mapping is requested.
-- Tracks the root loaded in CR3 and rejects destruction of the active address space.
+- Tracks the root loaded in CR3, exposes an explicit kernel-root activation path and rejects destruction of the active address space.
 - Uses INVLPG for active leaf mapping changes and a CR3 reload after active unmap/pruning.
 - Uses a CR3 reload when changing a paging-structure level during huge-page splitting, so stale translations cannot survive the page-size transition.
 - Reclaims empty private PT, PD and PDPT pages after an unmap; the root is retained until the address space is destroyed.
-- Explicit leaf mappings require a usable, currently allocated physical page and enforce W^X flags.
+- Address-space destruction is an explicit success/failure operation; callers must activate the kernel root before destroying an active space.
+- Explicit leaf mappings require a usable, currently allocated physical page, retain a frame reference and enforce W^X flags; unmap/space teardown release the mapping reference.
 
 Hierarchical page tables avoid allocating a flat table for unused virtual address space, while large mappings reduce page-table depth and TLB pressure. citeturn3search3turn3search7
 

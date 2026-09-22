@@ -75,7 +75,10 @@ struct vmm_space.
 The VMM currently gives each space a private user PML4 slot while sharing the
 kernel mapping root used by the existing bootstrap architecture. The process
 object is the lifecycle owner of that address-space root and destroys it
-during process reaping.
+during process reaping. Reaping refuses to publish the slot as unused if the
+root is still active; the caller must first activate the kernel root. This
+prevents an active CR3 root from being invalidated or its page tables leaked
+through a failed teardown.
 
 User virtual-memory population, page-fault handling, demand paging, and user
 stack construction are deliberately implemented in later Stage 1 work.

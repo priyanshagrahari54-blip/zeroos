@@ -8,6 +8,8 @@
 #define PHYS_MASK 0x000ffffffffff000ULL
 
 #define VMM_LEAF_FLAGS 0x00000000000001ffULL
+/* Software-only ownership marker; bit 9 is ignored by x86 page walkers. */
+#define VMM_INTERNAL_OWNED 0x0000000000000200ULL
 
 static uint64_t *root_table;
 static uint64_t root_physical;
@@ -83,7 +85,7 @@ static uint64_t *ensure_table(uint64_t *parent,
  * default and pays the extra 4 KiB table only when fine-grained mapping is
  * actually required.
  */
-static int split_2m(uint64_t *pd, uint64_t index) {
+static int split_2m(uint64_t *pd, uint64_t index, uint64_t owner_root) {
     uint64_t old = pd[index];
     if (!(old & VMM_PRESENT) || !(old & HUGE_PAGE_2M))
         return 0;
@@ -108,11 +110,13 @@ static int split_2m(uint64_t *pd, uint64_t index) {
      * the PT so no CPU can retain a stale translation for the old page size.
      */
     pd[index] = 0;
-    write_cr3(root_physical);
+    if (owner_root==active_root_physical)
+        write_cr3(owner_root);
     pd[index] = ((uint64_t)pt & PAGE_MASK) |
                 VMM_PRESENT | VMM_WRITABLE |
                 (old & VMM_USER);
-    write_cr3(root_physical);
+    if (owner_root==active_root_physical)
+        write_cr3(owner_root);
 
     return 0;
 }
@@ -185,7 +189,7 @@ int vmm_map_page(uint64_t virtual_address,
         return -1;
 
     if (pd[pd_index] & HUGE_PAGE_2M) {
-        if (split_2m(pd, pd_index) != 0)
+        if (split_2m(pd, pd_index, root_physical) != 0)
             return -1;
     }
 
@@ -195,11 +199,15 @@ int vmm_map_page(uint64_t virtual_address,
 
     if (pt[pt_index] & VMM_PRESENT)
         return -1;
+    if (memory_page_retain(physical_address)!=0)
+        return -1;
 
     pt[pt_index] = (physical_address & PHYS_MASK) |
-                   VMM_PRESENT | (flags & (VMM_LEAF_FLAGS | VMM_NO_EXECUTE));
+                   VMM_PRESENT | VMM_INTERNAL_OWNED |
+                   (flags & (VMM_LEAF_FLAGS | VMM_NO_EXECUTE));
 
-    invalidate_page(virtual_address);
+    if (active_root_physical==root_physical)
+        invalidate_page(virtual_address);
     return 0;
 }
 
@@ -225,7 +233,7 @@ int vmm_unmap_page(uint64_t virtual_address) {
 
     uint64_t *pd = table_from_entry(e2);
     if (pd[pd_index] & HUGE_PAGE_2M) {
-        if (split_2m(pd, pd_index) != 0)
+        if (split_2m(pd, pd_index, root_physical) != 0)
             return -1;
     }
 
@@ -234,11 +242,16 @@ int vmm_unmap_page(uint64_t virtual_address) {
         return -1;
 
     uint64_t *pt = table_from_entry(e3);
-    if (!(pt[pt_index] & VMM_PRESENT))
+    uint64_t old_leaf=pt[pt_index];
+    if (!(old_leaf & VMM_PRESENT))
+        return -1;
+    if ((old_leaf & VMM_INTERNAL_OWNED) &&
+        memory_page_release(old_leaf & PHYS_MASK)!=0)
         return -1;
 
     pt[pt_index] = 0;
-    invalidate_page(virtual_address);
+    if (active_root_physical==root_physical)
+        invalidate_page(virtual_address);
     return 0;
 }
 
@@ -354,7 +367,7 @@ int vmm_protect_page(uint64_t virtual_address, uint64_t flags) {
     pdpt[pdpt_index] = e2;
 
     if (pd[pd_index] & HUGE_PAGE_2M) {
-        if (split_2m(pd, pd_index) != 0) return -1;
+        if (split_2m(pd, pd_index, root_physical) != 0) return -1;
     }
 
     uint64_t e3 = pd[pd_index];
@@ -367,10 +380,11 @@ int vmm_protect_page(uint64_t virtual_address, uint64_t flags) {
     uint64_t *pt = table_from_entry(e3);
     if (!(pt[pt_index] & VMM_PRESENT)) return -1;
 
-    pt[pt_index] = (pt[pt_index] & PHYS_MASK) |
+    pt[pt_index] = (pt[pt_index] & (PHYS_MASK | VMM_INTERNAL_OWNED)) |
                    VMM_PRESENT |
                    (flags & (VMM_LEAF_FLAGS | VMM_NO_EXECUTE));
-    invalidate_page(virtual_address);
+    if (active_root_physical==root_physical)
+        invalidate_page(virtual_address);
     return 0;
 }
 
@@ -460,10 +474,11 @@ int vmm_space_create(struct vmm_space *space) {
     return 0;
 }
 
-void vmm_space_destroy(struct vmm_space *space) {
-    if (!space || !space->root ||
-        space->root_physical==active_root_physical)
-        return;
+int vmm_space_destroy(struct vmm_space *space) {
+    if (!space || !space->root)
+        return -1;
+    if (space->root_physical==active_root_physical)
+        return -1;
     /* User page-table pages are private to this space. */
     uint64_t e1 = space->root[VMM_USER_PML4_INDEX];
     if (e1 & VMM_PRESENT) {
@@ -479,7 +494,14 @@ void vmm_space_destroy(struct vmm_space *space) {
                     /* User huge mappings own no page-table leaf here. */
                     continue;
                 }
-                page_free(table_from_entry(e3));
+                uint64_t *pt=table_from_entry(e3);
+                for (uint64_t k=0; k<ENTRY_COUNT; ++k) {
+                    uint64_t e4=pt[k];
+                    if ((e4&VMM_PRESENT) && (e4&VMM_INTERNAL_OWNED))
+                        if (memory_page_release(e4&PHYS_MASK)!=0)
+                            return -1;
+                }
+                page_free(pt);
             }
             page_free(pd);
         }
@@ -488,6 +510,7 @@ void vmm_space_destroy(struct vmm_space *space) {
     page_free(space->root);
     space->root = 0;
     space->root_physical = 0;
+    return 0;
 }
 
 int vmm_space_map_page(struct vmm_space *space, uint64_t virtual_address,
@@ -514,15 +537,18 @@ int vmm_space_map_page(struct vmm_space *space, uint64_t virtual_address,
     if (!pd) return -1;
 
     if (pd[pd_i] & HUGE_PAGE_2M) {
-        if (split_2m(pd,pd_i) != 0) return -1;
+        if (split_2m(pd,pd_i,space->root_physical) != 0) return -1;
     }
 
     uint64_t *pt = space_ensure_table(pd,pd_i,flags);
     if (!pt || (pt[pt_i] & VMM_PRESENT)) return -1;
+    if (memory_page_retain(physical_address)!=0)
+        return -1;
 
     pt[pt_i] = (physical_address & PHYS_MASK) |
-               VMM_PRESENT | (flags & (VMM_LEAF_FLAGS|VMM_NO_EXECUTE));
-    if (space->root_physical == root_physical)
+               VMM_PRESENT | VMM_INTERNAL_OWNED |
+               (flags & (VMM_LEAF_FLAGS|VMM_NO_EXECUTE));
+    if (space->root_physical == active_root_physical)
         invalidate_page(virtual_address);
     return 0;
 }
@@ -547,7 +573,11 @@ int vmm_space_unmap_page(struct vmm_space *space, uint64_t virtual_address) {
     uint64_t e3=pd[pd_index];
     if (!(e3&VMM_PRESENT) || (e3&HUGE_PAGE_2M)) return -1;
     uint64_t *pt=table_from_entry(e3);
-    if (!(pt[pt_index]&VMM_PRESENT)) return -1;
+    uint64_t old_leaf=pt[pt_index];
+    if (!(old_leaf&VMM_PRESENT)) return -1;
+    if ((old_leaf&VMM_INTERNAL_OWNED) &&
+        memory_page_release(old_leaf&PHYS_MASK)!=0)
+        return -1;
 
     pt[pt_index]=0;
     int active=space->root_physical==active_root_physical;
@@ -596,5 +626,13 @@ int vmm_space_activate(const struct vmm_space *space) {
         return -1;
     write_cr3(space->root_physical);
     active_root_physical=space->root_physical;
+    return 0;
+}
+
+int vmm_activate_kernel(void) {
+    if (!root_table || root_physical==0)
+        return -1;
+    write_cr3(root_physical);
+    active_root_physical=root_physical;
     return 0;
 }

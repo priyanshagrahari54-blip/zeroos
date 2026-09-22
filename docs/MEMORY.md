@@ -12,14 +12,18 @@ to the first 512 MiB and reports that boundary explicitly rather than treating
 higher memory as usable.
 
 The allocator maintains separate usable and allocation bitmaps plus a summary
-bitmap. `page_free()` rejects reserved pages and double frees; allocation and
-accounting are serialized by `memory_lock`.
+bitmap and a per-frame reference count. `page_alloc()` creates the initial
+owner reference; `memory_page_retain()` and `memory_page_release()` manage
+shared mappings, while `page_free()` releases one owner/reference. A frame is
+returned to the free pool only when its reference count reaches zero. Reserved
+pages, invalid releases and reference underflow do not mutate accounting; all
+allocation/reference operations are serialized by `memory_lock`.
 
 Required mature metadata remains:
 - frame state;
 - owner/type;
 - allocation site in debug builds;
-- reference count when shared;
+- reference count when shared; (`memory_page_references()` exposes the current debug count);
 - zeroed/nonzeroed state where relevant;
 - eventual per-CPU/scalable allocation path.
 

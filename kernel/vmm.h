@@ -28,11 +28,12 @@ struct vmm_space {
 };
 
 int vmm_space_create(struct vmm_space *space);
-void vmm_space_destroy(struct vmm_space *space);
+int vmm_space_destroy(struct vmm_space *space);
 int vmm_space_map_page(struct vmm_space *space, uint64_t virtual_address,
                        uint64_t physical_address, uint64_t flags);
 int vmm_space_unmap_page(struct vmm_space *space, uint64_t virtual_address);
 uint64_t vmm_space_translate(const struct vmm_space *space, uint64_t virtual_address);
 int vmm_space_activate(const struct vmm_space *space);
+int vmm_activate_kernel(void);
 
 #endif
