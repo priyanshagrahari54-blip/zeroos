@@ -1,5 +1,6 @@
 #include "task.h"
 #include "memory.h"
+#include "gdt.h"
 #include "sync.h"
 #include "interrupts.h"
 #include "timer.h"
@@ -144,6 +145,8 @@ static void task_context_panic(const char *message,
         task_write_u64((uint64_t)task->state);
         serial_write_public(" stack=");
         task_write_u64(task->stack_base);
+        serial_write_public(" rsp0=");
+        task_write_u64(task->kernel_stack_top);
         serial_write_public(" saved=");
         task_write_u64(task->saved_stack);
         serial_write_public("\n");
@@ -194,6 +197,10 @@ static void task_validate_table_at(const char *where,
          * task stack; scheduler_start parks it while the first real task runs.
          */
         if (i==0) {
+            if (!task->kernel_stack_top ||
+                (task->kernel_stack_top & 0xfULL)!=0)
+                task_context_panic("ZEROOS PANIC: bootstrap kernel stack metadata invalid.\n",
+                                   task);
             if (task->state==TASK_RUNNING)
                 ++running;
             continue;
@@ -210,7 +217,9 @@ static void task_validate_table_at(const char *where,
 
         if (!task->stack_base ||
             (task->stack_base & (ZEROOS_PAGE_SIZE-1ULL))!=0 ||
-            task->stack_base>=memory_max_physical())
+            task->stack_base>=memory_max_physical() ||
+            task->kernel_stack_top!=task->stack_base+ZEROOS_TASK_STACK_SIZE ||
+            (task->kernel_stack_top & 0xfULL)!=0)
             task_context_panic("ZEROOS PANIC: task stack metadata invalid.\n",
                                task);
 
@@ -400,6 +409,7 @@ static void reap_zombies_locked(void) {
         task->state=TASK_UNUSED;
         task->saved_stack=0;
         task->stack_base=0;
+        task->kernel_stack_top=0;
         task->entry=0;
         task->argument=0;
         task->runtime_ticks=0;
@@ -521,6 +531,15 @@ static void dispatch_locked(struct task *previous, int next,
     ++target->context_switches;
     current_task=target;
 
+    /*
+     * The target's scheduler stack is also its protected privilege-entry
+     * stack. Publish RSP0 before the target can execute or receive an IRQ;
+     * this is the ownership boundary for eventual user-thread entry.
+     */
+    if (gdt_set_kernel_stack(target->kernel_stack_top)!=0)
+        task_context_panic("ZEROOS PANIC: target kernel stack publication failed.\n",
+                           target);
+
     task_validate_table_at(where,previous);
     spin_unlock(&task_lock);
 
@@ -541,6 +560,7 @@ int task_system_init(void) {
         tasks[i].state=TASK_UNUSED;
         tasks[i].saved_stack=0;
         tasks[i].stack_base=0;
+        tasks[i].kernel_stack_top=0;
         tasks[i].entry=0;
         tasks[i].argument=0;
         tasks[i].runtime_ticks=0;
@@ -564,6 +584,10 @@ int task_system_init(void) {
 
     tasks[0].id=0;
     tasks[0].state=TASK_RUNNING;
+    tasks[0].kernel_stack_top=gdt_kernel_stack();
+    if (tasks[0].kernel_stack_top==0 ||
+        (tasks[0].kernel_stack_top & 0xfULL)!=0)
+        return -1;
 
     idle_stack=page_alloc();
     if (!idle_stack) return -1;
@@ -571,6 +595,8 @@ int task_system_init(void) {
     tasks[ZEROOS_IDLE_SLOT].id=1;
     tasks[ZEROOS_IDLE_SLOT].state=TASK_RUNNABLE;
     tasks[ZEROOS_IDLE_SLOT].stack_base=(uint64_t)idle_stack;
+    tasks[ZEROOS_IDLE_SLOT].kernel_stack_top=(uint64_t)idle_stack+
+                                              ZEROOS_TASK_STACK_SIZE;
     tasks[ZEROOS_IDLE_SLOT].entry=task_idle_entry;
     tasks[ZEROOS_IDLE_SLOT].timeslice_ticks=ZEROOS_DEFAULT_TIMESLICE;
     task_prepare_stack(&tasks[ZEROOS_IDLE_SLOT]);
@@ -613,6 +639,7 @@ int task_create_owned(task_entry_t entry, void *argument,
     task->id=next_task_id++;
     task->state=TASK_RUNNABLE;
     task->stack_base=(uint64_t)stack;
+    task->kernel_stack_top=(uint64_t)stack+ZEROOS_TASK_STACK_SIZE;
     task->entry=entry;
     task->argument=argument;
     task->runtime_ticks=0;

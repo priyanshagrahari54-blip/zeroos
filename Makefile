@@ -58,7 +58,7 @@ $(BUILD)/gdt.o: kernel/gdt.c kernel/gdt.h kernel/memory.h kernel/types.h | $(BUI
 $(BUILD)/vmm.o: kernel/vmm.c kernel/vmm.h kernel/memory.h kernel/types.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
-$(BUILD)/task.o: kernel/task.c kernel/task.h kernel/types.h kernel/memory.h kernel/sync.h kernel/timer.h kernel/thread.h | $(BUILD)
+$(BUILD)/task.o: kernel/task.c kernel/task.h kernel/types.h kernel/memory.h kernel/gdt.h kernel/sync.h kernel/timer.h kernel/thread.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
 $(BUILD)/wait.o: kernel/wait.c kernel/wait.h kernel/task.h kernel/types.h kernel/sync.h | $(BUILD)

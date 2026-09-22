@@ -6,8 +6,11 @@ task, and scheduler-owned blocking/wakeup primitives.
 ## Task model
 
 Each task contains a stable ID, lifecycle state, saved kernel stack pointer,
-one kernel stack page, entry function, opaque argument, and intrusive wait-list
-links. States are UNUSED, RUNNABLE, RUNNING, BLOCKED, and ZOMBIE.
+one allocator-backed kernel stack page, its aligned TSS.RSP0 value, entry
+function, opaque argument, and intrusive wait-list links. States are UNUSED,
+RUNNABLE, RUNNING, BLOCKED, and ZOMBIE. Before every context handoff the
+selected task's kernel stack top is published to the runtime TSS, making the
+stack ownership boundary explicit for future privilege transitions.
 
 Slot zero is the bootstrap execution context. Slot one is a permanent idle task.
 Ordinary kernel tasks use the remaining slots.

@@ -55,6 +55,8 @@ struct task {
     enum task_state state;
     uint64_t saved_stack;
     uint64_t stack_base;
+    /* TSS.RSP0 value for this task while it can receive a privilege entry. */
+    uint64_t kernel_stack_top;
     task_entry_t entry;
     void *argument;
 

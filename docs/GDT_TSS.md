@@ -33,10 +33,15 @@ The current TSS contains:
 - I/O-map base positioned at the end of the TSS
 
 A dedicated runtime entry-stack page is allocated during GDT initialization.
-Its aligned top is installed as the initial RSP0.
+Its aligned top is installed as the initial RSP0. The bootstrap task retains
+that value as its kernel-entry stack.
 
-This is intentionally a bootstrap entry stack. It is not yet the final
-per-thread user-to-kernel stack model.
+Every scheduler task owns one allocator-backed, guard-checked kernel stack
+page. The scheduler publishes the selected task's aligned stack top through
+`gdt_set_kernel_stack()` before the context handoff, so a privilege transition
+can never land on the previously running task's stack. This is the protected
+kernel-stack layer; a future user thread will add a separate user stack and
+user-mode frame without reusing the kernel stack page.
 
 ## User transition boundary
 
@@ -54,8 +59,11 @@ Future Ring-3 execution will require:
        v
     normalized ISR / fault path
 
-The next Stage 1 work is to allocate and own a protected kernel stack for
-every user thread and update TSS.RSP0 during a user-thread context transition.
+The scheduler now allocates and owns the protected kernel stack for every
+schedulable task and updates TSS.RSP0 at each context transition. Actual
+Ring-3 privilege entry, separate user stacks, user interrupt entry and user
+fault containment remain later Stage 2/Stage 1-boundary work; this module does
+not claim that Ring 3 is active.
 
 ## Kernel/user selectors
 
@@ -94,6 +102,7 @@ The runtime self-test verifies:
 - user selectors differ from kernel selectors;
 - TSS.RSP0 is non-zero and 16-byte aligned.
 
-The self-test does not claim Ring-3 execution yet. Actual privilege transition,
-per-thread kernel stacks, user interrupt entry, and user fault containment
-remain subsequent Stage 1 milestones.
+The self-test does not claim Ring-3 execution yet. Scheduler validation now
+also checks per-task kernel-stack metadata and publishes each selected stack to
+TSS.RSP0. Actual privilege transition, separate user stacks, user interrupt
+entry and user fault containment remain subsequent user-mode milestones.
