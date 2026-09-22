@@ -92,12 +92,26 @@ long_mode:
     mov $0x3f8, %dx
     out %al, %dx
 
+    # Establish a guard at the bottom of the bootstrap stack before C code.
+    movabs $0x5a45524f424f4f54, %rax
+    movq %rax, stack_bottom
+
     call kernel_main
 
 .hang:
     cli
     hlt
     jmp .hang
+
+.global boot_stack_guard_ok
+.type boot_stack_guard_ok, @function
+boot_stack_guard_ok:
+    movq stack_bottom, %rax
+    movabs $0x5a45524f424f4f54, %rdx
+    cmpq %rdx, %rax
+    sete %al
+    movzbq %al, %rax
+    retq
 
 .section .data
 .align 8
@@ -132,7 +146,8 @@ pd_table:
 .section .bss
 .align 16
 stack_bottom:
-    .skip 16384
+    .quad 0
+    .skip 16376
 stack_top:
 
 .section .note.GNU-stack,"",@progbits

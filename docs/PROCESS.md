@@ -11,6 +11,7 @@ The process owns:
 - the private address-space root
 - process lifecycle state
 - thread membership and thread counts
+- explicit thread/child/address-space resource ceilings
 - process exit status
 
 The thread owns:
@@ -78,6 +79,15 @@ during process reaping.
 
 User virtual-memory population, page-fault handling, demand paging, and user
 stack construction are deliberately implemented in later Stage 1 work.
+
+## Resource limits
+
+Every live process has nonzero explicit ceilings for threads, children and
+address-space pages. `process_thread_reserve()` and `process_create()` enforce
+the corresponding ceilings before publication; lowering a limit below current
+usage is rejected. The limits are scheduler/storage-independent policy data,
+so later service/resource governance can expose them without changing process
+identity or lifetime semantics.
 
 ## Thread creation
 

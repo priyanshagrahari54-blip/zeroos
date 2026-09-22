@@ -36,6 +36,26 @@ static void serial_write_hex(uint64_t value) {
     serial_write_public(buffer);
 }
 
+static int canonical_address(uint64_t address) {
+    uint64_t sign=(address>>47)&1ULL;
+    uint64_t upper=address>>48;
+    return sign ? upper==0xffffULL : upper==0;
+}
+
+static int interrupt_frame_sane(const struct interrupt_frame *frame) {
+    if (!frame || frame->vector>=256 ||
+        !(frame->rflags & (1ULL<<1)))
+        return 0;
+    if ((frame->cs & 3ULL)==3ULL) {
+        if ((frame->ss & 3ULL)!=3ULL || !canonical_address(frame->rip) ||
+            !canonical_address(frame->rsp))
+            return 0;
+    } else if ((frame->cs & 3ULL)!=0 || !canonical_address(frame->rip)) {
+        return 0;
+    }
+    return 1;
+}
+
 static void exception_name(uint64_t vector) {
     static const char *names[32] = {
         "#DE divide error","#DB debug","NMI","#BP breakpoint","#OF overflow",
@@ -71,6 +91,12 @@ static void halt_exception(struct interrupt_frame *frame) {
     }
     if (frame->vector == 14) {
         serial_write_public(" cr2="); serial_write_hex(read_cr2());
+        serial_write_public(" pf[protection="); serial_write_hex(frame->error_code & 1ULL);
+        serial_write_public(" write="); serial_write_hex((frame->error_code>>1)&1ULL);
+        serial_write_public(" user="); serial_write_hex((frame->error_code>>2)&1ULL);
+        serial_write_public(" reserved="); serial_write_hex((frame->error_code>>3)&1ULL);
+        serial_write_public(" instruction="); serial_write_hex((frame->error_code>>4)&1ULL);
+        serial_write_public("]");
     }
     serial_write_public("\nZEROOS: kernel halted after fatal exception.\n");
     for (;;) __asm__ volatile ("cli; hlt");
@@ -97,6 +123,11 @@ static void timer_irq_handler(uint8_t irq, struct interrupt_frame *frame, void *
 }
 
 uint64_t interrupt_dispatch(struct interrupt_frame *frame) {
+    if (!interrupt_frame_sane(frame)) {
+        serial_write_public("ZEROOS PANIC: malformed interrupt frame.\n");
+        for (;;) __asm__ volatile("cli; hlt");
+    }
+
     uint64_t result=(uint64_t)frame;
     cpu_irq_enter();
 

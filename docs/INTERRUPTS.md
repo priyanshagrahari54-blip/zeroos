@@ -21,7 +21,12 @@ Exceptions that architecturally push an error code keep that CPU-provided error 
 
 ## Exception diagnostics
 
-Fatal CPU exceptions report vector, decoded exception name, error code, saved RIP, and CR2 for page faults, then enter a halted panic state.
+Fatal CPU exceptions report vector, decoded exception name, error code, saved RIP,
+validated privilege/return-frame metadata and CR2 for page faults, then enter
+a halted panic state. Page-fault diagnostics decode protection/write/user/
+reserved/instruction-fetch bits without attempting unsafe recovery in the
+current kernel-only execution boundary. Malformed normalized frames are
+rejected before dispatch.
 
 ## IRQ ownership and dispatch
 

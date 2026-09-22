@@ -49,6 +49,7 @@ void serial_write_public(const char *text) {
 }
 
 extern void interrupts_init(void);
+extern int boot_stack_guard_ok(void);
 
 static void serial_write_u64(uint64_t value) {
     char buffer[21];
@@ -285,6 +286,17 @@ static void process_thread_probe_monitor_step(void) {
         if (!process_probe_parent ||
             process_probe_parent->state!=PROCESS_NEW)
             process_thread_probe_fail("process lookup/state validation failed");
+
+        if (process_set_limits(process_probe_parent,4,2,1024)!=0) {
+            process_thread_probe_fail("process resource-limit setup failed");
+        }
+        {
+            uint64_t max_threads=0, max_children=0, max_pages=0;
+            if (process_get_limits(process_probe_parent,&max_threads,
+                                   &max_children,&max_pages)!=0 ||
+                max_threads!=4 || max_children!=2 || max_pages!=1024)
+                process_thread_probe_fail("process resource-limit validation failed");
+        }
 
         if (thread_create_kernel(process_probe_parent,
                                   process_thread_probe_parent_entry,0,
@@ -773,10 +785,13 @@ static void scheduler_self_test(void) {
 }
 
 void kernel_main(uint64_t multiboot_info, uint64_t multiboot_magic) {
+    if (!boot_stack_guard_ok())
+        for (;;) __asm__ volatile ("cli; hlt");
     serial_init();
     serial_write_public("\nZEROOS kernel starting...\n");
     serial_write_public("ZEROOS: entered x86-64 long mode.\n");
     serial_write_public("ZEROOS: serial console initialized.\n");
+    serial_write_public("ZEROOS: bootstrap stack guard verified.\n");
 
     if (cpu_init()!=0)
         kernel_panic("CPU feature initialization failed");

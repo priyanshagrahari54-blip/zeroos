@@ -4,6 +4,10 @@
 #include "types.h"
 #include "vmm.h"
 
+#define ZEROOS_PROCESS_DEFAULT_MAX_THREADS 32ULL
+#define ZEROOS_PROCESS_DEFAULT_MAX_CHILDREN 16ULL
+#define ZEROOS_PROCESS_DEFAULT_MAX_ADDRESS_SPACE_PAGES (~0ULL)
+
 typedef uint64_t process_id_t;
 
 enum process_state {
@@ -30,6 +34,12 @@ struct process {
     uint64_t live_thread_count;
     uint64_t creating_threads;
 
+    /* Explicit resource ceilings; zero is never interpreted as unlimited. */
+    uint64_t max_threads;
+    uint64_t max_children;
+    uint64_t max_address_space_pages;
+    uint64_t resident_pages;
+
     uint64_t exit_status;
 
     /* The process owns its private user address-space root. */
@@ -49,6 +59,12 @@ int process_thread_exited(struct thread *thread, uint64_t exit_status);
 int process_thread_detach(struct thread *thread);
 
 int process_reap(struct process *process, uint64_t *exit_status_out);
+int process_set_limits(struct process *process, uint64_t max_threads,
+                       uint64_t max_children,
+                       uint64_t max_address_space_pages);
+int process_get_limits(const struct process *process, uint64_t *max_threads,
+                       uint64_t *max_children,
+                       uint64_t *max_address_space_pages);
 
 uint64_t process_child_count(const struct process *process);
 uint64_t process_thread_count(const struct process *process);

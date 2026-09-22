@@ -68,6 +68,10 @@ static void process_reset_locked(struct process *process) {
     process->thread_count=0;
     process->live_thread_count=0;
     process->creating_threads=0;
+    process->max_threads=0;
+    process->max_children=0;
+    process->max_address_space_pages=0;
+    process->resident_pages=0;
     process->exit_status=0;
     process->address_space.root=0;
     process->address_space.root_physical=0;
@@ -87,6 +91,10 @@ int process_system_init(void) {
         processes[i].thread_count=0;
         processes[i].live_thread_count=0;
         processes[i].creating_threads=0;
+        processes[i].max_threads=0;
+        processes[i].max_children=0;
+        processes[i].max_address_space_pages=0;
+        processes[i].resident_pages=0;
         processes[i].exit_status=0;
         processes[i].address_space.root=0;
         processes[i].address_space.root_physical=0;
@@ -100,7 +108,8 @@ int process_create(struct process *parent, process_id_t *pid_out) {
 
     if (parent && (parent->state==PROCESS_UNUSED ||
                    parent->state==PROCESS_ZOMBIE ||
-                   process_lookup_locked(parent->pid)!=parent)) {
+                   process_lookup_locked(parent->pid)!=parent ||
+                   parent->child_count>=parent->max_children)) {
         spin_unlock_irqrestore(&process_lock,flags);
         return -1;
     }
@@ -142,6 +151,10 @@ int process_create(struct process *parent, process_id_t *pid_out) {
     process->thread_count=0;
     process->live_thread_count=0;
     process->creating_threads=0;
+    process->max_threads=ZEROOS_PROCESS_DEFAULT_MAX_THREADS;
+    process->max_children=ZEROOS_PROCESS_DEFAULT_MAX_CHILDREN;
+    process->max_address_space_pages=ZEROOS_PROCESS_DEFAULT_MAX_ADDRESS_SPACE_PAGES;
+    process->resident_pages=0;
     process->exit_status=0;
 
     if (parent) {
@@ -173,7 +186,9 @@ int process_thread_reserve(struct process *process) {
         return -1;
     }
 
-    if (process->creating_threads==0xffffffffffffffffULL) {
+    if (process->creating_threads==0xffffffffffffffffULL ||
+        process->thread_count>process->max_threads ||
+        process->creating_threads>process->max_threads-process->thread_count) {
         spin_unlock_irqrestore(&process_lock,flags);
         return -1;
     }
@@ -349,6 +364,47 @@ int process_reap(struct process *process, uint64_t *exit_status_out) {
     return 0;
 }
 
+int process_set_limits(struct process *process, uint64_t max_threads,
+                       uint64_t max_children,
+                       uint64_t max_address_space_pages) {
+    if (!process || max_threads==0 || max_children==0 ||
+        max_address_space_pages==0)
+        return -1;
+    uint64_t flags=spin_lock_irqsave(&process_lock);
+    if (process_lookup_locked(process->pid)!=process ||
+        process->state==PROCESS_UNUSED ||
+        process->thread_count>max_threads ||
+        process->creating_threads>max_threads-process->thread_count ||
+        process->child_count>max_children ||
+        process->resident_pages>max_address_space_pages) {
+        spin_unlock_irqrestore(&process_lock,flags);
+        return -1;
+    }
+    process->max_threads=max_threads;
+    process->max_children=max_children;
+    process->max_address_space_pages=max_address_space_pages;
+    spin_unlock_irqrestore(&process_lock,flags);
+    return 0;
+}
+
+int process_get_limits(const struct process *process, uint64_t *max_threads,
+                       uint64_t *max_children,
+                       uint64_t *max_address_space_pages) {
+    if (!process) return -1;
+    uint64_t flags=spin_lock_irqsave(&process_lock);
+    if (process_lookup_locked(process->pid)!=process ||
+        process->state==PROCESS_UNUSED) {
+        spin_unlock_irqrestore(&process_lock,flags);
+        return -1;
+    }
+    if (max_threads) *max_threads=process->max_threads;
+    if (max_children) *max_children=process->max_children;
+    if (max_address_space_pages)
+        *max_address_space_pages=process->max_address_space_pages;
+    spin_unlock_irqrestore(&process_lock,flags);
+    return 0;
+}
+
 uint64_t process_child_count(const struct process *process) {
     if (!process) return 0;
     return process->child_count;
@@ -377,6 +433,8 @@ int process_debug_validate(void) {
                 process->next_sibling || process->child_count ||
                 process->first_thread || process->thread_count ||
                 process->live_thread_count || process->creating_threads ||
+                process->max_threads || process->max_children ||
+                process->max_address_space_pages || process->resident_pages ||
                 process->address_space.root ||
                 process->address_space.root_physical) {
                 spin_unlock_irqrestore(&process_lock,flags);
@@ -388,6 +446,15 @@ int process_debug_validate(void) {
         if (process_decode_id(process->pid,&slot,&generation)!=0 ||
             slot!=i || generation!=process->generation ||
             process_lookup_locked(process->pid)!=process) {
+            spin_unlock_irqrestore(&process_lock,flags);
+            return -1;
+        }
+
+        if (process->max_threads==0 || process->max_children==0 ||
+            process->max_address_space_pages==0 ||
+            process->thread_count>process->max_threads ||
+            process->child_count>process->max_children ||
+            process->resident_pages>process->max_address_space_pages) {
             spin_unlock_irqrestore(&process_lock,flags);
             return -1;
         }
