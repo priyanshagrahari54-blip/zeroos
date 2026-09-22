@@ -1,49 +1,172 @@
-# ZEROOS Memory Architecture
+# ZEROOS — MEMORY AND STATE MANAGEMENT
+Version: 1.0
 
-| Layer | Purpose | Current implementation | Production direction |
-|---|---|---|---|
-| Firmware map | Discover RAM and reserved ranges | Multiboot2 memory map | Keep hardware-derived map |
-| Physical allocator | Allocate/free 4 KiB pages | Compact bitmap + summary index | Zones/buddy + per-CPU caches |
-| Allocation search | Find a free page quickly | Hierarchical summary, bounded scan | Per-CPU fast paths |
-| Kernel metadata | Avoid corrupting boot/kernel data | Page 0, kernel image and Multiboot info reserved | Full boot-memory reservation model |
-| Physical range | Keep bootstrap simple | First 512 MiB tracked | Extend from firmware map as higher-memory support lands |
+## 1. Scope
+This document defines physical memory, virtual memory, process memory, caches, dormant feature state, memory pressure and persistence rules.
 
-## Current allocator
+## 2. Physical Memory
+The physical allocator owns available page frames.
+Boot-reserved memory includes kernel image, boot information and required early structures.
+Initial implementation may use a bitmap/bootstrap strategy; it must evolve toward scalable allocation for larger machines.
 
-ZEROOS starts with all tracked pages reserved and releases only pages reported as type 1 (available RAM) by the Multiboot2 memory map. The kernel image, page zero and the Multiboot information structure are then reserved again.
+Required metadata:
+- frame state,
+- owner/type,
+- allocation site in debug builds,
+- reference count when shared,
+- zeroed/nonzeroed state where relevant.
 
-The allocator stores one bit per 4 KiB page. The 512 MiB bootstrap range therefore needs 16 KiB for the primary bitmap. A small summary bitmap records which bitmap words still contain free pages.
+## 3. Virtual Memory
+Each process owns an address-space root.
+Kernel mappings are controlled and consistent.
+User mappings have explicit read/write/execute permissions.
+Page faults are classified as:
+- valid lazy allocation,
+- copy-on-write,
+- mapped file,
+- stack growth,
+- invalid access.
 
-This changes the old first-fit design from potentially scanning all 131,072 pages to scanning at most the small summary hierarchy plus one 64-bit word. Allocation/free accounting remains deterministic and the metadata stays very small.
+Invalid faults terminate the offending process where safe; kernel faults produce diagnostic panic/recovery behavior according to context.
 
-## Why this is an intentional intermediate architecture
+## 4. Memory Classes
+### Active
+Currently executing or immediately required pages.
 
-A full production allocator needs zones, fragmentation management, higher-order contiguous allocations and eventually per-CPU caches. Linux, for example, uses zones and a buddy allocator, with per-CPU page sets to keep frequent allocations away from global allocator contention. citeturn1search0turn1search12
+### Warm
+Small state retained for fast activation.
 
-ZEROOS is not pretending the current allocator is the final NUMA/driver-grade allocator. It is now a fast bootstrap allocator with an interface that can later be backed by those mechanisms without changing callers.
+### Cache
+Reclaimable data that can be recreated.
 
-## Resource budget
+### Dormant
+State retained at low cost for quick resume.
 
-| Resource | Current cost |
-|---|---:|
-| Tracked physical range | 512 MiB |
-| Base-page size | 4 KiB |
-| Primary bitmap | 16 KiB |
-| Summary bitmap | 256 bytes |
-| Allocation search | Bounded by summary levels |
-| Per-allocation dynamic metadata | None |
+### Cold/Discarded
+State removed; reconstruction is required.
 
-The allocator itself does not reserve a large heap or create per-page structs, so the bootstrap footprint stays small.
+## 5. Feature Memory Contract
+Every optional service declares:
+- base resident memory,
+- active memory ceiling,
+- cache ceiling,
+- reclaim priority,
+- persistence requirements,
+- wake latency target.
 
-## Next memory layers
+The system should keep tiny controllers warm for frequent features while allowing heavy engines to be cold.
 
-The intended progression is:
+## 6. Browser Memory
+Tab states:
+ACTIVE: full renderer.
+IDLE: reduced scheduling.
+FROZEN: execution paused, state retained.
+DISCARDED: renderer memory reclaimed; navigation/session metadata retained.
 
-1. Kernel object allocator for sub-page objects.
-2. Higher-order/contiguous allocation.
-3. Page ownership/reference tracking.
-4. Per-process address spaces.
-5. Demand paging and copy-on-write.
-6. Reclaim/page cache/swap policies where useful.
+Media, downloads and unsaved forms receive special preservation rules.
 
-That keeps the current fast page primitive useful instead of replacing every caller later.
+## 7. AI Memory
+AI model memory is not permanently reserved by default.
+Model manager:
+discover backend -> load model -> serve request -> cache according to policy -> unload/reclaim.
+If hardware supports GPU/NPU acceleration, placement is capability-dependent.
+Context windows have explicit limits.
+
+## 8. Android/Windows Memory
+Compatibility runtimes use separate memory budgets.
+When no compatible application is active, runtime memory can be reclaimed.
+A tiny launcher/controller may remain warm without keeping the complete runtime resident.
+
+## 9. Kernel Object Memory
+Objects such as processes, threads, file descriptors, VM areas and IPC endpoints require explicit lifetime management.
+Preferred pattern:
+reference ownership -> last reference -> cleanup.
+Debug builds should detect leaks and use-after-free.
+
+## 10. Page Reclamation
+Pressure levels:
+P0 normal
+P1 cache reclaim
+P2 background throttling
+P3 aggressive reclaim
+P4 emergency recovery.
+
+Reclaim order should prefer reconstructible caches and dormant services before active foreground state.
+
+## 11. Compression and Swap
+Memory compression may reduce disk I/O at the cost of CPU.
+Swap is optional and policy-driven.
+Do not present swap as equivalent to RAM.
+Under sustained pressure, foreground responsiveness is prioritized.
+
+## 12. HDD Rules
+HDD systems require conservative background memory/disk behavior:
+- batch metadata updates,
+- sequentialize maintenance,
+- avoid repeated scans,
+- defer indexing,
+- coalesce writes,
+- keep hot metadata cached,
+- minimize random I/O.
+
+## 13. GPU Memory
+Graphics allocations have ownership and eviction policy.
+Textures, surfaces and shader caches must be reclaimable.
+The compositor retains only active scene resources where possible.
+
+## 14. Audio/Video Buffers
+Buffers are bounded and sized to latency mode.
+Playback uses ring buffers and hardware decode/processing when available.
+Background media is paused or reduced when user policy allows.
+
+## 15. Memory Safety
+No raw pointer crosses a privilege boundary without validation.
+No userspace pointer is trusted.
+Length arithmetic must detect overflow.
+DMA buffers require explicit mapping and lifetime.
+
+## 16. State Persistence
+Persistent state is separated from volatile runtime state.
+Examples:
+settings, document metadata, package state and update slots are persistent.
+Scheduler queues, renderer caches and decoded thumbnails are volatile/reclaimable.
+
+## 17. Fast Switch Principle
+For instant feature switching:
+User action
+-> warm controller
+-> restore compact state
+-> activate heavy engine
+-> progressively load optional resources.
+
+The objective is to avoid unnecessary cold boot while avoiding permanent residency of heavy components.
+
+## 18. Memory Telemetry
+Expose:
+used, free, reclaimable, cached, compressed, mapped, shared, per-process resident and pressure level.
+Do not mislead users by treating cache as permanently unavailable memory.
+
+## 19. Testing
+Stress:
+- allocation/free churn,
+- process creation,
+- address-space destruction,
+- page faults,
+- concurrent mapping,
+- memory pressure,
+- cache eviction,
+- suspend/resume,
+- compatibility runtime load/unload.
+
+## 20. Invariants
+- no double free,
+- no use-after-free,
+- no writable alias without policy,
+- no executable mapping without explicit permission,
+- no unbounded cache,
+- no silent memory leak,
+- no foreground starvation due to reclaim.
+
+## 21. Long-Term Evolution
+Bootstrap allocator -> scalable physical allocator -> object/slab allocator -> demand paging -> COW -> page cache/reclaim -> NUMA-aware policy if required.
+Every step must preserve existing ABI and test contracts.
