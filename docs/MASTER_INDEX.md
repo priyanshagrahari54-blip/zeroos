@@ -156,3 +156,26 @@ Before merging a major subsystem:
 ## Final rule
 
 If two documents conflict, do not silently choose one. Treat the conflict as an architecture issue, resolve it deliberately, then update the affected documents in the same change.
+
+
+## Advanced-First Production Policy
+
+Stage labels define dependency order, not quality level.
+
+ZEROOS must NOT follow “basic foundation now, advanced later”. Every subsystem is designed against its intended production architecture from the beginning. If a dependency blocks activation, implement the dependency-independent production portion and isolate the remaining boundary without creating a throwaway API.
+
+Production status requires, where applicable:
+- correctness and invariant validation;
+- ownership/lifetime/concurrency contracts;
+- security boundaries;
+- bounded CPU/RAM/I/O behavior;
+- diagnostics and observability;
+- failure isolation and recovery;
+- unit/integration/negative/stress/fault tests;
+- QEMU and supported-hardware validation;
+- CI coverage;
+- documentation synchronization.
+
+Canonical implementation prompt: `docs/MASTER_IMPLEMENTATION_PROMPT.md`.
+
+The master prompt is the operational execution contract; this index remains the navigation/source-of-truth map.
