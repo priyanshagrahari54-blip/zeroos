@@ -69,6 +69,7 @@ jobs:
             grep -q "ZEROOS: interrupt-frame ownership invariant verified." build/serial.log
             grep -q "ZEROOS: scheduler certification passed." build/serial.log
             grep -q "ZEROOS: process/thread object model self-test passed." build/serial.log
+            grep -q "ZEROOS: process address-space ownership self-test passed." build/serial.log
             grep -q "ZEROOS: PID/TID reuse protection self-test passed." build/serial.log
             grep -q "ZEROOS: per-task kernel-stack/TSS handoff self-test passed." build/serial.log
 

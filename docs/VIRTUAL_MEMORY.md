@@ -43,6 +43,8 @@ The Intel architecture defines a PDE with PS=1 as a 2 MiB mapping; ordinary PTEs
 - Reclaims empty private PT, PD and PDPT pages after an unmap; the root is retained until the address space is destroyed.
 - Address-space destruction is an explicit success/failure operation; callers must activate the kernel root before destroying an active space.
 - Explicit leaf mappings require a usable, currently allocated physical page, retain a frame reference and enforce W^X flags; unmap/space teardown release the mapping reference.
+- Each isolated address space tracks owned mapped pages and an explicit nonzero page ceiling; the process mapping wrappers use this counter for quota enforcement and cross-check it during teardown.
+- Isolated user-range validation walks the space's own page tables and checks present, user and writable permissions without trusting the active kernel root.
 
 Hierarchical page tables avoid allocating a flat table for unused virtual address space, while large mappings reduce page-table depth and TLB pressure. citeturn3search3turn3search7
 
@@ -56,7 +58,7 @@ ZEROOS does not blindly use 4 KiB pages for everything.
 | Large contiguous regions | Prefer 2 MiB mappings |
 | Fine-grained mappings | 4 KiB |
 | Partial huge-page mapping | Split only the affected 2 MiB region |
-| User address spaces | Future per-process policy |
+| User address spaces | 4 KiB isolated mappings through process-owned quota wrappers |
 
 Intel documents 2 MiB and 1 GiB x86 page sizes and notes their TLB/page-walk benefits, while also warning that large mappings must respect memory-type boundaries. citeturn0search0turn6search13
 
@@ -69,7 +71,7 @@ Changing a page-table entry without invalidating cached translations can leave t
 Still intentionally not implemented:
 
 - page-fault-driven demand allocation
-- copy-on-write and physical-page reference ownership
+- copy-on-write
 - memory-mapped files
 - swap/reclaim
 - PCID/INVPCID

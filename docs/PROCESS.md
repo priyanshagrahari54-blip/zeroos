@@ -80,17 +80,28 @@ root is still active; the caller must first activate the kernel root. This
 prevents an active CR3 root from being invalidated or its page tables leaked
 through a failed teardown.
 
-User virtual-memory population, page-fault handling, demand paging, and user
-stack construction are deliberately implemented in later Stage 1 work.
+The process-owned `process_address_space_map_page()` and
+`process_address_space_unmap_page()` wrappers are the accounting boundary for
+private user mappings. They require the mapping to use the isolated user PML4
+slot, retain/release physical-page ownership through the VMM, and keep
+`resident_pages` equal to the VMM's owned mapping count. The wrappers also
+provide permission-aware `process_address_space_is_user_range()` validation
+for future syscall and fault paths. Reaping refuses an accounting mismatch and
+tears down the private root only after the process is no longer running.
+
+Demand paging, page-fault recovery, and user stack construction are deliberately
+implemented in later Stage 1 work.
 
 ## Resource limits
 
 Every live process has nonzero explicit ceilings for threads, children and
 address-space pages. `process_thread_reserve()` and `process_create()` enforce
-the corresponding ceilings before publication; lowering a limit below current
-usage is rejected. The limits are scheduler/storage-independent policy data,
-so later service/resource governance can expose them without changing process
-identity or lifetime semantics.
+the corresponding ceilings before publication; the address-space mapping
+wrappers enforce the page ceiling before allocating page tables or retaining a
+physical page. Lowering a limit below current usage is rejected. The limits
+are scheduler/storage-independent policy data, so later service/resource
+governance can expose them without changing process identity or lifetime
+semantics.
 
 ## Thread creation
 
@@ -219,7 +230,6 @@ missing are:
 - signals/events
 - file-descriptor tables
 - security credentials/capabilities
-- resource limits and accounting
 - user-thread creation
 - kernel-stack/user-stack separation for Ring 3
 - syscall ABI

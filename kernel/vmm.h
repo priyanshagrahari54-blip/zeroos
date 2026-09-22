@@ -25,6 +25,8 @@ uint64_t vmm_root(void);
 struct vmm_space {
     uint64_t root_physical;
     uint64_t *root;
+    uint64_t mapped_pages;
+    uint64_t max_pages;
 };
 
 int vmm_space_create(struct vmm_space *space);
@@ -33,6 +35,11 @@ int vmm_space_map_page(struct vmm_space *space, uint64_t virtual_address,
                        uint64_t physical_address, uint64_t flags);
 int vmm_space_unmap_page(struct vmm_space *space, uint64_t virtual_address);
 uint64_t vmm_space_translate(const struct vmm_space *space, uint64_t virtual_address);
+int vmm_space_set_page_limit(struct vmm_space *space, uint64_t max_pages);
+uint64_t vmm_space_mapped_pages(const struct vmm_space *space);
+int vmm_space_is_user_range(const struct vmm_space *space,
+                            uint64_t virtual_address, uint64_t length,
+                            uint64_t write);
 int vmm_space_activate(const struct vmm_space *space);
 int vmm_activate_kernel(void);
 

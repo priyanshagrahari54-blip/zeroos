@@ -65,6 +65,16 @@ int process_set_limits(struct process *process, uint64_t max_threads,
 int process_get_limits(const struct process *process, uint64_t *max_threads,
                        uint64_t *max_children,
                        uint64_t *max_address_space_pages);
+int process_address_space_map_page(struct process *process,
+                                   uint64_t virtual_address,
+                                   uint64_t physical_address,
+                                   uint64_t flags);
+int process_address_space_unmap_page(struct process *process,
+                                     uint64_t virtual_address);
+uint64_t process_address_space_mapped_pages(const struct process *process);
+int process_address_space_is_user_range(const struct process *process,
+                                        uint64_t virtual_address,
+                                        uint64_t length, uint64_t write);
 
 uint64_t process_child_count(const struct process *process);
 uint64_t process_thread_count(const struct process *process);

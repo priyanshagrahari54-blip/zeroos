@@ -468,6 +468,8 @@ int vmm_space_create(struct vmm_space *space) {
 
     space->root = (uint64_t *)root;
     space->root_physical = (uint64_t)root;
+    space->mapped_pages = 0;
+    space->max_pages = ~0ULL;
 
     /* Slot 0 contains the kernel's identity/direct map and is shared. */
     space->root[0] = root_table[0];
@@ -497,9 +499,12 @@ int vmm_space_destroy(struct vmm_space *space) {
                 uint64_t *pt=table_from_entry(e3);
                 for (uint64_t k=0; k<ENTRY_COUNT; ++k) {
                     uint64_t e4=pt[k];
-                    if ((e4&VMM_PRESENT) && (e4&VMM_INTERNAL_OWNED))
-                        if (memory_page_release(e4&PHYS_MASK)!=0)
+                    if ((e4&VMM_PRESENT) && (e4&VMM_INTERNAL_OWNED)) {
+                        if (space->mapped_pages==0 ||
+                            memory_page_release(e4&PHYS_MASK)!=0)
                             return -1;
+                        --space->mapped_pages;
+                    }
                 }
                 page_free(pt);
             }
@@ -510,12 +515,15 @@ int vmm_space_destroy(struct vmm_space *space) {
     page_free(space->root);
     space->root = 0;
     space->root_physical = 0;
+    space->mapped_pages = 0;
+    space->max_pages = 0;
     return 0;
 }
 
 int vmm_space_map_page(struct vmm_space *space, uint64_t virtual_address,
                        uint64_t physical_address, uint64_t flags) {
-    if (!space || !space->root || !space_canonical(virtual_address) ||
+    if (!space || !space->root || space->mapped_pages>=space->max_pages ||
+        space->mapped_pages==~0ULL || !space_canonical(virtual_address) ||
         (virtual_address & (VMM_PAGE_SIZE-1)) ||
         (physical_address & (VMM_PAGE_SIZE-1)) ||
         !physical_page_valid(physical_address) ||
@@ -548,6 +556,7 @@ int vmm_space_map_page(struct vmm_space *space, uint64_t virtual_address,
     pt[pt_i] = (physical_address & PHYS_MASK) |
                VMM_PRESENT | VMM_INTERNAL_OWNED |
                (flags & (VMM_LEAF_FLAGS|VMM_NO_EXECUTE));
+    ++space->mapped_pages;
     if (space->root_physical == active_root_physical)
         invalidate_page(virtual_address);
     return 0;
@@ -576,8 +585,11 @@ int vmm_space_unmap_page(struct vmm_space *space, uint64_t virtual_address) {
     uint64_t old_leaf=pt[pt_index];
     if (!(old_leaf&VMM_PRESENT)) return -1;
     if ((old_leaf&VMM_INTERNAL_OWNED) &&
-        memory_page_release(old_leaf&PHYS_MASK)!=0)
+        (space->mapped_pages==0 ||
+         memory_page_release(old_leaf&PHYS_MASK)!=0))
         return -1;
+    if (old_leaf&VMM_INTERNAL_OWNED)
+        --space->mapped_pages;
 
     pt[pt_index]=0;
     int active=space->root_physical==active_root_physical;
@@ -619,6 +631,58 @@ uint64_t vmm_space_translate(const struct vmm_space *space, uint64_t virtual_add
     uint64_t e4=pt[(virtual_address>>12)&0x1ff];
     if (!(e4&VMM_PRESENT)) return 0;
     return (e4&PHYS_MASK)|(virtual_address&0xfffULL);
+}
+
+int vmm_space_set_page_limit(struct vmm_space *space, uint64_t max_pages) {
+    if (!space || !space->root || max_pages==0 ||
+        max_pages<space->mapped_pages)
+        return -1;
+    space->max_pages=max_pages;
+    return 0;
+}
+
+uint64_t vmm_space_mapped_pages(const struct vmm_space *space) {
+    return space && space->root ? space->mapped_pages : 0;
+}
+
+int vmm_space_is_user_range(const struct vmm_space *space,
+                            uint64_t virtual_address, uint64_t length,
+                            uint64_t write) {
+    if (!space || !space->root || length==0 ||
+        !space_canonical(virtual_address) ||
+        virtual_address>~0ULL-length)
+        return 0;
+
+    uint64_t end=virtual_address+length-1ULL;
+    if (!space_canonical(end))
+        return 0;
+    uint64_t cursor=virtual_address&~(VMM_PAGE_SIZE-1ULL);
+    uint64_t last=end&~(VMM_PAGE_SIZE-1ULL);
+
+    for (;;) {
+        if (((cursor>>39)&0x1ffULL)!=VMM_USER_PML4_INDEX)
+            return 0;
+        uint64_t e1=space->root[VMM_USER_PML4_INDEX];
+        if (!(e1&VMM_PRESENT) || !(e1&VMM_USER)) return 0;
+        uint64_t *pdpt=table_from_entry(e1);
+        uint64_t e2=pdpt[(cursor>>30)&0x1ffULL];
+        if (!(e2&VMM_PRESENT) || !(e2&VMM_USER)) return 0;
+        uint64_t *pd=table_from_entry(e2);
+        uint64_t e3=pd[(cursor>>21)&0x1ffULL];
+        if (!(e3&VMM_PRESENT) || !(e3&VMM_USER)) return 0;
+        if (e3&HUGE_PAGE_2M) {
+            if (write && !(e3&VMM_WRITABLE)) return 0;
+        } else {
+            uint64_t *pt=table_from_entry(e3);
+            uint64_t e4=pt[(cursor>>12)&0x1ffULL];
+            if (!(e4&VMM_PRESENT) || !(e4&VMM_USER) ||
+                (write && !(e4&VMM_WRITABLE)))
+                return 0;
+        }
+        if (cursor==last) break;
+        cursor+=VMM_PAGE_SIZE;
+    }
+    return 1;
 }
 
 int vmm_space_activate(const struct vmm_space *space) {

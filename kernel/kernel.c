@@ -371,6 +371,40 @@ static void process_thread_probe_monitor_step(void) {
                                 VMM_SPACE_TEST_VA)!=0)
             process_thread_probe_fail("process address-space isolation validation failed");
 
+        /* Process-owned mapping wrappers must enforce the address-space quota
+         * and keep process accounting identical to VMM ownership accounting. */
+        void *probe_page=page_alloc_zero();
+        if (!probe_page ||
+            process_address_space_map_page(process_probe_parent,
+                                           VMM_SPACE_TEST_VA,
+                                           (uint64_t)probe_page,
+                                           VMM_USER|VMM_WRITABLE|VMM_NO_EXECUTE)!=0 ||
+            process_address_space_mapped_pages(process_probe_parent)!=1 ||
+            !process_address_space_is_user_range(process_probe_parent,
+                                                 VMM_SPACE_TEST_VA,
+                                                 VMM_PAGE_SIZE,1) ||
+            process_address_space_map_page(process_probe_parent,
+                                           VMM_SPACE_TEST_VA,
+                                           (uint64_t)probe_page,
+                                           VMM_USER|VMM_WRITABLE|VMM_NO_EXECUTE)!=-1) {
+            if (probe_page) page_free(probe_page);
+            process_thread_probe_fail("process address-space ownership/quota validation failed");
+        }
+        if (process_set_limits(process_probe_parent,4,2,1)!=0 ||
+            process_address_space_map_page(process_probe_parent,
+                                           VMM_SPACE_TEST_VA+VMM_PAGE_SIZE,
+                                           (uint64_t)probe_page,
+                                           VMM_USER|VMM_WRITABLE|VMM_NO_EXECUTE)!=-1 ||
+            process_address_space_unmap_page(process_probe_parent,
+                                             VMM_SPACE_TEST_VA)!=0 ||
+            process_address_space_mapped_pages(process_probe_parent)!=0 ||
+            process_set_limits(process_probe_parent,4,2,1024)!=0) {
+            page_free(probe_page);
+            process_thread_probe_fail("process address-space limit transition failed");
+        }
+        page_free(probe_page);
+        serial_write_public("ZEROOS: process address-space ownership self-test passed.\n");
+
         atomic_u64_store(&process_thread_probe_allow_parent_exit,1);
         atomic_u64_store(&process_thread_probe_phase,1);
         return;
