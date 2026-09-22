@@ -385,3 +385,35 @@ ZEROOS becomes a complete ecosystem:
 Kernel + Drivers + Security + Storage + Network + Desktop + Native Apps + Study Platform + Compatibility + Recovery + Updates + Forge AI
 
 while remaining fast, lightweight, native, reliable and measurable.
+
+
+## Advanced-First Execution Rule
+
+The roadmap is a dependency roadmap, not a basic-first/advanced-later roadmap.
+
+Every milestone targets production architecture immediately. A blocked dependency may delay activation, but it must not force a throwaway implementation.
+
+### Universal Production Gate
+
+Before marking a milestone production:
+- implementation is complete for its declared scope;
+- public contracts are documented;
+- ownership/lifetime/concurrency are verified;
+- security boundary is reviewed;
+- resource behavior is measured;
+- failure and recovery paths are tested;
+- negative/stress/fault tests pass where applicable;
+- QEMU and supported hardware validation pass;
+- CI is green;
+- documentation matches code.
+
+### Stage 0–5 Production Targets
+
+Stage 0 → production engineering/reproducibility/CI
+Stage 1 → production kernel and core execution architecture
+Stage 2 → production userspace and service/IPC architecture
+Stage 3 → production persistent storage and filesystem
+Stage 4 → production hardware, drivers, networking, audio, power/thermal
+Stage 5 → production graphics, compositor, shell and desktop services
+
+Later stages remain separate product gates for native applications, security hardening, updates/recovery, compatibility, AI and ecosystem services.
