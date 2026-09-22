@@ -164,3 +164,58 @@ An agent must stop and report rather than guess when:
 [ ] No invariant weakened
 [ ] CI/QEMU checked where applicable
 [ ] Commit is scoped
+
+
+## 15. Advanced-First Implementation Contract
+
+Agents MUST NOT interpret stage names as permission to implement basic or disposable versions.
+
+Required loop:
+
+MATURITY AUDIT
+→ PRODUCTION ARCHITECTURE
+→ ROBUST IMPLEMENTATION
+→ HARDENING
+→ PERFORMANCE/RESOURCE REVIEW
+→ FAILURE/RECOVERY TESTING
+→ INTEGRATION
+→ CI/QEMU/HARDWARE VERIFICATION
+
+### Forbidden Agent Behavior
+
+Do not:
+- add a toy implementation because it is faster;
+- create a placeholder API that will obviously be replaced;
+- defer critical ownership/lifetime/security design;
+- call a feature production because its happy path works;
+- remove tests/assertions to obtain a green result;
+- claim hardware compatibility without evidence.
+
+### Dependency Rule
+
+If a dependency is missing:
+1. define the final production interface;
+2. implement all independent production work;
+3. isolate the blocked component;
+4. test the boundary;
+5. continue with other non-dependent production work.
+
+### Production Review
+
+Before declaring a subsystem complete, review:
+- architecture;
+- ownership/lifetime;
+- concurrency;
+- memory safety;
+- interrupt safety;
+- ABI/API;
+- security;
+- resource budgets;
+- diagnostics;
+- recovery;
+- negative tests;
+- stress/soak tests;
+- CI;
+- supported hardware.
+
+The agent must report PARTIAL when any required production gate is not yet verified.
