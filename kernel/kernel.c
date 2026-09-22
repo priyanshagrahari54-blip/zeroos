@@ -275,6 +275,8 @@ static thread_id_t thread_probe_reuse_tid;
 
 static struct atomic_u64 process_thread_probe_allow_parent_exit;
 
+static void scheduler_tss_stack_self_check(void);
+
 static void process_thread_probe_parent_entry(void *argument) {
     (void)argument;
     while (atomic_u64_load(&process_thread_probe_allow_parent_exit)==0)
@@ -447,6 +449,7 @@ static void process_thread_probe_monitor_step(void) {
 
 static void scheduler_probe_cpu_a(void *argument) {
     (void)argument;
+    scheduler_tss_stack_self_check();
 
     /*
      * Keep callee-saved registers live from the very first CPU-bound loop so
@@ -502,6 +505,7 @@ static void scheduler_probe_cpu_a(void *argument) {
 
 static void scheduler_probe_cpu_b(void *argument) {
     (void)argument;
+    scheduler_tss_stack_self_check();
     register uint64_t rbx asm("rbx")=0xdeadbeefcafebabeULL;
     register uint64_t r12 asm("r12")=0x0123456789abcdefULL;
     register uint64_t r13 asm("r13")=0xfedcba9876543210ULL;
@@ -548,6 +552,11 @@ static void scheduler_probe_lifecycle_creator(void *argument) {
     atomic_u64_store(&lifecycle_probe_done,1);
 }
 
+static void scheduler_tss_stack_self_check(void) {
+    if (!task_current() || gdt_kernel_stack()!=task_current()->kernel_stack_top)
+        kernel_panic("scheduler/TSS kernel-stack handoff validation failed");
+}
+
 static void scheduler_probe_worker(void *argument) {
     uint64_t rbx_value=0x1122334455667788ULL;
     uint64_t r12_value=0x13579bdf2468ace0ULL;
@@ -555,6 +564,8 @@ static void scheduler_probe_worker(void *argument) {
     uint64_t r14_value=0x55aa55aa33cc33ccULL;
     uint64_t r15_value=0xcc33cc3355aa55aaULL;
     (void)argument;
+    scheduler_tss_stack_self_check();
+    serial_write_public("ZEROOS: per-task kernel-stack/TSS handoff self-test passed.\n");
 
     /*
      * Keep callee-saved values live across repeated cooperative switches.
@@ -802,10 +813,7 @@ static void scheduler_self_test(void) {
     serial_write_public("ZEROOS: entering kernel task scheduler.\n");
     scheduler_start();
 
-    if (!task_current() || gdt_kernel_stack()!=task_current()->kernel_stack_top)
-        kernel_panic("scheduler/TSS kernel-stack handoff validation failed");
-    serial_write_public("ZEROOS: per-task kernel-stack/TSS handoff self-test passed.\n");
-    serial_write_public("ZEROOS: returned to bootstrap task.\n");
+    serial_write_public("ZEROOS: scheduler control transfer returned to bootstrap.\n");
 }
 
 void kernel_main(uint64_t multiboot_info, uint64_t multiboot_magic) {
