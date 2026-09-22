@@ -127,3 +127,37 @@ G. QEMU/hardware validation as applicable.
 ## Current Recommended Execution
 Do not jump from the current kernel foundation directly to UI/AI.
 First stabilize scheduler/process/thread invariants, then establish ring-3 and syscall contracts. Everything above those boundaries becomes substantially safer after that.
+
+
+## Advanced-First Stage Policy
+
+The following stages are dependency gates, not “basic → advanced” maturity levels.
+
+### Phase/Stage Quality Rule
+
+Every stage targets the production architecture appropriate to its scope:
+
+- Stage 0: production engineering, reproducibility, CI and architecture governance.
+- Stage 1: production kernel, scheduler, memory, process/thread and interrupt architecture.
+- Stage 2: production userspace, syscall ABI, executable runtime, services and IPC.
+- Stage 3: production storage, VFS, filesystem, cache, recovery and persistent-data integrity.
+- Stage 4: production hardware, drivers, networking, audio, display, power and thermal architecture.
+- Stage 5: production graphics, compositor, window system, shell, search, settings, notifications and accessibility.
+
+Do not create a “basic version” with the intention of replacing it later.
+
+### Production Exit Gate
+
+Every stage must pass:
+1. functional tests;
+2. negative/failure tests;
+3. stress/soak tests where applicable;
+4. security review;
+5. resource/performance review;
+6. recovery validation;
+7. CI;
+8. QEMU;
+9. supported-hardware validation where applicable;
+10. documentation synchronization.
+
+A stage may remain PARTIAL when a genuine external dependency blocks activation, but its final production contract must already be defined and its independent implementation must be mature.
