@@ -158,3 +158,44 @@ P3: Windows/Android compatibility, AI integration, gaming/study ecosystems and a
 
 ## 12. Product Success
 ZEROOS succeeds when it can boot reproducibly, run isolated userspace applications, manage hardware and storage safely, provide a responsive desktop, recover from faults/updates, and progressively add compatibility and ecosystem layers without destabilizing the kernel foundation.
+
+
+## 13. Advanced-First Product Maturity Contract
+
+The product is not allowed to accumulate intentionally throwaway “basic” subsystems. Stage order exists because subsystems have dependencies; it does not define a low maturity level.
+
+For every product subsystem, the intended mature architecture must be established before implementation begins. Where dependencies prevent complete activation, the implementation must maximize production-complete scope while preserving the final contract.
+
+### Production Feature Gate
+
+A user-visible feature is production only after:
+- implementation;
+- API/ABI contract;
+- lifecycle and ownership;
+- security boundary;
+- resource policy;
+- failure isolation;
+- recovery behavior;
+- diagnostics;
+- negative/failure testing;
+- stress testing where appropriate;
+- QEMU/hardware validation where applicable;
+- CI;
+- documentation.
+
+### Product Quality Rule
+
+ZEROOS must not ship a collection of demos that later require architectural rewrites. Advanced capabilities such as SMP-aware scheduling, mature virtual memory, crash-consistent storage, isolated drivers, accelerated graphics, accessibility and resource governance are treated as production architecture concerns when their dependencies permit them.
+
+### Stage Meaning
+
+Stage 0–5 are dependency gates:
+
+Stage 0 = production engineering/reproducibility contract  
+Stage 1 = production kernel  
+Stage 2 = production userspace  
+Stage 3 = production storage  
+Stage 4 = production hardware/networking  
+Stage 5 = production graphics/desktop
+
+Completion of Stage 5 does not imply the entire ZEROOS product is complete; later ecosystem, compatibility, AI, update and broader security systems remain separately gated.
