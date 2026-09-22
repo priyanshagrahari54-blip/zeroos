@@ -117,6 +117,15 @@ overloading this API.
 
 ## Thread lifecycle
 
+A thread's association to its scheduler task (`task->thread`) is a link, not
+an ownership claim, and is valid only while the thread is live. At
+`thread_exit()` the link is cleared at the lifetime boundary before the
+thread becomes reapable, so a reaped-and-reused thread slot can never be
+reached through a stale task link. PID/TID generation tags and the task
+association never pin a thread object alive: reaping is explicit
+(`thread_reap()` / `process_reap()`), and the scheduler task's own zombie
+reclamation is independent.
+
 The current thread lifecycle is:
 
     UNUSED

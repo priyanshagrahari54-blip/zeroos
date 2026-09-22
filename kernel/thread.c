@@ -59,6 +59,7 @@ static void thread_reset_locked(struct thread *thread) {
 
 static void thread_bootstrap(void *argument) {
     struct thread *thread=(struct thread *)argument;
+    uint64_t flags;
     if (!thread || !thread->process || !thread->entry) {
         task_exit();
         return;
@@ -68,7 +69,9 @@ static void thread_bootstrap(void *argument) {
         task_exit();
         return;
     }
+    flags=spin_lock_irqsave(&thread_lock);
     thread->state=THREAD_RUNNING;
+    spin_unlock_irqrestore(&thread_lock,flags);
     thread->entry(thread->argument);
     (void)thread_exit(0);
 
@@ -175,8 +178,12 @@ int thread_create_kernel(struct process *process,
         return -1;
     }
 
-    thread->scheduler_task_id=task_id;
-    thread->state=THREAD_RUNNABLE;
+    {
+        uint64_t publish_flags=spin_lock_irqsave(&thread_lock);
+        thread->scheduler_task_id=task_id;
+        thread->state=THREAD_RUNNABLE;
+        spin_unlock_irqrestore(&thread_lock,publish_flags);
+    }
 
     if (process_thread_attach(process,thread)!=0) {
         /*
@@ -197,14 +204,28 @@ int thread_create_kernel(struct process *process,
 
 int thread_exit(uint64_t exit_status) {
     struct thread *thread=thread_current();
+    uint64_t flags;
+
     if (!thread || thread->state==THREAD_ZOMBIE ||
         thread->state==THREAD_UNUSED)
         return -1;
 
     if (process_thread_exited(thread,exit_status)!=0)
         return -1;
+
+    /*
+     * Lifetime boundary: the task->thread link is valid only while the
+     * thread is live. Clear it before the thread becomes reapable so a
+     * reaped-and-reused thread slot can never be reached through a stale
+     * task link. The link is not ownership: PID/TID and task association
+     * never pin a thread object alive.
+     */
+    task_detach_thread();
+
+    flags=spin_lock_irqsave(&thread_lock);
     thread->state=THREAD_ZOMBIE;
     thread->scheduler_task_id=0;
+    spin_unlock_irqrestore(&thread_lock,flags);
 
     task_exit();
     return 0;

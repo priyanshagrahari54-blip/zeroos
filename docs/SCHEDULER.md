@@ -14,9 +14,42 @@ Ordinary kernel tasks use the remaining slots.
 
 ## Context switching
 
-kernel/context.S saves RBP, RBX, R12-R15 and RSP. The task return address
-remains on its kernel stack, so restoring the stack and executing RET resumes
-the task at its previous execution point.
+kernel/context.S provides the single scheduler handoff primitive
+`context_switch_ex(old_sp, new_sp, new_frame)`. It saves RBP, RBX, R12-R15
+and the return address on the outgoing task's kernel stack and then resumes
+the successor through either resumable context form:
+
+- `new_frame != 0`: the successor was preempted and owns a live hardware
+  interrupt frame on its own stack; the frame is resumed with the
+  architectural pop/iretq sequence and the frame pointer is consumed
+  (retired) at the exact moment the handoff takes ownership of it.
+- `new_frame == 0`: the successor suspended cooperatively; its callee-saved
+  registers are restored and RET resumes the task at its previous execution
+  point.
+
+Both forms are legal dispatch targets for every scheduler entry point
+(IRQ exit, yield, block, sleep, exit). A task suspended with a hardware
+frame is therefore never skipped by cooperative dispatch, and the idle task
+is always resumable even when every ordinary task is frame-suspended.
+
+## Context ownership contract
+
+Exactly one of the following holds at every scheduler-observable point,
+enforced fatally by task_validate_table() on every creation, dispatch and
+timer tick:
+
+- A RUNNING task owns the CPU and never carries a resumable
+  `interrupt_frame`. A live IRQ frame while running belongs to the active
+  interrupt path only and is consumed by that path's iretq/epilogue.
+- A RUNNABLE or BLOCKED task owns exactly one resumable context: either a
+  valid hardware interrupt frame (exact preemption point) or a valid
+  cooperative saved context.
+- A ZOMBIE task owns no resumable context and no queue links.
+
+A consumed frame pointer is never retained, and a stale frame pointer is
+never silently cleared: violations are fatal diagnostics. The table dump at
+panic time reports every slot, saved stack and return address so the first
+invalid transition can be located.
 
 The bootstrap task in slot zero is a special pre-scheduler context. It runs on
 the boot stack rather than a task-owned stack page, so a PIT interrupt can
@@ -73,13 +106,20 @@ the normal `popq` + `iretq` path. This prevents the earlier unsafe pattern
 where a normal C-call-frame context switch was attempted while an interrupt
 return frame was still owned by the interrupted task.
 
-New tasks start with only their ABI-valid cooperative context. The IRQ-exit
-scheduler can restore that context directly through the tagged `saved_stack`
-path. A live `interrupt_frame` exists only for a task that has actually been
-preempted. Cooperative scheduling deliberately skips such tasks until an IRQ
-exit can restore their live architectural frame; this prevents a stale
-cooperative return address from being mistaken for the interrupted execution
-point.
+Frame publication follows one rule: the interrupted frame becomes a task's
+resumable `interrupt_frame` only at the moment the scheduler switches away
+from that task. If the IRQ returns to the interrupted task instead, the frame
+is consumed by that very iretq and is never recorded in the task table. This
+keeps the RUNNING-without-frame invariant true at every observable point and
+removes the failure mode where a task kept a stale frame pointer across its
+own execution.
+
+New tasks start with only their ABI-valid cooperative context. Any dispatch
+path can restore that context through the tagged `saved_stack` path, and any
+dispatch path can resume a preempted task through its live architectural
+frame via the same handoff primitive. Selection therefore treats both context
+forms uniformly: a runnable task is never skipped because of the way it was
+suspended.
 
 The design follows the same architectural principle used by mature kernels:
 interrupt entry/exit and scheduling state are explicit boundaries, and the
@@ -108,17 +148,24 @@ descriptor. No heap allocation is used for idle execution or waiters.
 
 The scheduler self-test reports independent success markers for cooperative
 context switching, wait/wakeup, timed sleep, timer-only preemption,
-zombie/slot-reuse lifecycle stress, and finally an aggregate scheduler
-certification passed marker. CI requires all of these markers and fails the
-boot test if a ZEROOS PANIC: is present in the serial log. This makes scheduler
-certification a runtime-tested CI gate rather than a documentation-only claim.
+zombie/slot-reuse lifecycle stress, the interrupt-frame ownership invariant,
+the process/thread object model, and generation-tagged PID/TID reuse
+protection, before an aggregate scheduler certification passed marker. The
+aggregate certificate additionally requires the process/thread probe suite to
+complete. CI requires all of these markers across three consecutive QEMU
+boots and fails the boot test if a ZEROOS PANIC: is present in the serial
+log. This makes scheduler certification a runtime-tested CI gate rather than
+a documentation-only claim.
 
 ## Next stage
 
 Scheduler certification now covers cooperative switching, callee-saved register
 preservation, timer-only CPU-bound preemption, wait/wakeup, timed sleep, bounded
-deadlock detection, zombie reclamation, slot reuse, and the pre-scheduler
-bootstrap interrupt boundary. The next scheduler stage is long-duration
-fairness/latency measurement, followed by per-CPU runqueues as part of SMP
-preparation. Higher-level synchronization can continue to build on the
-existing wait-queue and preemption boundaries.
+deadlock detection, zombie reclamation, slot reuse, the interrupt-frame
+ownership contract, uniform dispatch of both resumable context forms, and the
+pre-scheduler bootstrap interrupt boundary. The next scheduler stage is
+long-duration fairness/latency measurement, followed by per-CPU runqueues as
+part of SMP preparation (the switch-handoff window currently relies on IF=0
+UP atomicity and is the marked boundary that moves to per-runqueue locks).
+Higher-level synchronization can continue to build on the existing wait-queue
+and preemption boundaries.

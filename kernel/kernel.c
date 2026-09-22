@@ -563,6 +563,7 @@ static void scheduler_probe_monitor(void *argument) {
     int sleep_reported=0;
     int preempt_reported=0;
     int lifecycle_reported=0;
+    int frame_invariant_reported=0;
     int certification_reported=0;
     uint64_t stress_start=timer_ticks();
 
@@ -604,6 +605,23 @@ static void scheduler_probe_monitor(void *argument) {
         }
 
         /*
+         * Interrupt-frame ownership is enforced continuously by
+         * task_debug_validate(): a RUNNING task must never retain a frame
+         * pointer and a suspended task must own exactly one live context.
+         * Once timer-driven preemption has demonstrably resumed tasks
+         * through their live hardware frames (frame-form dispatch), record
+         * the positive invariant marker so CI can gate on it explicitly.
+         */
+        if (!frame_invariant_reported &&
+            preempt_reported &&
+            task_frame_resume_count()>=2 &&
+            task_current() && task_current()->interrupt_frame==0 &&
+            task_debug_validate()==0) {
+            frame_invariant_reported=1;
+            serial_write_public("ZEROOS: interrupt-frame ownership invariant verified.\n");
+        }
+
+        /*
          * This marker is the scheduler's explicit certification boundary.
          * CI keys off it so a booting kernel cannot be mistaken for a fully
          * passing scheduler: all independent scheduler probes must report
@@ -615,6 +633,8 @@ static void scheduler_probe_monitor(void *argument) {
             sleep_reported &&
             preempt_reported &&
             lifecycle_reported &&
+            frame_invariant_reported &&
+            atomic_u64_load(&process_thread_probe_phase)==3 &&
             atomic_u64_load(&scheduler_stress_failures)==0) {
             certification_reported=1;
             serial_write_public("ZEROOS: scheduler certification passed.\n");
@@ -632,6 +652,7 @@ static void scheduler_probe_monitor(void *argument) {
          */
         if (now-stress_start>400 &&
             (!preempt_reported || !lifecycle_reported ||
+             !frame_invariant_reported ||
              atomic_u64_load(&sleep_probe_state)!=2 ||
              atomic_u64_load(&wait_probe_state)!=2 ||
              atomic_u64_load(&process_thread_probe_phase)!=3)) {

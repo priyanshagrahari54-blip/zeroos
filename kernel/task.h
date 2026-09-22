@@ -20,6 +20,32 @@ enum task_state {
 
 struct wait_queue;
 
+/*
+ * Context ownership contract (enforced by task_validate_table()):
+ *
+ *   RUNNING   The task owns the CPU. It never carries a resumable
+ *             interrupt_frame: any live IRQ frame belongs to the active
+ *             interrupt path and is consumed by that path's iretq/epilogue.
+ *
+ *   RUNNABLE  Suspended and resumable through exactly one live context:
+ *             - interrupt_frame != 0: a hardware frame on this task's own
+ *               stack, created by preemption. Resumption consumes the frame
+ *               pointer and resumes with pop/iretq (exact interruption
+ *               point), or
+ *             - interrupt_frame == 0: a cooperative callee-saved context in
+ *               saved_stack, created by context_switch_ex(). Resumption pops
+ *               the callee-saved set and retq's into the frozen C
+ *               continuation.
+ *
+ *   BLOCKED   Same resumable-context rule as RUNNABLE.
+ *
+ *   ZOMBIE    No resumable context; reclaimed from a later scheduler tick.
+ *
+ * Both context forms are legal dispatch targets for every scheduler entry
+ * point (IRQ exit, yield, block, sleep, exit). A consumed frame pointer is
+ * never retained and a stale frame pointer is never rebuilt or cleared
+ * silently: violations are fatal diagnostics.
+ */
 struct task {
     uint64_t id;
     enum task_state state;
@@ -35,13 +61,16 @@ struct task {
     uint8_t need_resched;
 
     /*
-     * Active architectural interrupt frame, valid only while this task is
-     * runnable because it was preempted and has not yet resumed. A null value
-     * means the task resumes through its cooperative saved_stack context.
+     * Active architectural interrupt frame while suspended by preemption.
+     * Consumed (set to zero) at the exact moment a dispatch path hands the
+     * frame to pop/iretq. See the ownership contract above.
      */
     struct interrupt_frame *interrupt_frame;
 
-    /* Canonical higher-level owner; null for legacy kernel tasks. */
+    /*
+     * Canonical higher-level owner; null for legacy kernel tasks and after
+     * the owning thread has exited (the link is never a dangling pointer).
+     */
     struct thread *thread;
 
     struct task *wait_next;
@@ -56,6 +85,8 @@ int task_create(task_entry_t entry, void *argument, uint64_t *task_id);
 int task_create_owned(task_entry_t entry, void *argument, struct thread *thread,
                       uint64_t *task_id);
 struct task *task_current(void);
+/* Clears the current task's thread-owner link at the thread lifetime boundary. */
+void task_detach_thread(void);
 void task_yield(void);
 int task_prepare_block(void);
 int task_block(void);
@@ -75,7 +106,7 @@ void task_exit(void);
  *
  * Both forms are required because a runnable task can either have a live
  * hardware interrupt frame or only a cooperative context saved by
- * context_switch().
+ * context_switch_ex().
  */
 uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame);
 
@@ -87,6 +118,15 @@ uint8_t task_need_resched(void);
 
 void task_start_first(void);
 uint64_t task_count(void);
+
+/*
+ * Deterministic scheduler test/diagnostic hooks.
+ * task_debug_validate() panics fatally on any task-table or context
+ * ownership invariant violation and returns 0 when the table is sound.
+ * task_frame_resume_count() reports how many dispatches resumed a task
+ * through a live hardware interrupt frame.
+ */
 int task_debug_validate(void);
+uint64_t task_frame_resume_count(void);
 
 #endif

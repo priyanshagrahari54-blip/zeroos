@@ -1,4 +1,5 @@
 #include "memory.h"
+#include "sync.h"
 
 #define MULTIBOOT_TAG_TYPE_END 0
 #define MULTIBOOT_TAG_TYPE_MMAP 6
@@ -66,6 +67,17 @@ static uint64_t free_word_summary[ZEROOS_SUMMARY_WORDS];
 static uint64_t managed_pages;
 static uint64_t free_pages;
 static uint64_t available_pages;
+
+/*
+ * Physical-allocator lock. Lock order (never inverted):
+ *   wait_queue::lock -> task_lock -> memory_lock
+ *   process_lock / thread_lock    -> memory_lock
+ * memory_init() runs single-threaded before interrupts are enabled and
+ * mutates the bitmap without the lock; every runtime allocation/free is
+ * serialized here, including frees from the scheduler reaper and VMM
+ * teardown paths.
+ */
+static struct spinlock memory_lock;
 
 extern char __kernel_start;
 extern char __kernel_end;
@@ -244,6 +256,8 @@ void memory_init(uint64_t multiboot_info) {
 }
 
 void *page_alloc(void) {
+    uint64_t irq_flags = spin_lock_irqsave(&memory_lock);
+
     for (uint64_t summary_word = 0;
          summary_word < ZEROOS_SUMMARY_WORDS;
          ++summary_word) {
@@ -254,7 +268,10 @@ void *page_alloc(void) {
             if (!(summary & (1ULL << bit))) continue;
 
             uint64_t word = (summary_word << 6) + bit;
-            if (word >= ZEROOS_BITMAP_WORDS) return (void *)0;
+            if (word >= ZEROOS_BITMAP_WORDS) {
+                spin_unlock_irqrestore(&memory_lock, irq_flags);
+                return (void *)0;
+            }
 
             uint64_t free_mask = ~page_bitmap[word];
             if (!free_mask) {
@@ -267,16 +284,21 @@ void *page_alloc(void) {
                 ++page_bit;
 
             uint64_t page = (word << 6) + page_bit;
-            if (page >= ZEROOS_MAX_PAGES) return (void *)0;
+            if (page >= ZEROOS_MAX_PAGES) {
+                spin_unlock_irqrestore(&memory_lock, irq_flags);
+                return (void *)0;
+            }
 
             bitmap_set(page);
             --free_pages;
             summary_clear_if_full(word);
 
+            spin_unlock_irqrestore(&memory_lock, irq_flags);
             return (void *)(page * ZEROOS_PAGE_SIZE);
         }
     }
 
+    spin_unlock_irqrestore(&memory_lock, irq_flags);
     return (void *)0;
 }
 
@@ -287,12 +309,17 @@ void page_free(void *address) {
         physical >= ZEROOS_MAX_PHYS_MEM)
         return;
 
+    uint64_t irq_flags = spin_lock_irqsave(&memory_lock);
     uint64_t page = physical / ZEROOS_PAGE_SIZE;
-    if (!bitmap_test(page)) return;
+    if (!bitmap_test(page)) {
+        spin_unlock_irqrestore(&memory_lock, irq_flags);
+        return;
+    }
 
     bitmap_clear(page);
     ++free_pages;
     summary_set_if_free(page >> 6);
+    spin_unlock_irqrestore(&memory_lock, irq_flags);
 }
 
 uint64_t memory_total_pages(void) { return managed_pages; }

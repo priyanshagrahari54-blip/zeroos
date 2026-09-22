@@ -4,7 +4,8 @@
 #include "interrupts.h"
 #include "timer.h"
 
-extern void context_switch(uint64_t *old_sp, uint64_t *new_sp);
+extern void context_switch_ex(uint64_t *old_sp, const uint64_t *new_sp,
+                              struct interrupt_frame *new_frame);
 extern void task_trampoline(void);
 extern void serial_write_public(const char *text);
 extern char __kernel_start;
@@ -18,9 +19,21 @@ static void task_debug_dump_all(const char *label);
 
 static struct task tasks[ZEROOS_MAX_TASKS];
 static struct task *current_task;
+
+/*
+ * Scheduler metadata lock. Lock order (never inverted):
+ *   wait_queue::lock  ->  task_lock  ->  memory_lock
+ *   process_lock / thread_lock      ->  memory_lock
+ * task_lock is always acquired irqsave (or with interrupts already disabled).
+ * It is released before any context_switch_ex() handoff: the handoff itself
+ * is the atomic ownership transfer. UP atomicity of the switch window is
+ * provided by IF=0; SMP runqueue ownership across the handoff is the marked
+ * boundary that moves to per-runqueue locks in the SMP stage.
+ */
 static struct spinlock task_lock;
 static uint64_t next_task_id;
 static struct task *sleep_head;
+static uint64_t frame_resume_count;
 
 static int task_stack_guard_ok(const struct task *task) {
     return task && task->stack_base &&
@@ -56,7 +69,7 @@ static int task_saved_context_ok(const struct task *task) {
     if (!task_saved_stack_ok(task))
         return 0;
 
-    /* context_switch restores six callee-saved registers then retq. */
+    /* context_switch_ex restores six callee-saved registers then retq. */
     rip=*(const uint64_t *)(task->saved_stack + 48ULL);
     return rip >= start && rip < end;
 }
@@ -64,10 +77,10 @@ static int task_saved_context_ok(const struct task *task) {
 static void task_saved_context_panic(const struct task *task) {
     uint64_t rip=0;
     if (task && task->saved_stack &&
-        task->stack_base &&
-        task->saved_stack + 48ULL < task->stack_base + ZEROOS_TASK_STACK_SIZE)
+        task->stack_base && task->saved_stack + 48ULL < task->stack_base + ZEROOS_TASK_STACK_SIZE)
         rip=*(const uint64_t *)(task->saved_stack + 48ULL);
 
+    task_debug_dump_all("saved-context invariant dump");
     serial_write_public("ZEROOS PANIC: invalid saved context RIP. task=");
     if (task) task_write_u64(task->id);
     serial_write_public(" stack=");
@@ -122,6 +135,7 @@ static int task_state_valid(enum task_state state) {
 
 static void task_context_panic(const char *message,
                                const struct task *task) {
+    task_debug_dump_all("task-table invariant dump");
     serial_write_public(message);
     if (task) {
         serial_write_public(" id=");
@@ -149,7 +163,17 @@ static void task_write_u64(uint64_t value) {
     serial_write_public(&buffer[pos]);
 }
 
-static void task_validate_table(const char *where) {
+/*
+ * Full task-table and context-ownership validation.
+ *
+ * `handoff` names a task whose cooperative saved context is being written by
+ * an in-flight context_switch_ex() handoff: its state transition is already
+ * committed but its saved_stack becomes authoritative only atomically with
+ * the stack switch. Every other task must satisfy the complete ownership
+ * contract at every observable point.
+ */
+static void task_validate_table_at(const char *where,
+                                   const struct task *handoff) {
     int running=0;
 
     if (!task_pointer_ok(current_task) ||
@@ -189,15 +213,11 @@ static void task_validate_table(const char *where) {
                                task);
 
         /*
-         * saved_stack is a suspended cooperative context, not a permanent
-         * snapshot of a task's stack. Once a task resumes, normal execution
-         * may overwrite the old frame, so a RUNNING task's saved_stack must
-         * never be validated as if it were live context.
-         *
          * A RUNNING task owns the CPU context directly and therefore cannot
-         * simultaneously own a live interrupt frame. Suspended runnable/
-         * blocked tasks must have either a valid interrupt frame or a valid
-         * cooperative saved context. ZOMBIE tasks have no resumable context.
+         * simultaneously own a resumable interrupt frame. A frame pointer
+         * retained after the interrupt return consumed the frame is a
+         * corrupted ownership state and is fatal here: it is never cleared
+         * silently.
          */
         if (task->state==TASK_RUNNING) {
             if (task->interrupt_frame)
@@ -227,6 +247,15 @@ static void task_validate_table(const char *where) {
             task_context_panic("ZEROOS PANIC: task sleep queue self-cycle.\n",
                                task);
 
+        /*
+         * The handoff task's saved context is mid-write. Queue membership
+         * and identity were validated above; its resumable context becomes
+         * visible atomically with the stack switch and is checked when it is
+         * later selected as a dispatch target.
+         */
+        if (task==handoff)
+            continue;
+
         if (task->interrupt_frame) {
             if (!task_frame_ok(task,task->interrupt_frame))
                 task_context_panic("ZEROOS PANIC: task IRQ frame invalid.\n",
@@ -245,7 +274,12 @@ static void task_validate_table(const char *where) {
                            current_task);
 }
 
+static void task_validate_table(const char *where) {
+    task_validate_table_at(where, 0);
+}
+
 static void task_stack_guard_panic(const struct task *task) {
+    task_debug_dump_all("stack-guard invariant dump");
     (void)task;
     serial_write_public("ZEROOS PANIC: task stack guard corrupted.\n");
     for (;;) __asm__ volatile ("cli; hlt");
@@ -295,7 +329,7 @@ static void task_prepare_stack(struct task *task) {
     *(uint64_t *)(uint64_t)task->stack_base=ZEROOS_TASK_STACK_GUARD;
 
     /*
-     * context_switch restores six callee-saved registers then retq. The
+     * context_switch_ex restores six callee-saved registers then retq. The
      * saved stack must be 0 mod 16 so that six 8-byte pops followed by retq
      * leave the assembly task_trampoline wrapper with RSP 8 mod 16. The
      * wrapper then reserves interrupt headroom before calling the C body.
@@ -377,7 +411,14 @@ static void reap_zombies_locked(void) {
     }
 }
 
-static int find_next_runnable(int cooperative) {
+/*
+ * Single successor selection shared by every scheduler entry point. Any
+ * TASK_RUNNABLE task is a legal target regardless of its resumable context
+ * form (hardware interrupt frame or cooperative saved stack), so a
+ * frame-suspended task is never skipped by cooperative dispatch and a
+ * blocking task can always find a successor.
+ */
+static int find_next_runnable(void) {
     int start=-1;
     int index;
 
@@ -387,46 +428,67 @@ static int find_next_runnable(int cooperative) {
     for (int step=1;step<=ZEROOS_MAX_TASKS;++step) {
         index=(start+step)%ZEROOS_MAX_TASKS;
         if (index!=0 && index!=ZEROOS_IDLE_SLOT &&
-            tasks[index].state==TASK_RUNNABLE &&
-            (!cooperative || tasks[index].interrupt_frame==0))
+            tasks[index].state==TASK_RUNNABLE)
             return index;
     }
 
-    if (tasks[ZEROOS_IDLE_SLOT].state==TASK_RUNNABLE &&
-        (!cooperative || tasks[ZEROOS_IDLE_SLOT].interrupt_frame==0))
+    if (tasks[ZEROOS_IDLE_SLOT].state==TASK_RUNNABLE)
         return ZEROOS_IDLE_SLOT;
 
     return -1;
 }
 
-static int switch_to_next(struct task *previous, int next) {
-    if (!previous || next<0 || &tasks[next]==previous) return 0;
-    if (!task_stack_guard_ok(previous)) task_stack_guard_panic(previous);
-    if (!task_stack_guard_ok(&tasks[next])) task_stack_guard_panic(&tasks[next]);
+/*
+ * The cooperative handoff. The caller holds task_lock (interrupts disabled)
+ * and has already assigned previous's suspension state
+ * (RUNNABLE/BLOCKED/ZOMBIE).
+ *
+ * Ownership transition performed here:
+ *   - previous was RUNNING, so it owns no interrupt frame (fatal otherwise);
+ *     its cooperative context is written by context_switch_ex();
+ *   - tasks[next]'s resumable context is consumed: a hardware frame pointer
+ *     is retired at the exact moment this dispatch takes ownership of the
+ *     frame for pop/iretq.
+ *
+ * task_lock is released before the assembly handoff and is NOT held on
+ * return. Returns only when previous is later resumed through its saved
+ * cooperative context.
+ */
+static void dispatch_locked(struct task *previous, int next,
+                            const char *where) {
+    struct task *target=&tasks[next];
+    struct interrupt_frame *target_frame;
+
+    if (previous->interrupt_frame)
+        task_context_panic("ZEROOS PANIC: dispatched task retains IRQ frame.\n",
+                           previous);
+
+    target_frame=target->interrupt_frame;
+    if (target_frame) {
+        if (!task_frame_ok(target,target_frame))
+            task_context_panic("ZEROOS PANIC: target IRQ frame invalid.\n",
+                               target);
+        target->interrupt_frame=0;
+        ++frame_resume_count;
+    } else if (!task_saved_stack_ok(target) ||
+               !task_saved_context_ok(target)) {
+        task_saved_context_panic(target);
+    }
+
+    target->state=TASK_RUNNING;
+    ++target->context_switches;
+    current_task=target;
+
+    task_validate_table_at(where,previous);
+    spin_unlock(&task_lock);
 
     /*
-     * A cooperative switch resumes the task's saved RET frame, not an old
-     * interrupt frame. A frame retained from an earlier preemption becomes
-     * stale as soon as that task has resumed and later yields again.
+     * The target context is now exclusively owned by this handoff:
+     * target_frame -> iretq, or saved_stack -> cooperative restore + retq.
      */
-    previous->interrupt_frame=0;
-
-    /* Cooperative selection excludes tasks with a live IRQ frame. */
-    if (tasks[next].interrupt_frame!=0)
-        return 0;
-    if (!task_identity_ok(previous) || !task_identity_ok(&tasks[next]))
-        task_context_panic("ZEROOS PANIC: task identity invariant failed.\n",
-                           previous);
-    if (!task_saved_context_ok(&tasks[next]))
-        task_saved_context_panic(&tasks[next]);
-
-    previous->state=TASK_RUNNABLE;
-    tasks[next].state=TASK_RUNNING;
-    tasks[next].context_switches++;
-    current_task=&tasks[next];
-
-    context_switch(&previous->saved_stack,&current_task->saved_stack);
-    return 1;
+    context_switch_ex(&previous->saved_stack,
+                      &target->saved_stack,
+                      target_frame);
 }
 
 int task_system_init(void) {
@@ -470,6 +532,7 @@ int task_system_init(void) {
     current_task=&tasks[0];
     next_task_id=2;
     sleep_head=0;
+    frame_resume_count=0;
     return 0;
 }
 
@@ -527,7 +590,6 @@ int task_create_owned(task_entry_t entry, void *argument,
      * creation boundary instead of a much later scheduler failure.
      */
     task_validate_table("ZEROOS PANIC: task creation invariant failed.\n");
-    task_debug_dump_all("after task_create");
 
     if (task_id) *task_id=task->id;
     spin_unlock_irqrestore(&task_lock,flags);
@@ -569,6 +631,13 @@ struct task *task_current(void) {
     return current_task;
 }
 
+void task_detach_thread(void) {
+    uint64_t flags=spin_lock_irqsave(&task_lock);
+    if (current_task)
+        current_task->thread=0;
+    spin_unlock_irqrestore(&task_lock,flags);
+}
+
 void task_yield(void) {
     struct task *previous=current_task;
     int next;
@@ -576,28 +645,35 @@ void task_yield(void) {
 
     if (!previous || previous->preempt_count!=0) return;
     flags=task_irq_save();
+    spin_lock(&task_lock);
 
-    next=find_next_runnable(1);
+    next=find_next_runnable();
     if (next<0 || &tasks[next]==previous) {
         previous->need_resched=0;
+        spin_unlock(&task_lock);
         task_irq_restore(flags);
         return;
     }
 
     previous->need_resched=0;
-    switch_to_next(previous,next);
+    previous->state=TASK_RUNNABLE;
+    dispatch_locked(previous,next,
+                    "ZEROOS PANIC: task yield invariant failed.\n");
     task_irq_restore(flags);
 }
 
 int task_prepare_block(void) {
     struct task *task=current_task;
+    uint64_t flags;
 
     if (!task || task==&tasks[0] || task==&tasks[ZEROOS_IDLE_SLOT] ||
         task->state!=TASK_RUNNING || task->preempt_count!=0)
         return -1;
 
+    flags=spin_lock_irqsave(&task_lock);
     task->state=TASK_BLOCKED;
     task->need_resched=0;
+    spin_unlock_irqrestore(&task_lock,flags);
     return 0;
 }
 
@@ -611,29 +687,31 @@ static int task_block_locked(uint64_t flags) {
         return -1;
     }
 
+    spin_lock(&task_lock);
+
+    /* Already made runnable again before the switch (lost-wakeup guard). */
     if (previous->state==TASK_RUNNABLE) {
+        spin_unlock(&task_lock);
         task_irq_restore(flags);
         return 0;
     }
 
     if (previous->state!=TASK_BLOCKED) {
+        spin_unlock(&task_lock);
         task_irq_restore(flags);
         return -1;
     }
 
-    next=find_next_runnable(1);
+    next=find_next_runnable();
     if (next<0) {
         previous->state=TASK_RUNNING;
+        spin_unlock(&task_lock);
         task_irq_restore(flags);
         return -1;
     }
 
-    tasks[next].state=TASK_RUNNING;
-    tasks[next].context_switches++;
-    previous->interrupt_frame=0;
-    current_task=&tasks[next];
-    task_validate_table("ZEROOS PANIC: task block invariant failed.\n");
-    context_switch(&previous->saved_stack,&current_task->saved_stack);
+    dispatch_locked(previous,next,
+                    "ZEROOS PANIC: task block invariant failed.\n");
     task_irq_restore(flags);
     return 0;
 }
@@ -653,18 +731,23 @@ int task_wake(struct task *task) {
         task->state!=TASK_BLOCKED)
         return -1;
 
-    flags=task_irq_save();
+    flags=spin_lock_irqsave(&task_lock);
+    if (task->state!=TASK_BLOCKED) {
+        spin_unlock_irqrestore(&task_lock,flags);
+        return -1;
+    }
     if (task->sleep_armed)
         sleep_queue_remove_locked(task);
     task->state=TASK_RUNNABLE;
     task->need_resched=1;
-    task_irq_restore(flags);
+    spin_unlock_irqrestore(&task_lock,flags);
     return 0;
 }
 
 int task_sleep_until(uint64_t deadline) {
     struct task *task=current_task;
     uint64_t flags;
+    int next;
 
     if (!task || task==&tasks[0] || task==&tasks[ZEROOS_IDLE_SLOT] ||
         task->state!=TASK_RUNNING || task->preempt_count!=0)
@@ -674,12 +757,16 @@ int task_sleep_until(uint64_t deadline) {
         return 0;
 
     flags=task_irq_save();
+    spin_lock(&task_lock);
+
     if (task->state!=TASK_RUNNING || task->preempt_count!=0) {
+        spin_unlock(&task_lock);
         task_irq_restore(flags);
         return -1;
     }
 
     if ((long long)(deadline-timer_ticks())<=0) {
+        spin_unlock(&task_lock);
         task_irq_restore(flags);
         return 0;
     }
@@ -690,20 +777,17 @@ int task_sleep_until(uint64_t deadline) {
     task->state=TASK_BLOCKED;
     sleep_queue_insert_locked(task);
 
-    int next=find_next_runnable(1);
+    next=find_next_runnable();
     if (next<0) {
         task->state=TASK_RUNNING;
         sleep_queue_remove_locked(task);
+        spin_unlock(&task_lock);
         task_irq_restore(flags);
         return -1;
     }
 
-    tasks[next].state=TASK_RUNNING;
-    tasks[next].context_switches++;
-    task->interrupt_frame=0;
-    current_task=&tasks[next];
-    task_validate_table("ZEROOS PANIC: task sleep invariant failed.\n");
-    context_switch(&task->saved_stack,&current_task->saved_stack);
+    dispatch_locked(task,next,
+                    "ZEROOS PANIC: task sleep invariant failed.\n");
     task_irq_restore(flags);
     return 0;
 }
@@ -723,24 +807,26 @@ void task_exit(void) {
         return;
 
     (void)task_irq_save();
+    spin_lock(&task_lock);
+
     previous->state=TASK_ZOMBIE;
     previous->need_resched=0;
-    next=find_next_runnable(1);
+    /*
+     * No clearing of previous->interrupt_frame here: a RUNNING task owns no
+     * frame (dispatch_locked() panics if one exists), and silently erasing a
+     * stale pointer would mask an ownership violation.
+     */
+    next=find_next_runnable();
 
     if (next<0) {
         tasks[ZEROOS_IDLE_SLOT].state=TASK_RUNNABLE;
         next=ZEROOS_IDLE_SLOT;
     }
 
-    tasks[next].state=TASK_RUNNING;
-    tasks[next].context_switches++;
-    previous->interrupt_frame=0;
-    current_task=&tasks[next];
-    if (!task_saved_context_ok(&tasks[next]))
-        task_saved_context_panic(&tasks[next]);
-    task_validate_table("ZEROOS PANIC: task exit invariant failed.\n");
-    context_switch(&previous->saved_stack,&current_task->saved_stack);
+    dispatch_locked(previous,next,
+                    "ZEROOS PANIC: task exit invariant failed.\n");
 
+    /* Unreachable: a zombie is never selected as a dispatch target. */
     for (;;) __asm__ volatile ("cli; hlt");
 }
 
@@ -752,6 +838,8 @@ void task_exit(void) {
  */
 uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
     struct task *previous=current_task;
+    struct task *target;
+    struct interrupt_frame *target_frame;
     int next;
 
     if (!previous || !frame)
@@ -789,71 +877,64 @@ uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
     if (previous->preempt_count!=0)
         return (uint64_t)frame;
 
-    previous->interrupt_frame=frame;
+    spin_lock(&task_lock);
 
     /*
+     * The frame is published as previous's suspension context ONLY when this
+     * path actually switches away from previous. On every other path the
+     * frame is consumed by this very iretq, and a RUNNING task must never
+     * retain a pointer to it. Publishing first and clearing later would
+     * create a window in which the ownership state is a lie.
+     *
      * Normal tasks enter the IRQ-exit scheduler only after their time slice
      * expires (or another kernel path explicitly requests rescheduling).
      * Idle is the exception: if runnable work exists, leave idle immediately.
      */
-    if (previous!=&tasks[ZEROOS_IDLE_SLOT] && !previous->need_resched)
+    if (previous!=&tasks[ZEROOS_IDLE_SLOT] && !previous->need_resched) {
+        spin_unlock(&task_lock);
         return (uint64_t)frame;
+    }
 
-    next=find_next_runnable(0);
+    next=find_next_runnable();
 
     if (next<0 || &tasks[next]==previous) {
         previous->need_resched=0;
-        /*
-         * The architectural frame is consumed by the iretq epilogue. Once
-         * execution returns to the task, RSP points above the frame and the
-         * normal downward-growing stack may overwrite it. Do not retain a
-         * pointer to a frame that is no longer live.
-         */
-        previous->interrupt_frame=0;
+        spin_unlock(&task_lock);
         return (uint64_t)frame;
     }
 
     previous->need_resched=0;
     previous->state=TASK_RUNNABLE;
+    /*
+     * Exact preemption point retained for every task, idle included: this
+     * frame is the task's single resumable context until a dispatch consumes
+     * it. Idle is resumed through its real interruption point like any other
+     * task; its earlier cooperative context is never resurrected.
+     */
+    previous->interrupt_frame=frame;
 
     /*
-     * Idle is a special non-progressing task. If it was interrupted while
-     * hlt/yield was running and we are switching away from it, its precise
-     * hardware frame is not a required continuation point. Retire that frame
-     * and keep the idle task resumable through its stable cooperative context.
-     * Ordinary tasks must retain their interrupt frame for exact preemption
-     * resume.
+     * Capture and retire the target's resumable context before publishing
+     * the new current_task. A consumed frame pointer is never retained.
      */
-    if (previous==&tasks[ZEROOS_IDLE_SLOT])
-        previous->interrupt_frame=0;
-
-    /*
-     * Capture and retire a target interrupt frame before publishing the new
-     * current_task. This makes the context ownership transition atomic with
-     * respect to all scheduler diagnostics: a TASK_RUNNING task never
-     * advertises a frame that is about to be consumed by iretq.
-     */
-    struct interrupt_frame *target_frame=tasks[next].interrupt_frame;
+    target=&tasks[next];
+    target_frame=target->interrupt_frame;
     if (target_frame) {
-        if (!task_frame_ok(&tasks[next],target_frame)) {
-            serial_write_public("ZEROOS PANIC: invalid target IRQ frame.\n");
-            for (;;) __asm__ volatile ("cli; hlt");
-        }
-        serial_write_public("ZEROOS: IRQ switch -> saved frame task ");
-        task_write_u64(tasks[next].id);
-        serial_write_public(".\n");
-        tasks[next].interrupt_frame=0;
-    } else if (!task_saved_stack_ok(&tasks[next]) ||
-               !task_saved_context_ok(&tasks[next])) {
-        task_saved_context_panic(&tasks[next]);
+        if (!task_frame_ok(target,target_frame))
+            task_context_panic("ZEROOS PANIC: target IRQ frame invalid.\n",
+                               target);
+        target->interrupt_frame=0;
+        ++frame_resume_count;
+    } else if (!task_saved_stack_ok(target) ||
+               !task_saved_context_ok(target)) {
+        task_saved_context_panic(target);
     }
 
-    tasks[next].state=TASK_RUNNING;
-    tasks[next].context_switches++;
-    current_task=&tasks[next];
-    if (!task_pointer_ok(current_task) ||
-        current_task->state!=TASK_RUNNING)
-        task_context_panic("ZEROOS PANIC: invalid selected task.\n",current_task);
+    target->state=TASK_RUNNING;
+    ++target->context_switches;
+    current_task=target;
+    task_validate_table("ZEROOS PANIC: IRQ dispatch invariant failed.\n");
+    spin_unlock(&task_lock);
 
     /*
      * The target context is now exclusively owned by the IRQ-exit path:
@@ -862,7 +943,7 @@ uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
     if (target_frame)
         return (uint64_t)target_frame;
 
-    return tasks[next].saved_stack | 1ULL;
+    return target->saved_stack | 1ULL;
 }
 
 void task_scheduler_tick(void) {
@@ -881,24 +962,8 @@ void task_scheduler_tick(void) {
      * validate. The scheduler tick still services global timeout/reclamation
      * state, but bootstrap itself is never time-slice preempted.
      */
-    if (task!=&tasks[0]) {
-        /*
-         * interrupt_frame is a pending resume context only while a task is
-         * suspended. A RUNNING task is executing on the CPU; its current
-         * hardware IRQ frame belongs to the active interrupt path and will be
-         * captured by task_reschedule_from_interrupt() after the timer hook
-         * returns. If a previous resume frame was left behind, retire that
-         * stale metadata before validating the task table.
-         */
-        if (task->state==TASK_RUNNING && task->interrupt_frame) {
-            serial_write_public("ZEROOS: retiring stale IRQ frame from running task ");
-            task_write_u64(task->id);
-            serial_write_public(".\n");
-            task->interrupt_frame=0;
-        }
-
-        if (!task_stack_guard_ok(task)) task_stack_guard_panic(task);
-    }
+    if (task!=&tasks[0] && !task_stack_guard_ok(task))
+        task_stack_guard_panic(task);
 
     now=timer_ticks();
     {
@@ -908,6 +973,12 @@ void task_scheduler_tick(void) {
         spin_unlock_irqrestore(&task_lock,flags);
     }
 
+    /*
+     * The running task's interrupt frame is owned by the in-flight interrupt
+     * path and is never recorded in the task table while the task is
+     * RUNNING. Any frame pointer observed here is corrupted ownership state
+     * and is fatal: it is never "retired" silently.
+     */
     task_validate_table("ZEROOS PANIC: scheduler table invariant failed.\n");
 
     if (task==&tasks[0])
@@ -949,29 +1020,30 @@ void task_start_first(void) {
     int next;
     uint64_t flags=task_irq_save();
 
+    spin_lock(&task_lock);
     tasks[0].state=TASK_BLOCKED;
-    next=find_next_runnable(1);
+    next=find_next_runnable();
     if (next<0) {
+        tasks[0].state=TASK_RUNNING;
+        spin_unlock(&task_lock);
         task_irq_restore(flags);
         return;
     }
 
-    tasks[next].state=TASK_RUNNING;
-    tasks[next].context_switches++;
-    tasks[0].interrupt_frame=0;
-    current_task=&tasks[next];
-    if (tasks[next].interrupt_frame!=0 ||
-        !task_saved_context_ok(&tasks[next]))
-        task_saved_context_panic(&tasks[next]);
-    task_validate_table("ZEROOS PANIC: scheduler start invariant failed.\n");
-    context_switch(&tasks[0].saved_stack,&current_task->saved_stack);
+    dispatch_locked(&tasks[0],next,
+                    "ZEROOS PANIC: scheduler start invariant failed.\n");
 
+    /* Unreachable: nothing ever dispatches back to the bootstrap slot. */
     for (;;) __asm__ volatile ("cli; hlt");
 }
 
 int task_debug_validate(void) {
     task_validate_table("ZEROOS PANIC: explicit scheduler checkpoint failed.\n");
     return 0;
+}
+
+uint64_t task_frame_resume_count(void) {
+    return frame_resume_count;
 }
 
 uint64_t task_count(void) {
