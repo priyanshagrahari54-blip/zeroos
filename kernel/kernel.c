@@ -207,6 +207,16 @@ static void gdt_self_test(void) {
         rsp0==0 || (rsp0 & 0xfULL)!=0)
         kernel_panic("GDT/TSS self-test failed");
 
+    for (uint8_t ist=1; ist<=ZEROOS_GDT_IST_COUNT; ++ist)
+        if (gdt_ist_stack_top(ist)==0 ||
+            (gdt_ist_stack_top(ist)&0xfULL)!=0)
+            kernel_panic("GDT/TSS IST self-test failed");
+    if (gdt_exception_ist(8)!=1 || gdt_exception_ist(2)!=2 ||
+        gdt_exception_ist(18)!=3 || gdt_exception_ist(14)!=4 ||
+        gdt_exception_ist(13)!=5 || gdt_exception_ist(32)!=0)
+        kernel_panic("GDT/TSS exception-stack routing failed");
+
+    serial_write_public("ZEROOS: exception IST routing self-test passed.\n");
     serial_write_public("ZEROOS: runtime GDT/TSS self-test passed.\n");
 }
 

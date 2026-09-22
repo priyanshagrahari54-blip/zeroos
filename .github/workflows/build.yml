@@ -49,6 +49,7 @@ jobs:
             grep -q "ZEROOS: CPU capabilities detected" build/serial.log
             grep -q "ZEROOS: physical page allocator initialized." build/serial.log
             grep -q "ZEROOS: runtime GDT/TSS self-test passed." build/serial.log
+            grep -q "ZEROOS: exception IST routing self-test passed." build/serial.log
             grep -q "ZEROOS: IRQ controller capability:" build/serial.log
             grep -q "ZEROOS: ACPI routing discovery:" build/serial.log
             grep -q "ZEROOS: PIT timer configured at .*clocksource=" build/serial.log

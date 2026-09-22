@@ -2,6 +2,7 @@
 #include "memory.h"
 
 #define ZEROOS_GDT_ENTRIES 7U
+#define ZEROOS_STACK_GUARD 0x5a45524f4953544bULL
 
 struct __attribute__((packed)) tss64 {
     uint32_t reserved0;
@@ -30,6 +31,8 @@ static uint64_t gdt[ZEROOS_GDT_ENTRIES] __attribute__((aligned(8)));
 static struct tss64 runtime_tss __attribute__((aligned(16)));
 static struct gdtr64 runtime_gdtr;
 static void *runtime_entry_stack;
+static void *runtime_ist_stacks[ZEROOS_GDT_IST_COUNT];
+static uint64_t runtime_ist_tops[ZEROOS_GDT_IST_COUNT];
 static int initialized;
 
 static void gdt_set_code(uint32_t index, uint32_t access) {
@@ -93,6 +96,20 @@ int gdt_init(void) {
     stack_top=(uint64_t)runtime_entry_stack+ZEROOS_PAGE_SIZE;
     stack_top &= ~0xFULL;
 
+    for (uint32_t i=0; i<ZEROOS_GDT_IST_COUNT; ++i) {
+        runtime_ist_stacks[i]=page_alloc();
+        if (!runtime_ist_stacks[i]) {
+            for (uint32_t j=0; j<i; ++j)
+                page_free(runtime_ist_stacks[j]);
+            page_free(runtime_entry_stack);
+            runtime_entry_stack=0;
+            return -1;
+        }
+        *(uint64_t *)runtime_ist_stacks[i]=ZEROOS_STACK_GUARD;
+        runtime_ist_tops[i]=((uint64_t)runtime_ist_stacks[i]+
+                             ZEROOS_PAGE_SIZE)&~0xFULL;
+    }
+
     gdt[0]=0;
     gdt_set_code(1,0x9aU);
     gdt_set_data(2,0x92U);
@@ -100,6 +117,11 @@ int gdt_init(void) {
     gdt_set_data(4,0xf2U);
 
     runtime_tss.rsp0=stack_top;
+    runtime_tss.ist1=runtime_ist_tops[0];
+    runtime_tss.ist2=runtime_ist_tops[1];
+    runtime_tss.ist3=runtime_ist_tops[2];
+    runtime_tss.ist4=runtime_ist_tops[3];
+    runtime_tss.ist5=runtime_ist_tops[4];
     runtime_tss.iomap_base=(uint16_t)sizeof(runtime_tss);
     gdt_set_tss(5,(uint64_t)&runtime_tss,
                  (uint32_t)(sizeof(runtime_tss)-1U));
@@ -147,4 +169,26 @@ int gdt_set_kernel_stack(uint64_t stack_top) {
 
     runtime_tss.rsp0=stack_top;
     return 0;
+}
+
+uint8_t gdt_exception_ist(uint8_t vector) {
+    switch (vector) {
+    case 2:  return 2; /* NMI. */
+    case 8:  return 1; /* Double fault. */
+    case 10: /* Invalid TSS. */
+    case 11: /* Segment not present. */
+    case 12: /* Stack fault. */
+    case 13: /* General protection. */
+    case 17: /* Alignment check. */
+        return 5;
+    case 14: return 4; /* Page fault. */
+    case 18: return 3; /* Machine check. */
+    default: return 0;
+    }
+}
+
+uint64_t gdt_ist_stack_top(uint8_t ist_index) {
+    if (!initialized || ist_index==0 || ist_index>ZEROOS_GDT_IST_COUNT)
+        return 0;
+    return runtime_ist_tops[ist_index-1U];
 }

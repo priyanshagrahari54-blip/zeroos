@@ -3,6 +3,7 @@
 #include "apic.h"
 #include "pic.h"
 #include "timer.h"
+#include "gdt.h"
 #include "scheduler.h"
 #include "task.h"
 
@@ -106,7 +107,7 @@ static void idt_set_gate(uint8_t vector, void *handler) {
     uint64_t address=(uint64_t)handler;
     idt[vector].offset_low=(uint16_t)(address&0xffff);
     idt[vector].selector=0x08;
-    idt[vector].ist=0;
+    idt[vector].ist=gdt_exception_ist(vector);
     idt[vector].type_attr=0x8e;
     idt[vector].offset_mid=(uint16_t)((address>>16)&0xffff);
     idt[vector].offset_high=(uint32_t)(address>>32);

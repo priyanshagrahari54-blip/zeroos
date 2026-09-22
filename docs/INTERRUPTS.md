@@ -8,6 +8,8 @@ ZEROOS creates 256 64-bit IDT gate descriptors.
 
 The assembly layer normalizes the interrupt stack into:
 
+    dedicated IST stack where required
+            |
     saved GPRs
         |
     vector
@@ -23,10 +25,12 @@ Exceptions that architecturally push an error code keep that CPU-provided error 
 
 Fatal CPU exceptions report vector, decoded exception name, error code, saved RIP,
 validated privilege/return-frame metadata and CR2 for page faults, then enter
-a halted panic state. Page-fault diagnostics decode protection/write/user/
-reserved/instruction-fetch bits without attempting unsafe recovery in the
-current kernel-only execution boundary. Malformed normalized frames are
-rejected before dispatch.
+a halted panic state. Double fault, NMI, machine check, page fault and
+segment/protection faults enter on dedicated TSS IST pages before diagnostics;
+this keeps a damaged current/task stack from becoming the diagnostic stack.
+Page-fault diagnostics decode protection/write/user/reserved/instruction-fetch
+bits without attempting unsafe recovery in the current kernel-only execution
+boundary. Malformed normalized frames are rejected before dispatch.
 
 ## IRQ ownership and dispatch
 

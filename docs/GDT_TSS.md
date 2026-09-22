@@ -29,12 +29,16 @@ descriptors retain normal writable data-segment encoding.
 The current TSS contains:
 - RSP0 for privilege transitions
 - reserved RSP1/RSP2 fields
-- IST1-IST7 fields reserved for future exception stacks
+- IST1 double-fault stack, IST2 NMI stack, IST3 machine-check stack,
+  IST4 page-fault stack and IST5 segment/protection-fault stack;
+- IST6-IST7 reserved for later architecture-specific paths;
 - I/O-map base positioned at the end of the TSS
 
 A dedicated runtime entry-stack page is allocated during GDT initialization.
-Its aligned top is installed as the initial RSP0. The bootstrap task retains
-that value as its kernel-entry stack.
+Its aligned top is installed as the initial RSP0. Five additional
+allocator-backed, guard-marked IST pages are allocated for fatal/diagnostic
+exception classes. The bootstrap task retains the RSP0 value as its
+kernel-entry stack.
 
 Every scheduler task owns one allocator-backed, guard-checked kernel stack
 page. The scheduler publishes the selected task's aligned stack top through
@@ -92,6 +96,11 @@ Initialization performs:
 7. record the aligned RSP0 value.
 
 ## Certification
+
+The IDT assigns the IST slots through `gdt_exception_ist()`: double fault,
+NMI, machine check, page fault and segment/protection faults do not reuse the
+possibly damaged current stack. Each IST top is aligned and validated during
+boot.
 
 The runtime self-test verifies:
 - LGDT took effect;
