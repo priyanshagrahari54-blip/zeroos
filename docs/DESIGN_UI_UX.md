@@ -190,3 +190,42 @@ Every UI feature must have:
 - low-resource state,
 - keyboard navigation,
 - localization-ready strings.
+
+
+## 17. Production Desktop Quality Contract
+
+ZEROOS desktop implementation is not a visual prototype. Every desktop subsystem must be engineered as a production platform component.
+
+### Shell/Compositor Requirements
+
+Production graphics/desktop architecture must include, as applicable:
+- retained scene model;
+- damage tracking;
+- occlusion;
+- frame scheduling and pacing;
+- vsync/display synchronization;
+- GPU/software fallback;
+- surface/buffer ownership;
+- multi-monitor;
+- DPI scaling;
+- accessibility semantics;
+- crash isolation;
+- watchdog/restart behavior;
+- low-resource and reduced-motion modes.
+
+### UI State Completeness
+
+Every major feature must define:
+NORMAL, LOADING, EMPTY, ERROR, OFFLINE, PERMISSION-DENIED, LOW-RESOURCE and REDUCED-MOTION states where applicable.
+
+### Resource Maturity
+
+Do not keep heavy renderers, indexes or engines permanently resident merely to make a feature appear instant. Use tiny warm controllers, retained state and demand activation. Measure wake latency and memory residency rather than assuming performance.
+
+### Accessibility Is Production Scope
+
+Keyboard traversal, semantic accessibility information, scaling, high contrast, captions, reduced motion, alternative input and Hindi/English localization are architectural requirements, not later polish.
+
+### Originality
+
+ZEROOS may learn from familiar desktop interaction patterns, but implementation must maintain its own visual language, component system and information architecture rather than becoming a clone of another operating system.
