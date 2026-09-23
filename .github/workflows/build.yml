@@ -117,3 +117,14 @@ jobs:
           else
             echo "qemu.log was not produced"
           fi
+
+      - name: Preserve boot diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zeroos-boot-diagnostics
+          if-no-files-found: ignore
+          path: |
+            build/serial.log
+            build/debug.log
+            build/qemu.log
