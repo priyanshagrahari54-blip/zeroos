@@ -149,6 +149,15 @@ static int apic_write_ipi(uint32_t destination_apic_id, uint32_t command) {
 }
 
 static void apic_delay_us(uint64_t microseconds) {
+    /* A short SIPI spacing delay must not depend on a future timer IRQ: an AP
+     * may already be changing reset state while the BSP remains in this
+     * routine. */
+    if (microseconds<=200ULL) {
+        for (uint64_t delay=0; delay<100000ULL; ++delay)
+            cpu_relax();
+        return;
+    }
+
     uint64_t frequency=cpu_tsc_frequency_hz();
     if (frequency) {
         uint64_t ticks=(frequency/1000000ULL)*microseconds;
