@@ -126,7 +126,7 @@ jobs:
             echo "::error title=ZEROOS serial log::$summary"
           fi
           if test -s build/qemu.log; then
-            qsummary=$(tail -c 6000 build/qemu.log | tr '\r\n' '  ')
+            qsummary=$(tail -c 2200 build/qemu.log | tr '\r\n' '  ')
             echo "::error title=QEMU diagnostics::$qsummary"
           fi
           if test -s build/debug.log; then
