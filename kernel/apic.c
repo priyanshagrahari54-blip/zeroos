@@ -18,6 +18,7 @@
 #define APIC_REG_TIMER_CURRENT 0x390U
 #define APIC_REG_TIMER_DIVIDE 0x3e0U
 #define APIC_TIMER_MASK (1U<<16)
+#define APIC_TIMER_PERIODIC (1U<<17)
 #define APIC_TIMER_DIVIDE_BY_16 0x3U
 #define APIC_REG_ICR_LOW 0x300U
 #define APIC_REG_ICR_HIGH 0x310U
@@ -357,7 +358,8 @@ static int apic_program_cpu_timer(void) {
         return -1;
     initial=(uint32_t)per_tick;
     local_apic_write(APIC_REG_TIMER_INITIAL,initial);
-    local_apic_write(APIC_REG_TIMER_LVT,ZEROOS_SCHEDULER_TICK_VECTOR);
+    local_apic_write(APIC_REG_TIMER_LVT,
+                     ZEROOS_SCHEDULER_TICK_VECTOR|APIC_TIMER_PERIODIC);
     local->scheduler_timer_ready=1;
     return 0;
 }
