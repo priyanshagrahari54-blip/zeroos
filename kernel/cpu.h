@@ -45,6 +45,7 @@ struct cpu_local {
     uint64_t interrupt_count;
     struct task *scheduler_current;
     uint8_t scheduler_started;
+    uint8_t scheduler_timer_ready;
     uint8_t prepared;
     uint8_t online;
 };

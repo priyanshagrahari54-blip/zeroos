@@ -16,17 +16,20 @@ void scheduler_tick(void) {
     atomic_u64_fetch_add(&scheduler_ticks_count,1);
     task_scheduler_tick();
 
-    /* PIT/IOAPIC ownership remains on the BSP, but every online AP receives
-     * an independent scheduler interrupt and performs its own local tick,
-     * queue aging, timeout processing, and preemption decision. No AP ever
-     * borrows the BSP current-task or runqueue state. */
+    /* PIT/IOAPIC ownership remains on the BSP. APs normally own a calibrated
+     * local LAPIC timer; only APs whose local clock event could not be
+     * calibrated receive this targeted fallback IPI. Every recipient still
+     * performs its own local tick, queue aging, timeout processing, and
+     * preemption decision. No AP ever borrows the BSP current-task or
+     * runqueue state. */
     if (cpu_current_id()==0 && task_scheduler_ready()) {
         uint32_t discovered=smp_discovered_count();
         for (uint32_t cpu=1; cpu<discovered; ++cpu) {
             const struct cpu_local *local=cpu_local_for_id(cpu);
             const struct smp_cpu_record *record=smp_cpu_record(cpu);
             if (!local || !record ||
-                !__atomic_load_n(&local->online,__ATOMIC_ACQUIRE))
+                !__atomic_load_n(&local->online,__ATOMIC_ACQUIRE) ||
+                local->scheduler_timer_ready)
                 continue;
             (void)apic_send_ipi(record->apic_id,ZEROOS_SCHEDULER_TICK_VECTOR);
         }

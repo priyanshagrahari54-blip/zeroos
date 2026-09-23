@@ -3,6 +3,7 @@
 #include "pic.h"
 #include "timer.h"
 #include "vmm.h"
+#include "task.h"
 
 #define IA32_APIC_BASE_MSR 0x1bU
 #define APIC_BASE_MASK 0x000ffffffffff000ULL
@@ -12,6 +13,12 @@
 #define APIC_REG_TPR 0x080U
 #define APIC_REG_EOI 0x0b0U
 #define APIC_REG_SVR 0x0f0U
+#define APIC_REG_TIMER_LVT 0x320U
+#define APIC_REG_TIMER_INITIAL 0x380U
+#define APIC_REG_TIMER_CURRENT 0x390U
+#define APIC_REG_TIMER_DIVIDE 0x3e0U
+#define APIC_TIMER_MASK (1U<<16)
+#define APIC_TIMER_DIVIDE_BY_16 0x3U
 #define APIC_REG_ICR_LOW 0x300U
 #define APIC_REG_ICR_HIGH 0x310U
 #define APIC_ICR_DELIVERY_STATUS (1U<<12)
@@ -319,11 +326,52 @@ uint32_t apic_local_id(void) {
     return state.local_apic_id;
 }
 
+static int apic_program_cpu_timer(void) {
+    struct cpu_local *local=(struct cpu_local *)(uint64_t)cpu_local();
+    uint64_t start;
+    uint64_t elapsed;
+    uint64_t per_tick;
+    uint32_t initial;
+
+    if (!local || cpu_current_id()==0)
+        return -1;
+
+    /* Calibrate against the already-running BSP PIT. The AP keeps its timer
+     * masked during calibration, so an early local tick cannot enter the
+     * scheduler before the AP has published its current context. */
+    local->scheduler_timer_ready=0;
+    local_apic_write(APIC_REG_TIMER_DIVIDE,APIC_TIMER_DIVIDE_BY_16);
+    local_apic_write(APIC_REG_TIMER_LVT,
+                     ZEROOS_SCHEDULER_TICK_VECTOR|APIC_TIMER_MASK);
+    local_apic_write(APIC_REG_TIMER_INITIAL,0xffffffffU);
+    start=timer_ticks();
+    for (uint64_t spins=0; spins<50000000ULL && timer_ticks()-start<2ULL;
+         ++spins)
+        cpu_relax();
+    elapsed=(uint64_t)0xffffffffU-
+            (uint64_t)local_apic_read(APIC_REG_TIMER_CURRENT);
+    if (timer_ticks()-start<2ULL)
+        return -1;
+    per_tick=elapsed/2ULL;
+    if (per_tick<1000ULL || per_tick>0xffffffffULL)
+        return -1;
+    initial=(uint32_t)per_tick;
+    local_apic_write(APIC_REG_TIMER_INITIAL,initial);
+    local_apic_write(APIC_REG_TIMER_LVT,ZEROOS_SCHEDULER_TICK_VECTOR);
+    local->scheduler_timer_ready=1;
+    return 0;
+}
+
 int apic_cpu_init(void) {
+    struct cpu_local *local;
     if (!state.local_apic_present || !state.local_apic_virtual)
         return -1;
+    local=(struct cpu_local *)(uint64_t)cpu_local();
+    if (local)
+        local->scheduler_timer_ready=0;
     local_apic_write(APIC_REG_TPR,0);
     local_apic_write(APIC_REG_SVR,APIC_SPURIOUS_VECTOR|APIC_SVR_ENABLE);
+    (void)apic_program_cpu_timer();
     return 0;
 }
 

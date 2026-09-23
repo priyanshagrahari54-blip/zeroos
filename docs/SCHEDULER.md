@@ -61,32 +61,60 @@ returned through their original architectural frame without entering the task
 scheduler. Once scheduler_start() transfers execution away from slot zero,
 only task-owned contexts participate in scheduler validation and switching.
 
-## Scheduling policy
+## SMP scheduling policy and ownership
 
-The current UP policy is a bounded priority-aware round-robin over the
-ordinary task slots. Priorities are explicit (0–31), CPU affinity is an
-explicit bitmask, and equal effective priorities retain deterministic slot
-order. Runnable aging promotes a waiting task after bounded wait time, which
-prevents starvation without a polling worker or an unbounded queue.
+The scheduler now has one current-task slot and one intrusive runqueue per
+online CPU. `current_tasks[cpu]` is mirrored in the per-CPU CPU-local record
+and is the only owner of a RUNNING task on that CPU. Ordinary RUNNABLE tasks
+are present on exactly one `task_runqueue[cpu]`; a task is removed before it
+becomes RUNNING and reinserted only after it becomes RUNNABLE again. Queue
+length, head/tail links, and the task's `runqueue_cpu` owner are validated at
+every scheduler checkpoint.
 
-The idle task is excluded from normal selection and is chosen only when no
-ordinary task is runnable. Task mechanics remain separate from policy so the
-verified task stacks and context ownership can move to per-CPU runqueues
-without an ABI rewrite. `task_set_priority()` and `task_set_affinity()` reject
-unsupported CPU masks rather than silently claiming an offline CPU.
+A global task metadata lock serializes state/lifecycle transitions, while each
+runqueue has its own lock and is accessed in the fixed order
+`task_lock -> runqueue_lock`. This prevents remote wakeups, queue stealing,
+affinity migration, and local dispatch from observing a half-published task.
+The global lock is released before `context_switch_ex()`, so no scheduler
+lock is held across an architectural stack handoff.
 
-## Idle execution
+Selection prefers the local queue, then steals a compatible task from another
+online queue when the local queue is empty. Effective priority remains
+priority plus bounded runnable aging; equal priorities are FIFO by queue
+insertion. CPU affinity is checked both at enqueue and dispatch. A runnable
+task whose current CPU is removed from its affinity mask is migrated to an
+online compatible queue at its next handoff rather than executed on a
+forbidden CPU.
 
-The idle task executes HLT with interrupts enabled and yields after wakeup.
-This gives ZEROOS a real no-work execution context instead of treating the
-bootstrap continuation as an idle task. A dedicated idle task is a standard
-scheduler model: the CPU runs it when there is no other runnable work, and the
-idle loop can enter processor idle states. citeturn1search0
+The BSP bootstrap context is not a runqueue task. The BSP has a dedicated idle
+task, and every AP has a separate idle context backed by its private AP
+bootstrap stack. Thus two CPUs never execute the same idle stack. Idle contexts
+are excluded from ordinary queues and selected only when their local/stealable
+queues are empty. `task_set_priority()` and `task_set_affinity()` reject
+invalid masks and never silently claim an unavailable CPU.
 
-The current implementation intentionally keeps the PIT tick enabled while
-idle. Tickless idle can be added later after the timer subsystem can reprogram
-the next wakeup event safely; avoiding scheduler ticks during long idle
-intervals is an established power optimization. citeturn1search1turn1search4
+## Idle execution and AP entry
+
+The BSP idle task executes HLT with interrupts enabled and yields after wakeup.
+Each AP enters `task_start_secondary_cpu()` on its private bootstrap stack
+immediately after SMP publication. APs wait with interrupts enabled until the
+BSP publishes the scheduler start gate, then install their own idle current
+slot, validate the per-CPU ownership record, and dispatch from their own
+queue. A scheduler wake IPI releases an AP from HLT; it never performs a
+context switch from interrupt context.
+
+The same PIT remains the physical clock source on the BSP. Each AP first
+calibrates and owns a periodic local LAPIC timer against the running PIT. If a
+platform cannot calibrate that local clock event, the BSP uses a targeted
+scheduler-tick IPI as the explicit fallback for that AP; the fallback is
+recorded in the per-CPU timer-ready state and does not change task ownership.
+Each AP accounts its own current task, wakes its own local/remote-owned
+runnable work, and decides its own preemption at the common IRQ-exit boundary.
+No AP ever borrows the BSP task or runqueue state.
+
+The implementation intentionally keeps ticks enabled while idle. Tickless
+idle is deferred until clock-event reprogramming and wakeup cancellation have
+explicit ownership and recovery tests.
 
 ## Blocking and wakeup
 
@@ -103,9 +131,13 @@ resuming.
 
 ## Preemption boundary
 
-Timer-driven preemption now occurs at the common IRQ-exit boundary rather than
-inside the C timer handler. The timer tick only accounts CPU time and raises
-the task's `need_resched` flag when its time slice expires.
+Timer-driven preemption occurs at the common IRQ-exit boundary rather than
+inside the C timer handler. The BSP PIT handler accounts the global tick and
+raises the BSP task's `need_resched` flag when its time slice expires. The
+scheduler hook then delivers the same event as a dedicated scheduler IPI to
+each online AP; the AP performs its own accounting and sets its own
+`need_resched`. No AP runs the BSP scheduler tick function as a substitute for
+its current-task ownership.
 
 The common ISR saves the complete architectural register frame and passes its
 address through `interrupt_dispatch()`. After the IRQ handler and PIC EOI,
@@ -168,21 +200,31 @@ context switching, wait/wakeup, timed sleep, timer-only preemption,
 zombie/slot-reuse lifecycle stress, the interrupt-frame ownership invariant,
 the process/thread object model, and generation-tagged PID/TID reuse
 protection, before an aggregate scheduler certification passed marker. The
-aggregate certificate additionally requires the process/thread probe suite to
-complete. CI requires all of these markers across three consecutive QEMU
-boots and fails the boot test if a ZEROOS PANIC: is present in the serial
-log. This makes scheduler certification a runtime-tested CI gate rather than
-a documentation-only claim.
+aggregate certificate additionally requires the process/thread probe suite and
+`per-CPU scheduler ownership verified` marker. On multi-CPU boots the latter
+requires a real non-idle task to execute on an AP, not merely that an AP was
+reported online. CI requires all markers across three consecutive QEMU boots,
+a four-vCPU boot, and NX-disabled compatibility boot; any `ZEROOS PANIC:` in a
+serial log fails the gate.
 
-## Next stage
+## Current exit-gate scope
 
-Scheduler certification now covers cooperative switching, callee-saved register
-preservation, timer-only CPU-bound preemption, wait/wakeup, timed sleep, bounded
-deadlock detection, zombie reclamation, slot reuse, the interrupt-frame
-ownership contract, uniform dispatch of both resumable context forms, and the
-pre-scheduler bootstrap interrupt boundary. The next scheduler stage is
-long-duration fairness/latency measurement, followed by per-CPU runqueues as
-part of SMP preparation (the switch-handoff window currently relies on IF=0
-UP atomicity and is the marked boundary that moves to per-runqueue locks).
-Higher-level synchronization can continue to build on the existing wait-queue
-and preemption boundaries.
+The implemented scheduler/SMP boundary covers:
+
+- per-CPU current-task publication and private idle contexts;
+- per-CPU runqueue insertion/removal, queue accounting, compatible stealing,
+  affinity migration, and fixed lock ordering;
+- AP scheduler entry after a release-published start gate;
+- BSP-owned PIT tick distribution as per-CPU scheduler IPIs;
+- local IRQ-exit preemption with either a cooperative context or a live
+  interrupt frame;
+- timeout wakeup, remote wakeup, zombie reclamation, and concurrent queue
+  validation; and
+- runtime proof that ordinary work executed on a secondary CPU.
+
+The remaining Stage 1 scheduler work is not hidden: long-duration fairness and
+latency stress, deliberate AP late-start/failed-IPI recovery, CPU hot-offline
+queue evacuation, and a hardware-local LAPIC clock-event backend still require
+implementation and fault validation before the Stage 1 exit gate. Higher-level
+synchronization continues to use the existing wait-queue and preemption
+contracts.
