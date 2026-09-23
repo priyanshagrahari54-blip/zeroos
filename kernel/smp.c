@@ -221,6 +221,7 @@ int smp_init(void) {
             failed=1;
             continue;
         }
+        serial_write_public("ZEROOS: SMP INIT/SIPI dispatch completed.\n");
 
         uint8_t started=0;
         uint64_t wait_ticks=timer_ticks();

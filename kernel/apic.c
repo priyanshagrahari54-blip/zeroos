@@ -357,11 +357,9 @@ int apic_send_init_sipi(uint32_t destination_apic_id, uint8_t vector) {
     apic_delay_us(200);
     if (apic_write_ipi(destination_apic_id,APIC_ICR_SIPI|vector)!=0)
         return -1;
-    serial_write_public("ZEROOS: LAPIC first SIPI delivered.\n");
     /* A correctly delivered first SIPI is sufficient on the supported QEMU
      * APIC path. The AP handshake below is the completion acknowledgement;
      * avoid issuing a second command while the target is already executing
      * copied reset code. */
-    serial_write_public("ZEROOS: LAPIC SIPI sequence complete.\n");
     return 0;
 }
