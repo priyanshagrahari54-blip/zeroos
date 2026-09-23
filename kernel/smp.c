@@ -115,6 +115,8 @@ void smp_ap_entry(uint32_t cpu_id) {
     if (gdt_init_cpu(cpu_id)!=0)
         smp_ap_fail(cpu_id);
     smp_debug_marker('C');
+    interrupts_load_current_cpu();
+    smp_debug_marker('E');
     if (vmm_translate(apic_info()->local_apic_virtual)==0)
         smp_debug_marker('0');
     else
@@ -135,8 +137,6 @@ void smp_ap_entry(uint32_t cpu_id) {
     if (apic_cpu_init()!=0)
         smp_ap_fail(cpu_id);
     smp_debug_marker('D');
-    interrupts_load_current_cpu();
-    smp_debug_marker('E');
     if (tlb_register_cpu(cpu_id)!=0)
         smp_ap_fail(cpu_id);
     smp_debug_marker('F');
