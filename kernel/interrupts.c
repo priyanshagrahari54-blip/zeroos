@@ -200,6 +200,18 @@ uint64_t interrupt_dispatch(struct interrupt_frame *frame) {
         return (uint64_t)frame;
     }
 
+    if (frame->vector==ZEROOS_SCHEDULER_OFFLINE_VECTOR) {
+        if (cpu_current_id()==0) {
+            serial_write_public("ZEROOS PANIC: BSP received CPU-offline IPI.\\n");
+            for (;;) __asm__ volatile ("cli; hlt");
+        }
+        result=task_cpu_offline_from_interrupt(frame);
+        if (apic_controller()==ZEROOS_IRQ_CONTROLLER_LAPIC_IOAPIC)
+            apic_eoi();
+        cpu_irq_exit();
+        return result;
+    }
+
     if (frame->vector==ZEROOS_SCHEDULER_TICK_VECTOR) {
         if (cpu_current_id()!=0 && task_scheduler_ready()) {
             scheduler_tick_remote();

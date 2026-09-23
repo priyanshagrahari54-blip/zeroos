@@ -223,15 +223,17 @@ The implemented scheduler/SMP boundary covers:
 - local IRQ-exit preemption with either a cooperative context or a live
   interrupt frame;
 - timeout wakeup, remote wakeup, zombie reclamation, and concurrent queue
-  validation; and
-- runtime proof that ordinary work executed on a secondary CPU.
+  validation;
+- runtime proof that ordinary work executed on a secondary CPU; and
+- coordinated CPU hot-offline queue evacuation, AP TLB/CPU-local withdrawal,
+  idle parking, bounded acknowledgement and scheduler validation.
 
-The remaining Stage 1 scheduler work is not hidden: CPU hot-offline queue
-evacuation still requires implementation and fault validation before the Stage
-1 exit gate. Equal-priority fairness/latency stress, the AP late-token/failed-
-dispatch recovery contract, and the per-AP local LAPIC clock-event contract
-(with an explicit targeted-IPI fallback) are now exercised by the runtime
-certification, including a separate fault-injected QEMU boot that must
-complete the bounded retry.
+The remaining Stage 1 scheduler work is not hidden: extended FPU state
+switching and supported-hardware multi-vCPU validation remain required before
+the Stage 1 exit gate. Equal-priority fairness/latency stress, the AP late-
+token/failed-dispatch recovery contract, and the per-AP local LAPIC clock-
+event contract (with an explicit targeted-IPI fallback) are now exercised by
+the runtime certification, including a separate fault-injected QEMU boot that
+must complete the bounded retry.
 Higher-level synchronization continues to use the existing wait-queue and
 preemption contracts.

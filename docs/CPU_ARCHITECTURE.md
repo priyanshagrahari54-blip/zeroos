@@ -100,6 +100,7 @@ The boot certification checks:
 - scheduler priority, affinity and starvation-aging metadata;
 - repeated QEMU scheduler/process stress boots;
 - four-vCPU SMP startup and remote-shootdown certification;
+- CPU hot-offline queue evacuation and AP parking certification;
 - NX-disabled two-vCPU boot certification.
 
 ## Remaining Stage 1 boundary

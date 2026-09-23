@@ -406,7 +406,7 @@ uint32_t smp_discovered_count(void) {
 }
 
 uint32_t smp_online_count(void) {
-    return online;
+    return __atomic_load_n(&online,__ATOMIC_ACQUIRE);
 }
 
 int smp_is_degraded(void) {
@@ -498,6 +498,19 @@ int smp_startup_recovery_self_test(void) {
     if (!startup_fault_injected || !startup_fault_retried)
         return -1;
 #endif
+    return 0;
+}
+
+int smp_mark_cpu_offline(uint32_t cpu_id) {
+    if (!initialized || cpu_id==0 || cpu_id>=discovered)
+        return -1;
+    if (atomic_load_u32(&records[cpu_id].state)!=ZEROOS_SMP_CPU_ONLINE)
+        return -1;
+    atomic_store_u32(&records[cpu_id].state,ZEROOS_SMP_CPU_OFFLINE);
+    if (__atomic_load_n(&online,__ATOMIC_ACQUIRE)==0)
+        return -1;
+    __atomic_fetch_sub(&online,1,__ATOMIC_ACQ_REL);
+    degraded=1;
     return 0;
 }
 

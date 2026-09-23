@@ -759,7 +759,15 @@ static void scheduler_probe_monitor(void *argument) {
     int fairness_reported=0;
     int certification_reported=0;
     int per_cpu_reported=0;
+    int hotplug_reported=0;
     uint64_t stress_start=timer_ticks();
+
+    /* Keep the certification monitor on the BSP: it owns the control-plane
+     * request that drains and parks a secondary scheduler CPU. */
+    if (task_set_affinity(task_current(),1ULL)!=0)
+        kernel_panic("scheduler monitor BSP affinity setup failed");
+    while (cpu_current_id()!=0)
+        scheduler_yield();
 
     for (;;) {
         uint64_t now=timer_ticks();
@@ -858,6 +866,18 @@ static void scheduler_probe_monitor(void *argument) {
             serial_write_public("ZEROOS: per-CPU scheduler ownership verified.\n");
         }
 
+        if (!hotplug_reported && per_cpu_reported &&
+            atomic_u64_load(&process_thread_probe_phase)==3) {
+            if (smp_online_count()>1) {
+                if (task_cpu_offline(1)!=0)
+                    kernel_panic("CPU hot-offline evacuation failed");
+                serial_write_public("ZEROOS: CPU hot-offline queue evacuation and parking passed.\n");
+            } else {
+                serial_write_public("ZEROOS: CPU hot-offline test skipped (single CPU).\n");
+            }
+            hotplug_reported=1;
+        }
+
         if (now>=last_report+100) {
             last_report=now;
             serial_write_public("ZEROOS: timer tick 100.\n");
@@ -871,6 +891,7 @@ static void scheduler_probe_monitor(void *argument) {
         if (now-stress_start>400 &&
             (!preempt_reported || !lifecycle_reported ||
              !fairness_reported || !frame_invariant_reported ||
+             !hotplug_reported ||
              (smp_online_count()>1 && !per_cpu_reported) ||
              atomic_u64_load(&sleep_probe_state)!=2 ||
              atomic_u64_load(&wait_probe_state)!=2 ||

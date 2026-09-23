@@ -11,6 +11,7 @@
 #define ZEROOS_TASK_AFFINITY_ANY (~0ULL)
 #define ZEROOS_SCHEDULER_TICK_VECTOR 48U
 #define ZEROOS_SCHEDULER_WAKE_VECTOR 49U
+#define ZEROOS_SCHEDULER_OFFLINE_VECTOR 50U
 
 struct interrupt_frame;
 struct thread;
@@ -167,5 +168,12 @@ int task_debug_validate(void);
 uint64_t task_frame_resume_count(void);
 /* CPUs on which a real (non-idle) task has executed since scheduler start. */
 uint64_t task_scheduler_task_cpu_mask(void);
+/* Quiesce one secondary CPU, drain its runnable queue, and park it. */
+int task_cpu_offline(uint32_t cpu_id);
+/* Called only by the target CPU's offline IPI path. */
+uint64_t task_cpu_offline_from_interrupt(struct interrupt_frame *frame);
+/* AP idle/bootstrap loops use this to complete a pending hot-offline. */
+int task_cpu_offline_pending(void);
+void task_cpu_offline_park(void);
 
 #endif

@@ -6,6 +6,7 @@
 #include "timer.h"
 #include "cpu.h"
 #include "smp.h"
+#include "tlb.h"
 #include "apic.h"
 
 extern void context_switch_ex(uint64_t *old_sp, const uint64_t *new_sp,
@@ -45,6 +46,8 @@ struct task_runqueue {
 
 static struct task_runqueue runqueues[ZEROOS_MAX_CPUS];
 static uint8_t cpu_scheduler_started[ZEROOS_MAX_CPUS];
+static volatile uint8_t cpu_offline_requested[ZEROOS_MAX_CPUS];
+static volatile uint8_t cpu_offline_acknowledged[ZEROOS_MAX_CPUS];
 static volatile uint8_t scheduler_ready;
 static volatile uint64_t scheduler_task_cpu_mask;
 
@@ -507,6 +510,8 @@ static void task_irq_restore(uint64_t flags) {
 static void task_idle_entry(void *argument) {
     (void)argument;
     for (;;) {
+        if (task_cpu_offline_pending())
+            task_cpu_offline_park();
         __asm__ volatile ("sti; hlt" ::: "memory");
         task_yield();
     }
@@ -683,6 +688,7 @@ static uint64_t task_valid_cpu_mask(void) {
 static int task_can_run_on_cpu(const struct task *task, uint32_t cpu) {
     return task && cpu<ZEROOS_MAX_CPUS &&
            (task->cpu_affinity & (1ULL<<cpu))!=0 &&
+           !__atomic_load_n(&cpu_offline_requested[cpu],__ATOMIC_ACQUIRE) &&
            cpu_local_for_id(cpu) &&
            __atomic_load_n(&cpu_local_for_id(cpu)->online,__ATOMIC_ACQUIRE);
 }
@@ -757,6 +763,51 @@ static int task_choose_cpu_locked(const struct task *task) {
         }
     }
     return selected<ZEROOS_MAX_CPUS ? (int)selected : -1;
+}
+
+static int task_has_online_alternative_locked(const struct task *task,
+                                               uint32_t offline_cpu) {
+    if (!task || task_is_idle(task))
+        return 1;
+    for (uint32_t cpu=0; cpu<ZEROOS_MAX_CPUS; ++cpu) {
+        if (cpu==offline_cpu)
+            continue;
+        if (task_can_run_on_cpu(task,cpu))
+            return 1;
+    }
+    return 0;
+}
+
+/* Drain a queue while task_lock is held. Queue locks are never held while
+ * selecting the destination, preserving task_lock -> runqueue_lock order. */
+static int runqueue_evacuate_locked(uint32_t offline_cpu) {
+    struct task_runqueue *queue=&runqueues[offline_cpu];
+
+    for (;;) {
+        struct task *task;
+        int owner;
+
+        spin_lock(&queue->lock);
+        task=queue->head;
+        if (task) {
+            queue->head=task->run_next;
+            if (queue->length)
+                --queue->length;
+            task->run_next=0;
+            task->runqueue_cpu=0;
+            if (!queue->head)
+                queue->tail=0;
+        }
+        spin_unlock(&queue->lock);
+        if (!task)
+            return 0;
+
+        owner=task_choose_cpu_locked(task);
+        if (owner<0)
+            task_context_panic("ZEROOS PANIC: CPU-offline queue evacuation lost affinity.\n",
+                               task);
+        runqueue_append_locked((uint32_t)owner,task);
+    }
 }
 
 static struct task *runqueue_pick_locked(uint32_t cpu) {
@@ -945,6 +996,8 @@ int task_system_init(void) {
         current_tasks[cpu]=0;
         handoff_tasks[cpu]=0;
         cpu_scheduler_started[cpu]=0;
+        cpu_offline_requested[cpu]=0;
+        cpu_offline_acknowledged[cpu]=0;
         if (cpu_local_for_id(cpu)) {
             cpu_local_for_id(cpu)->scheduler_current=0;
             cpu_local_for_id(cpu)->scheduler_started=0;
@@ -1410,6 +1463,11 @@ uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
     struct task *previous=current_task;
     struct task *target;
     struct interrupt_frame *target_frame;
+    uint32_t cpu=task_cpu_index();
+    int offlining=cpu_offline_requested[cpu] &&
+                  cpu_local_for_id(cpu) &&
+                  !__atomic_load_n(&cpu_local_for_id(cpu)->online,
+                                   __ATOMIC_ACQUIRE);
 
     if (!previous || !frame)
         return (uint64_t)frame;
@@ -1444,7 +1502,7 @@ uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
     /* Select while previous is still RUNNING so it cannot be selected from
      * its own queue. Only after a different target is known is the live IRQ
      * frame published as previous's resumable context. */
-    target=find_next_runnable();
+    target=offlining ? task_idle_for_cpu(cpu) : find_next_runnable();
     if (!target || target==previous) {
         previous->need_resched=0;
         spin_unlock(&task_lock);
@@ -1652,6 +1710,123 @@ uint8_t task_need_resched(void) {
     return current_task ? current_task->need_resched : 0;
 }
 
+int task_cpu_offline_pending(void) {
+    uint32_t cpu=task_cpu_index();
+    return cpu>0 && cpu<ZEROOS_MAX_CPUS &&
+           __atomic_load_n(&cpu_offline_requested[cpu],__ATOMIC_ACQUIRE) &&
+           !__atomic_load_n(&cpu_offline_acknowledged[cpu],__ATOMIC_ACQUIRE);
+}
+
+void task_cpu_offline_park(void) {
+    uint32_t cpu=task_cpu_index();
+    struct task *idle;
+
+    if (cpu==0 || cpu>=ZEROOS_MAX_CPUS)
+        return;
+    idle=task_idle_for_cpu(cpu);
+    if (!__atomic_load_n(&cpu_offline_requested[cpu],__ATOMIC_ACQUIRE) ||
+        current_task!=idle)
+        return;
+
+    __atomic_store_n(&cpu_offline_acknowledged[cpu],1,__ATOMIC_RELEASE);
+    serial_write_public("ZEROOS: AP scheduler CPU quiesced and parked (cpu=");
+    task_write_u64(cpu);
+    serial_write_public(").\\n");
+    for (;;) {
+        __asm__ volatile ("cli; hlt" : : : "memory");
+    }
+}
+
+uint64_t task_cpu_offline_from_interrupt(struct interrupt_frame *frame) {
+    uint32_t cpu=task_cpu_index();
+    struct task *current=current_task;
+
+    if (!frame || cpu==0 || cpu>=ZEROOS_MAX_CPUS ||
+        !__atomic_load_n(&cpu_offline_requested[cpu],__ATOMIC_ACQUIRE))
+        return (uint64_t)frame;
+    /* A preemption-disabled critical section must finish before the CPU can
+     * transfer its current task to another runqueue. The request remains
+     * published and a later interrupt retries it. */
+    if (!current || current->preempt_count!=0)
+        return (uint64_t)frame;
+    if (tlb_unregister_current_cpu(cpu)!=0)
+        return (uint64_t)frame;
+    if (cpu_mark_offline(cpu)!=0 || smp_mark_cpu_offline(cpu)!=0) {
+        serial_write_public("ZEROOS PANIC: AP CPU-offline ownership transition failed.\\n");
+        for (;;) __asm__ volatile ("cli; hlt");
+    }
+    current->need_resched=1;
+    return task_reschedule_from_interrupt(frame);
+}
+
+int task_cpu_offline(uint32_t cpu_id) {
+    uint64_t flags;
+    const struct smp_cpu_record *record;
+    uint64_t start;
+    uint64_t last_signal=0;
+
+    if (cpu_current_id()!=0 || cpu_id==0 || cpu_id>=ZEROOS_MAX_CPUS ||
+        smp_online_count()<=1 || !task_scheduler_ready() ||
+        !cpu_local_for_id(cpu_id) ||
+        !__atomic_load_n(&cpu_local_for_id(cpu_id)->online,__ATOMIC_ACQUIRE))
+        return -1;
+
+    flags=spin_lock_irqsave(&task_lock);
+    if (cpu_offline_requested[cpu_id] || !cpu_scheduler_started[cpu_id]) {
+        spin_unlock_irqrestore(&task_lock,flags);
+        return -1;
+    }
+    /* Reject a transition that would strand any live schedulable task. */
+    for (int i=2; i<ZEROOS_MAX_TASKS; ++i) {
+        struct task *task=&tasks[i];
+        if (task->state!=TASK_UNUSED && task->state!=TASK_ZOMBIE &&
+            !task_has_online_alternative_locked(task,cpu_id)) {
+            spin_unlock_irqrestore(&task_lock,flags);
+            return -1;
+        }
+    }
+
+    __atomic_store_n(&cpu_offline_requested[cpu_id],1,__ATOMIC_RELEASE);
+    __atomic_store_n(&cpu_offline_acknowledged[cpu_id],0,__ATOMIC_RELEASE);
+    if (runqueue_evacuate_locked(cpu_id)!=0) {
+        __atomic_store_n(&cpu_offline_requested[cpu_id],0,__ATOMIC_RELEASE);
+        spin_unlock_irqrestore(&task_lock,flags);
+        return -1;
+    }
+    spin_unlock_irqrestore(&task_lock,flags);
+
+    record=smp_cpu_record(cpu_id);
+    if (!record || apic_send_ipi(record->apic_id,
+                                 ZEROOS_SCHEDULER_OFFLINE_VECTOR)!=0) {
+        __atomic_store_n(&cpu_offline_requested[cpu_id],0,__ATOMIC_RELEASE);
+        return -1;
+    }
+
+    start=timer_ticks();
+    for (;;) {
+        if (__atomic_load_n(&cpu_offline_acknowledged[cpu_id],
+                            __ATOMIC_ACQUIRE))
+            break;
+        if (timer_ticks()-start>100ULL) {
+            serial_write_public("ZEROOS: AP CPU-offline acknowledgement timed out.\\n");
+            /* Keep the request published: cancelling a transition after the
+             * AP has removed its TLB ownership would be unsafe. */
+            return -1;
+        }
+        if (timer_ticks()-last_signal>=10ULL) {
+            (void)apic_send_ipi(record->apic_id,
+                                ZEROOS_SCHEDULER_OFFLINE_VECTOR);
+            last_signal=timer_ticks();
+        }
+        cpu_relax();
+    }
+
+    if (__atomic_load_n(&cpu_local_for_id(cpu_id)->online,__ATOMIC_ACQUIRE) ||
+        tlb_cpu_is_online(cpu_id) || smp_online_count()>=2)
+        return -1;
+    return 0;
+}
+
 void task_start_first(void) {
     struct task *next;
     uint64_t flags=task_irq_save();
@@ -1719,6 +1894,8 @@ void task_start_secondary_cpu(void) {
     /* A cooperative handoff returns here when this CPU's idle context is
      * selected again. The idle context never enters a shared task stack. */
     for (;;) {
+        if (task_cpu_offline_pending())
+            task_cpu_offline_park();
         __asm__ volatile ("sti; hlt" : : : "memory");
         task_yield();
     }

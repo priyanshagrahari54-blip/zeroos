@@ -105,10 +105,10 @@ A guessed APIC route is never considered support.
 
 The active Stage 1 matrix therefore has an explicit legacy-PIC fallback and a
 validated LAPIC/IOAPIC timer path. The SMP boundary also uses Local-APIC IPIs
-for AP startup and fail-closed TLB shootdowns; non-timer IRQ ownership,
-per-CPU device-controller state and multi-CPU scheduling/routing remain
-separate gates. Per-CPU interrupt nesting and count are tracked in
-`struct cpu_local`.
+for AP startup, fail-closed TLB shootdowns and the bounded scheduler CPU
+hot-offline IPI; non-timer IRQ ownership, per-CPU device-controller state and
+multi-CPU scheduling/routing remain separate gates. Per-CPU interrupt nesting
+and count are tracked in `struct cpu_local`.
 
 ## Production direction
 

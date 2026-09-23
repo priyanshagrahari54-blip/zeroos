@@ -32,6 +32,8 @@ uint32_t smp_online_count(void);
 int smp_is_degraded(void);
 int smp_startup_self_test(void);
 int smp_startup_recovery_self_test(void);
+/* Called by a quiesced AP after its TLB and CPU-local ownership are removed. */
+int smp_mark_cpu_offline(uint32_t cpu_id);
 const struct smp_cpu_record *smp_cpu_record(uint32_t cpu_id);
 uint64_t smp_bootstrap_stack(uint32_t cpu_id);
 
