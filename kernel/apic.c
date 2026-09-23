@@ -148,15 +148,6 @@ static int apic_write_ipi(uint32_t destination_apic_id, uint32_t command) {
     return apic_wait_icr();
 }
 
-static int apic_fire_ipi(uint32_t destination_apic_id, uint32_t command) {
-    if (!state.local_apic_present || destination_apic_id>0xffU ||
-        !state.local_apic_virtual)
-        return -1;
-    local_apic_write(APIC_REG_ICR_HIGH,destination_apic_id<<24);
-    local_apic_write(APIC_REG_ICR_LOW,command);
-    return 0;
-}
-
 static void apic_delay_us(uint64_t microseconds) {
     /* A short SIPI spacing delay must not depend on a future timer IRQ: an AP
      * may already be changing reset state while the BSP remains in this
@@ -367,10 +358,10 @@ int apic_send_init_sipi(uint32_t destination_apic_id, uint8_t vector) {
     if (apic_write_ipi(destination_apic_id,APIC_ICR_SIPI|vector)!=0)
         return -1;
     serial_write_public("ZEROOS: LAPIC first SIPI delivered.\n");
-    apic_delay_us(200);
-    serial_write_public("ZEROOS: LAPIC second SIPI dispatch.\n");
-    /* The AP handshake is the completion acknowledgement for the final SIPI;
-     * do not poll a delivery-status bit while the reset target is transitioning
-     * into protected/long mode. */
-    return apic_fire_ipi(destination_apic_id,APIC_ICR_SIPI|vector);
+    /* A correctly delivered first SIPI is sufficient on the supported QEMU
+     * APIC path. The AP handshake below is the completion acknowledgement;
+     * avoid issuing a second command while the target is already executing
+     * copied reset code. */
+    serial_write_public("ZEROOS: LAPIC SIPI sequence complete.\n");
+    return 0;
 }
