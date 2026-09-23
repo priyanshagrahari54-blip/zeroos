@@ -335,6 +335,10 @@ int smp_startup_self_test(void) {
             return -1;
         }
     }
+    /* Exercise the actual remote IPI/ack path after APs are published. The
+     * pre-SMP VMM self-test can only certify the BSP-local fast path. */
+    if (online>1 && tlb_flush_all()!=0)
+        return -1;
     return 0;
 }
 

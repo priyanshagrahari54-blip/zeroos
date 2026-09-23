@@ -71,9 +71,10 @@ Changing a page-table entry without invalidating cached translations can leave t
 The TLB service owns a sequence-numbered shootdown request and acknowledgement
 protocol. The bootstrap CPU is registered locally; additional CPUs are refused
 unless an IPI sender is installed, and an unacknowledged remote flush is a
-hard failure rather than a silent stale-translation risk. The current QEMU
-boundary therefore certifies the UP path while keeping the SMP ownership and
-rollback contract explicit. Intel documents INVLPG and CR3 reloads as TLB/page-structure invalidation mechanisms. citeturn4search14turn4search15
+hard failure rather than a silent stale-translation risk. The SMP startup gate
+now exercises a remote full flush after AP publication; longer shootdown
+stress/soak and address-space concurrency remain separate gates. Intel documents
+INVLPG and CR3 reloads as TLB/page-structure invalidation mechanisms. citeturn4search14turn4search15
 
 ## Current limits
 
