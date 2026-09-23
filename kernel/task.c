@@ -958,8 +958,10 @@ int task_create(task_entry_t entry, void *argument, uint64_t *task_id) {
     return task_create_owned(entry,argument,0,task_id);
 }
 
-int task_create_owned(task_entry_t entry, void *argument,
-                      struct thread *thread, uint64_t *task_id) {
+static int task_create_owned_internal(task_entry_t entry, void *argument,
+                                       struct thread *thread,
+                                       uint64_t *task_id,
+                                       int publish) {
     if (!entry) return -1;
 
     uint64_t flags=spin_lock_irqsave(&task_lock);
@@ -982,7 +984,9 @@ int task_create_owned(task_entry_t entry, void *argument,
 
     struct task *task=&tasks[slot];
     task->id=next_task_id++;
-    task->state=TASK_RUNNABLE;
+    /* Staged owned tasks are blocked but have no wait-queue membership. They
+     * cannot execute until the caller has published every higher-level link. */
+    task->state=publish ? TASK_RUNNABLE : TASK_BLOCKED;
     task->stack_base=(uint64_t)stack;
     task->kernel_stack_top=(uint64_t)stack+ZEROOS_TASK_STACK_SIZE;
     task->entry=entry;
@@ -1008,7 +1012,7 @@ int task_create_owned(task_entry_t entry, void *argument,
     task->sleep_armed=0;
     task_prepare_stack(task);
 
-    {
+    if (publish) {
         int owner=task_choose_cpu_locked(task);
         if (owner<0) {
             page_free(stack);
@@ -1031,6 +1035,47 @@ int task_create_owned(task_entry_t entry, void *argument,
     task_validate_table("ZEROOS PANIC: task creation invariant failed.\n");
 
     if (task_id) *task_id=task->id;
+    spin_unlock_irqrestore(&task_lock,flags);
+    return 0;
+}
+
+int task_create_owned(task_entry_t entry, void *argument,
+                      struct thread *thread, uint64_t *task_id) {
+    return task_create_owned_internal(entry,argument,thread,task_id,1);
+}
+
+int task_create_owned_staged(task_entry_t entry, void *argument,
+                             struct thread *thread, uint64_t *task_id) {
+    return task_create_owned_internal(entry,argument,thread,task_id,0);
+}
+
+int task_publish_staged(uint64_t task_id) {
+    uint64_t flags;
+    struct task *task=0;
+    int owner;
+
+    if (!task_id) return -1;
+    flags=spin_lock_irqsave(&task_lock);
+    for (int i=2;i<ZEROOS_MAX_TASKS;++i) {
+        if (tasks[i].id==task_id) {
+            task=&tasks[i];
+            break;
+        }
+    }
+    if (!task || task->state!=TASK_BLOCKED || task->run_next ||
+        task->runqueue_cpu!=0 || task->wait_queue || task->sleep_armed) {
+        spin_unlock_irqrestore(&task_lock,flags);
+        return -1;
+    }
+
+    owner=task_choose_cpu_locked(task);
+    if (owner<0) {
+        spin_unlock_irqrestore(&task_lock,flags);
+        return -1;
+    }
+    task->state=TASK_RUNNABLE;
+    runqueue_append_locked((uint32_t)owner,task);
+    task_validate_table("ZEROOS PANIC: staged task publication invariant failed.\n");
     spin_unlock_irqrestore(&task_lock,flags);
     return 0;
 }

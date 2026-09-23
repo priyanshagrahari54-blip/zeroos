@@ -607,9 +607,16 @@ static void scheduler_probe_lifecycle_creator(void *argument) {
     (void)argument;
     for (uint64_t i=0;i<6;++i) {
         uint64_t id;
-        if (task_create(scheduler_probe_lifecycle_worker,0,&id)!=0) {
-            atomic_u64_fetch_add(&scheduler_stress_failures,1);
-            kernel_panic("lifecycle slot reuse creation failed");
+        uint64_t wait_start=timer_ticks();
+        /* A worker can be a zombie for one timer interval before the
+         * scheduler's deferred reaper releases its stack/slot. Treat that
+         * as normal back-pressure, not as a failed creation transaction. */
+        while (task_create(scheduler_probe_lifecycle_worker,0,&id)!=0) {
+            if (timer_ticks()-wait_start>100) {
+                atomic_u64_fetch_add(&scheduler_stress_failures,1);
+                kernel_panic("lifecycle slot reuse creation timed out");
+            }
+            scheduler_yield();
         }
         atomic_u64_fetch_add(&lifecycle_probe_created,1);
         scheduler_yield();

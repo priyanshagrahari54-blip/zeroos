@@ -600,10 +600,13 @@ int process_debug_validate(void) {
             return -1;
         }
 
+        /* A zombie process may still own unreaped children.  Child
+         * ownership is deliberately retained until each child has been
+         * reaped, so a validator must not mistake that normal intermediate
+         * lifetime state for corruption. process_reap() still requires the
+         * list to be empty before destruction. */
         if (process->state==PROCESS_ZOMBIE &&
-            (process->live_thread_count ||
-             process->creating_threads ||
-             process->first_child)) {
+            (process->live_thread_count || process->creating_threads)) {
             spin_unlock_irqrestore(&process_lock,flags);
             return -1;
         }

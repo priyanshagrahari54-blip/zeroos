@@ -169,7 +169,10 @@ int thread_create_kernel(struct process *process,
         return -1;
     }
 
-    if (task_create_owned(thread_bootstrap,thread,thread,&task_id)!=0) {
+    /* Keep the scheduler task staged until the process list owns the thread.
+     * A local preemption disable cannot stop a remote CPU from dispatching a
+     * newly runnable task on SMP. */
+    if (task_create_owned_staged(thread_bootstrap,thread,thread,&task_id)!=0) {
         (void)task_preempt_enable();
         flags=spin_lock_irqsave(&thread_lock);
         thread_reset_locked(thread);
@@ -181,7 +184,6 @@ int thread_create_kernel(struct process *process,
     {
         uint64_t publish_flags=spin_lock_irqsave(&thread_lock);
         thread->scheduler_task_id=task_id;
-        thread->state=THREAD_RUNNABLE;
         spin_unlock_irqrestore(&thread_lock,publish_flags);
     }
 
@@ -192,6 +194,16 @@ int thread_create_kernel(struct process *process,
          * failure path and halt rather than creating an orphan runnable task.
          */
         serial_write_public("ZEROOS PANIC: failed to attach kernel thread.\n");
+        for (;;) __asm__ volatile ("cli; hlt");
+    }
+
+    {
+        uint64_t publish_flags=spin_lock_irqsave(&thread_lock);
+        thread->state=THREAD_RUNNABLE;
+        spin_unlock_irqrestore(&thread_lock,publish_flags);
+    }
+    if (task_publish_staged(task_id)!=0) {
+        serial_write_public("ZEROOS PANIC: failed to publish kernel thread.\n");
         for (;;) __asm__ volatile ("cli; hlt");
     }
 
