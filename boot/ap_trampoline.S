@@ -32,7 +32,7 @@ ap_trampoline_start:
 
     movl %eax, %edx
     addl $(ap_trampoline_gdt_ptr-ap_trampoline_start), %edx
-    lgdt (%edx)
+    lgdtl (%edx)
     movl %eax, %ebx
     movw $0xe9, %dx
     movb $'g', %al
