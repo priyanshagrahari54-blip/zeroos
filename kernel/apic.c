@@ -1,6 +1,7 @@
 #include "apic.h"
 #include "cpu.h"
 #include "pic.h"
+#include "timer.h"
 #include "vmm.h"
 
 #define IA32_APIC_BASE_MSR 0x1bU
@@ -156,8 +157,16 @@ static void apic_delay_us(uint64_t microseconds) {
             cpu_relax();
         return;
     }
-    for (uint64_t delay=0; delay<1000000ULL*microseconds/200ULL+1ULL;
-         ++delay)
+
+    /* PIT is already initialized before AP startup. Use its tick boundary
+     * when CPUID did not expose a TSC frequency; this avoids a CPU-speed-
+     * dependent busy loop that can exceed the boot watchdog under TCG. */
+    uint64_t needed=(microseconds+9999ULL)/10000ULL;
+    if (needed==0)
+        needed=1;
+    uint64_t start=timer_ticks();
+    uint64_t spins=0;
+    while (timer_ticks()-start<needed && spins++<20000000ULL)
         cpu_relax();
 }
 

@@ -52,10 +52,10 @@ $(BUILD)/memory.o: kernel/memory.c kernel/memory.h kernel/types.h kernel/sync.h 
 $(BUILD)/cpu.o: kernel/cpu.c kernel/cpu.h kernel/types.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
-$(BUILD)/apic.o: kernel/apic.c kernel/apic.h kernel/acpi.h kernel/cpu.h kernel/pic.h kernel/vmm.h kernel/types.h | $(BUILD)
+$(BUILD)/apic.o: kernel/apic.c kernel/apic.h kernel/acpi.h kernel/cpu.h kernel/pic.h kernel/timer.h kernel/vmm.h kernel/types.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
-$(BUILD)/smp.o: kernel/smp.c kernel/smp.h kernel/acpi.h kernel/apic.h kernel/cpu.h kernel/gdt.h kernel/interrupts.h kernel/memory.h kernel/tlb.h kernel/vmm.h kernel/types.h | $(BUILD)
+$(BUILD)/smp.o: kernel/smp.c kernel/smp.h kernel/acpi.h kernel/apic.h kernel/cpu.h kernel/gdt.h kernel/interrupts.h kernel/memory.h kernel/timer.h kernel/tlb.h kernel/vmm.h kernel/types.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
 $(BUILD)/acpi.o: kernel/acpi.c kernel/acpi.h kernel/types.h | $(BUILD)
