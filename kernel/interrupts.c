@@ -6,6 +6,7 @@
 #include "gdt.h"
 #include "scheduler.h"
 #include "task.h"
+#include "thread.h"
 
 struct idt_entry {
     uint16_t offset_low; uint16_t selector; uint8_t ist; uint8_t type_attr;
@@ -103,6 +104,38 @@ static void halt_exception(struct interrupt_frame *frame) {
     for (;;) __asm__ volatile ("cli; hlt");
 }
 
+static int user_exception_containable(uint64_t vector) {
+    /* Platform-fatal delivery is never converted into process termination. */
+    return vector<32 && vector!=2 && vector!=8 && vector!=15 && vector!=18;
+}
+
+static void contain_user_exception(struct interrupt_frame *frame) {
+    struct thread *thread=thread_current();
+
+    serial_write_public("ZEROOS: terminating thread after user exception ");
+    exception_name(frame->vector);
+    serial_write_public(" tid=");
+    if (thread)
+        serial_write_hex(thread->tid);
+    else
+        serial_write_public("0");
+    if (frame->vector==14) {
+        serial_write_public(" cr2=");
+        serial_write_hex(read_cr2());
+    }
+    serial_write_public(".\n");
+
+    /*
+     * User faults arrive on the task's privilege-entry/IST path, not as a
+     * resumable kernel-task frame. Termination therefore retires the faulting
+     * task without publishing the IST frame as scheduler-owned context.
+     */
+    cpu_irq_exit();
+    if (!thread || thread_exit(0x100ULL+frame->vector)!=0)
+        halt_exception(frame);
+    for (;;) __asm__ volatile ("cli; hlt");
+}
+
 static void idt_set_gate(uint8_t vector, void *handler) {
     uint64_t address=(uint64_t)handler;
     idt[vector].offset_low=(uint16_t)(address&0xffff);
@@ -132,8 +165,12 @@ uint64_t interrupt_dispatch(struct interrupt_frame *frame) {
     uint64_t result=(uint64_t)frame;
     cpu_irq_enter();
 
-    if (frame->vector < 32)
+    if (frame->vector < 32) {
+        if ((frame->cs & 3ULL)==3ULL &&
+            user_exception_containable(frame->vector))
+            contain_user_exception(frame);
         halt_exception(frame);
+    }
 
     if (frame->vector >= 32 && frame->vector < 48) {
         uint8_t irq=(uint8_t)(frame->vector-32);
@@ -190,5 +227,6 @@ void interrupts_init(void) {
         serial_write_public("ZEROOS: LAPIC/IOAPIC timer routing activated.\n");
     else
         serial_write_public("ZEROOS: legacy PIC timer routing retained.\n");
+    serial_write_public("ZEROOS: user fault containment policy armed.\n");
     __asm__ volatile ("sti");
 }

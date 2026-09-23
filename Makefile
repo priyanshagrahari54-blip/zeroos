@@ -31,7 +31,7 @@ $(BUILD)/context.o: kernel/context.S | $(BUILD)
 $(BUILD)/kernel.o: kernel/kernel.c kernel/types.h kernel/cpu.h kernel/apic.h kernel/acpi.h kernel/memory.h kernel/timer.h kernel/vmm.h kernel/gdt.h kernel/sync.h kernel/task.h kernel/thread.h kernel/process.h kernel/scheduler.h kernel/wait.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
-$(BUILD)/interrupts.o: kernel/interrupts.c kernel/interrupts.h kernel/types.h kernel/cpu.h kernel/apic.h kernel/pic.h kernel/timer.h kernel/gdt.h | $(BUILD)
+$(BUILD)/interrupts.o: kernel/interrupts.c kernel/interrupts.h kernel/types.h kernel/cpu.h kernel/apic.h kernel/pic.h kernel/timer.h kernel/gdt.h kernel/task.h kernel/thread.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
 $(BUILD)/pic.o: kernel/pic.c kernel/pic.h kernel/types.h | $(BUILD)

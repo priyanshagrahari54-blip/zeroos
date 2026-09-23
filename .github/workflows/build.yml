@@ -52,6 +52,7 @@ jobs:
             grep -q "ZEROOS: exception IST routing self-test passed." build/serial.log
             grep -q "ZEROOS: IRQ controller capability:" build/serial.log
             grep -Eq 'ZEROOS: (LAPIC/IOAPIC timer routing activated|legacy PIC timer routing retained)\.' build/serial.log
+            grep -q "ZEROOS: user fault containment policy armed." build/serial.log
             grep -q "ZEROOS: ACPI routing discovery:" build/serial.log
             grep -q "ZEROOS: PIT timer configured at .*clocksource=" build/serial.log
             grep -q "ZEROOS: synchronization primitives self-test passed." build/serial.log

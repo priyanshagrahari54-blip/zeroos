@@ -234,10 +234,11 @@ missing are:
 - kernel-stack/user-stack separation for Ring 3
 - syscall ABI
 - ELF loading and exec
-- user fault containment
+- user fault reporting/signals beyond deterministic fault termination
 
-These are subsequent dependencies, not hidden inside the current process
-object model.
+The interrupt layer already has a fail-closed Ring-3 exception termination
+policy; these remaining ABI features are subsequent dependencies, not hidden
+inside the current process object model.
 
 ## Certification
 

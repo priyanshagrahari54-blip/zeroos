@@ -23,14 +23,22 @@ Exceptions that architecturally push an error code keep that CPU-provided error 
 
 ## Exception diagnostics
 
-Fatal CPU exceptions report vector, decoded exception name, error code, saved RIP,
-validated privilege/return-frame metadata and CR2 for page faults, then enter
-a halted panic state. Double fault, NMI, machine check, page fault and
-segment/protection faults enter on dedicated TSS IST pages before diagnostics;
-this keeps a damaged current/task stack from becoming the diagnostic stack.
-Page-fault diagnostics decode protection/write/user/reserved/instruction-fetch
-bits without attempting unsafe recovery in the current kernel-only execution
-boundary. Malformed normalized frames are rejected before dispatch.
+Kernel and platform-fatal CPU exceptions report vector, decoded exception
+name, error code, saved RIP, validated privilege/return-frame metadata and CR2
+for page faults, then enter a halted panic state. Double fault, NMI, machine
+check, page fault and segment/protection faults enter on dedicated TSS IST
+pages before diagnostics; this keeps a damaged current/task stack from
+becoming the diagnostic stack. Page-fault diagnostics decode
+protection/write/user/reserved/instruction-fetch bits.
+
+For a containable exception arriving from Ring 3, the dispatcher records the
+fault identity, retires the owning thread with a deterministic fault status,
+and never publishes the IST frame as a scheduler-owned task context. Thread
+and process lifetime code then performs the normal zombie/reap transition. A
+missing thread owner, malformed frame, double fault, NMI or machine check
+remains fatal. The policy is armed now; Ring-3 entry and executable fault
+injection are later Stage 2 validation gates. Malformed normalized frames are
+rejected before dispatch.
 
 ## IRQ ownership and dispatch
 
