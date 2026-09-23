@@ -1765,11 +1765,18 @@ int task_cpu_offline(uint32_t cpu_id) {
     uint64_t start;
     uint64_t last_signal=0;
 
-    if (cpu_current_id()!=0 || cpu_id==0 || cpu_id>=ZEROOS_MAX_CPUS ||
-        smp_online_count()<=1 || !task_scheduler_ready() ||
-        !cpu_local_for_id(cpu_id) ||
-        !__atomic_load_n(&cpu_local_for_id(cpu_id)->online,__ATOMIC_ACQUIRE))
-        return -1;
+    if (cpu_current_id()!=0)
+        return -11;
+    if (cpu_id==0 || cpu_id>=ZEROOS_MAX_CPUS)
+        return -12;
+    if (smp_online_count()<=1)
+        return -13;
+    if (!task_scheduler_ready())
+        return -14;
+    if (!cpu_local_for_id(cpu_id))
+        return -15;
+    if (!__atomic_load_n(&cpu_local_for_id(cpu_id)->online,__ATOMIC_ACQUIRE))
+        return -16;
 
     flags=spin_lock_irqsave(&task_lock);
     if (cpu_offline_requested[cpu_id] || !cpu_scheduler_started[cpu_id]) {
