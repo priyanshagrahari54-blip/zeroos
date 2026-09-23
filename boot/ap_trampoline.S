@@ -28,7 +28,9 @@ ap_trampoline_start:
     shll $4, %eax
     movl %eax, %edx
     addl $(ap_trampoline_gdt_ptr-ap_trampoline_start+2), %edx
-    movl %eax, (%edx)
+    movl %eax, %ecx
+    addl $(ap_trampoline_gdt-ap_trampoline_start), %ecx
+    movl %ecx, (%edx)
 
     movl %eax, %edx
     addl $(ap_trampoline_gdt_ptr-ap_trampoline_start), %edx
