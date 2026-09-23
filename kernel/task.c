@@ -1038,7 +1038,28 @@ int task_create_owned(task_entry_t entry, void *argument,
 static void task_debug_dump_all(const char *label) {
     serial_write_public("ZEROOS DEBUG: ");
     serial_write_public(label);
+    serial_write_public(" cpu=");
+    task_write_u64(task_cpu_index());
     serial_write_public("\n");
+    for (uint32_t cpu=0; cpu<ZEROOS_MAX_CPUS; ++cpu) {
+        struct task *current=current_tasks[cpu];
+        if (!cpu_scheduler_started[cpu] && !current)
+            continue;
+        serial_write_public("  cpu=");
+        task_write_u64(cpu);
+        serial_write_public(" started=");
+        task_write_u64(cpu_scheduler_started[cpu]);
+        serial_write_public(" current=");
+        task_write_u64(current ? current->id : 0);
+        serial_write_public(" state=");
+        task_write_u64(current ? (uint64_t)current->state : 0);
+        serial_write_public(" rq=");
+        task_write_u64(runqueues[cpu].length);
+        serial_write_public(" epoch=");
+        task_write_u64(cpu_local_for_id(cpu) ?
+                       cpu_local_for_id(cpu)->scheduler_epoch : 0);
+        serial_write_public("\n");
+    }
 
     for (int i=0;i<ZEROOS_MAX_TASKS;++i) {
         struct task *task=&tasks[i];

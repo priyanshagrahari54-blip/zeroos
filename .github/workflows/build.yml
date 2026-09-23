@@ -107,6 +107,8 @@ jobs:
           if grep -q "ZEROOS PANIC:" build/serial-smp4.log; then
             echo "ZEROOS four-vCPU boot reported a panic before scheduler gates:"
             grep "ZEROOS PANIC:" build/serial-smp4.log
+            smp4_summary=$(tail -c 12000 build/serial-smp4.log | tr '\r\n' '  ')
+            echo "::error title=four-vCPU serial tail::$smp4_summary"
             exit 1
           fi
           grep -q "ZEROOS: SMP CPU topology: discovered=4 online=4." build/serial-smp4.log
@@ -116,6 +118,8 @@ jobs:
           if grep -q "ZEROOS PANIC:" build/serial-smp4.log; then
             echo "ZEROOS four-vCPU boot reported a panic:"
             grep "ZEROOS PANIC:" build/serial-smp4.log
+            smp4_summary=$(tail -c 12000 build/serial-smp4.log | tr '\r\n' '  ')
+            echo "::error title=four-vCPU serial tail::$smp4_summary"
             exit 1
           fi
 
