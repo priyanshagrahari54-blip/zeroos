@@ -153,7 +153,7 @@ static void apic_delay_us(uint64_t microseconds) {
      * may already be changing reset state while the BSP remains in this
      * routine. */
     if (microseconds<=200ULL) {
-        for (uint64_t delay=0; delay<100000ULL; ++delay)
+        for (uint64_t delay=0; delay<1000ULL; ++delay)
             cpu_relax();
         return;
     }
