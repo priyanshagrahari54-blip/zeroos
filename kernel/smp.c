@@ -144,6 +144,7 @@ int smp_init(void) {
     };
     discovered=1;
     online=1;
+    serial_write_public("ZEROOS: SMP BSP record initialized.\n");
 
     const struct acpi_info *firmware=acpi_info();
     if (!firmware->valid || firmware->processor_count<=1) {
@@ -154,6 +155,7 @@ int smp_init(void) {
         serial_write_public("ZEROOS: SMP topology requires a usable Local APIC.\n");
         return -1;
     }
+    serial_write_public("ZEROOS: SMP AP preparation started.\n");
 
     for (uint32_t i=0; i<firmware->processor_count; ++i) {
         uint32_t apic_id=firmware->processors[i].apic_id;
