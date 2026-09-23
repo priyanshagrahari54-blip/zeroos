@@ -181,21 +181,25 @@ int smp_init(void) {
         }
         ++discovered;
     }
+    serial_write_public("ZEROOS: SMP AP records prepared.\n");
 
     if (discovered==1) {
         serial_write_public("ZEROOS: SMP topology has no startable secondary CPUs.\n");
         return 0;
     }
+    serial_write_public("ZEROOS: SMP trampoline preparation started.\n");
     if (trampoline_prepare()!=0) {
         for (uint32_t i=1; i<discovered; ++i)
             atomic_store_u32(&records[i].state,ZEROOS_SMP_CPU_FAILED);
         serial_write_public("ZEROOS: SMP AP trampoline unavailable.\n");
         return -1;
     }
+    serial_write_public("ZEROOS: SMP trampoline prepared.\n");
     if (tlb_install_ipi_sender(smp_send_tlb_ipi)!=0) {
         serial_write_public("ZEROOS: SMP TLB IPI sender unavailable.\n");
         return -1;
     }
+    serial_write_public("ZEROOS: SMP TLB IPI sender installed.\n");
 
     uint8_t failed=0;
     for (uint32_t i=1; i<discovered; ++i) {
@@ -210,6 +214,7 @@ int smp_init(void) {
         field=trampoline_offset(ap_trampoline_cpu_id);
         *(uint32_t *)(copy+field)=i;
         atomic_store_u32(&records[i].state,ZEROOS_SMP_CPU_STARTING);
+        serial_write_public("ZEROOS: SMP INIT/SIPI dispatch started.\n");
 
         if (apic_send_init_sipi(records[i].apic_id,trampoline_vector)!=0) {
             atomic_store_u32(&records[i].state,ZEROOS_SMP_CPU_FAILED);
