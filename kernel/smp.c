@@ -98,17 +98,23 @@ static void smp_ap_park(void) {
     }
 }
 
-static int smp_ap_generation_matches(uint32_t cpu_id, uint32_t generation) {
+static int smp_ap_token_matches(uint32_t cpu_id, uint32_t generation) {
     return cpu_id>0 && cpu_id<discovered && generation!=0 &&
-           atomic_load_u32(&records[cpu_id].startup_generation)==generation &&
+           atomic_load_u32(&records[cpu_id].startup_generation)==generation;
+}
+
+static int smp_ap_generation_matches(uint32_t cpu_id, uint32_t generation) {
+    return smp_ap_token_matches(cpu_id,generation) &&
            atomic_load_u32(&records[cpu_id].state)==ZEROOS_SMP_CPU_STARTING;
 }
 
 static void smp_ap_fail(uint32_t cpu_id, uint32_t generation) {
-    if (smp_ap_generation_matches(cpu_id,generation)) {
-        atomic_store_u32(&records[cpu_id].state,ZEROOS_SMP_CPU_FAILED);
+    if (smp_ap_token_matches(cpu_id,generation)) {
+        if (atomic_load_u32(&records[cpu_id].state)==ZEROOS_SMP_CPU_STARTING)
+            atomic_store_u32(&records[cpu_id].state,ZEROOS_SMP_CPU_FAILED);
         /* The TLB mask is independent of the SMP record state. Remove this
-         * CPU before parking so a later BSP shootdown cannot wait forever. */
+         * CPU before parking so a later BSP shootdown cannot wait forever,
+         * including when the BSP timed out between AP initialization steps. */
         (void)tlb_unregister_current_cpu(cpu_id);
         (void)cpu_mark_offline(cpu_id);
     }
