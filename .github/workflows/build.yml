@@ -125,6 +125,10 @@ jobs:
             summary=$(tr '\r\n' '  ' < build/serial.log | cut -c1-6000)
             echo "::error title=ZEROOS serial log::$summary"
           fi
+          if test -s build/qemu.log; then
+            qsummary=$(tail -c 6000 build/qemu.log | tr '\r\n' '  ')
+            echo "::error title=QEMU diagnostics::$qsummary"
+          fi
 
       - name: Preserve boot diagnostics
         if: always()
