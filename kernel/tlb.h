@@ -18,6 +18,8 @@ int tlb_init(void);
 int tlb_set_current_cpu(uint32_t cpu_id);
 int tlb_register_cpu(uint32_t cpu_id);
 int tlb_unregister_cpu(uint32_t cpu_id);
+/* Removes a failing AP while it is still executing its own failure path. */
+int tlb_unregister_current_cpu(uint32_t cpu_id);
 int tlb_install_ipi_sender(tlb_ipi_sender_t sender);
 int tlb_handle_ipi(uint32_t cpu_id);
 int tlb_invalidate_page(uint64_t virtual_address);

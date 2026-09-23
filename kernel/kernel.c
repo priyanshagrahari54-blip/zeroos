@@ -975,16 +975,18 @@ void kernel_main(uint64_t multiboot_info, uint64_t multiboot_magic) {
     serial_write_public("ZEROOS: IRQ ownership layer initialized.\n");
 
     if (smp_init()!=0)
-        kernel_panic("SMP startup boundary failed");
+        kernel_panic("SMP startup boundary failed its internal contract");
     serial_write_public("ZEROOS: SMP CPU topology: discovered=");
     serial_write_u64(smp_discovered_count());
     serial_write_public(" online=");
     serial_write_u64(smp_online_count());
     serial_write_public(".\n");
-    if (smp_discovered_count()>1) {
-        if (smp_online_count()!=smp_discovered_count())
-            kernel_panic("SMP topology published an incomplete online set");
+    if (smp_startup_self_test()!=0)
+        kernel_panic("SMP topology publication invariant failed");
+    if (smp_discovered_count()>1 && !smp_is_degraded()) {
         serial_write_public("ZEROOS: SMP startup self-test passed.\n");
+    } else if (smp_is_degraded()) {
+        serial_write_public("ZEROOS: SMP startup recovery self-test passed in degraded mode.\n");
     } else {
         serial_write_public("ZEROOS: SMP startup self-test skipped (single CPU).\n");
     }

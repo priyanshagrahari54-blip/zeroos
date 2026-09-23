@@ -26,6 +26,10 @@ static uint32_t online;
 static void *trampoline_page;
 static uint8_t trampoline_vector;
 static uint8_t initialized;
+static uint8_t degraded;
+
+#define SMP_STARTUP_ATTEMPTS 2U
+#define SMP_TOKEN_CPU_MASK 0xffffU
 
 static void atomic_store_u32(uint32_t *value, uint32_t new_value) {
     __atomic_store_n(value,new_value,__ATOMIC_RELEASE);
@@ -88,34 +92,54 @@ static int smp_send_tlb_ipi(uint64_t target_mask, uint8_t vector) {
     return sent || target_mask==0 ? 0 : -1;
 }
 
-static void smp_ap_fail(uint32_t cpu_id) {
-    if (cpu_id<ZEROOS_MAX_CPUS) {
-        atomic_store_u32(&records[cpu_id].state,ZEROOS_SMP_CPU_FAILED);
-        if (cpu_online_count()>1)
-            (void)cpu_mark_offline(cpu_id);
-    }
+static void smp_ap_park(void) {
     for (;;) {
         __asm__ volatile ("cli; hlt");
     }
 }
 
-void smp_ap_entry(uint32_t cpu_id) {
-    if (cpu_id==0 || cpu_id>=discovered ||
-        records[cpu_id].cpu_id!=cpu_id)
-        smp_ap_fail(cpu_id);
+static int smp_ap_generation_matches(uint32_t cpu_id, uint32_t generation) {
+    return cpu_id>0 && cpu_id<discovered && generation!=0 &&
+           atomic_load_u32(&records[cpu_id].startup_generation)==generation &&
+           atomic_load_u32(&records[cpu_id].state)==ZEROOS_SMP_CPU_STARTING;
+}
+
+static void smp_ap_fail(uint32_t cpu_id, uint32_t generation) {
+    if (smp_ap_generation_matches(cpu_id,generation)) {
+        atomic_store_u32(&records[cpu_id].state,ZEROOS_SMP_CPU_FAILED);
+        /* The TLB mask is independent of the SMP record state. Remove this
+         * CPU before parking so a later BSP shootdown cannot wait forever. */
+        (void)tlb_unregister_current_cpu(cpu_id);
+        (void)cpu_mark_offline(cpu_id);
+    }
+    smp_ap_park();
+}
+
+void smp_ap_entry(uint32_t startup_token) {
+    uint32_t cpu_id=startup_token&SMP_TOKEN_CPU_MASK;
+    uint32_t generation=startup_token>>16;
+
+    if (!smp_ap_generation_matches(cpu_id,generation))
+        smp_ap_park();
 
     if (cpu_mark_online(cpu_id)!=0)
-        smp_ap_fail(cpu_id);
+        smp_ap_fail(cpu_id,generation);
+    if (!smp_ap_generation_matches(cpu_id,generation)) {
+        (void)cpu_mark_offline(cpu_id);
+        smp_ap_park();
+    }
     if (gdt_init_cpu(cpu_id)!=0)
-        smp_ap_fail(cpu_id);
+        smp_ap_fail(cpu_id,generation);
     /* Install the per-CPU IDT before touching device state so an AP startup
      * fault is contained and diagnosable rather than triple-faulting. */
     interrupts_load_current_cpu();
     if (apic_cpu_init()!=0)
-        smp_ap_fail(cpu_id);
+        smp_ap_fail(cpu_id,generation);
     if (tlb_register_cpu(cpu_id)!=0 || tlb_set_current_cpu(cpu_id)!=0)
-        smp_ap_fail(cpu_id);
+        smp_ap_fail(cpu_id,generation);
 
+    if (!smp_ap_generation_matches(cpu_id,generation))
+        smp_ap_fail(cpu_id,generation);
     atomic_store_u32(&records[cpu_id].state,ZEROOS_SMP_CPU_ONLINE);
     __atomic_fetch_add(&online,1,__ATOMIC_ACQ_REL);
 
@@ -124,11 +148,71 @@ void smp_ap_entry(uint32_t cpu_id) {
     }
 }
 
+static void smp_cleanup_failed_ap(uint32_t cpu_id) {
+    /* A failed AP is not a scheduler participant. The BSP is allowed to
+     * remove stale registration state after the bounded attempt, and the next
+     * INIT in a retry resets a late trampoline execution. */
+    (void)tlb_unregister_cpu(cpu_id);
+    (void)cpu_mark_offline(cpu_id);
+}
+
+static int smp_start_ap(uint32_t cpu_id) {
+    uint8_t *copy=(uint8_t *)trampoline_page;
+
+    for (uint32_t attempt=1; attempt<=SMP_STARTUP_ATTEMPTS; ++attempt) {
+        uint32_t generation=records[cpu_id].startup_generation+1U;
+        if (generation==0 || generation>0xffffU)
+            generation=1U;
+
+        if (attempt>1U) {
+            /* The INIT at the start of this dispatch is the recovery reset.
+             * Publish PREPARED before it so a late first-attempt AP cannot
+             * acknowledge the new attempt with an old token. */
+            smp_cleanup_failed_ap(cpu_id);
+            atomic_store_u32(&records[cpu_id].state,
+                             ZEROOS_SMP_CPU_PREPARED);
+        }
+
+        atomic_store_u32(&records[cpu_id].startup_generation,generation);
+        records[cpu_id].startup_attempts=attempt;
+        uint64_t field=trampoline_offset(ap_trampoline_stack);
+        *(uint64_t *)(copy+field)=records[cpu_id].bootstrap_stack+
+                                   ZEROOS_PAGE_SIZE;
+        field=trampoline_offset(ap_trampoline_cpu_id);
+        *(uint32_t *)(copy+field)=(generation<<16)|cpu_id;
+        atomic_store_u32(&records[cpu_id].state,ZEROOS_SMP_CPU_STARTING);
+
+        serial_write_public("ZEROOS: SMP INIT/SIPI dispatch started.\n");
+        if (apic_send_init_sipi(records[cpu_id].apic_id,trampoline_vector)!=0) {
+            atomic_store_u32(&records[cpu_id].state,ZEROOS_SMP_CPU_FAILED);
+            smp_cleanup_failed_ap(cpu_id);
+            continue;
+        }
+        serial_write_public("ZEROOS: SMP INIT/SIPI dispatch completed.\n");
+
+        uint64_t wait_ticks=timer_ticks();
+        for (uint64_t spins=0; spins<100000ULL; ++spins) {
+            uint32_t state=atomic_load_u32(&records[cpu_id].state);
+            if (state==ZEROOS_SMP_CPU_ONLINE)
+                return 0;
+            if (state==ZEROOS_SMP_CPU_FAILED ||
+                timer_ticks()-wait_ticks>=100ULL)
+                break;
+            cpu_relax();
+        }
+
+        atomic_store_u32(&records[cpu_id].state,ZEROOS_SMP_CPU_FAILED);
+        smp_cleanup_failed_ap(cpu_id);
+    }
+    return -1;
+}
+
 int smp_init(void) {
     serial_write_public("ZEROOS: SMP initialization entered.\n");
     if (initialized)
         return 0;
     initialized=1;
+    degraded=0;
     discovered=0;
     online=0;
     records[0]=(struct smp_cpu_record){
@@ -147,8 +231,9 @@ int smp_init(void) {
         return 0;
     }
     if (!apic_available()) {
-        serial_write_public("ZEROOS: SMP topology requires a usable Local APIC.\n");
-        return -1;
+        degraded=1;
+        serial_write_public("ZEROOS: SMP topology requires a usable Local APIC; BSP-only recovery selected.\n");
+        return 0;
     }
     serial_write_public("ZEROOS: SMP AP preparation started.\n");
 
@@ -157,8 +242,9 @@ int smp_init(void) {
         if (apic_id==records[0].apic_id)
             continue;
         if (discovered>=ZEROOS_MAX_CPUS) {
-            serial_write_public("ZEROOS: ACPI processor topology exceeds SMP capacity.\n");
-            return -1;
+            degraded=1;
+            serial_write_public("ZEROOS: ACPI processor topology exceeds SMP capacity; remaining CPUs left offline.\n");
+            break;
         }
         uint32_t cpu_id=discovered;
         records[cpu_id]=(struct smp_cpu_record){
@@ -186,13 +272,17 @@ int smp_init(void) {
     if (trampoline_prepare()!=0) {
         for (uint32_t i=1; i<discovered; ++i)
             atomic_store_u32(&records[i].state,ZEROOS_SMP_CPU_FAILED);
-        serial_write_public("ZEROOS: SMP AP trampoline unavailable.\n");
-        return -1;
+        degraded=1;
+        serial_write_public("ZEROOS: SMP AP trampoline unavailable; BSP-only recovery selected.\n");
+        return 0;
     }
     serial_write_public("ZEROOS: SMP trampoline prepared.\n");
     if (tlb_install_ipi_sender(smp_send_tlb_ipi)!=0) {
-        serial_write_public("ZEROOS: SMP TLB IPI sender unavailable.\n");
-        return -1;
+        for (uint32_t i=1; i<discovered; ++i)
+            atomic_store_u32(&records[i].state,ZEROOS_SMP_CPU_FAILED);
+        degraded=1;
+        serial_write_public("ZEROOS: SMP TLB IPI sender unavailable; BSP-only recovery selected.\n");
+        return 0;
     }
     serial_write_public("ZEROOS: SMP TLB IPI sender installed.\n");
 
@@ -202,43 +292,14 @@ int smp_init(void) {
             failed=1;
             continue;
         }
-        uint64_t field=trampoline_offset(ap_trampoline_stack);
-        uint8_t *copy=(uint8_t *)trampoline_page;
-        *(uint64_t *)(copy+field)=records[i].bootstrap_stack+
-                                   ZEROOS_PAGE_SIZE;
-        field=trampoline_offset(ap_trampoline_cpu_id);
-        *(uint32_t *)(copy+field)=i;
-        atomic_store_u32(&records[i].state,ZEROOS_SMP_CPU_STARTING);
-        serial_write_public("ZEROOS: SMP INIT/SIPI dispatch started.\n");
-
-        if (apic_send_init_sipi(records[i].apic_id,trampoline_vector)!=0) {
-            atomic_store_u32(&records[i].state,ZEROOS_SMP_CPU_FAILED);
+        if (smp_start_ap(i)!=0)
             failed=1;
-            continue;
-        }
-        serial_write_public("ZEROOS: SMP INIT/SIPI dispatch completed.\n");
-
-        uint8_t started=0;
-        uint64_t wait_ticks=timer_ticks();
-        for (uint64_t spins=0; spins<100000ULL; ++spins) {
-            uint32_t state=atomic_load_u32(&records[i].state);
-            if (state==ZEROOS_SMP_CPU_ONLINE) {
-                started=1;
-                break;
-            }
-            if (state==ZEROOS_SMP_CPU_FAILED ||
-                timer_ticks()-wait_ticks>=100ULL)
-                break;
-            cpu_relax();
-        }
-        if (!started) {
-            atomic_store_u32(&records[i].state,ZEROOS_SMP_CPU_FAILED);
-            failed=1;
-        }
     }
 
-    if (failed)
-        return -1;
+    if (failed) {
+        degraded=1;
+        serial_write_public("ZEROOS: SMP AP startup degraded; failed CPUs remain offline.\n");
+    }
 
     serial_write_public("ZEROOS: SMP AP startup boundary completed (online=");
     /* Avoid a formatter dependency in the boot boundary; kernel diagnostics
@@ -253,6 +314,28 @@ uint32_t smp_discovered_count(void) {
 
 uint32_t smp_online_count(void) {
     return online;
+}
+
+int smp_is_degraded(void) {
+    return degraded!=0;
+}
+
+int smp_startup_self_test(void) {
+    if (!initialized || online==0 || cpu_online_count()!=online ||
+        tlb_online_count()!=online)
+        return -1;
+    for (uint32_t i=0; i<discovered; ++i) {
+        uint32_t state=atomic_load_u32(&records[i].state);
+        if (state==ZEROOS_SMP_CPU_ONLINE) {
+            if (!cpu_local_for_id(i) ||
+                !__atomic_load_n(&cpu_local_for_id(i)->online,
+                                 __ATOMIC_ACQUIRE))
+                return -1;
+        } else if (state!=ZEROOS_SMP_CPU_FAILED && i!=0) {
+            return -1;
+        }
+    }
+    return 0;
 }
 
 const struct smp_cpu_record *smp_cpu_record(uint32_t cpu_id) {

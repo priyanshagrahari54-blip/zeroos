@@ -135,6 +135,22 @@ int tlb_unregister_cpu(uint32_t cpu_id) {
     return 0;
 }
 
+int tlb_unregister_current_cpu(uint32_t cpu_id) {
+    if (!initialized || cpu_id==0 || cpu_id>=ZEROOS_TLB_MAX_CPUS ||
+        cpu_current_id()!=cpu_id)
+        return -1;
+    uint64_t flags=spin_lock_irqsave(&tlb_lock);
+    if (!(online_mask&(1ULL<<cpu_id)) ||
+        (__atomic_load_n(&request.target_mask,__ATOMIC_ACQUIRE) &
+         (1ULL<<cpu_id))) {
+        spin_unlock_irqrestore(&tlb_lock,flags);
+        return -1;
+    }
+    online_mask&=~(1ULL<<cpu_id);
+    spin_unlock_irqrestore(&tlb_lock,flags);
+    return 0;
+}
+
 int tlb_install_ipi_sender(tlb_ipi_sender_t sender) {
     if (!initialized || (!sender && bit_count(online_mask)>1U))
         return -1;

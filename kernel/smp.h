@@ -14,13 +14,18 @@ struct smp_cpu_record {
     uint32_t apic_id;
     uint32_t state;
     uint32_t reserved;
+    uint32_t startup_generation;
+    uint32_t startup_attempts;
     uint64_t bootstrap_stack;
 };
 
 int smp_init(void);
-void smp_ap_entry(uint32_t cpu_id);
+/* The trampoline passes a generation-tagged startup token, not a bare ID. */
+void smp_ap_entry(uint32_t startup_token);
 uint32_t smp_discovered_count(void);
 uint32_t smp_online_count(void);
+int smp_is_degraded(void);
+int smp_startup_self_test(void);
 const struct smp_cpu_record *smp_cpu_record(uint32_t cpu_id);
 
 #endif
