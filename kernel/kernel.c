@@ -869,8 +869,13 @@ static void scheduler_probe_monitor(void *argument) {
         if (!hotplug_reported && per_cpu_reported &&
             atomic_u64_load(&process_thread_probe_phase)==3) {
             if (smp_online_count()>1) {
-                if (task_cpu_offline(1)!=0)
+                int hotplug_result=task_cpu_offline(1);
+                if (hotplug_result!=0) {
+                    serial_write_public("ZEROOS: CPU hot-offline evacuation failed (stage=");
+                    serial_write_u64((uint64_t)(-hotplug_result));
+                    serial_write_public(").\n");
                     kernel_panic("CPU hot-offline evacuation failed");
+                }
                 serial_write_public("ZEROOS: CPU hot-offline queue evacuation and parking passed.\n");
             } else {
                 serial_write_public("ZEROOS: CPU hot-offline test skipped (single CPU).\n");

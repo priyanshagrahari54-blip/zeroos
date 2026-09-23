@@ -1774,7 +1774,7 @@ int task_cpu_offline(uint32_t cpu_id) {
     flags=spin_lock_irqsave(&task_lock);
     if (cpu_offline_requested[cpu_id] || !cpu_scheduler_started[cpu_id]) {
         spin_unlock_irqrestore(&task_lock,flags);
-        return -1;
+        return -2;
     }
     /* Reject a transition that would strand any live schedulable task. */
     for (int i=2; i<ZEROOS_MAX_TASKS; ++i) {
@@ -1782,7 +1782,7 @@ int task_cpu_offline(uint32_t cpu_id) {
         if (task->state!=TASK_UNUSED && task->state!=TASK_ZOMBIE &&
             !task_has_online_alternative_locked(task,cpu_id)) {
             spin_unlock_irqrestore(&task_lock,flags);
-            return -1;
+            return -3;
         }
     }
 
@@ -1791,7 +1791,7 @@ int task_cpu_offline(uint32_t cpu_id) {
     if (runqueue_evacuate_locked(cpu_id)!=0) {
         __atomic_store_n(&cpu_offline_requested[cpu_id],0,__ATOMIC_RELEASE);
         spin_unlock_irqrestore(&task_lock,flags);
-        return -1;
+        return -4;
     }
     spin_unlock_irqrestore(&task_lock,flags);
 
@@ -1799,7 +1799,7 @@ int task_cpu_offline(uint32_t cpu_id) {
     if (!record || apic_send_ipi(record->apic_id,
                                  ZEROOS_SCHEDULER_OFFLINE_VECTOR)!=0) {
         __atomic_store_n(&cpu_offline_requested[cpu_id],0,__ATOMIC_RELEASE);
-        return -1;
+        return -5;
     }
 
     start=timer_ticks();
@@ -1811,7 +1811,7 @@ int task_cpu_offline(uint32_t cpu_id) {
             serial_write_public("ZEROOS: AP CPU-offline acknowledgement timed out.\\n");
             /* Keep the request published: cancelling a transition after the
              * AP has removed its TLB ownership would be unsafe. */
-            return -1;
+            return -6;
         }
         if (timer_ticks()-last_signal>=10ULL) {
             (void)apic_send_ipi(record->apic_id,
@@ -1823,7 +1823,7 @@ int task_cpu_offline(uint32_t cpu_id) {
 
     if (__atomic_load_n(&cpu_local_for_id(cpu_id)->online,__ATOMIC_ACQUIRE) ||
         tlb_cpu_is_online(cpu_id) || smp_online_count()>=2)
-        return -1;
+        return -7;
     return 0;
 }
 
