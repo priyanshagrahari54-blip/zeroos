@@ -43,6 +43,7 @@ The Intel architecture defines a PDE with PS=1 as a 2 MiB mapping; ordinary PTEs
 - Reclaims empty private PT, PD and PDPT pages after an unmap; the root is retained until the address space is destroyed.
 - Address-space destruction is an explicit success/failure operation; callers must activate the kernel root before destroying an active space.
 - Explicit leaf mappings require a usable, currently allocated physical page, retain a frame reference and enforce W^X flags; unmap/space teardown release the mapping reference.
+- W^X requests remain explicit when NX is absent, but the hardware NX bit is emitted only after CPUID capability detection so unsupported CPUs never consume it as a reserved bit.
 - Each isolated address space tracks owned mapped pages and an explicit nonzero page ceiling; the process mapping wrappers use this counter for quota enforcement and cross-check it during teardown.
 - Isolated user-range validation walks the space's own page tables and checks present, user and writable permissions without trusting the active kernel root.
 - Validated supervisor MMIO pages can be mapped without pretending device registers are allocator-owned RAM; the reserved high-half MMIO window is used by the LAPIC/IOAPIC activation path and is unmapped on failed setup.
@@ -83,7 +84,7 @@ Still intentionally not implemented:
 - memory-mapped files
 - swap/reclaim
 - PCID/INVPCID
-- SMP TLB shootdown
+- SMP TLB shootdown stress/soak coverage beyond the startup acknowledgement
 - 1 GiB mapping policy
 - user/kernel higher-half layout
 - complete per-process VM lifetime integration and fault recovery

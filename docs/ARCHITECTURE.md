@@ -68,9 +68,9 @@ NX enablement, invariant-TSC measurement and the per-CPU ownership record.
 The current supported matrix is x86-64 QEMU/PC with a capability-probed
 legacy PIC fallback or a validated LAPIC/IOAPIC timer path. When valid MADT
 processor records and the Local APIC path are available, the SMP boundary
-prepares and handshakes bounded AP records; otherwise startup fails explicitly
-rather than fabricating online CPUs. Multi-vCPU scheduling and hardware
-certification remain later gates.
+prepares and handshakes bounded AP records; otherwise it selects an explicit
+BSP-only recovery mode rather than fabricating online CPUs. Multi-vCPU
+scheduling and hardware certification remain later gates.
 
 ## 6. Execution Architecture
 ### Tasks
@@ -103,14 +103,18 @@ The current Stage 1 boundary provides:
 - bounded ACPI MADT CPU discovery;
 - a low-memory real-mode/protected-mode/long-mode AP trampoline;
 - per-CPU GS records and per-CPU GDT/TSS/IDT installation;
-- INIT/SIPI startup with an online handshake and explicit failure state;
-- inter-processor TLB shootdown request/acknowledgement plumbing;
+- INIT/SIPI startup with a generation-tagged online handshake and explicit
+  failure state;
+- one bounded INIT/SIPI retry per AP, with late-attempt rejection and BSP-only
+  recovery when an AP cannot complete initialization;
+- inter-processor TLB shootdown request/acknowledgement plumbing, including
+  removal of a failing AP from the target mask;
 - AP idle/interrupt dispatch that never borrows the BSP scheduler context.
 
 Per-CPU scheduler queues, AP device-IRQ ownership, FPU state policy, lock
 contention instrumentation and full multi-vCPU stress/hardware certification
-remain production gates. The AP boundary may therefore fail closed during
-startup; it never fabricates an online CPU.
+remain production gates. The AP boundary therefore fails closed during
+startup, reports degraded mode, and never fabricates an online CPU.
 
 ## 9. Userspace Architecture
 Userspace begins with an init/bootstrap process.

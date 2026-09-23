@@ -23,16 +23,19 @@ records:
 - TSC frequency from CPUID leaves 0x15/0x16 where firmware exposes it.
 
 ZEROOS requires SSE2 for the compiler/runtime ABI. NX is enabled through
-IA32_EFER.NXE when CPUID proves support; callers still treat capability
-absence as a reason to disable an optional protection rather than to write an
-unsupported MSR.
+IA32_EFER.NXE when CPUID proves support on the BSP and independently on every
+AP trampoline; callers still treat capability absence as a reason to disable
+an optional protection rather than to write an unsupported MSR. The VMM never
+places the NX page-table bit in hardware mappings when the capability is
+absent.
 
 ## Floating-point baseline
 
-The kernel clears CR0.EM, sets CR0.MP, and enables CR4.OSFXSR and
-CR4.OSXMMEXCPT. Extended XSAVE/AVX state is not enabled until a future
-per-thread FPU ownership policy is present; this prevents silently corrupting
-architectural state.
+The kernel clears CR0.EM and reset cache-disable/NW state, sets CR0.MP,
+CR0.NE and CR0.WP, and enables CR4.OSFXSR and CR4.OSXMMEXCPT. APs normalize
+the same CR0 policy during their protected-mode transition. Extended XSAVE/AVX
+state is not enabled until a future per-thread FPU ownership policy is
+present; this prevents silently corrupting architectural state.
 
 ## Per-CPU state
 
@@ -47,9 +50,11 @@ Records are statically allocated for the bounded supported CPU capacity.
 `cpu_prepare_local()` reserves an AP record, while `cpu_mark_online()`
 publishes its GS base only during the AP entry handshake. The AP then installs
 its per-CPU GDT/TSS and IDT, enables its Local APIC state, and registers with
-the TLB protocol before the SMP startup boundary acknowledges it. APs remain
-out of the BSP scheduler until per-CPU scheduling and device-IRQ ownership
-have passed their own gates.
+the TLB protocol before the SMP startup boundary acknowledges it. The BSP
+waits only for a bounded interval, retries a failed AP at most once with a
+new generation token, and removes failed APs from the TLB target mask before
+entering BSP-only recovery. APs remain out of the BSP scheduler until
+per-CPU scheduling and device-IRQ ownership have passed their own gates.
 
 ## Time source
 
@@ -76,8 +81,9 @@ non-timer routes and per-CPU device-controller ownership remain separate gates.
 
 Unsupported or malformed capability data must produce an explicit diagnostic.
 No code assumes that APIC, NX, invariant TSC, SMEP, SMAP or PCID exists. An
-unsupported optional feature is disabled; a missing mandatory SSE2 baseline
-fails CPU initialization before scheduler startup.
+unsupported optional feature is disabled; page-table NX flags are conditional
+on the probed capability; a missing mandatory SSE2 baseline fails CPU
+initialization before scheduler startup.
 
 ## Validation
 
@@ -88,6 +94,7 @@ The boot certification checks:
 - synchronization try/bounded paths and rwlock operations;
 - APIC/PIC capability report;
 - timer clocksource report;
+- generation-tagged AP acknowledgement, bounded retry and TLB-mask recovery;
 - scheduler priority, affinity and starvation-aging metadata;
 - repeated QEMU scheduler/process stress boots.
 

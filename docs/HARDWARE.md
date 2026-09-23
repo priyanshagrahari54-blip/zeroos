@@ -26,11 +26,13 @@ physical-window and entry-boundary validation. The validated controller path
 maps LAPIC/IOAPIC MMIO and owns one PIT timer redirection, with an explicit PIC
 rollback when validation or activation fails. A bounded AP/SMP startup path
 uses the validated MADT/LAPIC data, a retained low-memory trampoline and
-per-CPU initialization; multi-vCPU scheduling and supported-hardware
-certification are not yet claims. Full non-timer IOAPIC routing, PCI/PCIe
-enumeration, DMA/IOMMU, storage controllers, USB, GPU/display drivers, audio
-and ACPI power management remain unsupported. Those boundaries are explicit;
-no unsupported device is silently treated as active.
+per-CPU initialization. AP acknowledgement is generation-tagged, retried at
+most once, and failed CPUs are removed from TLB participation before explicit
+BSP-only recovery. Multi-vCPU scheduling and supported-hardware certification
+are not yet claims. Full non-timer IOAPIC routing, PCI/PCIe enumeration,
+DMA/IOMMU, storage controllers, USB, GPU/display drivers, audio and ACPI power
+management remain unsupported. Those boundaries are explicit; no unsupported
+device is silently treated as active.
 
 ## Engineering rule
 
