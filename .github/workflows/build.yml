@@ -123,6 +123,12 @@ jobs:
           else
             echo "serial.log was not produced"
           fi
+          echo "===== ZEROOS NX-disabled serial.log tail ====="
+          if test -f build/serial-nx-off.log; then
+            tail -n 30 build/serial-nx-off.log
+          else
+            echo "serial-nx-off.log was not produced"
+          fi
 
       - name: Dump serial log on failure
         if: failure()
@@ -135,11 +141,21 @@ jobs:
           fi
           echo "===== ZEROOS debug port ====="
           if test -f build/debug.log; then cat build/debug.log; else echo "debug.log was not produced"; fi
+          echo "===== ZEROOS NX-disabled serial.log ====="
+          if test -f build/serial-nx-off.log; then cat build/serial-nx-off.log; else echo "serial-nx-off.log was not produced"; fi
+          echo "===== ZEROOS NX-disabled debug port ====="
+          if test -f build/debug-nx-off.log; then cat build/debug-nx-off.log; else echo "debug-nx-off.log was not produced"; fi
           echo "===== QEMU diagnostics ====="
           if test -f build/qemu.log; then
             cat build/qemu.log
           else
             echo "qemu.log was not produced"
+          fi
+          echo "===== NX-disabled QEMU diagnostics ====="
+          if test -f build/qemu-nx-off.log; then
+            cat build/qemu-nx-off.log
+          else
+            echo "qemu-nx-off.log was not produced"
           fi
 
       - name: Publish boot failure summary
@@ -153,9 +169,17 @@ jobs:
             qsummary=$(tail -c 2200 build/qemu.log | tr '\r\n' '  ')
             echo "::error title=QEMU diagnostics::$qsummary"
           fi
+          if test -s build/qemu-nx-off.log; then
+            nxsummary=$(tail -c 2200 build/qemu-nx-off.log | tr '\r\n' '  ')
+            echo "::error title=NX-disabled QEMU diagnostics::$nxsummary"
+          fi
           if test -s build/debug.log; then
             dsummary=$(tail -c 2000 build/debug.log | tr '\r\n' '  ')
             echo "::error title=QEMU debug port::$dsummary"
+          fi
+          if test -s build/debug-nx-off.log; then
+            nxdebug=$(tail -c 2000 build/debug-nx-off.log | tr '\r\n' '  ')
+            echo "::error title=NX-disabled QEMU debug port::$nxdebug"
           fi
 
       - name: Preserve boot diagnostics
@@ -168,3 +192,6 @@ jobs:
             build/serial.log
             build/debug.log
             build/qemu.log
+            build/serial-nx-off.log
+            build/debug-nx-off.log
+            build/qemu-nx-off.log
