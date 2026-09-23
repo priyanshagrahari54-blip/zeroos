@@ -78,12 +78,16 @@ static void apic_unmap_mmio(void) {
 }
 
 static int map_runtime_controller_mmio(const struct acpi_info *firmware) {
+    /* Keep the LAPIC on a physical-address alias that is reachable from the
+     * bootstrap and every CPU's shared root without depending on a high-half
+     * translation being cached by a newly-started AP. The page is MMIO, so
+     * this low alias is never confused with allocator-owned RAM. */
     if (!state.local_apic_base ||
-        vmm_map_mmio_page(VMM_MMIO_BASE,state.local_apic_base,
+        vmm_map_mmio_page(state.local_apic_base,state.local_apic_base,
                           APIC_MMIO_FLAGS)!=0)
         return -1;
 
-    state.local_apic_virtual=VMM_MMIO_BASE;
+    state.local_apic_virtual=state.local_apic_base;
     local_apic_mapped=1;
     state.local_apic_version=local_apic_read(APIC_REG_VERSION)&0xffU;
     state.local_apic_id=local_apic_read(APIC_REG_ID)>>24;

@@ -115,13 +115,13 @@ void smp_ap_entry(uint32_t cpu_id) {
     if (gdt_init_cpu(cpu_id)!=0)
         smp_ap_fail(cpu_id);
     smp_debug_marker('C');
-    if (vmm_translate(VMM_MMIO_BASE)==0)
+    if (vmm_translate(apic_info()->local_apic_virtual)==0)
         smp_debug_marker('0');
     else
         smp_debug_marker('1');
     {
         uint64_t root=vmm_root();
-        uint64_t mmio=VMM_MMIO_BASE;
+        uint64_t mmio=apic_info()->local_apic_virtual;
         __asm__ volatile ("mov %0, %%cr3; invlpg (%%rax)"
                           : : "r"(root), "a"(mmio) : "memory");
     }
