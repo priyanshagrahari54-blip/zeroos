@@ -118,6 +118,14 @@ jobs:
             echo "qemu.log was not produced"
           fi
 
+      - name: Publish boot failure summary
+        if: failure()
+        run: |
+          if test -s build/serial.log; then
+            summary=$(tr '\r\n' '  ' < build/serial.log | cut -c1-6000)
+            echo "::error title=ZEROOS serial log::$summary"
+          fi
+
       - name: Preserve boot diagnostics
         if: always()
         uses: actions/upload-artifact@v4
