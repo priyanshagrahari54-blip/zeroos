@@ -91,6 +91,27 @@ jobs:
             fi
           done
 
+          echo "===== ZEROOS four-vCPU SMP certification ====="
+          timeout 12s qemu-system-x86_64 \
+            -smp 4 \
+            -cdrom build/zeroos.iso \
+            -serial file:build/serial-smp4.log \
+            -display none \
+            -no-reboot \
+            -no-shutdown \
+            -debugcon file:build/debug-smp4.log \
+            -global isa-debugcon.iobase=0xe9 \
+            -d int,guest_errors,cpu_reset \
+            -D build/qemu-smp4.log || true
+          grep -q "ZEROOS: SMP CPU topology: discovered=4 online=4." build/serial-smp4.log
+          grep -q "ZEROOS: remote TLB shootdown self-test passed." build/serial-smp4.log
+          grep -q "ZEROOS: scheduler certification passed." build/serial-smp4.log
+          if grep -q "ZEROOS PANIC:" build/serial-smp4.log; then
+            echo "ZEROOS four-vCPU boot reported a panic:"
+            grep "ZEROOS PANIC:" build/serial-smp4.log
+            exit 1
+          fi
+
           echo "===== ZEROOS NX-disabled compatibility boot ====="
           timeout 10s qemu-system-x86_64 \
             -cpu qemu64,-nx \
@@ -129,6 +150,12 @@ jobs:
           else
             echo "serial-nx-off.log was not produced"
           fi
+          echo "===== ZEROOS four-vCPU serial.log tail ====="
+          if test -f build/serial-smp4.log; then
+            tail -n 30 build/serial-smp4.log
+          else
+            echo "serial-smp4.log was not produced"
+          fi
 
       - name: Dump serial log on failure
         if: failure()
@@ -143,6 +170,10 @@ jobs:
           if test -f build/debug.log; then cat build/debug.log; else echo "debug.log was not produced"; fi
           echo "===== ZEROOS NX-disabled serial.log ====="
           if test -f build/serial-nx-off.log; then cat build/serial-nx-off.log; else echo "serial-nx-off.log was not produced"; fi
+          echo "===== ZEROOS four-vCPU serial.log ====="
+          if test -f build/serial-smp4.log; then cat build/serial-smp4.log; else echo "serial-smp4.log was not produced"; fi
+          echo "===== ZEROOS four-vCPU debug port ====="
+          if test -f build/debug-smp4.log; then cat build/debug-smp4.log; else echo "debug-smp4.log was not produced"; fi
           echo "===== ZEROOS NX-disabled debug port ====="
           if test -f build/debug-nx-off.log; then cat build/debug-nx-off.log; else echo "debug-nx-off.log was not produced"; fi
           echo "===== QEMU diagnostics ====="
@@ -173,6 +204,10 @@ jobs:
             nxsummary=$(tail -c 2200 build/qemu-nx-off.log | tr '\r\n' '  ')
             echo "::error title=NX-disabled QEMU diagnostics::$nxsummary"
           fi
+          if test -s build/qemu-smp4.log; then
+            smp4summary=$(tail -c 2200 build/qemu-smp4.log | tr '\r\n' '  ')
+            echo "::error title=four-vCPU QEMU diagnostics::$smp4summary"
+          fi
           if test -s build/debug.log; then
             dsummary=$(tail -c 2000 build/debug.log | tr '\r\n' '  ')
             echo "::error title=QEMU debug port::$dsummary"
@@ -180,6 +215,10 @@ jobs:
           if test -s build/debug-nx-off.log; then
             nxdebug=$(tail -c 2000 build/debug-nx-off.log | tr '\r\n' '  ')
             echo "::error title=NX-disabled QEMU debug port::$nxdebug"
+          fi
+          if test -s build/debug-smp4.log; then
+            smp4debug=$(tail -c 2000 build/debug-smp4.log | tr '\r\n' '  ')
+            echo "::error title=four-vCPU QEMU debug port::$smp4debug"
           fi
 
       - name: Preserve boot diagnostics
@@ -195,3 +234,6 @@ jobs:
             build/serial-nx-off.log
             build/debug-nx-off.log
             build/qemu-nx-off.log
+            build/serial-smp4.log
+            build/debug-smp4.log
+            build/qemu-smp4.log
