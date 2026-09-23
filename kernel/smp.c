@@ -442,7 +442,9 @@ int smp_startup_self_test(void) {
                 return -1;
             if (!cpu_local_for_id(i) ||
                 !__atomic_load_n(&cpu_local_for_id(i)->online,
-                                 __ATOMIC_ACQUIRE))
+                                 __ATOMIC_ACQUIRE) ||
+                (!cpu_local_for_id(i)->scheduler_timer_ready &&
+                 !cpu_local_for_id(i)->scheduler_timer_fallback))
                 return -1;
         } else if (state==ZEROOS_SMP_CPU_FAILED) {
             if (records[i].startup_attempts>SMP_STARTUP_ATTEMPTS)

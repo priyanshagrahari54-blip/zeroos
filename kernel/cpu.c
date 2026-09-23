@@ -175,6 +175,8 @@ int cpu_init(void) {
     cpu_locals[0].nmi_depth=0;
     cpu_locals[0].scheduler_epoch=0;
     cpu_locals[0].interrupt_count=0;
+    cpu_locals[0].scheduler_timer_ready=1;
+    cpu_locals[0].scheduler_timer_fallback=0;
     cpu_locals[0].prepared=1;
     cpu_locals[0].online=1;
     cpu_write_msr(IA32_GS_BASE_MSR,(uint64_t)&cpu_locals[0]);

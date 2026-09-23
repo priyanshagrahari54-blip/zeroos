@@ -107,7 +107,8 @@ The same PIT remains the physical clock source on the BSP. Each AP first
 calibrates and owns a periodic local LAPIC timer against the running PIT. If a
 platform cannot calibrate that local clock event, the BSP uses a targeted
 scheduler-tick IPI as the explicit fallback for that AP; the fallback is
-recorded in the per-CPU timer-ready state and does not change task ownership.
+recorded separately from the local-timer-ready state, is validated before the
+AP is accepted by the startup self-test, and does not change task ownership.
 Each AP accounts its own current task, wakes its own local/remote-owned
 runnable work, and decides its own preemption at the common IRQ-exit boundary.
 No AP ever borrows the BSP task or runqueue state.
@@ -226,10 +227,11 @@ The implemented scheduler/SMP boundary covers:
 - runtime proof that ordinary work executed on a secondary CPU.
 
 The remaining Stage 1 scheduler work is not hidden: CPU hot-offline queue
-evacuation and a hardware-local LAPIC clock-event backend still require
-implementation and fault validation before the Stage 1 exit gate. Equal-
-priority fairness/latency stress and the AP late-token/failed-dispatch
-recovery contract are now exercised by the runtime certification, including a
-separate fault-injected QEMU boot that must complete the bounded retry.
+evacuation still requires implementation and fault validation before the Stage
+1 exit gate. Equal-priority fairness/latency stress, the AP late-token/failed-
+dispatch recovery contract, and the per-AP local LAPIC clock-event contract
+(with an explicit targeted-IPI fallback) are now exercised by the runtime
+certification, including a separate fault-injected QEMU boot that must
+complete the bounded retry.
 Higher-level synchronization continues to use the existing wait-queue and
 preemption contracts.

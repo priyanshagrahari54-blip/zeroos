@@ -369,11 +369,14 @@ int apic_cpu_init(void) {
     if (!state.local_apic_present || !state.local_apic_virtual)
         return -1;
     local=(struct cpu_local *)(uint64_t)cpu_local();
-    if (local)
+    if (local) {
         local->scheduler_timer_ready=0;
+        local->scheduler_timer_fallback=0;
+    }
     local_apic_write(APIC_REG_TPR,0);
     local_apic_write(APIC_REG_SVR,APIC_SPURIOUS_VECTOR|APIC_SVR_ENABLE);
-    (void)apic_program_cpu_timer();
+    if (apic_program_cpu_timer()!=0 && local)
+        local->scheduler_timer_fallback=1;
     return 0;
 }
 

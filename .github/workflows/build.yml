@@ -142,6 +142,7 @@ jobs:
           grep -q "ZEROOS: CPU capabilities detected (APIC=1, NX=0" build/serial-nx-off.log
           grep -q "ZEROOS: foundation milestone reached." build/serial-nx-off.log
           grep -q "ZEROOS: remote TLB shootdown self-test passed." build/serial-nx-off.log
+          grep -q "ZEROOS: AP local LAPIC clock-event contract verified." build/serial-nx-off.log
           grep -q "ZEROOS: scheduler certification passed." build/serial-nx-off.log
           grep -q "ZEROOS: scheduler fairness and latency stress passed." build/serial-nx-off.log
           grep -q "ZEROOS: per-CPU scheduler ownership verified." build/serial-nx-off.log

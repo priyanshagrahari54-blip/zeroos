@@ -104,8 +104,8 @@ The boot certification checks:
 
 ## Remaining Stage 1 boundary
 
-Full IOAPIC IRQ ownership beyond the timer route, per-CPU runqueues and
-scheduler execution, remote TLB-shootdown stress, extended FPU state
+Full IOAPIC IRQ ownership beyond the timer route, CPU hot-offline evacuation,
+remote TLB-shootdown stress beyond boot certification, extended FPU state
 switching, and supported-hardware multi-vCPU validation remain required before
 claiming complete SMP hardware support. The TLB request/acknowledgement
 contract and AP startup handshake are implemented and fail closed when an AP
