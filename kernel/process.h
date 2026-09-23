@@ -33,6 +33,9 @@ struct process {
     uint64_t thread_count;
     uint64_t live_thread_count;
     uint64_t creating_threads;
+    /* A detached zombie remains process-owned until its thread object is
+     * reset; this prevents process reap from racing thread-object reuse. */
+    uint64_t reaping_threads;
 
     /* Explicit resource ceilings; zero is never interpreted as unlimited. */
     uint64_t max_threads;
@@ -57,6 +60,9 @@ int process_thread_attach(struct process *process, struct thread *thread);
 int process_thread_started(struct thread *thread);
 int process_thread_exited(struct thread *thread, uint64_t exit_status);
 int process_thread_detach(struct thread *thread);
+int process_thread_reap_begin(struct thread *thread,
+                              struct process **owner_out);
+int process_thread_reap_finish(struct process *process);
 
 int process_reap(struct process *process, uint64_t *exit_status_out);
 int process_set_limits(struct process *process, uint64_t max_threads,

@@ -68,6 +68,7 @@ static void process_reset_locked(struct process *process) {
     process->thread_count=0;
     process->live_thread_count=0;
     process->creating_threads=0;
+    process->reaping_threads=0;
     process->max_threads=0;
     process->max_children=0;
     process->max_address_space_pages=0;
@@ -93,6 +94,7 @@ int process_system_init(void) {
         processes[i].thread_count=0;
         processes[i].live_thread_count=0;
         processes[i].creating_threads=0;
+        processes[i].reaping_threads=0;
         processes[i].max_threads=0;
         processes[i].max_children=0;
         processes[i].max_address_space_pages=0;
@@ -155,6 +157,7 @@ int process_create(struct process *parent, process_id_t *pid_out) {
     process->thread_count=0;
     process->live_thread_count=0;
     process->creating_threads=0;
+    process->reaping_threads=0;
     process->max_threads=ZEROOS_PROCESS_DEFAULT_MAX_THREADS;
     process->max_children=ZEROOS_PROCESS_DEFAULT_MAX_CHILDREN;
     process->max_address_space_pages=ZEROOS_PROCESS_DEFAULT_MAX_ADDRESS_SPACE_PAGES;
@@ -325,6 +328,56 @@ int process_thread_detach(struct thread *thread) {
     return 0;
 }
 
+int process_thread_reap_begin(struct thread *thread,
+                              struct process **owner_out) {
+    struct process *process;
+    struct thread **cursor;
+    uint64_t flags;
+
+    if (!thread || !thread->process)
+        return -1;
+    process=thread->process;
+    flags=spin_lock_irqsave(&process_lock);
+    if (process_lookup_locked(process->pid)!=process ||
+        thread->state!=THREAD_ZOMBIE ||
+        process->reaping_threads==~0ULL) {
+        spin_unlock_irqrestore(&process_lock,flags);
+        return -1;
+    }
+
+    cursor=&process->first_thread;
+    while (*cursor && *cursor!=thread)
+        cursor=&(*cursor)->next_in_process;
+    if (*cursor!=thread) {
+        spin_unlock_irqrestore(&process_lock,flags);
+        return -1;
+    }
+
+    *cursor=thread->next_in_process;
+    thread->next_in_process=0;
+    if (process->thread_count)
+        --process->thread_count;
+    ++process->reaping_threads;
+    if (owner_out)
+        *owner_out=process;
+    spin_unlock_irqrestore(&process_lock,flags);
+    return 0;
+}
+
+int process_thread_reap_finish(struct process *process) {
+    uint64_t flags;
+    if (!process) return -1;
+    flags=spin_lock_irqsave(&process_lock);
+    if (process_lookup_locked(process->pid)!=process ||
+        process->reaping_threads==0) {
+        spin_unlock_irqrestore(&process_lock,flags);
+        return -1;
+    }
+    --process->reaping_threads;
+    spin_unlock_irqrestore(&process_lock,flags);
+    return 0;
+}
+
 int process_reap(struct process *process, uint64_t *exit_status_out) {
     uint64_t flags;
     struct process *parent;
@@ -337,6 +390,7 @@ int process_reap(struct process *process, uint64_t *exit_status_out) {
         process->thread_count!=0 ||
         process->live_thread_count!=0 ||
         process->creating_threads!=0 ||
+        process->reaping_threads!=0 ||
         process->first_child!=0 ||
         process->resident_pages!=
             vmm_space_mapped_pages(&process->address_space)) {
@@ -513,7 +567,7 @@ int process_debug_validate(void) {
                 process->next_sibling || process->child_count ||
                 process->first_thread || process->thread_count ||
                 process->live_thread_count || process->creating_threads ||
-                process->max_threads || process->max_children ||
+                process->reaping_threads || process->max_threads || process->max_children ||
                 process->max_address_space_pages || process->resident_pages ||
                 process->address_space.root ||
                 process->address_space.root_physical ||
@@ -535,6 +589,7 @@ int process_debug_validate(void) {
         if (process->max_threads==0 || process->max_children==0 ||
             process->max_address_space_pages==0 ||
             process->thread_count>process->max_threads ||
+            process->reaping_threads>process->max_threads ||
             process->child_count>process->max_children ||
             process->resident_pages>process->max_address_space_pages ||
             !process->address_space.root ||

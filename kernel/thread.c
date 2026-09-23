@@ -280,9 +280,16 @@ int thread_debug_validate(void) {
 
 int thread_reap(struct thread *thread, uint64_t *exit_status_out) {
     uint64_t flags;
+    thread_id_t tid;
+    uint64_t exit_status;
+    struct process *owner;
 
     if (!thread) return -1;
 
+    /* Lock order is process_lock -> thread_lock. Do not hold thread_lock
+     * while detaching from the owning process: thread creation reserves the
+     * process before taking the thread lock, so the old thread->process
+     * order was an SMP deadlock cycle. */
     flags=spin_lock_irqsave(&thread_lock);
     if (thread_lookup_locked(thread->tid)!=thread ||
         thread->state!=THREAD_ZOMBIE ||
@@ -290,16 +297,30 @@ int thread_reap(struct thread *thread, uint64_t *exit_status_out) {
         spin_unlock_irqrestore(&thread_lock,flags);
         return -1;
     }
+    tid=thread->tid;
+    exit_status=thread->exit_status;
+    spin_unlock_irqrestore(&thread_lock,flags);
 
-    if (process_thread_detach(thread)!=0) {
+    if (process_thread_reap_begin(thread,&owner)!=0)
+        return -1;
+
+    flags=spin_lock_irqsave(&thread_lock);
+    if (thread_lookup_locked(tid)!=thread ||
+        thread->state!=THREAD_ZOMBIE ||
+        thread->scheduler_task_id!=0) {
         spin_unlock_irqrestore(&thread_lock,flags);
+        (void)process_thread_reap_finish(owner);
         return -1;
     }
 
     if (exit_status_out)
-        *exit_status_out=thread->exit_status;
+        *exit_status_out=exit_status;
 
     thread_reset_locked(thread);
     spin_unlock_irqrestore(&thread_lock,flags);
+    if (process_thread_reap_finish(owner)!=0) {
+        serial_write_public("ZEROOS PANIC: process/thread reap transaction lost.\n");
+        for (;;) __asm__ volatile ("cli; hlt");
+    }
     return 0;
 }
