@@ -198,10 +198,11 @@ descriptor. No heap allocation is used for idle execution or waiters.
 ## Certification gate
 
 The scheduler self-test reports independent success markers for cooperative
-context switching, wait/wakeup, timed sleep, timer-only preemption,
-zombie/slot-reuse lifecycle stress, the interrupt-frame ownership invariant,
-the process/thread object model, and generation-tagged PID/TID reuse
-protection, before an aggregate scheduler certification passed marker. The
+context switching, wait/wakeup, timed sleep, timer-only preemption, equal-
+priority fairness and wakeup-latency stress, zombie/slot-reuse lifecycle
+stress, the interrupt-frame ownership invariant, the process/thread object
+model, and generation-tagged PID/TID reuse protection, before an aggregate
+scheduler certification passed marker. The
 aggregate certificate additionally requires the process/thread probe suite and
 `per-CPU scheduler ownership verified` marker. On multi-CPU boots the latter
 requires a real non-idle task to execute on an AP, not merely that an AP was

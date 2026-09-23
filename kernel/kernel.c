@@ -293,6 +293,10 @@ static struct atomic_u64 lifecycle_probe_done;
 static struct atomic_u64 lifecycle_probe_created;
 static struct atomic_u64 lifecycle_probe_exited;
 static struct atomic_u64 scheduler_stress_failures;
+static struct atomic_u64 fairness_probe_a;
+static struct atomic_u64 fairness_probe_b;
+static struct atomic_u64 fairness_probe_done;
+static struct atomic_u64 fairness_probe_max_gap;
 
 /* Process/thread model certification state. */
 static struct atomic_u64 process_thread_probe_phase;
@@ -609,6 +613,45 @@ static void scheduler_probe_cpu_b(void *argument) {
         kernel_panic("CPU-B callee-saved register corruption during preemption");
 }
 
+static void scheduler_atomic_max(struct atomic_u64 *value,
+                                  uint64_t candidate) {
+    uint64_t observed=atomic_u64_load(value);
+    while (candidate>observed &&
+           !__atomic_compare_exchange_n(&value->value,&observed,candidate,0,
+                                        __ATOMIC_ACQ_REL,__ATOMIC_ACQUIRE))
+        ;
+}
+
+static void scheduler_probe_fairness_worker(void *argument) {
+    struct atomic_u64 *counter=(struct atomic_u64 *)argument;
+    uint64_t last=timer_ticks();
+
+    if (!counter)
+        kernel_panic("fairness probe argument missing");
+
+    /* Equal-priority peers voluntarily yield at every sample. This measures
+     * scheduler service and wakeup latency independently of the CPU-bound
+     * timer-only preemption pair above. */
+    for (uint64_t i=0; i<64; ++i) {
+        uint64_t now=timer_ticks();
+        scheduler_atomic_max(&fairness_probe_max_gap,now-last);
+        atomic_u64_fetch_add(counter,1);
+        scheduler_yield();
+        last=timer_ticks();
+    }
+    atomic_u64_fetch_add(&fairness_probe_done,1);
+}
+
+static void scheduler_probe_fairness_a(void *argument) {
+    (void)argument;
+    scheduler_probe_fairness_worker(&fairness_probe_a);
+}
+
+static void scheduler_probe_fairness_b(void *argument) {
+    (void)argument;
+    scheduler_probe_fairness_worker(&fairness_probe_b);
+}
+
 static void scheduler_probe_lifecycle_worker(void *argument) {
     (void)argument;
     atomic_u64_fetch_add(&lifecycle_probe_exited,1);
@@ -713,6 +756,7 @@ static void scheduler_probe_monitor(void *argument) {
     int preempt_reported=0;
     int lifecycle_reported=0;
     int frame_invariant_reported=0;
+    int fairness_reported=0;
     int certification_reported=0;
     int per_cpu_reported=0;
     uint64_t stress_start=timer_ticks();
@@ -754,6 +798,22 @@ static void scheduler_probe_monitor(void *argument) {
             serial_write_public("ZEROOS: zombie reaping and slot-reuse stress passed.\n");
         }
 
+        if (!fairness_reported && atomic_u64_load(&fairness_probe_done)==2) {
+            uint64_t a=atomic_u64_load(&fairness_probe_a);
+            uint64_t b=atomic_u64_load(&fairness_probe_b);
+            uint64_t minimum=a<b ? a : b;
+            uint64_t maximum=a>b ? a : b;
+            uint64_t max_gap=atomic_u64_load(&fairness_probe_max_gap);
+            /* The peers must both receive all samples and no peer may be
+             * starved for more than one scheduler-second. A 4x service ratio
+             * leaves room for the other lifecycle and process probes while
+             * still catching a queue/affinity starvation regression. */
+            if (minimum<64 || maximum>minimum*4ULL || max_gap>100ULL)
+                kernel_panic("scheduler fairness or latency certification failed");
+            fairness_reported=1;
+            serial_write_public("ZEROOS: scheduler fairness and latency stress passed.\n");
+        }
+
         /*
          * Interrupt-frame ownership is enforced continuously by
          * task_debug_validate(): a RUNNING task must never retain a frame
@@ -783,6 +843,7 @@ static void scheduler_probe_monitor(void *argument) {
             sleep_reported &&
             preempt_reported &&
             lifecycle_reported &&
+            fairness_reported &&
             frame_invariant_reported &&
             atomic_u64_load(&process_thread_probe_phase)==3 &&
             atomic_u64_load(&scheduler_stress_failures)==0) {
@@ -809,7 +870,7 @@ static void scheduler_probe_monitor(void *argument) {
          */
         if (now-stress_start>400 &&
             (!preempt_reported || !lifecycle_reported ||
-             !frame_invariant_reported ||
+             !fairness_reported || !frame_invariant_reported ||
              (smp_online_count()>1 && !per_cpu_reported) ||
              atomic_u64_load(&sleep_probe_state)!=2 ||
              atomic_u64_load(&wait_probe_state)!=2 ||
@@ -826,6 +887,7 @@ static void scheduler_probe_monitor(void *argument) {
 static void scheduler_self_test(void) {
     uint64_t worker_id, monitor_id, waiter_id, waker_id, sleeper_id;
     uint64_t preempt_a_id, preempt_b_id, lifecycle_id;
+    uint64_t fairness_a_id, fairness_b_id;
 
     atomic_u64_init(&task_probe_counter,0);
     atomic_u64_init(&wait_probe_state,0);
@@ -838,6 +900,10 @@ static void scheduler_self_test(void) {
     atomic_u64_init(&lifecycle_probe_created,0);
     atomic_u64_init(&lifecycle_probe_exited,0);
     atomic_u64_init(&scheduler_stress_failures,0);
+    atomic_u64_init(&fairness_probe_a,0);
+    atomic_u64_init(&fairness_probe_b,0);
+    atomic_u64_init(&fairness_probe_done,0);
+    atomic_u64_init(&fairness_probe_max_gap,0);
     atomic_u64_init(&process_thread_probe_phase,0);
     atomic_u64_init(&process_thread_probe_parent_ran,0);
     atomic_u64_init(&process_thread_probe_child_ran,0);
@@ -871,6 +937,10 @@ static void scheduler_self_test(void) {
         kernel_panic("timer-preemption CPU-B creation failed");
     if (task_create(scheduler_probe_lifecycle_creator,0,&lifecycle_id)!=0)
         kernel_panic("lifecycle creator creation failed");
+    if (task_create(scheduler_probe_fairness_a,0,&fairness_a_id)!=0)
+        kernel_panic("fairness peer-A creation failed");
+    if (task_create(scheduler_probe_fairness_b,0,&fairness_b_id)!=0)
+        kernel_panic("fairness peer-B creation failed");
 
     serial_write_public("ZEROOS: kernel tasks created: ");
     serial_write_u64(task_count());
@@ -888,6 +958,10 @@ static void scheduler_self_test(void) {
     serial_write_u64(preempt_b_id);
     serial_write_public(", lifecycle=");
     serial_write_u64(lifecycle_id);
+    serial_write_public(", fairnessA=");
+    serial_write_u64(fairness_a_id);
+    serial_write_public(", fairnessB=");
+    serial_write_u64(fairness_b_id);
     serial_write_public(").\n");
 
     task_debug_validate();
