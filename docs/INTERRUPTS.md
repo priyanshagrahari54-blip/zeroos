@@ -120,7 +120,7 @@ separate gates. Per-CPU interrupt nesting and count are tracked in
 | AP startup boundary with per-CPU shape | Per-CPU event scheduling and full SMP interrupt routing |
 | Single IRQ owner | Shared/managed device IRQ registration where required |
 | Hard IRQ handler | Deferred work / threaded device handling |
-| No TLB shootdown | SMP invalidation protocol |
+| Fail-closed TLB request/ack boundary | SMP invalidation stress and policy integration |
 
 The legacy path remains as a deterministic rollback when firmware, MMIO
 mapping, or timer-route validation is unavailable. Boot diagnostics report

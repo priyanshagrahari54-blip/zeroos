@@ -7,6 +7,7 @@
 .global ap_trampoline_stack
 .global ap_trampoline_cpu_id
 .global ap_trampoline_gdt_ptr
+.global ap_trampoline_gdt
 
 .code16
 ap_trampoline_start:
@@ -58,7 +59,19 @@ ap_trampoline_protected:
     andl $~0x00000004, %eax
     orl $0x80000022, %eax
     movl %eax, %cr0
-    ljmpl $0x18, $(ap_trampoline_long-ap_trampoline_start)
+
+    /* The runtime GDT code base is the copied page's physical address.
+     * Recover that base from the current protected-mode instruction pointer,
+     * then enter long mode at the corresponding physical target. */
+    movl $0x1f0, %esp
+    call 1f
+1:
+    popl %eax
+    subl $(1b-ap_trampoline_start), %eax
+    addl $(ap_trampoline_long-ap_trampoline_start), %eax
+    pushl $0x18
+    pushl %eax
+    lret
 
 .code64
 ap_trampoline_long:

@@ -16,6 +16,7 @@ extern char ap_trampoline_cr3[];
 extern char ap_trampoline_entry[];
 extern char ap_trampoline_stack[];
 extern char ap_trampoline_cpu_id[];
+extern char ap_trampoline_gdt[];
 
 static struct smp_cpu_record records[ZEROOS_MAX_CPUS];
 static uint32_t discovered;
@@ -36,6 +37,17 @@ static uint64_t trampoline_offset(const char *symbol) {
     return (uint64_t)symbol-(uint64_t)ap_trampoline_start;
 }
 
+static void trampoline_patch_segment_base(uint8_t *copy,
+                                          uint32_t index,
+                                          uint32_t base) {
+    uint64_t offset=trampoline_offset(ap_trampoline_gdt)+index*8ULL;
+    uint64_t descriptor=*(uint64_t *)(copy+offset);
+    descriptor&=~((0xffffffULL<<16)|(0xffULL<<56));
+    descriptor|=((uint64_t)(base&0xffffffU)<<16)|
+                ((uint64_t)((base>>24)&0xffU)<<56);
+    *(uint64_t *)(copy+offset)=descriptor;
+}
+
 static int trampoline_prepare(void) {
     uint64_t size=(uint64_t)ap_trampoline_end-
                   (uint64_t)ap_trampoline_start;
@@ -50,21 +62,26 @@ static int trampoline_prepare(void) {
     for (uint64_t i=0; i<size; ++i)
         copy[i]=source[i];
 
+    uint64_t physical=(uint64_t)trampoline_page;
+    if ((physical&0xfffULL)!=0 || physical>=0x100000ULL)
+        return -1;
+
     uint64_t offset=trampoline_offset(ap_trampoline_cr3);
     *(uint64_t *)(copy+offset)=vmm_root();
     offset=trampoline_offset(ap_trampoline_entry);
     *(uint64_t *)(copy+offset)=(uint64_t)smp_ap_entry;
+    /* Protected-mode segment bases keep the copied code/data page addressable
+     * before long mode ignores the code-segment base. */
+    trampoline_patch_segment_base(copy,1,(uint32_t)physical);
+    trampoline_patch_segment_base(copy,2,(uint32_t)physical);
 
-    uint64_t physical=(uint64_t)trampoline_page;
-    if ((physical&0xfffULL)!=0 || physical>=0x100000ULL)
-        return -1;
     trampoline_vector=(uint8_t)(physical>>12);
     return 0;
 }
 
 static int smp_send_tlb_ipi(uint64_t target_mask, uint8_t vector) {
     int sent=0;
-    for (uint32_t i=1; i<discovered; ++i) {
+    for (uint32_t i=0; i<discovered; ++i) {
         if (!(target_mask&(1ULL<<i)))
             continue;
         if (atomic_load_u32(&records[i].state)!=ZEROOS_SMP_CPU_ONLINE &&
