@@ -121,7 +121,9 @@ void smp_ap_entry(uint32_t cpu_id) {
         smp_debug_marker('1');
     {
         uint64_t root=vmm_root();
-        __asm__ volatile ("mov %0, %%cr3" : : "r"(root) : "memory");
+        uint64_t mmio=VMM_MMIO_BASE;
+        __asm__ volatile ("mov %0, %%cr3; invlpg (%%rax)"
+                          : : "r"(root), "a"(mmio) : "memory");
     }
     if (apic_cpu_init()!=0)
         smp_ap_fail(cpu_id);
