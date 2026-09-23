@@ -127,7 +127,9 @@ ap_trampoline_protected:
 
     movl $0xc0000080, %ecx
     rdmsr
-    orl $0x00000100, %eax
+    /* The shared kernel page tables mark MMIO non-executable; carry the
+     * BSP's NX policy into the AP before paging becomes active. */
+    orl $0x00000900, %eax
     wrmsr
 
     movl %cr0, %eax
