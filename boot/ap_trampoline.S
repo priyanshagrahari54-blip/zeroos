@@ -55,6 +55,11 @@ ap_trampoline_start:
     outb %al, %dx
     movl %ebx, %edx
     addl $(ap_trampoline_protected_far-ap_trampoline_start), %edx
+    movl %edx, %esi
+    movw $0xe9, %dx
+    movb $'h', %al
+    outb %al, %dx
+    movl %esi, %edx
 
     movl %cr0, %eax
     orl $0x00000001, %eax
