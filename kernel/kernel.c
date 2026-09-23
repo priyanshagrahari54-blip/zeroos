@@ -1087,6 +1087,9 @@ void kernel_main(uint64_t multiboot_info, uint64_t multiboot_magic) {
     serial_write_public(".\n");
     if (smp_startup_self_test()!=0)
         kernel_panic("SMP topology publication invariant failed");
+    if (smp_startup_recovery_self_test()!=0)
+        kernel_panic("SMP startup recovery invariant failed");
+    serial_write_public("ZEROOS: SMP startup recovery contract self-test passed.\n");
     if (smp_online_count()>1)
         serial_write_public("ZEROOS: remote TLB shootdown self-test passed.\n");
     if (smp_discovered_count()>1 && !smp_is_degraded()) {

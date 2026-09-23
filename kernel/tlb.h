@@ -25,6 +25,7 @@ int tlb_handle_ipi(uint32_t cpu_id);
 int tlb_invalidate_page(uint64_t virtual_address);
 int tlb_flush_all(void);
 uint32_t tlb_online_count(void);
+int tlb_cpu_is_online(uint32_t cpu_id);
 uint64_t tlb_shootdown_sequence(void);
 int tlb_debug_validate(void);
 

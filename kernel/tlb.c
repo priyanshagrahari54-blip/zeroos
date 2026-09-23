@@ -220,6 +220,11 @@ uint32_t tlb_online_count(void) {
     return initialized ? bit_count(online_mask) : 0;
 }
 
+int tlb_cpu_is_online(uint32_t cpu_id) {
+    return initialized && cpu_id<ZEROOS_TLB_MAX_CPUS &&
+           (online_mask&(1ULL<<cpu_id))!=0;
+}
+
 uint64_t tlb_shootdown_sequence(void) {
     return initialized ? sequence : 0;
 }

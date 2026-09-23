@@ -94,7 +94,8 @@ The boot certification checks:
 - synchronization try/bounded paths and rwlock operations;
 - APIC/PIC capability report;
 - timer clocksource report;
-- generation-tagged AP acknowledgement, bounded retry and TLB-mask recovery;
+- generation-tagged AP acknowledgement, bounded retry, stale-token quarantine,
+  failed-dispatch fault injection and TLB-mask recovery;
 - AP CR0/EFER/CR3/IDT policy and shared-root invariants;
 - scheduler priority, affinity and starvation-aging metadata;
 - repeated QEMU scheduler/process stress boots;

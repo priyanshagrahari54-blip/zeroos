@@ -28,6 +28,10 @@ static void *trampoline_page;
 static uint8_t trampoline_vector;
 static uint8_t initialized;
 static uint8_t degraded;
+#ifdef ZEROOS_TEST_SMP_FAILED_DISPATCH
+static uint8_t startup_fault_injected;
+static uint8_t startup_fault_retried;
+#endif
 
 #define SMP_STARTUP_ATTEMPTS 2U
 #define SMP_TOKEN_CPU_MASK 0xffffU
@@ -242,6 +246,20 @@ static int smp_start_ap(uint32_t cpu_id) {
         serial_write_public(", attempt=");
         smp_write_u64(attempt);
         serial_write_public(").\n");
+#ifdef ZEROOS_TEST_SMP_FAILED_DISPATCH
+        /* Fault validation deliberately exercises the same bounded recovery
+         * path as a failed IPI delivery, without starting a first-attempt AP.
+         * The retry must publish a new generation before the real dispatch. */
+        if (!startup_fault_injected && attempt==1U) {
+            startup_fault_injected=1;
+            atomic_store_u32(&records[cpu_id].state,ZEROOS_SMP_CPU_FAILED);
+            smp_cleanup_failed_ap(cpu_id);
+            serial_write_public("ZEROOS: injected SMP dispatch failure for recovery validation.\n");
+            continue;
+        }
+        if (attempt>1U)
+            startup_fault_retried=1;
+#endif
         if (apic_send_init_sipi(records[cpu_id].apic_id,trampoline_vector)!=0) {
             atomic_store_u32(&records[cpu_id].state,ZEROOS_SMP_CPU_FAILED);
             smp_cleanup_failed_ap(cpu_id);
@@ -437,6 +455,47 @@ int smp_startup_self_test(void) {
      * pre-SMP VMM self-test can only certify the BSP-local fast path. */
     if (online>1 && tlb_flush_all()!=0)
         return -1;
+    return 0;
+}
+
+int smp_startup_recovery_self_test(void) {
+    if (!initialized || online==0 || cpu_online_count()!=online ||
+        tlb_online_count()!=online)
+        return -1;
+
+    for (uint32_t i=1; i<discovered; ++i) {
+        uint32_t state=atomic_load_u32(&records[i].state);
+        uint32_t generation=atomic_load_u32(&records[i].startup_generation);
+        struct cpu_local *local=cpu_local_for_id(i);
+
+        /* A failed AP is quarantined from both CPU-local and TLB ownership;
+         * this is the recovery invariant that makes later shootdowns safe. */
+        if (state==ZEROOS_SMP_CPU_FAILED &&
+            ((!local) || __atomic_load_n(&local->online,__ATOMIC_ACQUIRE) ||
+             tlb_cpu_is_online(i)))
+            return -1;
+
+        if (generation==0)
+            continue;
+
+        /* A late trampoline from the preceding generation must never match
+         * the published attempt. Generation zero is intentionally invalid,
+         * so it is also a useful first-generation stale-token probe. */
+        uint32_t stale=generation>1U ? generation-1U : 0U;
+        if (smp_ap_token_matches(i,stale))
+            return -1;
+
+        /* Token identity alone is not enough: final states must reject entry
+         * unless the record is explicitly STARTING. */
+        if (!smp_ap_token_matches(i,generation) ||
+            smp_ap_generation_matches(i,generation))
+            return -1;
+    }
+
+#ifdef ZEROOS_TEST_SMP_FAILED_DISPATCH
+    if (!startup_fault_injected || !startup_fault_retried)
+        return -1;
+#endif
     return 0;
 }
 

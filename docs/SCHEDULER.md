@@ -225,9 +225,11 @@ The implemented scheduler/SMP boundary covers:
   validation; and
 - runtime proof that ordinary work executed on a secondary CPU.
 
-The remaining Stage 1 scheduler work is not hidden: long-duration fairness and
-latency stress, deliberate AP late-start/failed-IPI recovery, CPU hot-offline
-queue evacuation, and a hardware-local LAPIC clock-event backend still require
-implementation and fault validation before the Stage 1 exit gate. Higher-level
-synchronization continues to use the existing wait-queue and preemption
-contracts.
+The remaining Stage 1 scheduler work is not hidden: CPU hot-offline queue
+evacuation and a hardware-local LAPIC clock-event backend still require
+implementation and fault validation before the Stage 1 exit gate. Equal-
+priority fairness/latency stress and the AP late-token/failed-dispatch
+recovery contract are now exercised by the runtime certification, including a
+separate fault-injected QEMU boot that must complete the bounded retry.
+Higher-level synchronization continues to use the existing wait-queue and
+preemption contracts.

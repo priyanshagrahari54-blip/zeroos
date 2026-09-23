@@ -61,8 +61,10 @@ remains the safe backend. AP startup is attempted only when a valid MADT
 contains additional enabled processors and the Local APIC path is usable; the
 trampoline, per-CPU setup and TLB registration must all acknowledge before an
 AP is published. Each AP gets one bounded retry with a generation token; a
-failed AP is removed from the TLB target mask and remains offline while the
-BSP continues in an explicitly reported degraded mode. Non-timer legacy IRQ
+late trampoline from an older generation is quarantined, and a failed-dispatch
+fault boot verifies the retry path. A failed AP is removed from the TLB target
+mask and remains offline while the BSP continues in an explicitly reported
+degraded mode. Non-timer legacy IRQ
 routing, per-CPU device-controller state and full rollback for a future
 multi-route transition remain separate Stage 1 gates.
 
