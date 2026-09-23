@@ -17,6 +17,9 @@ struct smp_cpu_record {
     uint32_t startup_generation;
     uint32_t startup_attempts;
     uint64_t bootstrap_stack;
+    uint64_t startup_cr0;
+    uint64_t startup_cr3;
+    uint64_t startup_efer;
 };
 
 int smp_init(void);

@@ -30,6 +30,17 @@ static uint8_t degraded;
 
 #define SMP_STARTUP_ATTEMPTS 2U
 #define SMP_TOKEN_CPU_MASK 0xffffU
+#define CR0_PE (1ULL << 0)
+#define CR0_EM (1ULL << 2)
+#define CR0_MP (1ULL << 1)
+#define CR0_NE (1ULL << 5)
+#define CR0_WP (1ULL << 16)
+#define CR0_NW (1ULL << 29)
+#define CR0_CD (1ULL << 30)
+#define CR0_PG (1ULL << 31)
+#define EFER_LME (1ULL << 8)
+#define EFER_LMA (1ULL << 10)
+#define EFER_NXE (1ULL << 11)
 
 static void atomic_store_u32(uint32_t *value, uint32_t new_value) {
     __atomic_store_n(value,new_value,__ATOMIC_RELEASE);
@@ -139,6 +150,14 @@ void smp_ap_entry(uint32_t startup_token) {
     /* Install the per-CPU IDT before touching device state so an AP startup
      * fault is contained and diagnosable rather than triple-faulting. */
     interrupts_load_current_cpu();
+    {
+        uint64_t cr0, cr3;
+        __asm__ volatile ("mov %%cr0,%0" : "=r"(cr0) : : "memory");
+        __asm__ volatile ("mov %%cr3,%0" : "=r"(cr3) : : "memory");
+        records[cpu_id].startup_cr0=cr0;
+        records[cpu_id].startup_cr3=cr3;
+        records[cpu_id].startup_efer=cpu_read_msr(0xc0000080U);
+    }
     if (apic_cpu_init()!=0)
         smp_ap_fail(cpu_id,generation);
     if (tlb_register_cpu(cpu_id)!=0 || tlb_set_current_cpu(cpu_id)!=0)
@@ -338,6 +357,17 @@ int smp_startup_self_test(void) {
             if (i!=0 && (records[i].startup_generation==0 ||
                          records[i].startup_attempts==0 ||
                          records[i].startup_attempts>SMP_STARTUP_ATTEMPTS))
+                return -1;
+            if (i!=0 &&
+                (records[i].startup_cr3!=vmm_root() ||
+                 (records[i].startup_cr0 &
+                  (CR0_PE|CR0_MP|CR0_NE|CR0_WP|CR0_PG)) !=
+                  (CR0_PE|CR0_MP|CR0_NE|CR0_WP|CR0_PG) ||
+                 (records[i].startup_cr0 & (CR0_EM|CR0_CD|CR0_NW)) != 0 ||
+                 (records[i].startup_efer & (EFER_LME|EFER_LMA)) !=
+                  (EFER_LME|EFER_LMA) ||
+                 ((records[i].startup_efer & EFER_NXE)!=0) !=
+                  (cpu_has(ZEROOS_CPU_FEATURE_NX)!=0)))
                 return -1;
             if (!cpu_local_for_id(i) ||
                 !__atomic_load_n(&cpu_local_for_id(i)->online,
