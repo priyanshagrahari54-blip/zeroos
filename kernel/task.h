@@ -67,6 +67,9 @@ struct task {
     uint32_t timeslice_ticks;
     uint32_t preempt_count;
     uint8_t need_resched;
+    /* Split wait-queue/block transitions are externally observable on SMP;
+     * this flag keeps the current CPU owner explicit until dispatch commits. */
+    uint8_t scheduler_transition;
     uint8_t priority;
     uint8_t base_priority;
     uint8_t reserved_scheduler;

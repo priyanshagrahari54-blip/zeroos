@@ -241,6 +241,13 @@ static void task_write_u64(uint64_t value) {
  * the stack switch. Every other task must satisfy the complete ownership
  * contract at every observable point.
  */
+static int task_current_owner(const struct task *task) {
+    for (uint32_t cpu=0; cpu<ZEROOS_MAX_CPUS; ++cpu)
+        if (cpu_scheduler_started[cpu] && current_tasks[cpu]==task)
+            return 1;
+    return 0;
+}
+
 static int task_slot_for_pointer(const struct task *task) {
     uint64_t address;
     uint64_t base;
@@ -267,7 +274,10 @@ static void task_validate_table_at(const char *where,
         ++expected;
         current=current_tasks[cpu];
         if (!task_pointer_ok(current) || !task_identity_ok(current) ||
-            current->state!=TASK_RUNNING ||
+            ((current->state!=TASK_RUNNING) &&
+             !(current->scheduler_transition &&
+               (current->state==TASK_BLOCKED ||
+                current->state==TASK_RUNNABLE))) ||
             (task_is_idle(current) && task_idle_cpu(current)!=cpu) ||
             !cpu_local_for_id(cpu) ||
             cpu_local_for_id(cpu)->scheduler_current!=current ||
@@ -330,6 +340,16 @@ static void task_validate_table_at(const char *where,
                 task->runqueue_cpu>=ZEROOS_MAX_CPUS)
                 task_context_panic("ZEROOS PANIC: running task queue/context ownership invalid.\n",
                                    task);
+            ++running;
+            continue;
+        }
+
+        if (task->state==TASK_BLOCKED && task->scheduler_transition &&
+            task_current_owner(task)) {
+            /* wait_queue_block() publishes BLOCKED before it can call the
+             * context-switch path. Interrupts are disabled locally, but a
+             * remote CPU may checkpoint the table during this short split
+             * transition; the current CPU still owns the task. */
             ++running;
             continue;
         }
@@ -581,6 +601,7 @@ static void reap_zombies_locked(void) {
         task->timeslice_ticks=ZEROOS_DEFAULT_TIMESLICE;
         task->preempt_count=0;
         task->need_resched=0;
+        task->scheduler_transition=0;
         task->priority=ZEROOS_TASK_PRIORITY_DEFAULT;
         task->base_priority=ZEROOS_TASK_PRIORITY_DEFAULT;
         task->reserved_scheduler=0;
@@ -850,6 +871,7 @@ int task_system_init(void) {
         tasks[i].timeslice_ticks=ZEROOS_DEFAULT_TIMESLICE;
         tasks[i].preempt_count=0;
         tasks[i].need_resched=0;
+        tasks[i].scheduler_transition=0;
         tasks[i].priority=ZEROOS_TASK_PRIORITY_DEFAULT;
         tasks[i].base_priority=ZEROOS_TASK_PRIORITY_DEFAULT;
         tasks[i].reserved_scheduler=0;
@@ -970,6 +992,7 @@ int task_create_owned(task_entry_t entry, void *argument,
     task->timeslice_ticks=ZEROOS_DEFAULT_TIMESLICE;
     task->preempt_count=0;
     task->need_resched=0;
+    task->scheduler_transition=0;
     task->priority=ZEROOS_TASK_PRIORITY_DEFAULT;
     task->base_priority=ZEROOS_TASK_PRIORITY_DEFAULT;
     task->reserved_scheduler=0;
@@ -1087,6 +1110,7 @@ int task_prepare_block(void) {
         return -1;
 
     flags=spin_lock_irqsave(&task_lock);
+    task->scheduler_transition=1;
     task->state=TASK_BLOCKED;
     task->need_resched=0;
     spin_unlock_irqrestore(&task_lock,flags);
@@ -1105,14 +1129,20 @@ static int task_block_locked(uint64_t flags) {
 
     spin_lock(&task_lock);
 
-    /* Already made runnable again before the switch (lost-wakeup guard). */
+    /* Already made runnable again before the switch (lost-wakeup guard).
+     * The remote wake may have inserted the still-current task into a
+     * runqueue; remove it before restoring RUNNING ownership. */
     if (previous->state==TASK_RUNNABLE) {
+        runqueue_remove_locked(previous);
+        previous->state=TASK_RUNNING;
+        previous->scheduler_transition=0;
         spin_unlock(&task_lock);
         task_irq_restore(flags);
         return 0;
     }
 
     if (previous->state!=TASK_BLOCKED) {
+        previous->scheduler_transition=0;
         spin_unlock(&task_lock);
         task_irq_restore(flags);
         return -1;
@@ -1121,11 +1151,13 @@ static int task_block_locked(uint64_t flags) {
     next=find_next_runnable();
     if (!next) {
         previous->state=TASK_RUNNING;
+        previous->scheduler_transition=0;
         spin_unlock(&task_lock);
         task_irq_restore(flags);
         return -1;
     }
 
+    previous->scheduler_transition=0;
     dispatch_locked(previous,next,
                     "ZEROOS PANIC: task block invariant failed.\n");
     task_irq_restore(flags);
