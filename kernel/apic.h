@@ -28,18 +28,17 @@ struct apic_info {
     uint64_t acpi_local_apic_address;
 };
 
-/*
- * Probe only: the current supported boot path intentionally retains the PIC
- * until ACPI MADT routing is available. This prevents silently programming a
- * guessed IOAPIC topology. The capability and activation boundary is stable
- * for the APIC/IOAPIC driver that follows.
- */
+/* Discover and map only a validated ACPI-described controller topology. */
 int apic_init(uint64_t multiboot_info);
-/* Map and activate the validated LAPIC/IOAPIC topology for the PIT timer. */
+/* Activate the validated LAPIC/IOAPIC topology for the PIT timer. */
 int apic_activate_timer(void);
 const struct apic_info *apic_info(void);
 int apic_available(void);
 enum irq_controller_kind apic_controller(void);
 void apic_eoi(void);
+uint32_t apic_local_id(void);
+int apic_cpu_init(void);
+int apic_send_ipi(uint32_t destination_apic_id, uint8_t vector);
+int apic_send_init_sipi(uint32_t destination_apic_id, uint8_t vector);
 
 #endif

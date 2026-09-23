@@ -11,6 +11,7 @@
 #include "thread.h"
 #include "process.h"
 #include "scheduler.h"
+#include "smp.h"
 #include "wait.h"
 
 #define COM1 0x3F8
@@ -972,6 +973,22 @@ void kernel_main(uint64_t multiboot_info, uint64_t multiboot_magic) {
     serial_write_u64(timer_wallclock_unix_seconds());
     serial_write_public(".\n");
     serial_write_public("ZEROOS: IRQ ownership layer initialized.\n");
+
+    if (smp_init()!=0)
+        kernel_panic("SMP startup boundary failed");
+    serial_write_public("ZEROOS: SMP CPU topology: discovered=");
+    serial_write_u64(smp_discovered_count());
+    serial_write_public(" online=");
+    serial_write_u64(smp_online_count());
+    serial_write_public(".\n");
+    if (smp_discovered_count()>1) {
+        if (smp_online_count()!=smp_discovered_count())
+            kernel_panic("SMP topology published an incomplete online set");
+        serial_write_public("ZEROOS: SMP startup self-test passed.\n");
+    } else {
+        serial_write_public("ZEROOS: SMP startup self-test skipped (single CPU).\n");
+    }
+
     serial_write_public("ZEROOS: foundation milestone reached.\n");
 
     scheduler_self_test();

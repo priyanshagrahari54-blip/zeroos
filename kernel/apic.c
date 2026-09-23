@@ -11,6 +11,12 @@
 #define APIC_REG_TPR 0x080U
 #define APIC_REG_EOI 0x0b0U
 #define APIC_REG_SVR 0x0f0U
+#define APIC_REG_ICR_LOW 0x300U
+#define APIC_REG_ICR_HIGH 0x310U
+#define APIC_ICR_DELIVERY_STATUS (1U<<12)
+#define APIC_ICR_INIT 0x00004500U
+#define APIC_ICR_INIT_LEVEL 0x0000c500U
+#define APIC_ICR_SIPI 0x00004600U
 #define APIC_SVR_ENABLE (1U << 8)
 #define APIC_SPURIOUS_VECTOR 0xffU
 
@@ -117,6 +123,42 @@ static uint32_t ioapic_entry_flags(uint16_t acpi_flags) {
     if (trigger==3U)
         flags|=1U<<15;
     return flags;
+}
+
+static int apic_wait_icr(void) {
+    for (uint64_t spins=0; spins<1000000ULL; ++spins) {
+        if (!(local_apic_read(APIC_REG_ICR_LOW)&APIC_ICR_DELIVERY_STATUS))
+            return 0;
+        cpu_relax();
+    }
+    return -1;
+}
+
+static int apic_write_ipi(uint32_t destination_apic_id, uint32_t command) {
+    if (!state.local_apic_present || destination_apic_id>0xffU ||
+        !state.local_apic_virtual)
+        return -1;
+    if (apic_wait_icr()!=0)
+        return -1;
+    local_apic_write(APIC_REG_ICR_HIGH,destination_apic_id<<24);
+    local_apic_write(APIC_REG_ICR_LOW,command);
+    return apic_wait_icr();
+}
+
+static void apic_delay_us(uint64_t microseconds) {
+    uint64_t frequency=cpu_tsc_frequency_hz();
+    if (frequency) {
+        uint64_t ticks=(frequency/1000000ULL)*microseconds;
+        if (ticks==0)
+            ticks=1;
+        uint64_t start=cpu_read_tsc();
+        while (cpu_read_tsc()-start<ticks)
+            cpu_relax();
+        return;
+    }
+    for (uint64_t delay=0; delay<1000000ULL*microseconds/200ULL+1ULL;
+         ++delay)
+        cpu_relax();
 }
 
 static int locate_timer_route(const struct acpi_info *firmware,
@@ -252,4 +294,42 @@ enum irq_controller_kind apic_controller(void) {
 void apic_eoi(void) {
     if (apic_available() && state.controller==ZEROOS_IRQ_CONTROLLER_LAPIC_IOAPIC)
         local_apic_write(APIC_REG_EOI,0);
+}
+
+uint32_t apic_local_id(void) {
+    if (state.local_apic_present && state.local_apic_virtual)
+        return local_apic_read(APIC_REG_ID)>>24;
+    return state.local_apic_id;
+}
+
+int apic_cpu_init(void) {
+    if (!state.local_apic_present || !state.local_apic_virtual)
+        return -1;
+    local_apic_write(APIC_REG_TPR,0);
+    local_apic_write(APIC_REG_SVR,APIC_SPURIOUS_VECTOR|APIC_SVR_ENABLE);
+    return 0;
+}
+
+int apic_send_ipi(uint32_t destination_apic_id, uint8_t vector) {
+    if (vector<32U)
+        return -1;
+    return apic_write_ipi(destination_apic_id,(uint32_t)vector);
+}
+
+int apic_send_init_sipi(uint32_t destination_apic_id, uint8_t vector) {
+    if (vector==0 || destination_apic_id>0xffU ||
+        !state.local_apic_present)
+        return -1;
+
+    /* INIT assert/deassert followed by the architecturally required SIPIs. */
+    if (apic_write_ipi(destination_apic_id,APIC_ICR_INIT_LEVEL)!=0)
+        return -1;
+    apic_delay_us(10000);
+    if (apic_write_ipi(destination_apic_id,0x00008500U)!=0)
+        return -1;
+    apic_delay_us(200);
+    if (apic_write_ipi(destination_apic_id,APIC_ICR_SIPI|vector)!=0)
+        return -1;
+    apic_delay_us(200);
+    return apic_write_ipi(destination_apic_id,APIC_ICR_SIPI|vector);
 }

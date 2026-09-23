@@ -65,9 +65,12 @@ Every physical page and major kernel object needs ownership/lifetime semantics.
 ## 5. CPU Architecture
 `CPU_ARCHITECTURE.md` defines capability discovery, the SSE2/FPU baseline,
 NX enablement, invariant-TSC measurement and the per-CPU ownership record.
-The current supported matrix is one online x86-64 CPU with a capability-probed
-legacy PIC fallback or a validated LAPIC/IOAPIC timer path; APIC/IOAPIC
-activation requires ACPI routing data and is never guessed.
+The current supported matrix is x86-64 QEMU/PC with a capability-probed
+legacy PIC fallback or a validated LAPIC/IOAPIC timer path. When valid MADT
+processor records and the Local APIC path are available, the SMP boundary
+prepares and handshakes bounded AP records; otherwise startup fails explicitly
+rather than fabricating online CPUs. Multi-vCPU scheduling and hardware
+certification remain later gates.
 
 ## 6. Execution Architecture
 ### Tasks
@@ -87,21 +90,27 @@ Interrupt-return context and voluntary context-switch context must not be confla
 
 ## 7. Interrupt Architecture
 IDT dispatches exceptions and IRQs.
-PIC is the validated rollback path; the current APIC/IOAPIC implementation owns only the validated timer route. Full modern multiprocessor support still requires AP startup, non-timer routing and SMP coordination.
+PIC is the validated rollback path; the current APIC/IOAPIC implementation
+owns the validated timer route and the IPI mechanisms used by the SMP boundary.
+Full modern multiprocessor support still requires non-timer routing, per-CPU
+scheduler execution and complete SMP coordination.
 Timer interrupts drive scheduling/timers.
 IRQ registration must separate hardware delivery from device-driver work.
 
 ## 8. SMP Architecture
-Future:
-- CPU discovery,
-- AP startup,
-- per-CPU data,
-- per-CPU scheduler queues,
-- inter-processor interrupts,
-- TLB shootdowns,
-- lock contention instrumentation.
+The current Stage 1 boundary provides:
 
-The initial kernel can remain single-core for stabilization, but interfaces must not make SMP impossible.
+- bounded ACPI MADT CPU discovery;
+- a low-memory real-mode/protected-mode/long-mode AP trampoline;
+- per-CPU GS records and per-CPU GDT/TSS/IDT installation;
+- INIT/SIPI startup with an online handshake and explicit failure state;
+- inter-processor TLB shootdown request/acknowledgement plumbing;
+- AP idle/interrupt dispatch that never borrows the BSP scheduler context.
+
+Per-CPU scheduler queues, AP device-IRQ ownership, FPU state policy, lock
+contention instrumentation and full multi-vCPU stress/hardware certification
+remain production gates. The AP boundary may therefore fail closed during
+startup; it never fabricates an online CPU.
 
 ## 9. Userspace Architecture
 Userspace begins with an init/bootstrap process.

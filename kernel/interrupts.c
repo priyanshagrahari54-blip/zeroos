@@ -7,6 +7,7 @@
 #include "scheduler.h"
 #include "task.h"
 #include "thread.h"
+#include "tlb.h"
 
 struct idt_entry {
     uint16_t offset_low; uint16_t selector; uint8_t ist; uint8_t type_attr;
@@ -19,6 +20,7 @@ struct irq_binding { irq_handler_t handler; void *context; };
 
 static struct idt_entry idt[256];
 static struct irq_binding irq_bindings[16];
+static struct idtr runtime_idtr;
 
 extern void *isr_stub_table[256];
 extern void serial_write_public(const char *text);
@@ -151,6 +153,11 @@ static inline void lidt(const struct idtr *descriptor) {
     __asm__ volatile ("lidt %0" : : "m"(*descriptor));
 }
 
+void interrupts_load_current_cpu(void) {
+    if (runtime_idtr.base)
+        lidt(&runtime_idtr);
+}
+
 static void timer_irq_handler(uint8_t irq, struct interrupt_frame *frame, void *context) {
     (void)irq; (void)frame; (void)context;
     timer_tick();
@@ -172,6 +179,17 @@ uint64_t interrupt_dispatch(struct interrupt_frame *frame) {
         halt_exception(frame);
     }
 
+    if (frame->vector==ZEROOS_TLB_SHOOTDOWN_VECTOR) {
+        if (tlb_handle_ipi(cpu_current_id())!=0) {
+            serial_write_public("ZEROOS PANIC: unclaimed TLB shootdown IPI.\n");
+            for (;;) __asm__ volatile ("cli; hlt");
+        }
+        if (apic_controller()==ZEROOS_IRQ_CONTROLLER_LAPIC_IOAPIC)
+            apic_eoi();
+        cpu_irq_exit();
+        return (uint64_t)frame;
+    }
+
     if (frame->vector >= 32 && frame->vector < 48) {
         uint8_t irq=(uint8_t)(frame->vector-32);
         struct irq_binding *binding=&irq_bindings[irq];
@@ -181,6 +199,13 @@ uint64_t interrupt_dispatch(struct interrupt_frame *frame) {
             apic_eoi();
         else
             pic_send_eoi(irq);
+
+        /* APs do not borrow the BSP scheduler context. Their future
+         * per-CPU device/timer queues get a separate dispatch boundary. */
+        if (cpu_current_id()!=0) {
+            cpu_irq_exit();
+            return (uint64_t)frame;
+        }
 
         /*
          * Scheduling is deliberately deferred until after the device EOI
@@ -215,8 +240,11 @@ void interrupts_init(void) {
 
     for (uint16_t i=0;i<256;++i) idt_set_gate((uint8_t)i,isr_stub_table[i]);
 
-    struct idtr descriptor={.limit=(uint16_t)(sizeof(idt)-1),.base=(uint64_t)idt};
-    lidt(&descriptor);
+    runtime_idtr=(struct idtr){
+        .limit=(uint16_t)(sizeof(idt)-1),
+        .base=(uint64_t)idt
+    };
+    interrupts_load_current_cpu();
 
     if (irq_register(0,timer_irq_handler,0)!=0) {
         serial_write_public("ZEROOS PANIC: timer IRQ registration failed.\n");

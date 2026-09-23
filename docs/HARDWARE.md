@@ -24,11 +24,13 @@ invariant-TSC/CMOS clock abstractions and serial diagnostics.
 ACPI RSDP/root-table/MADT discovery is implemented with checksum, length,
 physical-window and entry-boundary validation. The validated controller path
 maps LAPIC/IOAPIC MMIO and owns one PIT timer redirection, with an explicit PIC
-rollback when validation or activation fails. Full non-timer IOAPIC routing,
-PCI/PCIe enumeration, DMA/IOMMU, storage controllers, USB, GPU/display
-drivers, audio, ACPI power management, and AP/SMP startup remain unsupported.
-Those boundaries are explicit; no unsupported device is silently treated as
-active.
+rollback when validation or activation fails. A bounded AP/SMP startup path
+uses the validated MADT/LAPIC data, a retained low-memory trampoline and
+per-CPU initialization; multi-vCPU scheduling and supported-hardware
+certification are not yet claims. Full non-timer IOAPIC routing, PCI/PCIe
+enumeration, DMA/IOMMU, storage controllers, USB, GPU/display drivers, audio
+and ACPI power management remain unsupported. Those boundaries are explicit;
+no unsupported device is silently treated as active.
 
 ## Engineering rule
 

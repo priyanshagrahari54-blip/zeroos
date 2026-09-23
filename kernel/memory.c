@@ -331,6 +331,33 @@ void *page_alloc(void) {
     return (void *)0;
 }
 
+void *page_alloc_below(uint64_t physical_limit) {
+    if (physical_limit==0)
+        return (void *)0;
+    uint64_t page_limit;
+    if (physical_limit>~0ULL-(ZEROOS_PAGE_SIZE-1ULL))
+        page_limit=ZEROOS_MAX_PAGES;
+    else
+        page_limit=(physical_limit+ZEROOS_PAGE_SIZE-1ULL)/ZEROOS_PAGE_SIZE;
+    if (page_limit>ZEROOS_MAX_PAGES || physical_limit>ZEROOS_MAX_PHYS_MEM)
+        page_limit=ZEROOS_MAX_PAGES;
+
+    uint64_t flags=spin_lock_irqsave(&memory_lock);
+    for (uint64_t page=0; page<page_limit; ++page) {
+        if (!usable_test(page) || bitmap_test(page))
+            continue;
+        bitmap_set(page);
+        page_references[page]=1;
+        if (free_pages)
+            --free_pages;
+        summary_refresh(page>>6);
+        spin_unlock_irqrestore(&memory_lock,flags);
+        return (void *)(page*ZEROOS_PAGE_SIZE);
+    }
+    spin_unlock_irqrestore(&memory_lock,flags);
+    return (void *)0;
+}
+
 void page_free(void *address) {
     (void)memory_page_release((uint64_t)address);
 }

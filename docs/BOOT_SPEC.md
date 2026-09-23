@@ -25,4 +25,8 @@
 
 ## Future boot stages
 
-UEFI-native loading, richer firmware discovery, ACPI tables, APIC/IOAPIC setup, SMP bring-up, measured boot, and secure-boot integration remain roadmap work.
+UEFI-native loading, richer firmware discovery, measured boot, and secure-boot
+integration remain roadmap work. The current GRUB/Multiboot2 path validates
+ACPI MADT topology, activates a validated LAPIC/IOAPIC timer route, and has a
+bounded AP startup boundary; complete SMP scheduling and broader hardware
+support remain later production gates.

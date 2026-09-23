@@ -2,11 +2,12 @@
 
 ## Scope
 
-The current Stage 1 supported matrix is x86-64 QEMU/PC hardware with one
-online CPU and a GRUB Multiboot2 handoff. The implementation does not claim
-SMP activation or universal hardware support. The CPU layer is nevertheless
-SMP-safe in ownership shape: CPU capabilities, the bootstrap APIC ID and a
-per-CPU record are explicit rather than hidden in scheduler globals.
+The current Stage 1 supported matrix is x86-64 QEMU/PC hardware with a GRUB
+Multiboot2 handoff. The CPU layer has a bounded per-CPU record array and an AP
+startup boundary; an AP is published only after it installs its own GS base,
+GDT/TSS, IDT, interrupt-controller state and TLB registration. Multi-vCPU
+runtime certification is still a separate gate, and this document does not
+claim universal hardware support.
 
 ## Capability discovery
 
@@ -42,9 +43,13 @@ architectural state.
 - interrupt count;
 - scheduler epoch.
 
-The current UP build has one statically allocated record. AP startup must add
-records and publish them only after the AP has installed its GDT, IDT, stack,
-interrupt controller route and scheduler state.
+Records are statically allocated for the bounded supported CPU capacity.
+`cpu_prepare_local()` reserves an AP record, while `cpu_mark_online()`
+publishes its GS base only during the AP entry handshake. The AP then installs
+its per-CPU GDT/TSS and IDT, enables its Local APIC state, and registers with
+the TLB protocol before the SMP startup boundary acknowledges it. APs remain
+out of the BSP scheduler until per-CPU scheduling and device-IRQ ownership
+have passed their own gates.
 
 ## Time source
 
@@ -64,8 +69,8 @@ publishes a timer-only LAPIC/IOAPIC route only after GSI and redirection
 validation. The discovery record retains bounded processor, IOAPIC and
 source-override descriptors, not just aggregate counts, so routing is built
 from validated firmware records. A failed activation retains the 8259 PIC;
-AP startup, non-timer routes and per-CPU controller ownership remain
-unsupported until their own gates pass.
+AP startup requires a usable LAPIC and validated MADT processor records, while
+non-timer routes and per-CPU device-controller ownership remain separate gates.
 
 ## Security and failure policy
 
@@ -88,9 +93,11 @@ The boot certification checks:
 
 ## Remaining Stage 1 boundary
 
-Full IOAPIC IRQ ownership beyond the timer route, AP startup, per-CPU
-runqueues, remote TLB-shootdown activation, and extended FPU state switching
-remain required before claiming SMP hardware support. The TLB request/acknow-
-ledgement contract is implemented and fail-closed for the current UP boundary.
-These capabilities are deliberately isolated behind this contract rather than
-represented by a fake single-CPU success path.
+Full IOAPIC IRQ ownership beyond the timer route, per-CPU runqueues and
+scheduler execution, remote TLB-shootdown stress, extended FPU state
+switching, and supported-hardware multi-vCPU validation remain required before
+claiming complete SMP hardware support. The TLB request/acknowledgement
+contract and AP startup handshake are implemented and fail closed when an AP
+cannot reach the published state. These capabilities are deliberately
+isolated behind explicit gates rather than represented by a fake single-CPU
+success path.

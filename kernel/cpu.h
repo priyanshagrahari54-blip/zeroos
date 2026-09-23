@@ -16,6 +16,7 @@
 #define ZEROOS_CPU_FEATURE_OSXSAVE    (1ULL << 9)
 #define ZEROOS_CPU_FEATURE_1G_PAGES   (1ULL << 10)
 #define ZEROOS_CPU_FEATURE_RDRAND     (1ULL << 11)
+#define ZEROOS_MAX_CPUS               64U
 
 struct cpu_info {
     uint32_t bootstrap_apic_id;
@@ -40,6 +41,8 @@ struct cpu_local {
     uint32_t nmi_depth;
     uint64_t scheduler_epoch;
     uint64_t interrupt_count;
+    uint8_t prepared;
+    uint8_t online;
 };
 
 int cpu_init(void);
@@ -55,5 +58,13 @@ void cpu_relax(void);
 void cpu_irq_enter(void);
 void cpu_irq_exit(void);
 uint32_t cpu_irq_depth(void);
+
+/* SMP-safe per-CPU registration and GS-base ownership. */
+int cpu_prepare_local(uint32_t cpu_id, uint32_t apic_id);
+int cpu_mark_online(uint32_t cpu_id);
+int cpu_mark_offline(uint32_t cpu_id);
+uint32_t cpu_current_id(void);
+uint32_t cpu_online_count(void);
+struct cpu_local *cpu_local_for_id(uint32_t cpu_id);
 
 #endif

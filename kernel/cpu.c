@@ -16,9 +16,10 @@
 #define CR4_OSXMMEXCPT (1ULL << 10)
 #define EFER_MSR 0xc0000080U
 #define EFER_NXE (1ULL << 11)
+#define IA32_GS_BASE_MSR 0xc0000101U
 
 static struct cpu_info boot_cpu;
-static struct cpu_local boot_cpu_local;
+static struct cpu_local cpu_locals[ZEROOS_MAX_CPUS] __attribute__((aligned(64)));
 
 static void cpuid(uint32_t leaf, uint32_t subleaf,
                   uint32_t *eax, uint32_t *ebx,
@@ -75,7 +76,8 @@ int cpu_init(void) {
     uint32_t max_extended;
 
     boot_cpu=(struct cpu_info){0};
-    boot_cpu_local=(struct cpu_local){0};
+    for (uint32_t i=0; i<ZEROOS_MAX_CPUS; ++i)
+        cpu_locals[i]=(struct cpu_local){0};
 
     cpuid(CPUID_VENDOR,0,&max_basic,&ebx,&ecx,&edx);
     boot_cpu.max_basic_leaf=max_basic;
@@ -162,12 +164,15 @@ int cpu_init(void) {
     }
 
     boot_cpu.initialized=1;
-    boot_cpu_local.cpu_id=0;
-    boot_cpu_local.apic_id=boot_cpu.bootstrap_apic_id;
-    boot_cpu_local.irq_depth=0;
-    boot_cpu_local.nmi_depth=0;
-    boot_cpu_local.scheduler_epoch=0;
-    boot_cpu_local.interrupt_count=0;
+    cpu_locals[0].cpu_id=0;
+    cpu_locals[0].apic_id=boot_cpu.bootstrap_apic_id;
+    cpu_locals[0].irq_depth=0;
+    cpu_locals[0].nmi_depth=0;
+    cpu_locals[0].scheduler_epoch=0;
+    cpu_locals[0].interrupt_count=0;
+    cpu_locals[0].prepared=1;
+    cpu_locals[0].online=1;
+    cpu_write_msr(IA32_GS_BASE_MSR,(uint64_t)&cpu_locals[0]);
     return 0;
 }
 
@@ -176,7 +181,13 @@ const struct cpu_info *cpu_info(void) {
 }
 
 const struct cpu_local *cpu_local(void) {
-    return &boot_cpu_local;
+    uint64_t base=cpu_read_msr(IA32_GS_BASE_MSR);
+    uint64_t first=(uint64_t)&cpu_locals[0];
+    uint64_t last=(uint64_t)&cpu_locals[ZEROOS_MAX_CPUS];
+    if (base>=first && base<last &&
+        ((base-first)%sizeof(cpu_locals[0]))==0)
+        return (const struct cpu_local *)(uint64_t)base;
+    return &cpu_locals[0];
 }
 
 int cpu_has(uint64_t feature) {
@@ -205,15 +216,64 @@ void cpu_relax(void) {
 }
 
 void cpu_irq_enter(void) {
-    ++boot_cpu_local.irq_depth;
-    ++boot_cpu_local.interrupt_count;
+    struct cpu_local *local=(struct cpu_local *)(uint64_t)cpu_local();
+    ++local->irq_depth;
+    ++local->interrupt_count;
 }
 
 void cpu_irq_exit(void) {
-    if (boot_cpu_local.irq_depth)
-        --boot_cpu_local.irq_depth;
+    struct cpu_local *local=(struct cpu_local *)(uint64_t)cpu_local();
+    if (local->irq_depth)
+        --local->irq_depth;
 }
 
 uint32_t cpu_irq_depth(void) {
-    return boot_cpu_local.irq_depth;
+    return cpu_local()->irq_depth;
+}
+
+int cpu_prepare_local(uint32_t cpu_id, uint32_t apic_id) {
+    if (cpu_id>=ZEROOS_MAX_CPUS)
+        return -1;
+    struct cpu_local *local=&cpu_locals[cpu_id];
+    if (local->online)
+        return local->apic_id==apic_id ? 0 : -1;
+    *local=(struct cpu_local){
+        .cpu_id=cpu_id,
+        .apic_id=apic_id,
+        .prepared=1,
+        .online=0
+    };
+    return 0;
+}
+
+int cpu_mark_online(uint32_t cpu_id) {
+    if (cpu_id>=ZEROOS_MAX_CPUS || !cpu_locals[cpu_id].prepared)
+        return -1;
+    __atomic_store_n(&cpu_locals[cpu_id].online,1,__ATOMIC_RELEASE);
+    cpu_write_msr(IA32_GS_BASE_MSR,(uint64_t)&cpu_locals[cpu_id]);
+    return 0;
+}
+
+int cpu_mark_offline(uint32_t cpu_id) {
+    if (cpu_id==0 || cpu_id>=ZEROOS_MAX_CPUS ||
+        !cpu_locals[cpu_id].online)
+        return -1;
+    __atomic_store_n(&cpu_locals[cpu_id].online,0,__ATOMIC_RELEASE);
+    return 0;
+}
+
+uint32_t cpu_current_id(void) {
+    return cpu_local()->cpu_id;
+}
+
+uint32_t cpu_online_count(void) {
+    uint32_t count=0;
+    for (uint32_t i=0; i<ZEROOS_MAX_CPUS; ++i)
+        if (__atomic_load_n(&cpu_locals[i].online,__ATOMIC_ACQUIRE))
+            ++count;
+    return count;
+}
+
+struct cpu_local *cpu_local_for_id(uint32_t cpu_id) {
+    return cpu_id<ZEROOS_MAX_CPUS ? &cpu_locals[cpu_id] : (struct cpu_local *)0;
 }

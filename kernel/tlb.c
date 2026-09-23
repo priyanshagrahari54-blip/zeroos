@@ -1,5 +1,6 @@
 #include "tlb.h"
 #include "sync.h"
+#include "cpu.h"
 
 struct tlb_request {
     volatile uint64_t sequence;
@@ -13,7 +14,6 @@ static struct spinlock tlb_lock;
 static struct tlb_request request;
 static tlb_ipi_sender_t ipi_sender;
 static uint64_t online_mask;
-static uint32_t current_cpu_id;
 static uint64_t sequence;
 static uint64_t completed_shootdowns;
 static uint8_t initialized;
@@ -92,7 +92,6 @@ int tlb_init(void) {
     request=(struct tlb_request){0};
     ipi_sender=0;
     online_mask=1ULL;
-    current_cpu_id=0;
     sequence=0;
     completed_shootdowns=0;
     initialized=1;
@@ -101,9 +100,8 @@ int tlb_init(void) {
 
 int tlb_set_current_cpu(uint32_t cpu_id) {
     if (!initialized || cpu_id>=ZEROOS_TLB_MAX_CPUS ||
-        !(online_mask&(1ULL<<cpu_id)))
+        cpu_current_id()!=cpu_id || !(online_mask&(1ULL<<cpu_id)))
         return -1;
-    current_cpu_id=cpu_id;
     return 0;
 }
 
@@ -128,7 +126,7 @@ int tlb_unregister_cpu(uint32_t cpu_id) {
     if (!initialized || cpu_id==0 || cpu_id>=ZEROOS_TLB_MAX_CPUS)
         return -1;
     uint64_t flags=spin_lock_irqsave(&tlb_lock);
-    if (!(online_mask&(1ULL<<cpu_id)) || current_cpu_id==cpu_id) {
+    if (!(online_mask&(1ULL<<cpu_id)) || cpu_current_id()==cpu_id) {
         spin_unlock_irqrestore(&tlb_lock,flags);
         return -1;
     }
@@ -173,7 +171,12 @@ int tlb_invalidate_page(uint64_t virtual_address) {
         return -1;
 
     uint64_t flags=spin_lock_irqsave(&tlb_lock);
-    uint64_t targets=online_mask&~(1ULL<<current_cpu_id);
+    uint32_t cpu_id=cpu_current_id();
+    if (cpu_id>=ZEROOS_TLB_MAX_CPUS) {
+        spin_unlock_irqrestore(&tlb_lock,flags);
+        return -1;
+    }
+    uint64_t targets=online_mask&~(1ULL<<cpu_id);
     invalidate_local(virtual_address);
     int result=request_remote_locked(targets,0,virtual_address);
     spin_unlock_irqrestore(&tlb_lock,flags);
@@ -185,7 +188,12 @@ int tlb_flush_all(void) {
         return -1;
 
     uint64_t flags=spin_lock_irqsave(&tlb_lock);
-    uint64_t targets=online_mask&~(1ULL<<current_cpu_id);
+    uint32_t cpu_id=cpu_current_id();
+    if (cpu_id>=ZEROOS_TLB_MAX_CPUS) {
+        spin_unlock_irqrestore(&tlb_lock,flags);
+        return -1;
+    }
+    uint64_t targets=online_mask&~(1ULL<<cpu_id);
     flush_local();
     int result=request_remote_locked(targets,1,0);
     spin_unlock_irqrestore(&tlb_lock,flags);
@@ -201,8 +209,9 @@ uint64_t tlb_shootdown_sequence(void) {
 }
 
 int tlb_debug_validate(void) {
-    if (!initialized || online_mask==0 || current_cpu_id>=ZEROOS_TLB_MAX_CPUS ||
-        !(online_mask&(1ULL<<current_cpu_id)) ||
+    uint32_t cpu_id=cpu_current_id();
+    if (!initialized || online_mask==0 || cpu_id>=ZEROOS_TLB_MAX_CPUS ||
+        !(online_mask&(1ULL<<cpu_id)) ||
         bit_count(online_mask)>ZEROOS_TLB_MAX_CPUS)
         return -1;
     if (bit_count(online_mask)>1U && !ipi_sender)

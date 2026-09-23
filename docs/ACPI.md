@@ -47,7 +47,8 @@ hardware. After the kernel VMM is live, `apic_init()` maps the validated LAPIC
 and IOAPIC pages into a reserved supervisor MMIO window, validates the LAPIC
 and IOAPIC version registers, and retains the mappings only when all accesses
 are within the discovered topology. `apic_activate_timer()` then owns the
-narrow first activation boundary:
+narrow first activation boundary, after which the SMP layer may use the LAPIC
+for validated INIT/SIPI and IPI delivery:
 
 - it resolves the PIT IRQ through the MADT source-override table;
 - programs one masked IOAPIC redirection to the bootstrap LAPIC;
@@ -55,10 +56,13 @@ narrow first activation boundary:
 - unmasks the timer only after the destination and trigger fields are valid;
 - masks the legacy PIC before publishing the LAPIC/IOAPIC backend state.
 
-If any validation fails, activation is not published and the PIC remains the
-safe backend. Non-timer legacy IRQ routing, per-CPU controller state, AP
-startup, and full rollback for a future multi-route transition remain separate
-Stage 1 gates.
+If any timer-route validation fails, activation is not published and the PIC
+remains the safe backend. AP startup is attempted only when a valid MADT
+contains additional enabled processors and the Local APIC path is usable; the
+trampoline, per-CPU setup and TLB registration must all acknowledge before an
+AP is published. Non-timer legacy IRQ routing, per-CPU device-controller state
+and full rollback for a future multi-route transition remain separate Stage 1
+gates.
 
 ## Diagnostics and validation
 

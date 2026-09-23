@@ -104,9 +104,11 @@ and IOAPIC route is fully programmed; any failure retains the PIC backend.
 A guessed APIC route is never considered support.
 
 The active Stage 1 matrix therefore has an explicit legacy-PIC fallback and a
-validated LAPIC/IOAPIC timer path. Non-timer IRQ ownership, AP startup,
-per-CPU interrupt-controller state and multi-CPU routing remain separate gates.
-Per-CPU interrupt nesting and count are tracked in `struct cpu_local`.
+validated LAPIC/IOAPIC timer path. The SMP boundary also uses Local-APIC IPIs
+for AP startup and fail-closed TLB shootdowns; non-timer IRQ ownership,
+per-CPU device-controller state and multi-CPU scheduling/routing remain
+separate gates. Per-CPU interrupt nesting and count are tracked in
+`struct cpu_local`.
 
 ## Production direction
 
@@ -115,7 +117,7 @@ Per-CPU interrupt nesting and count are tracked in `struct cpu_local`.
 | 8259 PIC fallback or validated LAPIC + IOAPIC timer route | Full Local APIC + IOAPIC IRQ ownership |
 | PIT + invariant-TSC clocksource | APIC/HPET/TSC clock-event layer |
 | Global periodic tick | Per-CPU event scheduling / idle tick suppression |
-| One online CPU with per-CPU shape | AP startup and SMP interrupt routing |
+| AP startup boundary with per-CPU shape | Per-CPU event scheduling and full SMP interrupt routing |
 | Single IRQ owner | Shared/managed device IRQ registration where required |
 | Hard IRQ handler | Deferred work / threaded device handling |
 | No TLB shootdown | SMP invalidation protocol |
