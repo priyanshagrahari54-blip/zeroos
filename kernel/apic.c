@@ -127,7 +127,7 @@ static uint32_t ioapic_entry_flags(uint16_t acpi_flags) {
 }
 
 static int apic_wait_icr(void) {
-    for (uint64_t spins=0; spins<100000ULL; ++spins) {
+    for (uint64_t spins=0; spins<1000ULL; ++spins) {
         if (!(local_apic_read(APIC_REG_ICR_LOW)&APIC_ICR_DELIVERY_STATUS))
             return 0;
         cpu_relax();
