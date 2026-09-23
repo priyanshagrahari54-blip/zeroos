@@ -29,6 +29,8 @@
 #define APIC_TIMER_VECTOR 32U
 #define APIC_MMIO_FLAGS (VMM_WRITABLE | VMM_CACHE_DISABLE | VMM_NO_EXECUTE)
 
+extern void serial_write_public(const char *text);
+
 static struct apic_info state;
 static uint64_t ioapic_virtual[IOAPIC_MAX_SUPPORTED];
 static uint16_t ioapic_redirection_count[IOAPIC_MAX_SUPPORTED];
@@ -337,14 +339,20 @@ int apic_send_init_sipi(uint32_t destination_apic_id, uint8_t vector) {
         return -1;
 
     /* INIT assert/deassert followed by the architecturally required SIPIs. */
+    serial_write_public("ZEROOS: LAPIC INIT assert.\n");
     if (apic_write_ipi(destination_apic_id,APIC_ICR_INIT_LEVEL)!=0)
         return -1;
+    serial_write_public("ZEROOS: LAPIC INIT asserted.\n");
     apic_delay_us(10000);
+    serial_write_public("ZEROOS: LAPIC INIT delay complete.\n");
     if (apic_write_ipi(destination_apic_id,0x00008500U)!=0)
         return -1;
+    serial_write_public("ZEROOS: LAPIC INIT deasserted.\n");
     apic_delay_us(200);
     if (apic_write_ipi(destination_apic_id,APIC_ICR_SIPI|vector)!=0)
         return -1;
+    serial_write_public("ZEROOS: LAPIC first SIPI delivered.\n");
     apic_delay_us(200);
+    serial_write_public("ZEROOS: LAPIC second SIPI dispatch.\n");
     return apic_write_ipi(destination_apic_id,APIC_ICR_SIPI|vector);
 }
