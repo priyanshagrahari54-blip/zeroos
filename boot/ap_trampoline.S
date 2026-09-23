@@ -31,15 +31,26 @@ ap_trampoline_start:
     movl %eax, %edx
     addl $(ap_trampoline_gdt_ptr-ap_trampoline_start), %edx
     lgdt (%edx)
+    movl %eax, %ebx
+    movw $0xe9, %dx
+    movb $'g', %al
+    outb %al, %dx
+    movl %ebx, %eax
 
     movl %eax, %edx
     addl $(ap_trampoline_cr3-ap_trampoline_start), %edx
     movl (%edx), %eax
     movl %eax, %cr3
+    movw $0xe9, %dx
+    movb $'q', %al
+    outb %al, %dx
 
     movl %cr0, %eax
     orl $0x00000001, %eax
     movl %eax, %cr0
+    movw $0xe9, %dx
+    movb $'e', %al
+    outb %al, %dx
     ljmpl $0x08, $(ap_trampoline_protected-ap_trampoline_start)
 
 .code32
