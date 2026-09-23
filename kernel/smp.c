@@ -332,12 +332,21 @@ int smp_startup_self_test(void) {
         return -1;
     for (uint32_t i=0; i<discovered; ++i) {
         uint32_t state=atomic_load_u32(&records[i].state);
+        if (records[i].cpu_id!=i)
+            return -1;
         if (state==ZEROOS_SMP_CPU_ONLINE) {
+            if (i!=0 && (records[i].startup_generation==0 ||
+                         records[i].startup_attempts==0 ||
+                         records[i].startup_attempts>SMP_STARTUP_ATTEMPTS))
+                return -1;
             if (!cpu_local_for_id(i) ||
                 !__atomic_load_n(&cpu_local_for_id(i)->online,
                                  __ATOMIC_ACQUIRE))
                 return -1;
-        } else if (state!=ZEROOS_SMP_CPU_FAILED && i!=0) {
+        } else if (state==ZEROOS_SMP_CPU_FAILED) {
+            if (records[i].startup_attempts>SMP_STARTUP_ATTEMPTS)
+                return -1;
+        } else if (i!=0) {
             return -1;
         }
     }
