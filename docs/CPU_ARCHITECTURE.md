@@ -97,7 +97,9 @@ The boot certification checks:
 - generation-tagged AP acknowledgement, bounded retry and TLB-mask recovery;
 - AP CR0/EFER/CR3 policy and shared-root invariants;
 - scheduler priority, affinity and starvation-aging metadata;
-- repeated QEMU scheduler/process stress boots.
+- repeated QEMU scheduler/process stress boots;
+- four-vCPU SMP startup and remote-shootdown certification;
+- NX-disabled two-vCPU boot certification.
 
 ## Remaining Stage 1 boundary
 
