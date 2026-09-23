@@ -344,8 +344,8 @@ static void task_validate_table_at(const char *where,
             continue;
         }
 
-        if (task->state==TASK_BLOCKED && task->scheduler_transition &&
-            task_current_owner(task)) {
+        if ((task->state==TASK_BLOCKED || task->state==TASK_RUNNABLE) &&
+            task->scheduler_transition && task_current_owner(task)) {
             /* wait_queue_block() publishes BLOCKED before it can call the
              * context-switch path. Interrupts are disabled locally, but a
              * remote CPU may checkpoint the table during this short split

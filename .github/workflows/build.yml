@@ -104,6 +104,11 @@ jobs:
             -global isa-debugcon.iobase=0xe9 \
             -d int,guest_errors,cpu_reset \
             -D build/qemu-smp4.log || true
+          if grep -q "ZEROOS PANIC:" build/serial-smp4.log; then
+            echo "ZEROOS four-vCPU boot reported a panic before scheduler gates:"
+            grep "ZEROOS PANIC:" build/serial-smp4.log
+            exit 1
+          fi
           grep -q "ZEROOS: SMP CPU topology: discovered=4 online=4." build/serial-smp4.log
           grep -q "ZEROOS: remote TLB shootdown self-test passed." build/serial-smp4.log
           grep -q "ZEROOS: scheduler certification passed." build/serial-smp4.log
