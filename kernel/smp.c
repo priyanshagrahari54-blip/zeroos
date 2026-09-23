@@ -225,7 +225,7 @@ int smp_init(void) {
 
         uint8_t started=0;
         uint64_t wait_ticks=timer_ticks();
-        for (uint64_t spins=0; spins<5000000ULL; ++spins) {
+        for (uint64_t spins=0; spins<100000ULL; ++spins) {
             uint32_t state=atomic_load_u32(&records[i].state);
             if (state==ZEROOS_SMP_CPU_ONLINE) {
                 started=1;

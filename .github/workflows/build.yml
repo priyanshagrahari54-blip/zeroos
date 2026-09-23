@@ -129,6 +129,10 @@ jobs:
             qsummary=$(tail -c 6000 build/qemu.log | tr '\r\n' '  ')
             echo "::error title=QEMU diagnostics::$qsummary"
           fi
+          if test -s build/debug.log; then
+            dsummary=$(tail -c 2000 build/debug.log | tr '\r\n' '  ')
+            echo "::error title=QEMU debug port::$dsummary"
+          fi
 
       - name: Preserve boot diagnostics
         if: always()

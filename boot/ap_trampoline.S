@@ -12,6 +12,9 @@
 .code16
 ap_trampoline_start:
     cli
+    movw $0xe9, %dx
+    movb $'r', %al
+    outb %al, %dx
     xorw %ax, %ax
     movw %ax, %ds
     movw %ax, %es
@@ -41,6 +44,9 @@ ap_trampoline_start:
 
 .code32
 ap_trampoline_protected:
+    movw $0xe9, %dx
+    movb $'p', %al
+    outb %al, %dx
     movw $0x10, %ax
     movw %ax, %ds
     movw %ax, %es
@@ -75,10 +81,17 @@ ap_trampoline_protected:
 
 .code64
 ap_trampoline_long:
+    movw $0xe9, %dx
+    movb $'l', %al
+    outb %al, %dx
     movw $0x10, %ax
     movw %ax, %ds
     movw %ax, %es
     movw %ax, %ss
+
+    movw $0xe9, %dx
+    movb $'c', %al
+    outb %al, %dx
 
     leaq ap_trampoline_stack(%rip), %rsi
     movq (%rsi), %rsp
