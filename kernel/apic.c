@@ -150,7 +150,7 @@ static int apic_write_ipi(uint32_t destination_apic_id, uint32_t command) {
 
 static int apic_fire_ipi(uint32_t destination_apic_id, uint32_t command) {
     if (!state.local_apic_present || destination_apic_id>0xffU ||
-        !state.local_apic_virtual || apic_wait_icr()!=0)
+        !state.local_apic_virtual)
         return -1;
     local_apic_write(APIC_REG_ICR_HIGH,destination_apic_id<<24);
     local_apic_write(APIC_REG_ICR_LOW,command);
