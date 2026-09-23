@@ -50,6 +50,21 @@ static uint32_t atomic_load_u32(const uint32_t *value) {
     return __atomic_load_n(value,__ATOMIC_ACQUIRE);
 }
 
+static void smp_write_u64(uint64_t value) {
+    char buffer[21];
+    int position=20;
+    buffer[position]='\0';
+    if (value==0) {
+        serial_write_public("0");
+        return;
+    }
+    while (value && position>0) {
+        buffer[--position]=(char)('0'+(value%10ULL));
+        value/=10ULL;
+    }
+    serial_write_public(&buffer[position]);
+}
+
 static uint64_t trampoline_offset(const char *symbol) {
     return (uint64_t)symbol-(uint64_t)ap_trampoline_start;
 }
@@ -218,27 +233,47 @@ static int smp_start_ap(uint32_t cpu_id) {
         *(uint32_t *)(copy+field)=(generation<<16)|cpu_id;
         atomic_store_u32(&records[cpu_id].state,ZEROOS_SMP_CPU_STARTING);
 
-        serial_write_public("ZEROOS: SMP INIT/SIPI dispatch started.\n");
+        serial_write_public("ZEROOS: SMP INIT/SIPI dispatch started (cpu=");
+        smp_write_u64(cpu_id);
+        serial_write_public(", attempt=");
+        smp_write_u64(attempt);
+        serial_write_public(").\n");
         if (apic_send_init_sipi(records[cpu_id].apic_id,trampoline_vector)!=0) {
             atomic_store_u32(&records[cpu_id].state,ZEROOS_SMP_CPU_FAILED);
             smp_cleanup_failed_ap(cpu_id);
+            serial_write_public("ZEROOS: SMP INIT/SIPI dispatch failed (cpu=");
+            smp_write_u64(cpu_id);
+            serial_write_public(").\n");
             continue;
         }
-        serial_write_public("ZEROOS: SMP INIT/SIPI dispatch completed.\n");
+        serial_write_public("ZEROOS: SMP INIT/SIPI dispatch completed (cpu=");
+        smp_write_u64(cpu_id);
+        serial_write_public(").\n");
 
+        uint8_t timed_out=0;
         uint64_t wait_ticks=timer_ticks();
         for (uint64_t spins=0; spins<100000ULL; ++spins) {
             uint32_t state=atomic_load_u32(&records[cpu_id].state);
             if (state==ZEROOS_SMP_CPU_ONLINE)
                 return 0;
-            if (state==ZEROOS_SMP_CPU_FAILED ||
-                timer_ticks()-wait_ticks>=100ULL)
+            if (state==ZEROOS_SMP_CPU_FAILED)
                 break;
+            if (timer_ticks()-wait_ticks>=100ULL) {
+                timed_out=1;
+                break;
+            }
             cpu_relax();
         }
 
         atomic_store_u32(&records[cpu_id].state,ZEROOS_SMP_CPU_FAILED);
         smp_cleanup_failed_ap(cpu_id);
+        serial_write_public(timed_out ?
+                            "ZEROOS: SMP AP acknowledgement timed out (cpu=" :
+                            "ZEROOS: SMP AP reported startup failure (cpu=");
+        smp_write_u64(cpu_id);
+        serial_write_public(", attempt=");
+        smp_write_u64(attempt);
+        serial_write_public(").\n");
     }
     return -1;
 }
