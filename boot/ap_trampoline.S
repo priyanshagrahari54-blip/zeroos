@@ -57,55 +57,7 @@ ap_trampoline_start:
     outb %al, %dx
     movl %ebx, %edx
     addl $(ap_trampoline_protected_far-ap_trampoline_start), %edx
-    movl %edx, %edi
-    movw $0xe9, %dx
-    movb $'h', %al
-    outb %al, %dx
 
-    /* Emit the pointer address and its patched target for transition
-     * diagnostics without relying on a second console. */
-    movl %edi, %esi
-    movl $8, %ecx
-1:
-    movl %esi, %eax
-    shrl $28, %eax
-    andl $0x0f, %eax
-    cmpb $10, %al
-    jb 2f
-    addb $('a'-10), %al
-    jmp 3f
-2:
-    addb $'0', %al
-3:
-    movw $0xe9, %dx
-    outb %al, %dx
-    shll $4, %esi
-    decl %ecx
-    jnz 1b
-
-    movw $0xe9, %dx
-    movb $':', %al
-    outb %al, %dx
-    movl (%edi), %esi
-    movl $8, %ecx
-4:
-    movl %esi, %eax
-    shrl $28, %eax
-    andl $0x0f, %eax
-    cmpb $10, %al
-    jb 5f
-    addb $('a'-10), %al
-    jmp 6f
-5:
-    addb $'0', %al
-6:
-    movw $0xe9, %dx
-    outb %al, %dx
-    shll $4, %esi
-    decl %ecx
-    jnz 4b
-
-    movl %edi, %edx
     movl %cr0, %eax
     orl $0x00000001, %eax
     movl %eax, %cr0

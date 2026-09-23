@@ -27,10 +27,6 @@ static void *trampoline_page;
 static uint8_t trampoline_vector;
 static uint8_t initialized;
 
-static void smp_debug_marker(char marker) {
-    __asm__ volatile ("outb %0, $0xe9" : : "a"(marker));
-}
-
 static void atomic_store_u32(uint32_t *value, uint32_t new_value) {
     __atomic_store_n(value,new_value,__ATOMIC_RELEASE);
 }
@@ -104,48 +100,23 @@ static void smp_ap_fail(uint32_t cpu_id) {
 }
 
 void smp_ap_entry(uint32_t cpu_id) {
-    smp_debug_marker('A');
     if (cpu_id==0 || cpu_id>=discovered ||
         records[cpu_id].cpu_id!=cpu_id)
         smp_ap_fail(cpu_id);
 
     if (cpu_mark_online(cpu_id)!=0)
         smp_ap_fail(cpu_id);
-    smp_debug_marker('B');
     if (gdt_init_cpu(cpu_id)!=0)
         smp_ap_fail(cpu_id);
-    smp_debug_marker('C');
+    /* Install the per-CPU IDT before touching device state so an AP startup
+     * fault is contained and diagnosable rather than triple-faulting. */
     interrupts_load_current_cpu();
-    smp_debug_marker('E');
-    if (vmm_translate(apic_info()->local_apic_virtual)==0)
-        smp_debug_marker('0');
-    else
-        smp_debug_marker('1');
-    {
-        uint64_t root=vmm_root();
-        uint64_t mmio=apic_info()->local_apic_virtual;
-        uint64_t active;
-        __asm__ volatile ("mov %1, %%cr3; invlpg (%%rax); mov %%cr3, %0"
-                          : "=r"(active)
-                          : "r"(root), "a"(mmio)
-                          : "memory");
-        if (active!=root)
-            smp_debug_marker('X');
-        else
-            smp_debug_marker('Y');
-    }
     if (apic_cpu_init()!=0)
         smp_ap_fail(cpu_id);
-    smp_debug_marker('D');
-    if (tlb_register_cpu(cpu_id)!=0)
+    if (tlb_register_cpu(cpu_id)!=0 || tlb_set_current_cpu(cpu_id)!=0)
         smp_ap_fail(cpu_id);
-    smp_debug_marker('F');
-    if (tlb_set_current_cpu(cpu_id)!=0)
-        smp_ap_fail(cpu_id);
-    smp_debug_marker('G');
 
     atomic_store_u32(&records[cpu_id].state,ZEROOS_SMP_CPU_ONLINE);
-    smp_debug_marker('H');
     __atomic_fetch_add(&online,1,__ATOMIC_ACQ_REL);
 
     for (;;) {
