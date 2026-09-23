@@ -27,6 +27,10 @@ static void *trampoline_page;
 static uint8_t trampoline_vector;
 static uint8_t initialized;
 
+static void smp_debug_marker(char marker) {
+    __asm__ volatile ("outb %0, $0xe9" : : "a"(marker));
+}
+
 static void atomic_store_u32(uint32_t *value, uint32_t new_value) {
     __atomic_store_n(value,new_value,__ATOMIC_RELEASE);
 }
@@ -100,21 +104,31 @@ static void smp_ap_fail(uint32_t cpu_id) {
 }
 
 void smp_ap_entry(uint32_t cpu_id) {
+    smp_debug_marker('A');
     if (cpu_id==0 || cpu_id>=discovered ||
         records[cpu_id].cpu_id!=cpu_id)
         smp_ap_fail(cpu_id);
 
     if (cpu_mark_online(cpu_id)!=0)
         smp_ap_fail(cpu_id);
+    smp_debug_marker('B');
     if (gdt_init_cpu(cpu_id)!=0)
         smp_ap_fail(cpu_id);
+    smp_debug_marker('C');
     if (apic_cpu_init()!=0)
         smp_ap_fail(cpu_id);
+    smp_debug_marker('D');
     interrupts_load_current_cpu();
-    if (tlb_register_cpu(cpu_id)!=0 || tlb_set_current_cpu(cpu_id)!=0)
+    smp_debug_marker('E');
+    if (tlb_register_cpu(cpu_id)!=0)
         smp_ap_fail(cpu_id);
+    smp_debug_marker('F');
+    if (tlb_set_current_cpu(cpu_id)!=0)
+        smp_ap_fail(cpu_id);
+    smp_debug_marker('G');
 
     atomic_store_u32(&records[cpu_id].state,ZEROOS_SMP_CPU_ONLINE);
+    smp_debug_marker('H');
     __atomic_fetch_add(&online,1,__ATOMIC_ACQ_REL);
 
     for (;;) {
