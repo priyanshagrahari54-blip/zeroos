@@ -50,17 +50,15 @@ ap_trampoline_start:
     /* Keep an absolute protected-mode stack ready before PE is enabled. */
     movl %ebx, %esp
     addl $0x1f0, %esp
+    movw $0xe9, %dx
+    movb $'e', %al
+    outb %al, %dx
     movl %ebx, %edx
     addl $(ap_trampoline_protected_far-ap_trampoline_start), %edx
 
     movl %cr0, %eax
     orl $0x00000001, %eax
     movl %eax, %cr0
-    movw $0xe9, %dx
-    movb $'e', %al
-    outb %al, %dx
-    movl %ebx, %edx
-    addl $(ap_trampoline_protected_far-ap_trampoline_start), %edx
     ljmpl *(%edx)
 
 .code32
