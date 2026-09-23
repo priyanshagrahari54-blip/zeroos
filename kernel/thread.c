@@ -4,6 +4,31 @@
 
 extern void serial_write_public(const char *text);
 
+static void thread_write_u64(uint64_t value) {
+    char buffer[21];
+    int position=20;
+    buffer[position]='\0';
+    if (value==0) {
+        serial_write_public("0");
+        return;
+    }
+    while (value && position>0) {
+        buffer[--position]=(char)('0'+(value%10ULL));
+        value/=10ULL;
+    }
+    serial_write_public(&buffer[position]);
+}
+
+static int thread_create_failure(const char *stage,
+                                 const struct process *process) {
+    serial_write_public("ZEROOS: kernel thread creation rejected at ");
+    serial_write_public(stage);
+    serial_write_public(" (pid=");
+    thread_write_u64(process ? process->pid : 0);
+    serial_write_public(").\n");
+    return -1;
+}
+
 #define ZEROOS_MAX_THREADS 32U
 #define ZEROOS_THREAD_SLOT_BITS 16U
 #define ZEROOS_THREAD_SLOT_MASK ((1ULL << ZEROOS_THREAD_SLOT_BITS) - 1ULL)
@@ -115,9 +140,10 @@ int thread_create_kernel(struct process *process,
     struct thread *thread;
     uint64_t task_id;
 
-    if (!process || !entry ||
-        process_thread_reserve(process)!=0)
-        return -1;
+    if (!process || !entry)
+        return thread_create_failure("invalid arguments",process);
+    if (process_thread_reserve(process)!=0)
+        return thread_create_failure("process reservation",process);
 
     flags=spin_lock_irqsave(&thread_lock);
     for (uint32_t i=0;i<ZEROOS_MAX_THREADS;++i) {
@@ -131,7 +157,7 @@ int thread_create_kernel(struct process *process,
     if (slot<0) {
         spin_unlock_irqrestore(&thread_lock,flags);
         (void)process_thread_unreserve(process);
-        return -1;
+        return thread_create_failure("thread table capacity",process);
     }
 
     thread=&threads[slot];
@@ -139,7 +165,7 @@ int thread_create_kernel(struct process *process,
     if (generation==0) {
         spin_unlock_irqrestore(&thread_lock,flags);
         (void)process_thread_unreserve(process);
-        return -1;
+        return thread_create_failure("thread generation exhausted",process);
     }
 
     thread->generation=generation;
@@ -166,7 +192,7 @@ int thread_create_kernel(struct process *process,
         thread_reset_locked(thread);
         spin_unlock_irqrestore(&thread_lock,flags);
         (void)process_thread_unreserve(process);
-        return -1;
+        return thread_create_failure("scheduler preemption boundary",process);
     }
 
     /* Keep the scheduler task staged until the process list owns the thread.
@@ -178,7 +204,7 @@ int thread_create_kernel(struct process *process,
         thread_reset_locked(thread);
         spin_unlock_irqrestore(&thread_lock,flags);
         (void)process_thread_unreserve(process);
-        return -1;
+        return thread_create_failure("task resource capacity",process);
     }
 
     {
