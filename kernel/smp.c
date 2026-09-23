@@ -153,12 +153,19 @@ void smp_ap_entry(uint32_t startup_token) {
      * fault is contained and diagnosable rather than triple-faulting. */
     interrupts_load_current_cpu();
     {
+        struct __attribute__((packed)) {
+            uint16_t limit;
+            uint64_t base;
+        } idtr;
         uint64_t cr0, cr3;
         __asm__ volatile ("mov %%cr0,%0" : "=r"(cr0) : : "memory");
         __asm__ volatile ("mov %%cr3,%0" : "=r"(cr3) : : "memory");
+        __asm__ volatile ("sidt %0" : "=m"(idtr) : : "memory");
         records[cpu_id].startup_cr0=cr0;
         records[cpu_id].startup_cr3=cr3;
         records[cpu_id].startup_efer=cpu_read_msr(0xc0000080U);
+        records[cpu_id].startup_idt_base=idtr.base;
+        records[cpu_id].startup_idt_limit=idtr.limit;
     }
     if (apic_cpu_init()!=0)
         smp_ap_fail(cpu_id,generation);
@@ -371,7 +378,10 @@ int smp_startup_self_test(void) {
                  (records[i].startup_efer & (EFER_LME|EFER_LMA)) !=
                   (EFER_LME|EFER_LMA) ||
                  ((records[i].startup_efer & EFER_NXE)!=0) !=
-                  (cpu_has(ZEROOS_CPU_FEATURE_NX)!=0)))
+                  (cpu_has(ZEROOS_CPU_FEATURE_NX)!=0) ||
+                 records[i].startup_idt_base==0 ||
+                 records[i].startup_idt_limit < (256U*16U-1U) ||
+                 !gdt_cpu_is_initialized(i)))
                 return -1;
             if (!cpu_local_for_id(i) ||
                 !__atomic_load_n(&cpu_local_for_id(i)->online,

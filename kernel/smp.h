@@ -20,6 +20,8 @@ struct smp_cpu_record {
     uint64_t startup_cr0;
     uint64_t startup_cr3;
     uint64_t startup_efer;
+    uint64_t startup_idt_base;
+    uint64_t startup_idt_limit;
 };
 
 int smp_init(void);
