@@ -49,7 +49,7 @@ jobs:
           # not sufficient evidence.
           for iteration in 1 2 3; do
             echo "===== ZEROOS boot certification iteration ${iteration} ====="
-            timeout 10s qemu-system-x86_64             -smp 2             -cdrom build/zeroos.iso             -serial file:build/serial.log             -display none             -no-reboot             -no-shutdown             -debugcon file:build/debug.log             -global isa-debugcon.iobase=0xe9             -d guest_errors,cpu_reset             -D build/qemu.log || true
+            timeout 10s qemu-system-x86_64             -smp 2             -cdrom build/zeroos.iso             -serial file:build/serial.log             -display none             -no-reboot             -no-shutdown             -debugcon file:build/debug.log             -global isa-debugcon.iobase=0xe9             -d int,guest_errors,cpu_reset             -D build/qemu.log || true
             grep -q "ZEROOS: foundation milestone reached." build/serial.log
             grep -q "ZEROOS: bootstrap stack guard verified." build/serial.log
             grep -q "ZEROOS: CPU capabilities detected" build/serial.log
