@@ -141,6 +141,8 @@ void smp_ap_entry(uint32_t startup_token) {
 
     if (cpu_mark_online(cpu_id)!=0)
         smp_ap_fail(cpu_id,generation);
+    if (cpu_current_id()!=cpu_id)
+        smp_ap_fail(cpu_id,generation);
     if (!smp_ap_generation_matches(cpu_id,generation)) {
         (void)cpu_mark_offline(cpu_id);
         smp_ap_park();
@@ -159,6 +161,8 @@ void smp_ap_entry(uint32_t startup_token) {
         records[cpu_id].startup_efer=cpu_read_msr(0xc0000080U);
     }
     if (apic_cpu_init()!=0)
+        smp_ap_fail(cpu_id,generation);
+    if (apic_local_id()!=records[cpu_id].apic_id)
         smp_ap_fail(cpu_id,generation);
     if (tlb_register_cpu(cpu_id)!=0 || tlb_set_current_cpu(cpu_id)!=0)
         smp_ap_fail(cpu_id,generation);
