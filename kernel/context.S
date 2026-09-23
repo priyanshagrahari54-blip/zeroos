@@ -69,6 +69,15 @@ context_switch_ex:
     retq
 
 .Lresume_frame:
+    /* The old task may be a zombie. Clear its per-CPU handoff quarantine
+     * while the old stack is still active, immediately before switching to
+     * the destination architectural frame. */
+    movq %rdx, %r12
+    movq %r12, %rdi
+    subq $8, %rsp
+    call task_handoff_complete
+    addq $8, %rsp
+    movq %r12, %rdx
     /* Identical restore sequence to the isr_common frame epilogue. */
     movq %rdx, %rsp
     popq %r15

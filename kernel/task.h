@@ -146,6 +146,9 @@ uint64_t task_affinity(const struct task *task);
 uint32_t task_preempt_count(void);
 uint8_t task_need_resched(void);
 
+/* Called by the destination context after a cooperative/frame handoff so
+ * zombie stack reclamation cannot race the assembly transition. */
+void task_handoff_complete(void);
 void task_start_first(void);
 /* APs wait here until the BSP publishes the scheduler start gate. */
 void task_start_secondary_cpu(void);

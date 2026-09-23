@@ -17,6 +17,7 @@ extern char __kernel_end;
 
 static void task_write_u64(uint64_t value);
 static void task_debug_dump_all(const char *label);
+void task_handoff_complete(void);
 
 #define ZEROOS_IDLE_SLOT 1
 #define ZEROOS_DEFAULT_TIMESLICE 10U
@@ -24,6 +25,16 @@ static void task_debug_dump_all(const char *label);
 static struct task tasks[ZEROOS_MAX_TASKS];
 static struct task ap_idle_tasks[ZEROOS_MAX_CPUS];
 static struct task *current_tasks[ZEROOS_MAX_CPUS];
+
+/*
+ * A cooperative handoff leaves the outgoing task's stack live until the
+ * destination context has crossed the assembly boundary. Reclaiming a
+ * zombie during that interval can free/reuse the stack while
+ * context_switch_ex() is still writing its saved registers. This per-CPU
+ * publication is protected by task_lock and cleared only by the destination
+ * context (or by the frame handoff assembly hook).
+ */
+static struct task *handoff_tasks[ZEROOS_MAX_CPUS];
 
 struct task_runqueue {
     struct spinlock lock;
@@ -501,8 +512,23 @@ static void task_idle_entry(void *argument) {
     }
 }
 
+void task_handoff_complete(void) {
+    uint32_t cpu=task_cpu_index();
+    uint64_t flags;
+
+    if (cpu>=ZEROOS_MAX_CPUS)
+        return;
+    flags=spin_lock_irqsave(&task_lock);
+    /* The marker is a one-shot publication for the current CPU. The
+     * destination is deliberately not compared with the outgoing task: the
+     * two pointers must be different for a real handoff. */
+    handoff_tasks[cpu]=0;
+    spin_unlock_irqrestore(&task_lock,flags);
+}
+
 void task_trampoline_body(void) {
     struct task *task=current_task;
+    task_handoff_complete();
     __atomic_fetch_or(&scheduler_task_cpu_mask,1ULL<<task_cpu_index(),
                       __ATOMIC_ACQ_REL);
     __asm__ volatile ("sti" ::: "memory");
@@ -588,6 +614,16 @@ static void reap_zombies_locked(void) {
         struct task *task=&tasks[i];
         if (task->state!=TASK_ZOMBIE || !task->stack_base)
             continue;
+        /* A zombie is not reclaimable until the CPU that dispatched away
+         * from it has completed the architectural handoff. In particular,
+         * this protects the outgoing cooperative stack from page_free()
+         * racing context_switch_ex() on another CPU. */
+        for (uint32_t cpu=0; cpu<ZEROOS_MAX_CPUS; ++cpu) {
+            if (handoff_tasks[cpu]==task)
+                goto defer_zombie_reclaim;
+        }
+        if (task_current_owner(task))
+            task_context_panic("ZEROOS PANIC: zombie task still owns a CPU.\n",task);
         page_free((void *)task->stack_base);
         task->id=0;
         task->state=TASK_UNUSED;
@@ -616,6 +652,12 @@ static void reap_zombies_locked(void) {
         task->sleep_next=0;
         task->wake_tick=0;
         task->sleep_armed=0;
+        continue;
+
+    defer_zombie_reclaim:
+        /* The next scheduler tick retries after the destination context has
+         * published completion. */
+        continue;
     }
 }
 
@@ -843,12 +885,20 @@ static void dispatch_locked(struct task *previous, struct task *target,
         task_context_panic("ZEROOS PANIC: target kernel stack publication failed.\n",
                            target);
 
+    if (handoff_tasks[cpu])
+        task_context_panic("ZEROOS PANIC: scheduler handoff already pending.\n",
+                           handoff_tasks[cpu]);
+    handoff_tasks[cpu]=previous;
     task_validate_table_at(where,previous);
     spin_unlock(&task_lock);
 
     context_switch_ex(&previous->saved_stack,
                       &target->saved_stack,
                       target_frame);
+
+    /* A cooperative destination resumes at this call site. The frame
+     * destination clears the same marker in context.S before iretq. */
+    task_handoff_complete();
 }
 
 int task_system_init(void) {
@@ -893,6 +943,7 @@ int task_system_init(void) {
         runqueues[cpu].length=0;
         spinlock_init(&runqueues[cpu].lock);
         current_tasks[cpu]=0;
+        handoff_tasks[cpu]=0;
         cpu_scheduler_started[cpu]=0;
         if (cpu_local_for_id(cpu)) {
             cpu_local_for_id(cpu)->scheduler_current=0;
