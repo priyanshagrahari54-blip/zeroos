@@ -1,6 +1,9 @@
 #include "scheduler.h"
 #include "task.h"
 #include "sync.h"
+#include "cpu.h"
+#include "apic.h"
+#include "smp.h"
 
 static struct atomic_u64 scheduler_ticks_count;
 
@@ -11,6 +14,28 @@ int scheduler_init(void) {
 
 void scheduler_tick(void) {
     atomic_u64_fetch_add(&scheduler_ticks_count,1);
+    task_scheduler_tick();
+
+    /* PIT/IOAPIC ownership remains on the BSP, but every online AP receives
+     * an independent scheduler interrupt and performs its own local tick,
+     * queue aging, timeout processing, and preemption decision. No AP ever
+     * borrows the BSP current-task or runqueue state. */
+    if (cpu_current_id()==0 && task_scheduler_ready()) {
+        uint32_t discovered=smp_discovered_count();
+        for (uint32_t cpu=1; cpu<discovered; ++cpu) {
+            const struct cpu_local *local=cpu_local_for_id(cpu);
+            const struct smp_cpu_record *record=smp_cpu_record(cpu);
+            if (!local || !record ||
+                !__atomic_load_n(&local->online,__ATOMIC_ACQUIRE))
+                continue;
+            (void)apic_send_ipi(record->apic_id,ZEROOS_SCHEDULER_TICK_VECTOR);
+        }
+    }
+}
+
+void scheduler_tick_remote(void) {
+    if (!task_scheduler_ready())
+        return;
     task_scheduler_tick();
 }
 

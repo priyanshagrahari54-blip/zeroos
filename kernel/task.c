@@ -4,6 +4,9 @@
 #include "sync.h"
 #include "interrupts.h"
 #include "timer.h"
+#include "cpu.h"
+#include "smp.h"
+#include "apic.h"
 
 extern void context_switch_ex(uint64_t *old_sp, const uint64_t *new_sp,
                               struct interrupt_frame *new_frame);
@@ -19,17 +22,42 @@ static void task_debug_dump_all(const char *label);
 #define ZEROOS_DEFAULT_TIMESLICE 10U
 
 static struct task tasks[ZEROOS_MAX_TASKS];
-static struct task *current_task;
+static struct task ap_idle_tasks[ZEROOS_MAX_CPUS];
+static struct task *current_tasks[ZEROOS_MAX_CPUS];
+
+struct task_runqueue {
+    struct spinlock lock;
+    struct task *head;
+    struct task *tail;
+    uint32_t length;
+};
+
+static struct task_runqueue runqueues[ZEROOS_MAX_CPUS];
+static uint8_t cpu_scheduler_started[ZEROOS_MAX_CPUS];
+static volatile uint8_t scheduler_ready;
+static volatile uint64_t scheduler_task_cpu_mask;
+
+static uint32_t task_cpu_index(void) {
+    uint32_t cpu=cpu_current_id();
+    return cpu<ZEROOS_MAX_CPUS ? cpu : 0;
+}
+
+/* The current-task ownership slot is per CPU; there is no SMP-global
+ * current task. All callers are required to use this lvalue. */
+#define current_task (current_tasks[task_cpu_index()])
 
 /*
  * Scheduler metadata lock. Lock order (never inverted):
- *   wait_queue::lock  ->  task_lock  ->  memory_lock
+ *   wait_queue::lock  ->  task_lock  ->  runqueue::lock  ->  memory_lock
  *   process_lock / thread_lock      ->  memory_lock
  * task_lock is always acquired irqsave (or with interrupts already disabled).
+ * A task is inserted into or removed from a runqueue only while task_lock is
+ * held, so a remote wakeup cannot race a local dispatch. The per-CPU queue
+ * lock still gives each queue an independent ownership boundary for future
+ * lock-free/remote wakeup work and makes queue corruption diagnosable.
+ *
  * It is released before any context_switch_ex() handoff: the handoff itself
- * is the atomic ownership transfer. UP atomicity of the switch window is
- * provided by IF=0; SMP runqueue ownership across the handoff is the marked
- * boundary that moves to per-runqueue locks in the SMP stage.
+ * is the atomic ownership transfer on the executing CPU.
  */
 static struct spinlock task_lock;
 static uint64_t next_task_id;
@@ -95,12 +123,46 @@ static void task_saved_context_panic(const struct task *task) {
     for (;;) __asm__ volatile ("cli; hlt");
 }
 
+static int task_is_secondary_idle(const struct task *task) {
+    uint64_t address;
+    uint64_t base;
+    uint64_t end;
+
+    if (!task) return 0;
+    address=(uint64_t)task;
+    base=(uint64_t)&ap_idle_tasks[0];
+    end=(uint64_t)&ap_idle_tasks[ZEROOS_MAX_CPUS];
+    return address>=base && address<end &&
+           ((address-base) % sizeof(ap_idle_tasks[0]))==0;
+}
+
+static int task_is_idle(const struct task *task) {
+    return task==&tasks[ZEROOS_IDLE_SLOT] || task_is_secondary_idle(task);
+}
+
+static struct task *task_idle_for_cpu(uint32_t cpu) {
+    return cpu==0 ? &tasks[ZEROOS_IDLE_SLOT] : &ap_idle_tasks[cpu];
+}
+
+static uint32_t task_idle_cpu(const struct task *task) {
+    if (task==&tasks[ZEROOS_IDLE_SLOT])
+        return 0;
+    if (task_is_secondary_idle(task)) {
+        uint64_t address=(uint64_t)task;
+        return (uint32_t)(((uint64_t)address-(uint64_t)&ap_idle_tasks[0])/
+                          sizeof(ap_idle_tasks[0]));
+    }
+    return ZEROOS_MAX_CPUS;
+}
+
 static int task_pointer_ok(const struct task *task) {
     uint64_t address;
     uint64_t base;
     uint64_t end;
 
     if (!task) return 0;
+    if (task_is_secondary_idle(task))
+        return 1;
     address=(uint64_t)task;
     base=(uint64_t)&tasks[0];
     end=(uint64_t)&tasks[ZEROOS_MAX_TASKS];
@@ -115,6 +177,10 @@ static int task_identity_ok(const struct task *task) {
 
     if (!task_pointer_ok(task))
         return 0;
+
+    if (task_is_secondary_idle(task))
+        return task->id==0 && task->state!=TASK_UNUSED &&
+               task_idle_cpu(task)<ZEROOS_MAX_CPUS;
 
     address=(uint64_t)task;
     base=(uint64_t)&tasks[0];
@@ -175,15 +241,43 @@ static void task_write_u64(uint64_t value) {
  * the stack switch. Every other task must satisfy the complete ownership
  * contract at every observable point.
  */
+static int task_slot_for_pointer(const struct task *task) {
+    uint64_t address;
+    uint64_t base;
+
+    if (!task || task_is_secondary_idle(task))
+        return -1;
+    address=(uint64_t)task;
+    base=(uint64_t)&tasks[0];
+    if (address<base || address>=(uint64_t)&tasks[ZEROOS_MAX_TASKS])
+        return -1;
+    return (int)((address-base)/sizeof(tasks[0]));
+}
+
 static void task_validate_table_at(const char *where,
                                    const struct task *handoff) {
-    int running=0;
+    uint8_t queue_seen[ZEROOS_MAX_TASKS]={0};
+    uint32_t running=0;
+    uint32_t expected=0;
 
-    if (!task_pointer_ok(current_task) ||
-        !task_identity_ok(current_task) ||
-        current_task->state!=TASK_RUNNING) {
-        task_context_panic("ZEROOS PANIC: current task invariant failed.\n",
-                           current_task);
+    for (uint32_t cpu=0; cpu<ZEROOS_MAX_CPUS; ++cpu) {
+        struct task *current;
+        if (!cpu_scheduler_started[cpu])
+            continue;
+        ++expected;
+        current=current_tasks[cpu];
+        if (!task_pointer_ok(current) || !task_identity_ok(current) ||
+            current->state!=TASK_RUNNING ||
+            (task_is_idle(current) && task_idle_cpu(current)!=cpu) ||
+            !cpu_local_for_id(cpu) ||
+            cpu_local_for_id(cpu)->scheduler_current!=current ||
+            !cpu_local_for_id(cpu)->scheduler_started)
+            task_context_panic("ZEROOS PANIC: per-CPU current task invariant failed.\n",
+                               current);
+        for (uint32_t other=0; other<cpu; ++other)
+            if (current_tasks[other]==current)
+                task_context_panic("ZEROOS PANIC: task owned by multiple CPUs.\n",
+                                   current);
     }
 
     for (int i=0;i<ZEROOS_MAX_TASKS;++i) {
@@ -192,10 +286,8 @@ static void task_validate_table_at(const char *where,
         if (!task_state_valid(task->state) || !task_identity_ok(task))
             task_context_panic(where,task);
 
-        /*
-         * Slot 0 is the bootstrap task. It intentionally has no allocated
-         * task stack; scheduler_start parks it while the first real task runs.
-         */
+        /* Slot 0 is the bootstrap context and intentionally has no task
+         * stack. It is current only before the BSP hands off to the scheduler. */
         if (i==0) {
             if (!task->kernel_stack_top ||
                 (task->kernel_stack_top & 0xfULL)!=0)
@@ -206,12 +298,18 @@ static void task_validate_table_at(const char *where,
             continue;
         }
 
-        if (task->state==TASK_UNUSED)
+        if (task->state==TASK_UNUSED) {
+            if (task->run_next || task->runqueue_cpu!=0)
+                task_context_panic("ZEROOS PANIC: unused task remains queued.\n",
+                                   task);
             continue;
+        }
 
         if (task->priority>ZEROOS_TASK_PRIORITY_MAX ||
             task->base_priority>ZEROOS_TASK_PRIORITY_MAX ||
-            task->cpu_affinity==0)
+            task->cpu_affinity==0 ||
+            (ZEROOS_MAX_CPUS<64U &&
+             (task->cpu_affinity & ~((1ULL<<ZEROOS_MAX_CPUS)-1ULL))!=0))
             task_context_panic("ZEROOS PANIC: scheduler policy metadata invalid.\n",
                                task);
 
@@ -227,16 +325,10 @@ static void task_validate_table_at(const char *where,
             task_context_panic("ZEROOS PANIC: task stack guard corrupted.\n",
                                task);
 
-        /*
-         * A RUNNING task owns the CPU context directly and therefore cannot
-         * simultaneously own a resumable interrupt frame. A frame pointer
-         * retained after the interrupt return consumed the frame is a
-         * corrupted ownership state and is fatal here: it is never cleared
-         * silently.
-         */
         if (task->state==TASK_RUNNING) {
-            if (task->interrupt_frame)
-                task_context_panic("ZEROOS PANIC: running task retains IRQ frame.\n",
+            if (task->interrupt_frame || task->run_next ||
+                task->runqueue_cpu>=ZEROOS_MAX_CPUS)
+                task_context_panic("ZEROOS PANIC: running task queue/context ownership invalid.\n",
                                    task);
             ++running;
             continue;
@@ -244,7 +336,8 @@ static void task_validate_table_at(const char *where,
 
         if (task->state==TASK_ZOMBIE) {
             if (task->interrupt_frame || task->wait_queue ||
-                task->wait_next || task->sleep_next || task->sleep_armed)
+                task->wait_next || task->sleep_next || task->sleep_armed ||
+                task->run_next)
                 task_context_panic("ZEROOS PANIC: zombie task retains queue/context state.\n",
                                    task);
             continue;
@@ -262,12 +355,14 @@ static void task_validate_table_at(const char *where,
             task_context_panic("ZEROOS PANIC: task sleep queue self-cycle.\n",
                                task);
 
-        /*
-         * The handoff task's saved context is mid-write. Queue membership
-         * and identity were validated above; its resumable context becomes
-         * visible atomically with the stack switch and is checked when it is
-         * later selected as a dispatch target.
-         */
+        if (task->state==TASK_RUNNABLE && !task_is_idle(task)) {
+            int slot=task_slot_for_pointer(task);
+            if (slot<0 || task->runqueue_cpu>=ZEROOS_MAX_CPUS)
+                task_context_panic("ZEROOS PANIC: runnable task has no runqueue owner.\n",
+                                   task);
+        }
+
+        /* The handoff task's saved context is mid-write. */
         if (task==handoff)
             continue;
 
@@ -275,7 +370,7 @@ static void task_validate_table_at(const char *where,
             if (!task_frame_ok(task,task->interrupt_frame))
                 task_context_panic("ZEROOS PANIC: task IRQ frame invalid.\n",
                                    task);
-        } else {
+        } else if (!task_is_idle(task) || task->saved_stack) {
             if (!task_saved_stack_ok(task))
                 task_context_panic("ZEROOS PANIC: task saved stack invalid.\n",
                                    task);
@@ -284,8 +379,67 @@ static void task_validate_table_at(const char *where,
         }
     }
 
-    if (running!=1)
-        task_context_panic("ZEROOS PANIC: scheduler running-task count invalid.\n",
+    for (uint32_t cpu=1; cpu<ZEROOS_MAX_CPUS; ++cpu) {
+        struct task *idle=&ap_idle_tasks[cpu];
+        if (idle->state==TASK_UNUSED)
+            continue;
+        if (!task_identity_ok(idle) || !idle->stack_base ||
+            idle->kernel_stack_top!=idle->stack_base+ZEROOS_TASK_STACK_SIZE ||
+            !task_stack_guard_ok(idle))
+            task_context_panic("ZEROOS PANIC: AP idle context metadata invalid.\n",
+                               idle);
+        if (idle->state==TASK_RUNNING) {
+            if (idle->interrupt_frame || idle->run_next ||
+                idle->runqueue_cpu!=cpu)
+                task_context_panic("ZEROOS PANIC: AP idle ownership invalid.\n",
+                                   idle);
+            ++running;
+        } else if (idle->state==TASK_ZOMBIE || idle->run_next) {
+            task_context_panic("ZEROOS PANIC: AP idle queue state invalid.\n",idle);
+        } else if (idle!=handoff && idle->interrupt_frame==0 && idle->saved_stack!=0 &&
+                   (!task_saved_stack_ok(idle) || !task_saved_context_ok(idle))) {
+            task_saved_context_panic(idle);
+        }
+    }
+
+    for (uint32_t cpu=0; cpu<ZEROOS_MAX_CPUS; ++cpu) {
+        struct task_runqueue *queue=&runqueues[cpu];
+        uint32_t length=0;
+        struct task *previous=0;
+        for (struct task *task=queue->head; task; task=task->run_next) {
+            int slot=task_slot_for_pointer(task);
+            if (slot<2 || slot>=ZEROOS_MAX_TASKS || queue_seen[slot] ||
+                task->state!=TASK_RUNNABLE || task->runqueue_cpu!=cpu ||
+                task->wait_queue || task->sleep_armed)
+                task_context_panic("ZEROOS PANIC: per-CPU runqueue invariant failed.\n",
+                                   task);
+            if (previous==task)
+                task_context_panic("ZEROOS PANIC: per-CPU runqueue self-cycle.\n",
+                                   task);
+            queue_seen[slot]=1;
+            previous=task;
+            ++length;
+            if (length>ZEROOS_MAX_TASKS)
+                task_context_panic("ZEROOS PANIC: per-CPU runqueue cycle detected.\n",
+                                   task);
+        }
+        if (length!=queue->length || (length==0 && queue->tail!=0) ||
+            (length!=0 && (!queue->tail || queue->tail->run_next)))
+            task_context_panic("ZEROOS PANIC: per-CPU runqueue accounting failed.\n",
+                               queue->tail);
+    }
+
+    for (int i=2;i<ZEROOS_MAX_TASKS;++i) {
+        struct task *task=&tasks[i];
+        if (task->state==TASK_RUNNABLE && !queue_seen[i])
+            task_context_panic("ZEROOS PANIC: runnable task is absent from its runqueue.\n",
+                               task);
+        if (task->state!=TASK_RUNNABLE && queue_seen[i])
+            task_context_panic("ZEROOS PANIC: non-runnable task is queued.\n",task);
+    }
+
+    if (running!=expected)
+        task_context_panic("ZEROOS PANIC: per-CPU running-task count invalid.\n",
                            current_task);
 }
 
@@ -309,6 +463,9 @@ static uint64_t task_irq_save(void) {
     return flags;
 }
 
+static int task_choose_cpu_locked(const struct task *task);
+static void runqueue_append_locked(uint32_t cpu, struct task *task);
+
 static void task_irq_restore(uint64_t flags) {
     __asm__ volatile ("pushq %0; popfq"
                       :
@@ -326,6 +483,8 @@ static void task_idle_entry(void *argument) {
 
 void task_trampoline_body(void) {
     struct task *task=current_task;
+    __atomic_fetch_or(&scheduler_task_cpu_mask,1ULL<<task_cpu_index(),
+                      __ATOMIC_ACQ_REL);
     __asm__ volatile ("sti" ::: "memory");
     task->entry(task->argument);
     task_exit();
@@ -393,8 +552,13 @@ static void sleep_queue_wake_expired_locked(uint64_t now) {
         task->wake_tick=0;
         task->sleep_armed=0;
         if (task->state==TASK_BLOCKED) {
+            int owner;
             task->state=TASK_RUNNABLE;
             task->need_resched=1;
+            owner=task_choose_cpu_locked(task);
+            if (owner<0)
+                task_context_panic("ZEROOS PANIC: timed wake lost CPU affinity.\n",task);
+            runqueue_append_locked((uint32_t)owner,task);
         }
     }
 }
@@ -422,6 +586,8 @@ static void reap_zombies_locked(void) {
         task->reserved_scheduler=0;
         task->cpu_affinity=ZEROOS_TASK_AFFINITY_ANY;
         task->runnable_age=0;
+        task->runqueue_cpu=0;
+        task->run_next=0;
         task->interrupt_frame=0;
         task->thread=0;
         task->wait_next=0;
@@ -447,46 +613,131 @@ static uint8_t effective_priority(const struct task *task) {
     return (uint8_t)value;
 }
 
-static int task_can_run_on_boot_cpu(const struct task *task) {
-    return (task->cpu_affinity & 1ULL)!=0;
+static uint64_t task_valid_cpu_mask(void) {
+    return ZEROOS_MAX_CPUS>=64U ? ~0ULL : ((1ULL<<ZEROOS_MAX_CPUS)-1ULL);
 }
 
-static int find_next_runnable(void) {
-    int start=-1;
-    int selected=-1;
+static int task_can_run_on_cpu(const struct task *task, uint32_t cpu) {
+    return task && cpu<ZEROOS_MAX_CPUS &&
+           (task->cpu_affinity & (1ULL<<cpu))!=0 &&
+           cpu_local_for_id(cpu) &&
+           __atomic_load_n(&cpu_local_for_id(cpu)->online,__ATOMIC_ACQUIRE);
+}
+
+static void runqueue_append_locked(uint32_t cpu, struct task *task) {
+    struct task_runqueue *queue=&runqueues[cpu];
+
+    if (task_is_idle(task) || task->state!=TASK_RUNNABLE || task->run_next ||
+        task->runqueue_cpu>=ZEROOS_MAX_CPUS)
+        task_context_panic("ZEROOS PANIC: invalid runqueue insertion.\n",task);
+    spin_lock(&queue->lock);
+    task->runqueue_cpu=cpu;
+    task->run_next=0;
+    if (queue->tail)
+        queue->tail->run_next=task;
+    else
+        queue->head=task;
+    queue->tail=task;
+    ++queue->length;
+    spin_unlock(&queue->lock);
+}
+
+static void runqueue_recompute_tail_locked(struct task_runqueue *queue);
+
+static void runqueue_remove_locked(struct task *task) {
+    struct task_runqueue *queue;
+    struct task **cursor;
+
+    if (!task || task_is_idle(task) || task->runqueue_cpu>=ZEROOS_MAX_CPUS)
+        return;
+    queue=&runqueues[task->runqueue_cpu];
+    spin_lock(&queue->lock);
+    cursor=&queue->head;
+    while (*cursor && *cursor!=task)
+        cursor=&(*cursor)->run_next;
+    if (*cursor==task) {
+        *cursor=task->run_next;
+        if (queue->tail==task)
+            runqueue_recompute_tail_locked(queue);
+        if (queue->length)
+            --queue->length;
+        task->run_next=0;
+        task->runqueue_cpu=0;
+    }
+    spin_unlock(&queue->lock);
+}
+
+/* GCC statement expressions are deliberately avoided in the public kernel
+ * style; this helper is used by the removal path to keep tail accounting
+ * explicit and bounded. */
+static void runqueue_recompute_tail_locked(struct task_runqueue *queue) {
+    struct task *tail=queue->head;
+    if (!tail) {
+        queue->tail=0;
+        return;
+    }
+    while (tail->run_next)
+        tail=tail->run_next;
+    queue->tail=tail;
+}
+
+static int task_choose_cpu_locked(const struct task *task) {
+    uint32_t selected=ZEROOS_MAX_CPUS;
+    uint32_t selected_length=~0U;
+
+    for (uint32_t cpu=0; cpu<ZEROOS_MAX_CPUS; ++cpu) {
+        if (!task_can_run_on_cpu(task,cpu))
+            continue;
+        if (runqueues[cpu].length<selected_length) {
+            selected=cpu;
+            selected_length=runqueues[cpu].length;
+        }
+    }
+    return selected<ZEROOS_MAX_CPUS ? (int)selected : -1;
+}
+
+static struct task *runqueue_pick_locked(uint32_t cpu) {
+    struct task_runqueue *queue=&runqueues[cpu];
+    struct task *selected=0;
     uint8_t selected_priority=0;
 
-    for (int i=0;i<ZEROOS_MAX_TASKS;++i)
-        if (&tasks[i]==current_task) { start=i; break; }
-
-    /*
-     * Bounded priority-aware round robin. Aging promotes a runnable task
-     * after bounded wait time, preventing starvation without introducing a
-     * second scheduler policy that would later need replacement by SMP
-     * runqueues. Equal effective priorities retain deterministic slot order.
-     */
-    for (int step=1;step<=ZEROOS_MAX_TASKS;++step) {
-        int index=(start+step)%ZEROOS_MAX_TASKS;
-        struct task *candidate=&tasks[index];
-        if (index==0 || index==ZEROOS_IDLE_SLOT ||
-            candidate->state!=TASK_RUNNABLE ||
-            !task_can_run_on_boot_cpu(candidate))
+    spin_lock(&queue->lock);
+    for (struct task *candidate=queue->head; candidate;
+         candidate=candidate->run_next) {
+        if (candidate->state!=TASK_RUNNABLE ||
+            !task_can_run_on_cpu(candidate,cpu))
             continue;
         uint8_t priority=effective_priority(candidate);
-        if (selected<0 || priority>selected_priority) {
-            selected=index;
+        if (!selected || priority>selected_priority) {
+            selected=candidate;
             selected_priority=priority;
         }
     }
+    spin_unlock(&queue->lock);
+    return selected;
+}
 
-    if (selected>=0)
+/* A local queue is preferred; an idle CPU may steal a compatible runnable
+ * task from another queue while task_lock serializes the ownership transfer. */
+static struct task *find_next_runnable(void) {
+    uint32_t cpu=task_cpu_index();
+    struct task *selected=runqueue_pick_locked(cpu);
+
+    if (!selected) {
+        for (uint32_t other=0; other<ZEROOS_MAX_CPUS; ++other) {
+            if (other==cpu || !cpu_local_for_id(other) ||
+                !__atomic_load_n(&cpu_local_for_id(other)->online,
+                                 __ATOMIC_ACQUIRE))
+                continue;
+            selected=runqueue_pick_locked(other);
+            if (selected)
+                break;
+        }
+    }
+
+    if (selected)
         return selected;
-
-    if (tasks[ZEROOS_IDLE_SLOT].state==TASK_RUNNABLE &&
-        task_can_run_on_boot_cpu(&tasks[ZEROOS_IDLE_SLOT]))
-        return ZEROOS_IDLE_SLOT;
-
-    return -1;
+    return task_idle_for_cpu(cpu);
 }
 
 /*
@@ -497,22 +748,48 @@ static int find_next_runnable(void) {
  * Ownership transition performed here:
  *   - previous was RUNNING, so it owns no interrupt frame (fatal otherwise);
  *     its cooperative context is written by context_switch_ex();
- *   - tasks[next]'s resumable context is consumed: a hardware frame pointer
- *     is retired at the exact moment this dispatch takes ownership of the
- *     frame for pop/iretq.
+ *   - a RUNNABLE previous is returned to exactly one per-CPU runqueue;
+ *   - target is removed from its owning queue (or is this CPU's idle context)
+ *     and becomes the sole current-task owner of this CPU;
+ *   - a target interrupt frame is retired at the exact moment this dispatch
+ *     takes ownership of the frame for pop/iretq.
  *
  * task_lock is released before the assembly handoff and is NOT held on
  * return. Returns only when previous is later resumed through its saved
  * cooperative context.
  */
-static void dispatch_locked(struct task *previous, int next,
+static void dispatch_locked(struct task *previous, struct task *target,
                             const char *where) {
-    struct task *target=&tasks[next];
     struct interrupt_frame *target_frame;
+    uint32_t cpu=task_cpu_index();
 
-    if (previous->interrupt_frame)
+    if (!previous || !target || previous->interrupt_frame)
         task_context_panic("ZEROOS PANIC: dispatched task retains IRQ frame.\n",
                            previous);
+    if (target==previous || (task_is_idle(target) && task_idle_cpu(target)!=cpu))
+        task_context_panic("ZEROOS PANIC: cross-CPU dispatch target invalid.\n",
+                           target);
+
+    if (previous->state==TASK_RUNNABLE && !task_is_idle(previous)) {
+        int owner=task_choose_cpu_locked(previous);
+        if (owner<0)
+            task_context_panic("ZEROOS PANIC: runnable task lost CPU affinity.\n",
+                               previous);
+        runqueue_append_locked((uint32_t)owner,previous);
+    } else if (previous->state!=TASK_RUNNING && !task_is_idle(previous)) {
+        previous->run_next=0;
+        previous->runqueue_cpu=0;
+    }
+
+    if (!task_is_idle(target)) {
+        runqueue_remove_locked(target);
+        if (target->state!=TASK_RUNNABLE)
+            task_context_panic("ZEROOS PANIC: dispatch target is not runnable.\n",
+                               target);
+    } else if (target->state!=TASK_RUNNABLE && target->state!=TASK_RUNNING) {
+        task_context_panic("ZEROOS PANIC: idle dispatch target state invalid.\n",
+                           target);
+    }
 
     target_frame=target->interrupt_frame;
     if (target_frame) {
@@ -521,21 +798,26 @@ static void dispatch_locked(struct task *previous, int next,
                                target);
         target->interrupt_frame=0;
         ++frame_resume_count;
-    } else if (!task_saved_stack_ok(target) ||
-               !task_saved_context_ok(target)) {
+    } else if (target->saved_stack) {
+        if (!task_saved_stack_ok(target) || !task_saved_context_ok(target))
+            task_saved_context_panic(target);
+    } else if (!task_is_idle(target)) {
         task_saved_context_panic(target);
     }
 
     target->state=TASK_RUNNING;
+    target->runqueue_cpu=cpu;
+    target->run_next=0;
     target->runnable_age=0;
     ++target->context_switches;
     current_task=target;
+    if (cpu_local_for_id(cpu)) {
+        cpu_local_for_id(cpu)->scheduler_current=target;
+        ++cpu_local_for_id(cpu)->scheduler_epoch;
+    }
 
-    /*
-     * The target's scheduler stack is also its protected privilege-entry
-     * stack. Publish RSP0 before the target can execute or receive an IRQ;
-     * this is the ownership boundary for eventual user-thread entry.
-     */
+    /* The target's scheduler stack is also its protected privilege-entry
+     * stack. Publish RSP0 before the target can execute or receive an IRQ. */
     if (gdt_set_kernel_stack(target->kernel_stack_top)!=0)
         task_context_panic("ZEROOS PANIC: target kernel stack publication failed.\n",
                            target);
@@ -543,10 +825,6 @@ static void dispatch_locked(struct task *previous, int next,
     task_validate_table_at(where,previous);
     spin_unlock(&task_lock);
 
-    /*
-     * The target context is now exclusively owned by this handoff:
-     * target_frame -> iretq, or saved_stack -> cooperative restore + retq.
-     */
     context_switch_ex(&previous->saved_stack,
                       &target->saved_stack,
                       target_frame);
@@ -554,6 +832,10 @@ static void dispatch_locked(struct task *previous, int next,
 
 int task_system_init(void) {
     void *idle_stack;
+    uint32_t online=cpu_online_count();
+
+    if (online==0 || online>ZEROOS_MAX_CPUS)
+        return -1;
 
     for (int i=0;i<ZEROOS_MAX_TASKS;++i) {
         tasks[i].id=0;
@@ -571,8 +853,10 @@ int task_system_init(void) {
         tasks[i].priority=ZEROOS_TASK_PRIORITY_DEFAULT;
         tasks[i].base_priority=ZEROOS_TASK_PRIORITY_DEFAULT;
         tasks[i].reserved_scheduler=0;
-        tasks[i].cpu_affinity=ZEROOS_TASK_AFFINITY_ANY;
+        tasks[i].cpu_affinity=ZEROOS_TASK_AFFINITY_ANY & task_valid_cpu_mask();
         tasks[i].runnable_age=0;
+        tasks[i].runqueue_cpu=0;
+        tasks[i].run_next=0;
         tasks[i].interrupt_frame=0;
         tasks[i].thread=0;
         tasks[i].wait_next=0;
@@ -581,10 +865,25 @@ int task_system_init(void) {
         tasks[i].wake_tick=0;
         tasks[i].sleep_armed=0;
     }
+    for (uint32_t cpu=0; cpu<ZEROOS_MAX_CPUS; ++cpu) {
+        runqueues[cpu].head=0;
+        runqueues[cpu].tail=0;
+        runqueues[cpu].length=0;
+        spinlock_init(&runqueues[cpu].lock);
+        current_tasks[cpu]=0;
+        cpu_scheduler_started[cpu]=0;
+        if (cpu_local_for_id(cpu)) {
+            cpu_local_for_id(cpu)->scheduler_current=0;
+            cpu_local_for_id(cpu)->scheduler_started=0;
+            cpu_local_for_id(cpu)->scheduler_epoch=0;
+        }
+        ap_idle_tasks[cpu]=(struct task){0};
+    }
 
     tasks[0].id=0;
     tasks[0].state=TASK_RUNNING;
     tasks[0].kernel_stack_top=gdt_kernel_stack();
+    tasks[0].runqueue_cpu=0;
     if (tasks[0].kernel_stack_top==0 ||
         (tasks[0].kernel_stack_top & 0xfULL)!=0)
         return -1;
@@ -599,13 +898,37 @@ int task_system_init(void) {
                                               ZEROOS_TASK_STACK_SIZE;
     tasks[ZEROOS_IDLE_SLOT].entry=task_idle_entry;
     tasks[ZEROOS_IDLE_SLOT].timeslice_ticks=ZEROOS_DEFAULT_TIMESLICE;
+    tasks[ZEROOS_IDLE_SLOT].cpu_affinity=1ULL;
+    tasks[ZEROOS_IDLE_SLOT].runqueue_cpu=0;
     task_prepare_stack(&tasks[ZEROOS_IDLE_SLOT]);
 
+    for (uint32_t cpu=1; cpu<online; ++cpu) {
+        uint64_t stack=smp_bootstrap_stack(cpu);
+        struct task *idle=&ap_idle_tasks[cpu];
+        if (!stack || (stack & (ZEROOS_PAGE_SIZE-1ULL))!=0)
+            return -1;
+        idle->id=0;
+        idle->state=TASK_RUNNABLE;
+        idle->stack_base=stack;
+        idle->kernel_stack_top=stack+ZEROOS_TASK_STACK_SIZE;
+        idle->timeslice_ticks=ZEROOS_DEFAULT_TIMESLICE;
+        idle->cpu_affinity=1ULL<<cpu;
+        idle->runqueue_cpu=cpu;
+        *(uint64_t *)(uint64_t)stack=ZEROOS_TASK_STACK_GUARD;
+    }
+
     spinlock_init(&task_lock);
-    current_task=&tasks[0];
+    current_tasks[0]=&tasks[0];
+    cpu_scheduler_started[0]=1;
+    if (cpu_local_for_id(0)) {
+        cpu_local_for_id(0)->scheduler_current=&tasks[0];
+        cpu_local_for_id(0)->scheduler_started=1;
+    }
+    scheduler_ready=0;
     next_task_id=2;
     sleep_head=0;
     frame_resume_count=0;
+    scheduler_task_cpu_mask=0;
     return 0;
 }
 
@@ -650,8 +973,10 @@ int task_create_owned(task_entry_t entry, void *argument,
     task->priority=ZEROOS_TASK_PRIORITY_DEFAULT;
     task->base_priority=ZEROOS_TASK_PRIORITY_DEFAULT;
     task->reserved_scheduler=0;
-    task->cpu_affinity=ZEROOS_TASK_AFFINITY_ANY;
+    task->cpu_affinity=ZEROOS_TASK_AFFINITY_ANY & task_valid_cpu_mask();
     task->runnable_age=0;
+    task->runqueue_cpu=0;
+    task->run_next=0;
     task->thread=thread;
     task->wait_next=0;
     task->wait_queue=0;
@@ -659,6 +984,18 @@ int task_create_owned(task_entry_t entry, void *argument,
     task->wake_tick=0;
     task->sleep_armed=0;
     task_prepare_stack(task);
+
+    {
+        int owner=task_choose_cpu_locked(task);
+        if (owner<0) {
+            page_free(stack);
+            task->id=0;
+            task->state=TASK_UNUSED;
+            spin_unlock_irqrestore(&task_lock,flags);
+            return -1;
+        }
+        runqueue_append_locked((uint32_t)owner,task);
+    }
 
     if (!task_saved_context_ok(task))
         task_saved_context_panic(task);
@@ -719,7 +1056,7 @@ void task_detach_thread(void) {
 
 void task_yield(void) {
     struct task *previous=current_task;
-    int next;
+    struct task *next;
     uint64_t flags;
 
     if (!previous || previous->preempt_count!=0) return;
@@ -727,7 +1064,7 @@ void task_yield(void) {
     spin_lock(&task_lock);
 
     next=find_next_runnable();
-    if (next<0 || &tasks[next]==previous) {
+    if (!next || next==previous) {
         previous->need_resched=0;
         spin_unlock(&task_lock);
         task_irq_restore(flags);
@@ -745,7 +1082,7 @@ int task_prepare_block(void) {
     struct task *task=current_task;
     uint64_t flags;
 
-    if (!task || task==&tasks[0] || task==&tasks[ZEROOS_IDLE_SLOT] ||
+    if (!task || task==&tasks[0] || task_is_idle(task) ||
         task->state!=TASK_RUNNING || task->preempt_count!=0)
         return -1;
 
@@ -758,10 +1095,10 @@ int task_prepare_block(void) {
 
 static int task_block_locked(uint64_t flags) {
     struct task *previous=current_task;
-    int next;
+    struct task *next;
 
-    if (!previous || previous==&tasks[0] ||
-        previous==&tasks[ZEROOS_IDLE_SLOT] || previous->preempt_count!=0) {
+    if (!previous || previous==&tasks[0] || task_is_idle(previous) ||
+        previous->preempt_count!=0) {
         task_irq_restore(flags);
         return -1;
     }
@@ -782,7 +1119,7 @@ static int task_block_locked(uint64_t flags) {
     }
 
     next=find_next_runnable();
-    if (next<0) {
+    if (!next) {
         previous->state=TASK_RUNNING;
         spin_unlock(&task_lock);
         task_irq_restore(flags);
@@ -806,7 +1143,7 @@ int task_block_irqsave(uint64_t flags) {
 
 int task_wake(struct task *task) {
     uint64_t flags;
-    if (!task || task==&tasks[0] || task==&tasks[ZEROOS_IDLE_SLOT] ||
+    if (!task || task==&tasks[0] || task_is_idle(task) ||
         task->state!=TASK_BLOCKED)
         return -1;
 
@@ -819,6 +1156,15 @@ int task_wake(struct task *task) {
         sleep_queue_remove_locked(task);
     task->state=TASK_RUNNABLE;
     task->need_resched=1;
+    {
+        int owner=task_choose_cpu_locked(task);
+        if (owner<0) {
+            task->state=TASK_BLOCKED;
+            spin_unlock_irqrestore(&task_lock,flags);
+            return -1;
+        }
+        runqueue_append_locked((uint32_t)owner,task);
+    }
     spin_unlock_irqrestore(&task_lock,flags);
     return 0;
 }
@@ -826,9 +1172,9 @@ int task_wake(struct task *task) {
 int task_sleep_until(uint64_t deadline) {
     struct task *task=current_task;
     uint64_t flags;
-    int next;
+    struct task *next;
 
-    if (!task || task==&tasks[0] || task==&tasks[ZEROOS_IDLE_SLOT] ||
+    if (!task || task==&tasks[0] || task_is_idle(task) ||
         task->state!=TASK_RUNNING || task->preempt_count!=0)
         return -1;
 
@@ -857,7 +1203,7 @@ int task_sleep_until(uint64_t deadline) {
     sleep_queue_insert_locked(task);
 
     next=find_next_runnable();
-    if (next<0) {
+    if (!next) {
         task->state=TASK_RUNNING;
         sleep_queue_remove_locked(task);
         spin_unlock(&task_lock);
@@ -879,10 +1225,9 @@ int task_sleep_ticks(uint64_t ticks) {
 
 void task_exit(void) {
     struct task *previous=current_task;
-    int next;
+    struct task *next;
 
-    if (!previous || previous==&tasks[0] ||
-        previous==&tasks[ZEROOS_IDLE_SLOT])
+    if (!previous || previous==&tasks[0] || task_is_idle(previous))
         return;
 
     (void)task_irq_save();
@@ -896,11 +1241,8 @@ void task_exit(void) {
      * stale pointer would mask an ownership violation.
      */
     next=find_next_runnable();
-
-    if (next<0) {
-        tasks[ZEROOS_IDLE_SLOT].state=TASK_RUNNABLE;
-        next=ZEROOS_IDLE_SLOT;
-    }
+    if (!next)
+        next=task_idle_for_cpu(task_cpu_index());
 
     dispatch_locked(previous,next,
                     "ZEROOS PANIC: task exit invariant failed.\n");
@@ -919,7 +1261,6 @@ uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
     struct task *previous=current_task;
     struct task *target;
     struct interrupt_frame *target_frame;
-    int next;
 
     if (!previous || !frame)
         return (uint64_t)frame;
@@ -930,53 +1271,32 @@ uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
     if (previous->state!=TASK_RUNNING)
         task_context_panic("ZEROOS PANIC: current task is not running.\n",previous);
 
-    /*
-     * Slot 0 is the pre-scheduler bootstrap context and runs on the boot
-     * stack, not a task-owned stack page. Interrupts are enabled before
-     * scheduler_start(), so a PIT tick can legitimately arrive here. Return
-     * the architectural frame unchanged; bootstrap is not preemptible into
-     * the task scheduler yet.
-     */
+    /* Bootstrap is not a scheduler participant. */
     if (previous==&tasks[0])
         return (uint64_t)frame;
 
-    if (!task_stack_guard_ok(previous)) task_stack_guard_panic(previous);
+    if (!task_stack_guard_ok(previous))
+        task_stack_guard_panic(previous);
     if (!task_frame_ok(previous,frame)) {
         serial_write_public("ZEROOS PANIC: invalid current IRQ frame.\n");
         for (;;) __asm__ volatile ("cli; hlt");
     }
 
-    /*
-     * A preempt-disabled task remains the active CPU owner. The interrupt
-     * frame is consumed immediately by this IRQ return and must not be
-     * published as a resumable task-owned frame. Publishing it here would
-     * leave stale metadata behind and make later scheduler validation confuse
-     * the consumed IRQ frame with a suspended context.
-     */
     if (previous->preempt_count!=0)
         return (uint64_t)frame;
 
     spin_lock(&task_lock);
 
-    /*
-     * The frame is published as previous's suspension context ONLY when this
-     * path actually switches away from previous. On every other path the
-     * frame is consumed by this very iretq, and a RUNNING task must never
-     * retain a pointer to it. Publishing first and clearing later would
-     * create a window in which the ownership state is a lie.
-     *
-     * Normal tasks enter the IRQ-exit scheduler only after their time slice
-     * expires (or another kernel path explicitly requests rescheduling).
-     * Idle is the exception: if runnable work exists, leave idle immediately.
-     */
-    if (previous!=&tasks[ZEROOS_IDLE_SLOT] && !previous->need_resched) {
+    if (!task_is_idle(previous) && !previous->need_resched) {
         spin_unlock(&task_lock);
         return (uint64_t)frame;
     }
 
-    next=find_next_runnable();
-
-    if (next<0 || &tasks[next]==previous) {
+    /* Select while previous is still RUNNING so it cannot be selected from
+     * its own queue. Only after a different target is known is the live IRQ
+     * frame published as previous's resumable context. */
+    target=find_next_runnable();
+    if (!target || target==previous) {
         previous->need_resched=0;
         spin_unlock(&task_lock);
         return (uint64_t)frame;
@@ -984,19 +1304,21 @@ uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
 
     previous->need_resched=0;
     previous->state=TASK_RUNNABLE;
-    /*
-     * Exact preemption point retained for every task, idle included: this
-     * frame is the task's single resumable context until a dispatch consumes
-     * it. Idle is resumed through its real interruption point like any other
-     * task; its earlier cooperative context is never resurrected.
-     */
     previous->interrupt_frame=frame;
+    if (!task_is_idle(previous)) {
+        int owner=task_choose_cpu_locked(previous);
+        if (owner<0)
+            task_context_panic("ZEROOS PANIC: preempted task lost CPU affinity.\n",
+                               previous);
+        runqueue_append_locked((uint32_t)owner,previous);
+    }
 
-    /*
-     * Capture and retire the target's resumable context before publishing
-     * the new current_task. A consumed frame pointer is never retained.
-     */
-    target=&tasks[next];
+    if (!task_is_idle(target)) {
+        runqueue_remove_locked(target);
+        if (target->state!=TASK_RUNNABLE)
+            task_context_panic("ZEROOS PANIC: IRQ target is not runnable.\n",target);
+    }
+
     target_frame=target->interrupt_frame;
     if (target_frame) {
         if (!task_frame_ok(target,target_frame))
@@ -1004,28 +1326,31 @@ uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
                                target);
         target->interrupt_frame=0;
         ++frame_resume_count;
-    } else if (!task_saved_stack_ok(target) ||
-               !task_saved_context_ok(target)) {
+    } else if (target->saved_stack) {
+        if (!task_saved_stack_ok(target) || !task_saved_context_ok(target))
+            task_saved_context_panic(target);
+    } else if (!task_is_idle(target)) {
         task_saved_context_panic(target);
     }
 
     target->state=TASK_RUNNING;
+    target->runqueue_cpu=task_cpu_index();
+    target->run_next=0;
     target->runnable_age=0;
     ++target->context_switches;
     current_task=target;
+    if (cpu_local_for_id(task_cpu_index())) {
+        cpu_local_for_id(task_cpu_index())->scheduler_current=target;
+        ++cpu_local_for_id(task_cpu_index())->scheduler_epoch;
+    }
     if (gdt_set_kernel_stack(target->kernel_stack_top)!=0)
         task_context_panic("ZEROOS PANIC: IRQ target kernel stack publication failed.\n",
                            target);
-    task_validate_table("ZEROOS PANIC: IRQ dispatch invariant failed.\n");
+    task_validate_table_at("ZEROOS PANIC: IRQ dispatch invariant failed.\n",previous);
     spin_unlock(&task_lock);
 
-    /*
-     * The target context is now exclusively owned by the IRQ-exit path:
-     * target_frame -> iretq, or saved_stack -> cooperative restore + retq.
-     */
     if (target_frame)
         return (uint64_t)target_frame;
-
     return target->saved_stack | 1ULL;
 }
 
@@ -1071,7 +1396,11 @@ void task_scheduler_tick(void) {
      * RUNNING. Any frame pointer observed here is corrupted ownership state
      * and is fatal: it is never "retired" silently.
      */
-    task_validate_table("ZEROOS PANIC: scheduler table invariant failed.\n");
+    {
+        uint64_t validate_flags=spin_lock_irqsave(&task_lock);
+        task_validate_table("ZEROOS PANIC: scheduler table invariant failed.\n");
+        spin_unlock_irqrestore(&task_lock,validate_flags);
+    }
 
     if (task==&tasks[0])
         return;
@@ -1116,14 +1445,37 @@ int task_set_priority(struct task *task, uint8_t priority) {
 }
 
 int task_set_affinity(struct task *task, uint64_t affinity) {
-    if (!task_pointer_ok(task) || !(affinity & 1ULL))
+    uint64_t flags;
+    if (!task_pointer_ok(task) || affinity==0 ||
+        (affinity & ~task_valid_cpu_mask())!=0)
         return -1;
-    uint64_t flags=spin_lock_irqsave(&task_lock);
+    if (task==&tasks[0])
+        return affinity==1ULL ? 0 : -1;
+    if (task_is_idle(task))
+        return -1;
+    flags=spin_lock_irqsave(&task_lock);
     if (task->state==TASK_UNUSED || !task_identity_ok(task)) {
         spin_unlock_irqrestore(&task_lock,flags);
         return -1;
     }
+    if (task->state==TASK_RUNNABLE)
+        runqueue_remove_locked(task);
     task->cpu_affinity=affinity;
+    if (task->state==TASK_RUNNABLE) {
+        int owner=task_choose_cpu_locked(task);
+        if (owner<0) {
+            task->cpu_affinity=ZEROOS_TASK_AFFINITY_ANY & task_valid_cpu_mask();
+            owner=task_choose_cpu_locked(task);
+            if (owner<0) {
+                spin_unlock_irqrestore(&task_lock,flags);
+                return -1;
+            }
+        }
+        runqueue_append_locked((uint32_t)owner,task);
+    } else if (task->state==TASK_RUNNING &&
+               !(task->cpu_affinity & (1ULL<<task_cpu_index()))) {
+        task->need_resched=1;
+    }
     spin_unlock_irqrestore(&task_lock,flags);
     return 0;
 }
@@ -1145,13 +1497,13 @@ uint8_t task_need_resched(void) {
 }
 
 void task_start_first(void) {
-    int next;
+    struct task *next;
     uint64_t flags=task_irq_save();
 
     spin_lock(&task_lock);
     tasks[0].state=TASK_BLOCKED;
     next=find_next_runnable();
-    if (next<0) {
+    if (!next) {
         tasks[0].state=TASK_RUNNING;
         spin_unlock(&task_lock);
         task_irq_restore(flags);
@@ -1165,13 +1517,86 @@ void task_start_first(void) {
     for (;;) __asm__ volatile ("cli; hlt");
 }
 
+void task_start_secondary_cpu(void) {
+    uint32_t cpu=task_cpu_index();
+    struct task *idle;
+
+    if (cpu==0 || cpu>=ZEROOS_MAX_CPUS)
+        return;
+
+    while (!task_scheduler_ready())
+        __asm__ volatile ("sti; hlt" : : : "memory");
+
+    idle=&ap_idle_tasks[cpu];
+    {
+        uint64_t flags=task_irq_save();
+        struct task *next;
+        spin_lock(&task_lock);
+        if (idle->state!=TASK_RUNNABLE && idle->state!=TASK_RUNNING) {
+            spin_unlock(&task_lock);
+            task_irq_restore(flags);
+            return;
+        }
+        current_tasks[cpu]=idle;
+        cpu_scheduler_started[cpu]=1;
+        if (cpu_local_for_id(cpu)) {
+            cpu_local_for_id(cpu)->scheduler_current=idle;
+            cpu_local_for_id(cpu)->scheduler_started=1;
+        }
+        idle->state=TASK_RUNNING;
+        idle->runqueue_cpu=cpu;
+        if (gdt_set_kernel_stack(idle->kernel_stack_top)!=0)
+            task_context_panic("ZEROOS PANIC: AP idle stack publication failed.\n",idle);
+        next=find_next_runnable();
+        if (next==idle) {
+            task_validate_table("ZEROOS PANIC: AP scheduler start invariant failed.\n");
+            spin_unlock(&task_lock);
+            task_irq_restore(flags);
+        } else {
+            idle->state=TASK_RUNNABLE;
+            dispatch_locked(idle,next,
+                            "ZEROOS PANIC: AP scheduler start invariant failed.\n");
+            task_irq_restore(flags);
+        }
+    }
+
+    /* A cooperative handoff returns here when this CPU's idle context is
+     * selected again. The idle context never enters a shared task stack. */
+    for (;;) {
+        __asm__ volatile ("sti; hlt" : : : "memory");
+        task_yield();
+    }
+}
+
+void task_publish_scheduler_start(void) {
+    __atomic_store_n(&scheduler_ready,1,__ATOMIC_RELEASE);
+    for (uint32_t cpu=1; cpu<ZEROOS_MAX_CPUS; ++cpu) {
+        const struct cpu_local *local=cpu_local_for_id(cpu);
+        const struct smp_cpu_record *record=smp_cpu_record(cpu);
+        if (!local || !record ||
+            !__atomic_load_n(&local->online,__ATOMIC_ACQUIRE))
+            continue;
+        (void)apic_send_ipi(record->apic_id,ZEROOS_SCHEDULER_WAKE_VECTOR);
+    }
+}
+
+int task_scheduler_ready(void) {
+    return __atomic_load_n(&scheduler_ready,__ATOMIC_ACQUIRE)!=0;
+}
+
 int task_debug_validate(void) {
+    uint64_t flags=spin_lock_irqsave(&task_lock);
     task_validate_table("ZEROOS PANIC: explicit scheduler checkpoint failed.\n");
+    spin_unlock_irqrestore(&task_lock,flags);
     return 0;
 }
 
 uint64_t task_frame_resume_count(void) {
     return frame_resume_count;
+}
+
+uint64_t task_scheduler_task_cpu_mask(void) {
+    return __atomic_load_n(&scheduler_task_cpu_mask,__ATOMIC_ACQUIRE);
 }
 
 uint64_t task_count(void) {

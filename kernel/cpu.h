@@ -3,6 +3,8 @@
 
 #include "types.h"
 
+struct task;
+
 /* Feature bits are stable kernel-internal capability identifiers. */
 #define ZEROOS_CPU_FEATURE_SSE2       (1ULL << 0)
 #define ZEROOS_CPU_FEATURE_NX         (1ULL << 1)
@@ -41,6 +43,8 @@ struct cpu_local {
     uint32_t nmi_depth;
     uint64_t scheduler_epoch;
     uint64_t interrupt_count;
+    struct task *scheduler_current;
+    uint8_t scheduler_started;
     uint8_t prepared;
     uint8_t online;
 };

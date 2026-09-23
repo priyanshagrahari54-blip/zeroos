@@ -4,6 +4,7 @@
 
 int scheduler_init(void);
 void scheduler_tick(void);
+void scheduler_tick_remote(void);
 void scheduler_yield(void);
 int scheduler_sleep_until(uint64_t deadline);
 int scheduler_sleep_ticks(uint64_t ticks);

@@ -9,6 +9,8 @@
 #define ZEROOS_TASK_PRIORITY_DEFAULT 16U
 #define ZEROOS_TASK_PRIORITY_MAX 31U
 #define ZEROOS_TASK_AFFINITY_ANY (~0ULL)
+#define ZEROOS_SCHEDULER_TICK_VECTOR 48U
+#define ZEROOS_SCHEDULER_WAKE_VECTOR 49U
 
 struct interrupt_frame;
 struct thread;
@@ -71,6 +73,11 @@ struct task {
     uint64_t cpu_affinity;
     uint64_t runnable_age;
 
+    /* Exactly one per-CPU runqueue owns a RUNNABLE task; RUNNING tasks are
+     * owned by the current-task slot of their CPU instead. */
+    uint32_t runqueue_cpu;
+    struct task *run_next;
+
     /*
      * Active architectural interrupt frame while suspended by preemption.
      * Consumed (set to zero) at the exact moment a dispatch path hands the
@@ -132,6 +139,10 @@ uint32_t task_preempt_count(void);
 uint8_t task_need_resched(void);
 
 void task_start_first(void);
+/* APs wait here until the BSP publishes the scheduler start gate. */
+void task_start_secondary_cpu(void);
+void task_publish_scheduler_start(void);
+int task_scheduler_ready(void);
 uint64_t task_count(void);
 
 /*
@@ -143,5 +154,7 @@ uint64_t task_count(void);
  */
 int task_debug_validate(void);
 uint64_t task_frame_resume_count(void);
+/* CPUs on which a real (non-idle) task has executed since scheduler start. */
+uint64_t task_scheduler_task_cpu_mask(void);
 
 #endif

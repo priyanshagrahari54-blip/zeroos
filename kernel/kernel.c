@@ -695,6 +695,7 @@ static void scheduler_probe_monitor(void *argument) {
     int lifecycle_reported=0;
     int frame_invariant_reported=0;
     int certification_reported=0;
+    int per_cpu_reported=0;
     uint64_t stress_start=timer_ticks();
 
     for (;;) {
@@ -770,6 +771,13 @@ static void scheduler_probe_monitor(void *argument) {
             serial_write_public("ZEROOS: scheduler certification passed.\n");
         }
 
+        if (!per_cpu_reported && certification_reported &&
+            (smp_online_count()==1 ||
+             (task_scheduler_task_cpu_mask() & ~1ULL)!=0)) {
+            per_cpu_reported=1;
+            serial_write_public("ZEROOS: per-CPU scheduler ownership verified.\n");
+        }
+
         if (now>=last_report+100) {
             last_report=now;
             serial_write_public("ZEROOS: timer tick 100.\n");
@@ -783,6 +791,7 @@ static void scheduler_probe_monitor(void *argument) {
         if (now-stress_start>400 &&
             (!preempt_reported || !lifecycle_reported ||
              !frame_invariant_reported ||
+             (smp_online_count()>1 && !per_cpu_reported) ||
              atomic_u64_load(&sleep_probe_state)!=2 ||
              atomic_u64_load(&wait_probe_state)!=2 ||
              atomic_u64_load(&process_thread_probe_phase)!=3)) {
@@ -875,6 +884,8 @@ static void scheduler_self_test(void) {
     if (task_debug_validate()!=0)
         kernel_panic("scheduler pre-start task validation failed");
 
+    serial_write_public("ZEROOS: publishing per-CPU scheduler start gate.\n");
+    task_publish_scheduler_start();
     serial_write_public("ZEROOS: entering kernel task scheduler.\n");
     scheduler_start();
 

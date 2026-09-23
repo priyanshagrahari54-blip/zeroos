@@ -8,6 +8,7 @@
 #include "timer.h"
 #include "tlb.h"
 #include "vmm.h"
+#include "task.h"
 
 extern void serial_write_public(const char *text);
 
@@ -194,8 +195,11 @@ void smp_ap_entry(uint32_t startup_token) {
     atomic_store_u32(&records[cpu_id].state,ZEROOS_SMP_CPU_ONLINE);
     __atomic_fetch_add(&online,1,__ATOMIC_ACQ_REL);
 
+    /* The AP remains in its private bootstrap context until the BSP has
+     * initialized task queues and published the scheduler start gate. */
+    task_start_secondary_cpu();
     for (;;) {
-        __asm__ volatile ("sti; hlt" : : : "memory");
+        __asm__ volatile ("cli; hlt" : : : "memory");
     }
 }
 
@@ -438,4 +442,9 @@ int smp_startup_self_test(void) {
 
 const struct smp_cpu_record *smp_cpu_record(uint32_t cpu_id) {
     return cpu_id<discovered ? &records[cpu_id] : (const struct smp_cpu_record *)0;
+}
+
+uint64_t smp_bootstrap_stack(uint32_t cpu_id) {
+    const struct smp_cpu_record *record=smp_cpu_record(cpu_id);
+    return record ? record->bootstrap_stack : 0;
 }

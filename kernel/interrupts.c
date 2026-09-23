@@ -190,6 +190,27 @@ uint64_t interrupt_dispatch(struct interrupt_frame *frame) {
         return (uint64_t)frame;
     }
 
+    if (frame->vector==ZEROOS_SCHEDULER_WAKE_VECTOR) {
+        /* The AP scheduler gate is polled from the private bootstrap loop;
+         * this vector only releases its HLT and never performs a handoff from
+         * interrupt context. */
+        if (apic_controller()==ZEROOS_IRQ_CONTROLLER_LAPIC_IOAPIC)
+            apic_eoi();
+        cpu_irq_exit();
+        return (uint64_t)frame;
+    }
+
+    if (frame->vector==ZEROOS_SCHEDULER_TICK_VECTOR) {
+        if (cpu_current_id()!=0 && task_scheduler_ready()) {
+            scheduler_tick_remote();
+            result=task_reschedule_from_interrupt(frame);
+        }
+        if (apic_controller()==ZEROOS_IRQ_CONTROLLER_LAPIC_IOAPIC)
+            apic_eoi();
+        cpu_irq_exit();
+        return result;
+    }
+
     if (frame->vector >= 32 && frame->vector < 48) {
         uint8_t irq=(uint8_t)(frame->vector-32);
         struct irq_binding *binding=&irq_bindings[irq];
