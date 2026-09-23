@@ -1478,8 +1478,15 @@ int task_set_priority(struct task *task, uint8_t priority) {
 
 int task_set_affinity(struct task *task, uint64_t affinity) {
     uint64_t flags;
+    int online_target=0;
     if (!task_pointer_ok(task) || affinity==0 ||
         (affinity & ~task_valid_cpu_mask())!=0)
+        return -1;
+    for (uint32_t cpu=0; cpu<ZEROOS_MAX_CPUS; ++cpu)
+        if ((affinity&(1ULL<<cpu)) && cpu_local_for_id(cpu) &&
+            __atomic_load_n(&cpu_local_for_id(cpu)->online,__ATOMIC_ACQUIRE))
+            online_target=1;
+    if (!online_target)
         return -1;
     if (task==&tasks[0])
         return affinity==1ULL ? 0 : -1;
