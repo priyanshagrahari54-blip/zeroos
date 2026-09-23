@@ -115,6 +115,10 @@ void smp_ap_entry(uint32_t cpu_id) {
     if (gdt_init_cpu(cpu_id)!=0)
         smp_ap_fail(cpu_id);
     smp_debug_marker('C');
+    if (vmm_translate(VMM_MMIO_BASE)==0)
+        smp_debug_marker('0');
+    else
+        smp_debug_marker('1');
     if (apic_cpu_init()!=0)
         smp_ap_fail(cpu_id);
     smp_debug_marker('D');
