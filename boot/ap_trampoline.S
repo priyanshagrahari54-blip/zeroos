@@ -77,16 +77,30 @@ ap_trampoline_protected:
     orl $0x00000620, %eax
     movl %eax, %cr4
 
+    /* Enable long mode on every AP. NX is optional, so probe the extended
+     * CPUID leaf before touching EFER.NXE; shared page-table construction
+     * applies the same capability policy on the BSP. */
     movl $0xc0000080, %ecx
     rdmsr
-    /* The shared kernel page tables mark MMIO non-executable; carry the
-     * BSP's NX policy into the AP before paging becomes active. */
-    orl $0x00000900, %eax
+    orl $0x00000100, %eax
     wrmsr
+    movl $0x80000000, %eax
+    cpuid
+    cmpl $0x80000001, %eax
+    jb .Lno_ap_nx
+    movl $0x80000001, %eax
+    cpuid
+    testl $0x00100000, %edx
+    jz .Lno_ap_nx
+    movl $0xc0000080, %ecx
+    rdmsr
+    orl $0x00000800, %eax
+    wrmsr
+.Lno_ap_nx:
 
     movl %cr0, %eax
-    andl $~0x00000004, %eax
-    orl $0x80000022, %eax
+    andl $~0x60000004, %eax
+    orl $0x80010023, %eax
     movl %eax, %cr0
 
     /* Code and data descriptors are flat; recover the copied page's physical

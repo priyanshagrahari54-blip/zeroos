@@ -1,6 +1,7 @@
 #include "vmm.h"
 #include "memory.h"
 #include "tlb.h"
+#include "cpu.h"
 
 #define ENTRY_COUNT 512ULL
 #define PAGE_MASK 0x000ffffffffff000ULL
@@ -22,6 +23,15 @@ static int mapping_flags_valid(uint64_t flags) {
         return 0;
     return (flags & ~(VMM_USER | VMM_WRITABLE | VMM_WRITE_THROUGH |
                       VMM_CACHE_DISABLE | VMM_NO_EXECUTE))==0;
+}
+
+static uint64_t hardware_leaf_flags(uint64_t flags) {
+    /* NO_EXECUTE is a software contract when NX is unavailable; never place
+     * EFER.NXE's page-table bit in hardware page tables unless CPUID proved
+     * that the CPU implements it. */
+    if (!cpu_has(ZEROOS_CPU_FEATURE_NX))
+        flags &= ~VMM_NO_EXECUTE;
+    return flags & (VMM_LEAF_FLAGS | VMM_NO_EXECUTE);
 }
 
 static int physical_page_valid(uint64_t physical_address) {
@@ -98,9 +108,10 @@ static int split_2m(uint64_t *pd, uint64_t index, uint64_t owner_root) {
 
     uint64_t *pt = (uint64_t *)page;
     uint64_t base = old & 0x000ffffffe00000ULL;
-    uint64_t flags = old & (VMM_PRESENT | VMM_WRITABLE | VMM_USER |
-                            VMM_WRITE_THROUGH | VMM_CACHE_DISABLE |
-                            0x100ULL | VMM_NO_EXECUTE);
+    uint64_t flags = hardware_leaf_flags(old &
+                            (VMM_PRESENT | VMM_WRITABLE | VMM_USER |
+                             VMM_WRITE_THROUGH | VMM_CACHE_DISABLE |
+                             0x100ULL | VMM_NO_EXECUTE));
 
     zero_page(pt);
 
@@ -162,7 +173,7 @@ int vmm_init(void) {
     for (uint64_t i = 0; i < entries; ++i) {
         uint64_t flags = VMM_PRESENT | VMM_WRITABLE | HUGE_PAGE_2M;
         if (i != 0)
-            flags |= VMM_NO_EXECUTE;
+            flags |= hardware_leaf_flags(VMM_NO_EXECUTE);
         pd[i] = i * HUGE_PAGE_SIZE | flags;
     }
 
@@ -212,7 +223,7 @@ int vmm_map_page(uint64_t virtual_address,
 
     pt[pt_index] = (physical_address & PHYS_MASK) |
                    VMM_PRESENT | VMM_INTERNAL_OWNED |
-                   (flags & (VMM_LEAF_FLAGS | VMM_NO_EXECUTE));
+                   hardware_leaf_flags(flags);
 
     if (active_root_physical==root_physical)
         invalidate_page(virtual_address);
@@ -390,7 +401,7 @@ int vmm_protect_page(uint64_t virtual_address, uint64_t flags) {
 
     pt[pt_index] = (pt[pt_index] & (PHYS_MASK | VMM_INTERNAL_OWNED)) |
                    VMM_PRESENT |
-                   (flags & (VMM_LEAF_FLAGS | VMM_NO_EXECUTE));
+                   hardware_leaf_flags(flags);
     if (active_root_physical==root_physical)
         invalidate_page(virtual_address);
     return 0;
@@ -418,7 +429,7 @@ int vmm_map_mmio_page(uint64_t virtual_address, uint64_t physical_address,
     if (!pt || (pt[pt_index]&VMM_PRESENT)) return -1;
 
     pt[pt_index]=(physical_address&PHYS_MASK)|VMM_PRESENT|
-                 (flags&(VMM_LEAF_FLAGS|VMM_NO_EXECUTE));
+                 hardware_leaf_flags(flags);
     if (active_root_physical==root_physical)
         invalidate_page(virtual_address);
     return 0;
@@ -634,7 +645,7 @@ int vmm_space_map_page(struct vmm_space *space, uint64_t virtual_address,
 
     pt[pt_i] = (physical_address & PHYS_MASK) |
                VMM_PRESENT | VMM_INTERNAL_OWNED |
-               (flags & (VMM_LEAF_FLAGS|VMM_NO_EXECUTE));
+               hardware_leaf_flags(flags);
     ++space->mapped_pages;
     if (space->root_physical == active_root_physical)
         invalidate_page(virtual_address);

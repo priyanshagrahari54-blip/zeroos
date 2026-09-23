@@ -12,6 +12,10 @@
 
 #define CR0_MP (1ULL << 1)
 #define CR0_EM (1ULL << 2)
+#define CR0_NE (1ULL << 5)
+#define CR0_WP (1ULL << 16)
+#define CR0_NW (1ULL << 29)
+#define CR0_CD (1ULL << 30)
 #define CR4_OSFXSR (1ULL << 9)
 #define CR4_OSXMMEXCPT (1ULL << 10)
 #define EFER_MSR 0xc0000080U
@@ -149,8 +153,9 @@ int cpu_init(void) {
         return -1;
 
     uint64_t cr0=read_cr0();
-    cr0 &= ~CR0_EM;
-    cr0 |= CR0_MP;
+    /* Normalize reset cache state before shared page tables are used. */
+    cr0 &= ~(CR0_EM | CR0_CD | CR0_NW);
+    cr0 |= CR0_MP | CR0_NE | CR0_WP;
     write_cr0(cr0);
 
     uint64_t cr4=read_cr4();
