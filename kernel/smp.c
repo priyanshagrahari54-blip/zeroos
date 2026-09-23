@@ -119,6 +119,10 @@ void smp_ap_entry(uint32_t cpu_id) {
         smp_debug_marker('0');
     else
         smp_debug_marker('1');
+    {
+        uint64_t root=vmm_root();
+        __asm__ volatile ("mov %0, %%cr3" : : "r"(root) : "memory");
+    }
     if (apic_cpu_init()!=0)
         smp_ap_fail(cpu_id);
     smp_debug_marker('D');
