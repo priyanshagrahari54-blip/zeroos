@@ -186,7 +186,9 @@ half-range.
 
 A task that returns from its entry function becomes `TASK_ZOMBIE`. Its kernel stack cannot be freed by the task itself because execution is still using that stack. The scheduler therefore reclaims zombie stacks from a later timer/scheduler context, resets the descriptor to `TASK_UNUSED`, and returns the physical page to the page allocator. This makes task slots reusable without allocating a separate reaper thread or permanent reaper stack.
 
-The lifecycle is therefore `UNUSED → RUNNABLE → RUNNING → BLOCKED/RUNNABLE → ZOMBIE → UNUSED`. A blocked task cannot become a zombie until it is explicitly resumed and exits.
+SMP reclamation is handoff-quiescent rather than merely state-based. Before releasing the scheduler metadata lock, a cooperative dispatch publishes the outgoing task in a per-CPU handoff-quarantine slot. The reaper will not free that task's stack while the slot is published. The destination clears the slot after it crosses the cooperative context boundary; a frame destination clears it from the assembly handoff immediately before loading the destination frame and executing `iretq`. This closes the race in which a remote timer could reclaim and reuse a zombie's stack while `context_switch_ex()` was still saving registers on it. The quarantine is protected by the same task lock and is included in the fatal scheduler ownership checks.
+
+The lifecycle is therefore `UNUSED → RUNNABLE → RUNNING → BLOCKED/RUNNABLE → ZOMBIE → UNUSED`, with an explicit architectural handoff-quarantine interval between `ZOMBIE` and reclamation. A blocked task cannot become a zombie until it is explicitly resumed and exits.
 
 ## Resource model
 

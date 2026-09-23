@@ -28,7 +28,10 @@ static inline uint8_t inb(uint16_t port) {
     return value;
 }
 
+static struct spinlock serial_lock;
+
 static void serial_init(void) {
+    spinlock_init(&serial_lock);
     outb(COM1+1,0x00);
     outb(COM1+3,0x80);
     outb(COM1+0,0x03);
@@ -44,10 +47,19 @@ static void serial_putc(char c) {
 }
 
 void serial_write_public(const char *text) {
+    uint64_t flags;
+
+    if (!text)
+        return;
+    /* UART transmit is a shared MMIO/PIO resource. Serializing complete
+     * writes prevents AP diagnostics from interleaving individual bytes and
+     * destroying the line-oriented boot certification markers. */
+    flags=spin_lock_irqsave(&serial_lock);
     while (*text) {
         if (*text=='\n') serial_putc('\r');
         serial_putc(*text++);
     }
+    spin_unlock_irqrestore(&serial_lock,flags);
 }
 
 extern void interrupts_init(void);

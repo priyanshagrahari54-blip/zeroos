@@ -36,12 +36,14 @@ never inverted:
     process_lock / thread_lock      ->  memory_lock
 
 - `task_lock` serializes scheduler metadata: task table transitions, the
-  sleep queue, successor selection and context-ownership publication. It is
-  always acquired with interrupts disabled and is released before any
-  `context_switch_ex()` handoff. The handoff window itself is atomic on the
-  current UP configuration because it runs with IF=0; per-runqueue ownership
-  across the handoff is the marked boundary that moves to per-runqueue locks
-  in the SMP stage.
+  sleep queue, successor selection, per-CPU runqueue ownership and
+  context-ownership publication. It is always acquired with interrupts
+  disabled and is released before any `context_switch_ex()` handoff. A
+  per-CPU handoff-quarantine slot remains published until the destination
+  context has crossed the assembly boundary, so the remote reaper cannot free
+  a zombie's stack while the outgoing context is still being saved. Each
+  runqueue also has its own lock, acquired only after `task_lock`, for queue
+  structure/accounting validation and future finer-grained operations.
 - `memory_lock` serializes the physical page allocator bitmap, including
   frees from the scheduler reclaimer and VMM teardown paths.
 - `process_lock` serializes process-table mutations and process/thread
