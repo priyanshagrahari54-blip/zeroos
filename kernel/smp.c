@@ -130,6 +130,7 @@ void smp_ap_entry(uint32_t cpu_id) {
 }
 
 int smp_init(void) {
+    serial_write_public("ZEROOS: SMP initialization entered.\n");
     if (initialized)
         return 0;
     initialized=1;
