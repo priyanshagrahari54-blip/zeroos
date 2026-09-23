@@ -91,6 +91,29 @@ jobs:
             fi
           done
 
+          echo "===== ZEROOS NX-disabled compatibility boot ====="
+          timeout 10s qemu-system-x86_64 \
+            -cpu qemu64,-nx \
+            -smp 2 \
+            -cdrom build/zeroos.iso \
+            -serial file:build/serial-nx-off.log \
+            -display none \
+            -no-reboot \
+            -no-shutdown \
+            -debugcon file:build/debug-nx-off.log \
+            -global isa-debugcon.iobase=0xe9 \
+            -d int,guest_errors,cpu_reset \
+            -D build/qemu-nx-off.log || true
+          grep -q "ZEROOS: CPU capabilities detected (APIC=1, NX=0" build/serial-nx-off.log
+          grep -q "ZEROOS: foundation milestone reached." build/serial-nx-off.log
+          grep -q "ZEROOS: remote TLB shootdown self-test passed." build/serial-nx-off.log
+          grep -q "ZEROOS: scheduler certification passed." build/serial-nx-off.log
+          if grep -q "ZEROOS PANIC:" build/serial-nx-off.log; then
+            echo "ZEROOS NX-disabled boot reported a panic:"
+            grep "ZEROOS PANIC:" build/serial-nx-off.log
+            exit 1
+          fi
+
       - name: Serial summary
         if: always()
         run: |
