@@ -8,6 +8,8 @@
 .global ap_trampoline_cpu_id
 .global ap_trampoline_gdt_ptr
 .global ap_trampoline_gdt
+.global ap_trampoline_protected
+.global ap_trampoline_protected_far
 
 .code16
 ap_trampoline_start:
@@ -45,13 +47,21 @@ ap_trampoline_start:
     movb $'q', %al
     outb %al, %dx
 
+    /* Keep an absolute protected-mode stack ready before PE is enabled. */
+    movl %ebx, %esp
+    addl $0x1f0, %esp
+    movl %ebx, %edx
+    addl $(ap_trampoline_protected_far-ap_trampoline_start), %edx
+
     movl %cr0, %eax
     orl $0x00000001, %eax
     movl %eax, %cr0
     movw $0xe9, %dx
     movb $'e', %al
     outb %al, %dx
-    ljmpl $0x08, $(ap_trampoline_protected-ap_trampoline_start)
+    movl %ebx, %edx
+    addl $(ap_trampoline_protected_far-ap_trampoline_start), %edx
+    ljmpl *(%edx)
 
 .code32
 ap_trampoline_protected:
@@ -77,10 +87,8 @@ ap_trampoline_protected:
     orl $0x80000022, %eax
     movl %eax, %cr0
 
-    /* The runtime GDT code base is the copied page's physical address.
-     * Recover that base from the current protected-mode instruction pointer,
-     * then enter long mode at the corresponding physical target. */
-    movl $0x1f0, %esp
+    /* Code and data descriptors are flat; recover the copied page's physical
+     * address from the absolute protected-mode instruction pointer. */
     call 1f
 1:
     popl %eax
@@ -126,6 +134,11 @@ ap_trampoline_stack:
 ap_trampoline_cpu_id:
     .long 0
     .long 0
+
+.align 8
+ap_trampoline_protected_far:
+    .long 0
+    .word 0
 
 .align 8
 ap_trampoline_gdt_ptr:

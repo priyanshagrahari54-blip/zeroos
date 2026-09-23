@@ -17,7 +17,8 @@ extern char ap_trampoline_cr3[];
 extern char ap_trampoline_entry[];
 extern char ap_trampoline_stack[];
 extern char ap_trampoline_cpu_id[];
-extern char ap_trampoline_gdt[];
+extern char ap_trampoline_protected[];
+extern char ap_trampoline_protected_far[];
 
 static struct smp_cpu_record records[ZEROOS_MAX_CPUS];
 static uint32_t discovered;
@@ -36,17 +37,6 @@ static uint32_t atomic_load_u32(const uint32_t *value) {
 
 static uint64_t trampoline_offset(const char *symbol) {
     return (uint64_t)symbol-(uint64_t)ap_trampoline_start;
-}
-
-static void trampoline_patch_segment_base(uint8_t *copy,
-                                          uint32_t index,
-                                          uint32_t base) {
-    uint64_t offset=trampoline_offset(ap_trampoline_gdt)+index*8ULL;
-    uint64_t descriptor=*(uint64_t *)(copy+offset);
-    descriptor&=~((0xffffffULL<<16)|(0xffULL<<56));
-    descriptor|=((uint64_t)(base&0xffffffU)<<16)|
-                ((uint64_t)((base>>24)&0xffU)<<56);
-    *(uint64_t *)(copy+offset)=descriptor;
 }
 
 static int trampoline_prepare(void) {
@@ -71,10 +61,13 @@ static int trampoline_prepare(void) {
     *(uint64_t *)(copy+offset)=vmm_root();
     offset=trampoline_offset(ap_trampoline_entry);
     *(uint64_t *)(copy+offset)=(uint64_t)smp_ap_entry;
-    /* Protected-mode segment bases keep the copied code/data page addressable
-     * before long mode ignores the code-segment base. */
-    trampoline_patch_segment_base(copy,1,(uint32_t)physical);
-    trampoline_patch_segment_base(copy,2,(uint32_t)physical);
+    /* Enter protected mode through an absolute far pointer. Flat GDT
+     * descriptors then leave the transition independent of descriptor-base
+     * patching. */
+    offset=trampoline_offset(ap_trampoline_protected_far);
+    *(uint32_t *)(copy+offset)=(uint32_t)physical+
+                               (uint32_t)trampoline_offset(ap_trampoline_protected);
+    *(uint16_t *)(copy+offset+4ULL)=0x08U;
 
     trampoline_vector=(uint8_t)(physical>>12);
     return 0;
