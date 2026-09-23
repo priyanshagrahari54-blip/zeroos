@@ -127,7 +127,7 @@ static uint32_t ioapic_entry_flags(uint16_t acpi_flags) {
 }
 
 static int apic_wait_icr(void) {
-    for (uint64_t spins=0; spins<1000000ULL; ++spins) {
+    for (uint64_t spins=0; spins<100000ULL; ++spins) {
         if (!(local_apic_read(APIC_REG_ICR_LOW)&APIC_ICR_DELIVERY_STATUS))
             return 0;
         cpu_relax();
@@ -164,9 +164,15 @@ static void apic_delay_us(uint64_t microseconds) {
     uint64_t needed=(microseconds+9999ULL)/10000ULL;
     if (needed==0)
         needed=1;
-    uint64_t start=timer_ticks();
-    uint64_t spins=0;
-    while (timer_ticks()-start<needed && spins++<20000000ULL)
+    uint64_t flags;
+    __asm__ volatile ("pushfq; popq %0" : "=r"(flags) : : "memory");
+    if (flags & (1ULL<<9)) {
+        uint64_t start=timer_ticks();
+        while (timer_ticks()-start<needed)
+            __asm__ volatile ("hlt" : : : "memory");
+        return;
+    }
+    for (uint64_t delay=0; delay<100000ULL; ++delay)
         cpu_relax();
 }
 
