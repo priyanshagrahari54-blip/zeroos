@@ -48,6 +48,7 @@ jobs:
             grep -q "ZEROOS: bootstrap stack guard verified." build/serial.log
             grep -q "ZEROOS: CPU capabilities detected" build/serial.log
             grep -q "ZEROOS: physical page allocator initialized." build/serial.log
+            grep -q "ZEROOS: TLB shootdown boundary self-test passed." build/serial.log
             grep -q "ZEROOS: runtime GDT/TSS self-test passed." build/serial.log
             grep -q "ZEROOS: exception IST routing self-test passed." build/serial.log
             grep -q "ZEROOS: IRQ controller capability:" build/serial.log

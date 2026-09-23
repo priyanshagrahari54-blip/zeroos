@@ -4,6 +4,7 @@
 #include "memory.h"
 #include "timer.h"
 #include "vmm.h"
+#include "tlb.h"
 #include "gdt.h"
 #include "sync.h"
 #include "task.h"
@@ -150,7 +151,14 @@ static void vmm_self_test(void) {
         vmm_translate(mmio_va)!=0)
         kernel_panic("VMM MMIO ownership validation failed");
 
+    if (tlb_set_current_cpu(0)!=0 || tlb_online_count()!=1 ||
+        tlb_install_ipi_sender(0)!=0 || tlb_register_cpu(1)!=-1 ||
+        tlb_invalidate_page(VMM_SELF_TEST_VA)!=0 ||
+        tlb_debug_validate()!=0)
+        kernel_panic("TLB shootdown boundary self-test failed");
+
     page_free(physical);
+    serial_write_public("ZEROOS: TLB shootdown boundary self-test passed.\n");
     serial_write_public("ZEROOS: virtual memory self-test passed.\n");
 }
 

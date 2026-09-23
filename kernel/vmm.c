@@ -1,5 +1,6 @@
 #include "vmm.h"
 #include "memory.h"
+#include "tlb.h"
 
 #define ENTRY_COUNT 512ULL
 #define PAGE_MASK 0x000ffffffffff000ULL
@@ -33,7 +34,8 @@ static inline void write_cr3(uint64_t value) {
 }
 
 static inline void invalidate_page(uint64_t address) {
-    __asm__ volatile ("invlpg (%0)" : : "r"(address) : "memory");
+    if (tlb_invalidate_page(address)!=0)
+        for (;;) __asm__ volatile ("cli; hlt");
 }
 
 static void zero_page(uint64_t *page) {
@@ -110,18 +112,24 @@ static int split_2m(uint64_t *pd, uint64_t index, uint64_t owner_root) {
      * the PT so no CPU can retain a stale translation for the old page size.
      */
     pd[index] = 0;
-    if (owner_root==active_root_physical)
-        write_cr3(owner_root);
+    if (owner_root==active_root_physical) {
+        if (tlb_flush_all()!=0)
+            for (;;) __asm__ volatile ("cli; hlt");
+    }
     pd[index] = ((uint64_t)pt & PAGE_MASK) |
                 VMM_PRESENT | VMM_WRITABLE |
                 (old & VMM_USER);
-    if (owner_root==active_root_physical)
-        write_cr3(owner_root);
+    if (owner_root==active_root_physical) {
+        if (tlb_flush_all()!=0)
+            for (;;) __asm__ volatile ("cli; hlt");
+    }
 
     return 0;
 }
 
 int vmm_init(void) {
+    if (tlb_init()!=0)
+        return -1;
     void *root = page_alloc();
     if (!root)
         return -1;
@@ -452,7 +460,10 @@ int vmm_unmap_mmio_page(uint64_t virtual_address) {
             }
         }
     }
-    if (active) write_cr3(active_root_physical);
+    if (active) {
+        if (tlb_flush_all()!=0)
+            for (;;) __asm__ volatile ("cli; hlt");
+    }
     return 0;
 }
 
@@ -677,8 +688,10 @@ int vmm_space_unmap_page(struct vmm_space *space, uint64_t virtual_address) {
             }
         }
     }
-    if (active)
-        write_cr3(active_root_physical);
+    if (active) {
+        if (tlb_flush_all()!=0)
+            for (;;) __asm__ volatile ("cli; hlt");
+    }
     return 0;
 }
 

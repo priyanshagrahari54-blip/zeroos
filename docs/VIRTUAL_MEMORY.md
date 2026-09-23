@@ -65,7 +65,14 @@ Intel documents 2 MiB and 1 GiB x86 page sizes and notes their TLB/page-walk ben
 
 ## TLB discipline
 
-Changing a page-table entry without invalidating cached translations can leave the processor using stale mappings. ZEROOS tracks the active CR3 root: active leaf changes use INVLPG, active unmaps use a CR3 reload after table pruning, and active root switches update the tracker only after loading CR3. Non-active address spaces are modified without local TLB invalidation; they must be activated before execution. SMP shootdown remains a required later contract. Intel documents INVLPG and CR3 reloads as TLB/page-structure invalidation mechanisms. citeturn4search14turn4search15
+Changing a page-table entry without invalidating cached translations can leave the processor using stale mappings. ZEROOS tracks the active CR3 root: active leaf changes use the TLB service's INVLPG path, active unmaps use a full TLB flush after page-table pruning, and active root switches update the tracker only after loading CR3. Non-active address spaces are modified without local TLB invalidation; they must be activated before execution.
+
+The TLB service owns a sequence-numbered shootdown request and acknowledgement
+protocol. The bootstrap CPU is registered locally; additional CPUs are refused
+unless an IPI sender is installed, and an unacknowledged remote flush is a
+hard failure rather than a silent stale-translation risk. The current QEMU
+boundary therefore certifies the UP path while keeping the SMP ownership and
+rollback contract explicit. Intel documents INVLPG and CR3 reloads as TLB/page-structure invalidation mechanisms. citeturn4search14turn4search15
 
 ## Current limits
 
