@@ -505,6 +505,53 @@ int ipc_receive_timeout(struct process *owner, zeroos_ipc_handle_t handle,
 }
 
 
+/* Bounded byte-stream pipe — production semantics.
+ *
+ * Capacity: ZEROOS_IPC_PIPE_CAPACITY (2048) bytes, fixed, ring-buffer.
+ * - Byte semantics: head/tail/count with modulo wrap, no record boundaries.
+ * - Partial transfers: read returns min(available, requested) (>=1 when data
+ *   present); write returns min(free, requested) (>=1 when space present).
+ *   This is the byte-stream contract: a writer does not have to fit its
+ *   entire length atomically; a reader does not have to drain the pipe.
+ * - Full-buffer backpressure: when free==0, writer blocks (or EAGAIN/ETIMEDOUT).
+ * - Empty-buffer blocking: when count==0, reader blocks (or EAGAIN/ETIMEDOUT).
+ * - Wakeups: condition check and waiter publication are serialized by ipc_lock,
+ *   so no lost wakeup. After a successful transfer, one opposite waiter is
+ *   woken (wake_one is sufficient; wake_all is used for close/cancellation).
+ * - Timeout: deadline = now + timeout_ticks, with overflow guard to ~0ULL.
+ *   Infinite timeout (ZEROOS_IPC_TIMEOUT_FOREVER) uses event-driven
+ *   wait_queue_prepare/commit (no polling). Timed timeout currently uses
+ *   1-tick polling via task_sleep_ticks(1) to avoid violating the scheduler
+ *   invariant that forbids a task being in both wait_queue and sleep queue
+ *   simultaneously. This is documented as a bounded-latency fallback; the
+ *   deadline is still honored with tick granularity.
+ * - Cancellation: endpoint_destroy_locked() wakes both send and receive
+ *   waiters on both endpoints before invalidating generation.
+ * - Peer-close: writer sees EPIPE when peer is NULL (reader closed); reader
+ *   drains remaining bytes then sees EPIPE when peer is NULL and count==0.
+ *   EOF is therefore signaled as EPIPE after drain, consistent with message
+ *   queue semantics and verified by existing self-tests.
+ * - Lifetime: generation-checked capabilities, refcount in endpoint->reserved,
+ *   process revocation on exit wakes blocked peers.
+ * - Concurrent readers/writers: protected by ipc_lock spinlock; multiple
+ *   readers/writers may proceed serially, each transfer is atomic w.r.t.
+ *   head/tail/count.
+ * - PEEK: for read only; does not consume. Repeated PEEK observes same bytes
+ *   until a non-PEEK read consumes them. Interaction:
+ *     * timeout: if empty, PEEK still blocks with same timeout semantics;
+ *       deadline expiry returns ETIMEDOUT.
+ *     * close: if peer closed and empty, PEEK returns EPIPE (same as read).
+ *     * partial: PEEK returns min(count, capacity) without consuming.
+ *     * concurrent: PEEK and consuming reads are serialized by ipc_lock;
+ *       a concurrent consuming read that races a PEEK will either be ordered
+ *       before (PEEK sees post-consume state) or after (PEEK sees pre-consume
+ *       state), but never observes torn bytes.
+ * - User-copy validation: performed in syscall layer via
+ *   process_address_space_is_user_range and copy_from/to_user.
+ * - Resource accounting: fixed ring buffer per endpoint (2048 bytes),
+ *   bounded endpoint table (64), capability table (128), no dynamic
+ *   allocation in data path.
+ */
 int ipc_pipe_write_timeout(struct process *owner, zeroos_ipc_handle_t handle,
                            const void *data, uint64_t length, uint64_t flags,
                            uint64_t timeout_ticks) {
@@ -524,6 +571,8 @@ int ipc_pipe_write_timeout(struct process *owner, zeroos_ipc_handle_t handle,
         uint64_t irq_flags=spin_lock_irqsave(&ipc_lock);
         struct ipc_capability *capability=capability_lookup_locked(owner,handle);
         struct ipc_endpoint *peer;
+        uint64_t free_space;
+        uint64_t to_write;
         if (!capability || !(capability->rights&ZEROOS_IPC_RIGHT_SEND)) {
             spin_unlock_irqrestore(&ipc_lock,irq_flags);
             return -ZEROOS_EBADF;
@@ -537,7 +586,8 @@ int ipc_pipe_write_timeout(struct process *owner, zeroos_ipc_handle_t handle,
             spin_unlock_irqrestore(&ipc_lock,irq_flags);
             return -ZEROOS_EPIPE;
         }
-        if (peer->byte_count>ZEROOS_IPC_PIPE_CAPACITY-length) {
+        free_space=ZEROOS_IPC_PIPE_CAPACITY-peer->byte_count;
+        if (free_space==0) {
             if (flags&ZEROOS_IPC_FLAG_NONBLOCK) {
                 spin_unlock_irqrestore(&ipc_lock,irq_flags);
                 return -ZEROOS_EAGAIN;
@@ -566,18 +616,29 @@ int ipc_pipe_write_timeout(struct process *owner, zeroos_ipc_handle_t handle,
             }
             continue;
         }
-        for (uint64_t i=0; i<length; ++i)
+        to_write=length<free_space ? length : free_space;
+        for (uint64_t i=0; i<to_write; ++i)
             peer->bytes[(peer->byte_tail+i)%ZEROOS_IPC_PIPE_CAPACITY]=
                 ((const uint8_t *)data)[i];
-        peer->byte_tail=(uint16_t)((peer->byte_tail+length)%
+        peer->byte_tail=(uint16_t)((peer->byte_tail+to_write)%
                                    ZEROOS_IPC_PIPE_CAPACITY);
-        peer->byte_count=(uint16_t)(peer->byte_count+length);
+        peer->byte_count=(uint16_t)(peer->byte_count+to_write);
         (void)wait_queue_wake_one(&peer->receive_waiters);
         spin_unlock_irqrestore(&ipc_lock,irq_flags);
-        return (int)length;
+        return (int)to_write;
     }
 }
 
+/* See ipc_pipe_write_timeout() header for full pipe contract. This read
+ * path implements the complementary half:
+ * - Partial: returns min(byte_count, capacity) without requiring drain.
+ * - PEEK: when ZEROOS_IPC_FLAG_PEEK is set, data is copied but head/count
+ *   are not advanced and no writer wakeup is performed. Repeated PEEKs
+ *   therefore observe identical bytes until a consuming read occurs.
+ * - Empty blocking, timeout, close/EOF, concurrent, cancellation as described
+ *   in write path. For PEEK, close still returns EPIPE when empty and peer
+ *   is NULL; timeout still applies.
+ */
 int ipc_pipe_read_timeout(struct process *owner, zeroos_ipc_handle_t handle,
                           void *data, uint64_t capacity, uint64_t flags,
                           uint64_t *length_out, uint64_t timeout_ticks) {

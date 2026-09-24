@@ -104,6 +104,8 @@ jobs:
             grep -q "ZEROOS: blocking event wait/wake path passed." build/serial.log
             grep -q "ZEROOS: blocking IPC close-wakeup path passed." build/serial.log
             grep -q "ZEROOS: blocking IPC send-wakeup path passed." build/serial.log
+            grep -q "ZEROOS: blocking pipe close-wakeup path passed." build/serial.log
+            grep -q "ZEROOS: blocking pipe send-wakeup path passed." build/serial.log
             grep -q "ZEROOS: isolated service process setup complete." build/serial.log
             grep -q "ZEROOS: shared-memory map/grant/lifecycle self-test passed." build/serial.log
             grep -q "ZEROOS: userspace resource exhaustion/recovery passed." build/serial.log
@@ -174,6 +176,8 @@ jobs:
           grep -q "ZEROOS: blocking child wait/wakeup path passed." build/serial-smp4.log
           grep -q "ZEROOS: blocking IPC close-wakeup path passed." build/serial-smp4.log
           grep -q "ZEROOS: blocking IPC send-wakeup path passed." build/serial-smp4.log
+          grep -q "ZEROOS: blocking pipe close-wakeup path passed." build/serial-smp4.log
+          grep -q "ZEROOS: blocking pipe send-wakeup path passed." build/serial-smp4.log
           grep -q "ZEROOS: isolated service process setup complete." build/serial-smp4.log
           grep -q "ZEROOS: shared-memory map/grant/lifecycle self-test passed." build/serial-smp4.log
           grep -q "ZEROOS: userspace negative syscall/fault/malformed-ELF probes passed." build/serial-smp4.log
@@ -221,6 +225,8 @@ jobs:
           grep -q "ZEROOS: blocking child wait/wakeup path passed." build/serial-nx-off.log
           grep -q "ZEROOS: blocking IPC close-wakeup path passed." build/serial-nx-off.log
           grep -q "ZEROOS: blocking IPC send-wakeup path passed." build/serial-nx-off.log
+          grep -q "ZEROOS: blocking pipe close-wakeup path passed." build/serial-nx-off.log
+          grep -q "ZEROOS: blocking pipe send-wakeup path passed." build/serial-nx-off.log
           grep -q "ZEROOS: isolated service process setup complete." build/serial-nx-off.log
           grep -q "ZEROOS: shared-memory map/grant/lifecycle self-test passed." build/serial-nx-off.log
           grep -q "ZEROOS: userspace negative syscall/fault/malformed-ELF probes passed." build/serial-nx-off.log
@@ -262,6 +268,8 @@ jobs:
           grep -q "ZEROOS: blocking child wait/wakeup path passed." build-fault/serial.log
           grep -q "ZEROOS: blocking IPC close-wakeup path passed." build-fault/serial.log
           grep -q "ZEROOS: blocking IPC send-wakeup path passed." build-fault/serial.log
+          grep -q "ZEROOS: blocking pipe close-wakeup path passed." build-fault/serial.log
+          grep -q "ZEROOS: blocking pipe send-wakeup path passed." build-fault/serial.log
           grep -q "ZEROOS: isolated service process setup complete." build-fault/serial.log
           grep -q "ZEROOS: shared-memory map/grant/lifecycle self-test passed." build-fault/serial.log
           grep -q "ZEROOS: userspace negative syscall/fault/malformed-ELF probes passed." build-fault/serial.log

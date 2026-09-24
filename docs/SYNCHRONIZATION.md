@@ -56,15 +56,24 @@ ownership metadata happens under `task_lock`; wait-queue membership is owned
 by the corresponding `wait_queue::lock`. A lock is never held across a
 context switch.
 
+## Wait queues and blocking
+
+Wait queues are now production: `wait_queue_prepare` publishes current task as blocked while holding outer condition lock (e.g., `ipc_lock`), with interrupts disabled, closing lost-wakeup window. `wait_queue_commit` performs scheduler block transition. `wait_queue_wake_one/all` pops waiter and calls `task_wake`. Used by IPC message, pipe, event, and child wait.
+
+Timed variants currently use 1-tick polling via `task_sleep_ticks(1)` for timeout path because scheduler invariant forbids task being in both wait_queue and sleep queue simultaneously (`wait_queue && sleep_armed` panics). Infinite timeout uses event-driven wait_queue. Documented limitation, bounded latency.
+
+## IPC synchronization
+
+- Message queue: send blocks when peer count >= QUEUE_DEPTH, receive blocks when count==0. Condition check and waiter publication serialized by ipc_lock.
+- Pipe byte-stream: write blocks when free==0, read blocks when count==0. Partial transfers: write min(free, requested), read min(available, requested). PEEK does not consume nor wake writer.
+- Event: coalescing bit, signal sets bit and wakes one waiter, wait consumes bit unless PEEK.
+- Close/cancellation: endpoint_destroy wakes all send and receive waiters on both endpoints.
+- No lost wakeups: condition and waiter publication under same lock, wake after state change.
+
 ## Design boundary
 
-Mutexes, semaphores and wait queues are not faked here. They will be introduced
-with task blocking/wakeup so a waiter can actually sleep instead of polling.
-
-Linux similarly distinguishes spinning from sleeping locks and connects wait
-queues to task sleep/wakeup. citeturn0search1turn0search0turn0search2
+Mutexes, semaphores, rwlock sleep variants are future; current production primitives are spinlocks, atomic_u64, rwlock (non-sleeping), and wait queues for blocking.
 
 ## Cost
 
-A spinlock is one 32-bit word and an atomic counter is one 64-bit word. No
-dynamic allocation or background worker is created by this layer.
+A spinlock is one 32-bit word, atomic_u64 one 64-bit word, wait_queue head/tail pointers plus spinlock. No dynamic allocation or background worker in data path. Pipe ring buffer 2048 bytes per endpoint static, no alloc.

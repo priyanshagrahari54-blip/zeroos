@@ -137,13 +137,15 @@ User pointers are validated.
 ABI structures have explicit sizes/version fields where extensibility is required.
 
 ## 11. IPC
-Planned mechanisms:
-- message queues,
-- shared memory,
-- event/notification handles,
-- pipes,
-- sockets.
-IPC must support blocking and nonblocking modes without busy waiting.
+Production mechanisms (Stage 2):
+
+- message queues: bounded depth 8, max 256 bytes, record semantics, backpressure, PEEK, timeout, EPIPE on peer close, generation-tagged capabilities, rights-checked, wait_queue blocking, cancellation via close/revoke.
+- shared memory: page-granular, up to 16 pages, zero-filled, map/grant/unmap/close with rights (MAP/WRITE/GRANT/CLOSE), per-process tracking, physical-page refcount, rollback on failure.
+- event/notification handles: coalescing single pending bit, signal/wait with PEEK, nonblocking, timeout, EPIPE on peer close, same lifetime/wait-queue rules as IPC.
+- pipes: bounded byte-stream, 2048 bytes ring-buffer, partial read/write (read min(available, requested), write min(free, requested)), full-buffer backpressure, empty-buffer blocking, correct reader/writer wakeups, no lost wakeups (condition+waiter publication under ipc_lock), timeout-aware (infinite event-driven, timed 1-tick polling due to scheduler invariant), cancellation via endpoint destruction waking all, peer-close EPIPE after drain, safe generation+refcount lifetime, concurrent readers/writers serialized by spinlock, close/exit while blocked wakes EPIPE, PEEK inspects without consuming with defined interactions (timeout, close, partial, concurrent), user-copy validation in syscall layer, bounded memory accounting (fixed buffers, 64 endpoints, 128 caps, max transfer 512). Lifecycle states: STOPPED/DORMANT/WARM/ACTIVE/THROTTLED/SUSPENDED.
+- sockets: future, built on same bounded/backpressure/cancellation contracts; pipe is first byte-stream foundation.
+
+IPC must support blocking and nonblocking modes without busy waiting for infinite timeout; timed path uses bounded 1-tick polling as fallback due to task invariant forbidding wait_queue+sleep_armed simultaneously (documented limitation).
 
 ## 12. Storage
 VFS provides a stable namespace.

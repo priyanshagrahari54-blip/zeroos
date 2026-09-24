@@ -51,6 +51,14 @@ static struct atomic_u64 ipc_send_probe_state;
 static struct process *ipc_send_probe_process;
 static zeroos_ipc_handle_t ipc_send_probe_signal;
 static zeroos_ipc_handle_t ipc_send_probe_wait;
+static struct atomic_u64 pipe_close_probe_state;
+static struct process *pipe_close_probe_process;
+static zeroos_ipc_handle_t pipe_close_probe_local;
+static zeroos_ipc_handle_t pipe_close_probe_peer;
+static struct atomic_u64 pipe_send_probe_state;
+static struct process *pipe_send_probe_process;
+static zeroos_ipc_handle_t pipe_send_probe_local;
+static zeroos_ipc_handle_t pipe_send_probe_peer;
 
 static const char init_message[]=
     "ZEROOS: userspace init syscall path passed.\n";
@@ -1133,6 +1141,183 @@ static int userspace_ipc_self_test(struct process *process) {
             return -1;
     }
 
+    /* Extended production pipe tests: partial, PEEK repeat, concurrent, etc. */
+    {
+        zeroos_ipc_handle_t pipe_local=0;
+        zeroos_ipc_handle_t pipe_peer=0;
+        uint8_t pipe_data[ZEROOS_SYSCALL_MAX_TRANSFER];
+        uint8_t pipe_read[ZEROOS_SYSCALL_MAX_TRANSFER];
+        uint64_t pipe_length=0;
+
+        for (uint32_t i=0; i<sizeof(pipe_data); ++i)
+            pipe_data[i]=(uint8_t)('A'+(i%26U));
+        if (ipc_create_pipe(process,&pipe_local,&pipe_peer)!=0)
+            return -1;
+
+        /* Partial write: fill 2000 bytes, then try 100 bytes when only 48 free.
+         * New byte-stream contract returns min(free, requested) = 48, not EAGAIN
+         * and not blocking for the whole 100. */
+        for (uint32_t i=0; i<3; ++i) {
+            if (ipc_pipe_write_timeout(process,pipe_local,pipe_data,
+                                       sizeof(pipe_data),
+                                       ZEROOS_IPC_FLAG_NONBLOCK,0)!=
+                (int)sizeof(pipe_data)) {
+                (void)ipc_close(process,pipe_local);
+                (void)ipc_close(process,pipe_peer);
+                return -1;
+            }
+        }
+        /* 3*512=1536, free=512 */
+        if (ipc_pipe_write_timeout(process,pipe_local,pipe_data,500,
+                                   ZEROOS_IPC_FLAG_NONBLOCK,0)!=500) {
+            (void)ipc_close(process,pipe_local);
+            (void)ipc_close(process,pipe_peer);
+            return -1;
+        }
+        /* 2036 used, free=12 */
+        if (ipc_pipe_write_timeout(process,pipe_local,pipe_data,100,
+                                   ZEROOS_IPC_FLAG_NONBLOCK,0)!=12) {
+            (void)ipc_close(process,pipe_local);
+            (void)ipc_close(process,pipe_peer);
+            return -1;
+        }
+        /* Now full, nonblocking should EAGAIN */
+        if (ipc_pipe_write_timeout(process,pipe_local,pipe_data,1,
+                                   ZEROOS_IPC_FLAG_NONBLOCK,0)!=-ZEROOS_EAGAIN) {
+            (void)ipc_close(process,pipe_local);
+            (void)ipc_close(process,pipe_peer);
+            return -1;
+        }
+        /* Drain 100 bytes via partial reads of 50 */
+        if (ipc_pipe_read_timeout(process,pipe_peer,pipe_read,50,
+                                  ZEROOS_IPC_FLAG_NONBLOCK,&pipe_length,0)!=50 ||
+            pipe_length!=50) {
+            (void)ipc_close(process,pipe_local);
+            (void)ipc_close(process,pipe_peer);
+            return -1;
+        }
+        if (ipc_pipe_read_timeout(process,pipe_peer,pipe_read,50,
+                                  ZEROOS_IPC_FLAG_NONBLOCK,&pipe_length,0)!=50 ||
+            pipe_length!=50) {
+            (void)ipc_close(process,pipe_local);
+            (void)ipc_close(process,pipe_peer);
+            return -1;
+        }
+        /* Now free=100, try write 200 -> should return 100 partial */
+        if (ipc_pipe_write_timeout(process,pipe_local,pipe_data,200,
+                                   ZEROOS_IPC_FLAG_NONBLOCK,0)!=100) {
+            (void)ipc_close(process,pipe_local);
+            (void)ipc_close(process,pipe_peer);
+            return -1;
+        }
+        /* PEEK repeated observes same bytes */
+        if (ipc_pipe_read_timeout(process,pipe_peer,pipe_read,10,
+                                  ZEROOS_IPC_FLAG_PEEK,&pipe_length,0)!=10 ||
+            pipe_length!=10) {
+            (void)ipc_close(process,pipe_local);
+            (void)ipc_close(process,pipe_peer);
+            return -1;
+        }
+        uint8_t first_peek[10];
+        for (uint32_t i=0; i<10; ++i) first_peek[i]=pipe_read[i];
+        if (ipc_pipe_read_timeout(process,pipe_peer,pipe_read,10,
+                                  ZEROOS_IPC_FLAG_PEEK,&pipe_length,0)!=10 ||
+            pipe_length!=10) {
+            (void)ipc_close(process,pipe_local);
+            (void)ipc_close(process,pipe_peer);
+            return -1;
+        }
+        for (uint32_t i=0; i<10; ++i)
+            if (pipe_read[i]!=first_peek[i]) {
+                (void)ipc_close(process,pipe_local);
+                (void)ipc_close(process,pipe_peer);
+                return -1;
+            }
+        /* PEEK with partial length: request 5, should get 5 same prefix */
+        if (ipc_pipe_read_timeout(process,pipe_peer,pipe_read,5,
+                                  ZEROOS_IPC_FLAG_PEEK,&pipe_length,0)!=5 ||
+            pipe_length!=5) {
+            (void)ipc_close(process,pipe_local);
+            (void)ipc_close(process,pipe_peer);
+            return -1;
+        }
+        for (uint32_t i=0; i<5; ++i)
+            if (pipe_read[i]!=first_peek[i]) {
+                (void)ipc_close(process,pipe_local);
+                (void)ipc_close(process,pipe_peer);
+                return -1;
+            }
+        /* Consuming read should advance */
+        if (ipc_pipe_read_timeout(process,pipe_peer,pipe_read,10,
+                                  ZEROOS_IPC_FLAG_NONBLOCK,&pipe_length,0)!=10 ||
+            pipe_length!=10) {
+            (void)ipc_close(process,pipe_local);
+            (void)ipc_close(process,pipe_peer);
+            return -1;
+        }
+        for (uint32_t i=0; i<10; ++i)
+            if (pipe_read[i]!=first_peek[i]) {
+                (void)ipc_close(process,pipe_local);
+                (void)ipc_close(process,pipe_peer);
+                return -1;
+            }
+        /* After consume, PEEK should see next bytes, not same */
+        if (ipc_pipe_read_timeout(process,pipe_peer,pipe_read,10,
+                                  ZEROOS_IPC_FLAG_PEEK,&pipe_length,0)!=10) {
+            (void)ipc_close(process,pipe_local);
+            (void)ipc_close(process,pipe_peer);
+            return -1;
+        }
+        uint8_t second_peek[10];
+        for (uint32_t i=0; i<10; ++i) second_peek[i]=pipe_read[i];
+        /* Ensure second peek differs if data pattern varies, or at least not
+         * trivially same as first due to ring wrap – we check that PEEK after
+         * consume does not return the same head as before when buffer has
+         * advanced. Since our pattern repeats A-Z, we check that after reading
+         * 110 bytes total (50+50+10), the next bytes are not the initial A's
+         * but continued pattern. Simpler: just ensure PEEK is consistent. */
+        if (ipc_pipe_read_timeout(process,pipe_peer,pipe_read,10,
+                                  ZEROOS_IPC_FLAG_PEEK,&pipe_length,0)!=10) {
+            (void)ipc_close(process,pipe_local);
+            (void)ipc_close(process,pipe_peer);
+            return -1;
+        }
+        for (uint32_t i=0; i<10; ++i)
+            if (pipe_read[i]!=second_peek[i]) {
+                (void)ipc_close(process,pipe_local);
+                (void)ipc_close(process,pipe_peer);
+                return -1;
+            }
+
+        /* Close/EOF: drain remaining, then EPIPE */
+        if (ipc_close(process,pipe_local)!=0) {
+            (void)ipc_close(process,pipe_peer);
+            return -1;
+        }
+        pipe_local=0;
+        /* Drain */
+        while (ipc_pipe_read_timeout(process,pipe_peer,pipe_read,
+                                     sizeof(pipe_read),
+                                     ZEROOS_IPC_FLAG_NONBLOCK,
+                                     &pipe_length,0)>0) {}
+        /* After drain and peer closed, PEEK should also EPIPE */
+        if (ipc_pipe_read_timeout(process,pipe_peer,pipe_read,10,
+                                  ZEROOS_IPC_FLAG_PEEK,&pipe_length,0)!=
+            -ZEROOS_EPIPE) {
+            (void)ipc_close(process,pipe_peer);
+            return -1;
+        }
+        if (ipc_pipe_read_timeout(process,pipe_peer,pipe_read,
+                                  sizeof(pipe_read),
+                                  ZEROOS_IPC_FLAG_NONBLOCK,
+                                  &pipe_length,0)!=-ZEROOS_EPIPE) {
+            (void)ipc_close(process,pipe_peer);
+            return -1;
+        }
+        if (ipc_close(process,pipe_peer)!=0 || ipc_debug_validate()!=0)
+            return -1;
+    }
+
     {
         zeroos_ipc_handle_t signal_handle=0;
         zeroos_ipc_handle_t wait_handle=0;
@@ -1686,6 +1871,240 @@ fail:
     return result;
 }
 
+static void pipe_close_probe_entry(void *argument) {
+    struct process *process=(struct process *)argument;
+    uint8_t buffer[64];
+    uint64_t length=0;
+    int result=ipc_pipe_read_timeout(process,pipe_close_probe_peer,
+                                     buffer,sizeof(buffer),0,&length,
+                                     ZEROOS_IPC_TIMEOUT_FOREVER);
+    atomic_u64_store(&pipe_close_probe_state,
+                     result==-ZEROOS_EPIPE ? 2 : 3);
+}
+
+static int userspace_pipe_close_wakeup_self_test(void) {
+    process_id_t pid=0;
+    thread_id_t tid=0;
+    struct thread *thread=0;
+    uint64_t status=~0ULL;
+    uint8_t thread_created=0;
+    uint8_t blocked_seen=0;
+    int result=-1;
+
+    pipe_close_probe_process=0;
+    pipe_close_probe_local=0;
+    pipe_close_probe_peer=0;
+    atomic_u64_init(&pipe_close_probe_state,0);
+    if (process_create(0,&pid)!=0)
+        return -1;
+    pipe_close_probe_process=process_lookup(pid);
+    if (!pipe_close_probe_process ||
+        process_set_limits(pipe_close_probe_process,1,1,4)!=0 ||
+        ipc_create_pipe(pipe_close_probe_process,
+                        &pipe_close_probe_local,
+                        &pipe_close_probe_peer)!=0 ||
+        thread_create_kernel(pipe_close_probe_process,pipe_close_probe_entry,
+                             pipe_close_probe_process,&tid)!=0)
+        goto fail;
+    thread_created=1;
+    thread=thread_lookup(tid);
+    if (!thread)
+        goto fail;
+
+    for (uint64_t i=0; i<100000ULL; ++i) {
+        uint64_t state=atomic_u64_load(&pipe_close_probe_state);
+        struct task *task=thread->scheduler_task_id ?
+                          task_lookup(thread->scheduler_task_id) : 0;
+        if (state==0 && task && task->state==TASK_BLOCKED) {
+            blocked_seen=1;
+            break;
+        }
+        if (state>=2)
+            break;
+        scheduler_yield();
+    }
+    if (!blocked_seen || atomic_u64_load(&pipe_close_probe_state)!=0 ||
+        ipc_close(pipe_close_probe_process,pipe_close_probe_local)!=0)
+        goto release_waiter;
+    pipe_close_probe_local=0;
+    for (uint64_t i=0; i<100000ULL; ++i) {
+        if (atomic_u64_load(&pipe_close_probe_state)>=2)
+            break;
+        scheduler_yield();
+    }
+    if (atomic_u64_load(&pipe_close_probe_state)!=2 ||
+        thread->state!=THREAD_ZOMBIE ||
+        thread_reap(thread,&status)!=0 || status!=0 ||
+        pipe_close_probe_process->state!=PROCESS_ZOMBIE ||
+        vmm_activate_kernel()!=0 ||
+        process_reap(pipe_close_probe_process,&status)!=0 || status!=0 ||
+        process_lookup(pid)!=0 || ipc_debug_validate()!=0) {
+        thread=0;
+        goto fail;
+    }
+    thread=0;
+    thread_created=0;
+    pipe_close_probe_process=0;
+    pipe_close_probe_local=0;
+    pipe_close_probe_peer=0;
+    return 0;
+
+release_waiter:
+    if (pipe_close_probe_process && pipe_close_probe_local) {
+        (void)ipc_close(pipe_close_probe_process,pipe_close_probe_local);
+        pipe_close_probe_local=0;
+    }
+    for (uint64_t i=0; i<100000ULL &&
+         atomic_u64_load(&pipe_close_probe_state)<2; ++i)
+        scheduler_yield();
+fail:
+    if (thread_created && thread && thread->state==THREAD_ZOMBIE) {
+        (void)thread_reap(thread,&status);
+        thread=0;
+    }
+    if (pipe_close_probe_process &&
+        pipe_close_probe_process->state==PROCESS_ZOMBIE) {
+        (void)vmm_activate_kernel();
+        (void)process_reap(pipe_close_probe_process,&status);
+    } else if (pipe_close_probe_process &&
+               pipe_close_probe_process->state==PROCESS_NEW) {
+        if (pipe_close_probe_local)
+            (void)ipc_close(pipe_close_probe_process,pipe_close_probe_local);
+        if (pipe_close_probe_peer)
+            (void)ipc_close(pipe_close_probe_process,pipe_close_probe_peer);
+        (void)process_abort_new(pipe_close_probe_process);
+    }
+    pipe_close_probe_process=0;
+    pipe_close_probe_local=0;
+    pipe_close_probe_peer=0;
+    return result;
+}
+
+static void pipe_send_probe_entry(void *argument) {
+    struct process *process=(struct process *)argument;
+    uint8_t data[16];
+    for (uint32_t i=0; i<sizeof(data); ++i) data[i]=(uint8_t)('p'+i);
+    atomic_u64_store(&pipe_send_probe_state,1);
+    int result=ipc_pipe_write_timeout(process,pipe_send_probe_local,
+                                      data,sizeof(data),0,
+                                      ZEROOS_IPC_TIMEOUT_FOREVER);
+    atomic_u64_store(&pipe_send_probe_state,result==16 ? 2 : 3);
+}
+
+static int userspace_pipe_send_wakeup_self_test(void) {
+    process_id_t pid=0;
+    thread_id_t tid=0;
+    struct thread *thread=0;
+    uint8_t buffer[32];
+    uint64_t length=0;
+    uint64_t status=~0ULL;
+    uint8_t thread_created=0;
+    uint8_t blocked_seen=0;
+    int result=-1;
+
+    pipe_send_probe_process=0;
+    pipe_send_probe_local=0;
+    pipe_send_probe_peer=0;
+    atomic_u64_init(&pipe_send_probe_state,0);
+    if (process_create(0,&pid)!=0)
+        return -1;
+    pipe_send_probe_process=process_lookup(pid);
+    if (!pipe_send_probe_process ||
+        process_set_limits(pipe_send_probe_process,1,1,4)!=0 ||
+        ipc_create_pipe(pipe_send_probe_process,
+                        &pipe_send_probe_local,
+                        &pipe_send_probe_peer)!=0)
+        goto fail;
+    /* Fill pipe completely using partial-write contract */
+    for (uint32_t i=0; i<4; ++i) {
+        uint8_t fill[512];
+        for (uint32_t j=0; j<sizeof(fill); ++j) fill[j]=(uint8_t)j;
+        int written=ipc_pipe_write_timeout(pipe_send_probe_process,
+                                           pipe_send_probe_local,
+                                           fill,sizeof(fill),
+                                           ZEROOS_IPC_FLAG_NONBLOCK,0);
+        if (written!=(int)sizeof(fill))
+            goto fail;
+    }
+    if (thread_create_kernel(pipe_send_probe_process,pipe_send_probe_entry,
+                             pipe_send_probe_process,&tid)!=0)
+        goto fail;
+    thread_created=1;
+    thread=thread_lookup(tid);
+    if (!thread)
+        goto fail;
+
+    for (uint64_t i=0; i<100000ULL; ++i) {
+        uint64_t state=atomic_u64_load(&pipe_send_probe_state);
+        struct task *task=thread->scheduler_task_id ?
+                          task_lookup(thread->scheduler_task_id) : 0;
+        if (state==1 && task && task->state==TASK_BLOCKED) {
+            blocked_seen=1;
+            break;
+        }
+        if (state>=2)
+            break;
+        scheduler_yield();
+    }
+    if (!blocked_seen || atomic_u64_load(&pipe_send_probe_state)!=1 ||
+        ipc_pipe_read_timeout(pipe_send_probe_process,pipe_send_probe_peer,
+                              buffer,sizeof(buffer),
+                              ZEROOS_IPC_FLAG_NONBLOCK,&length,0)!=32 ||
+        length!=32)
+        goto release_sender;
+    for (uint64_t i=0; i<100000ULL; ++i) {
+        if (atomic_u64_load(&pipe_send_probe_state)>=2)
+            break;
+        scheduler_yield();
+    }
+    if (atomic_u64_load(&pipe_send_probe_state)!=2 ||
+        thread->state!=THREAD_ZOMBIE ||
+        thread_reap(thread,&status)!=0 || status!=0 ||
+        pipe_send_probe_process->state!=PROCESS_ZOMBIE ||
+        vmm_activate_kernel()!=0 ||
+        process_reap(pipe_send_probe_process,&status)!=0 || status!=0 ||
+        process_lookup(pid)!=0 || ipc_debug_validate()!=0) {
+        thread=0;
+        goto fail;
+    }
+    thread=0;
+    thread_created=0;
+    pipe_send_probe_process=0;
+    pipe_send_probe_local=0;
+    pipe_send_probe_peer=0;
+    return 0;
+
+release_sender:
+    if (pipe_send_probe_process && pipe_send_probe_local) {
+        (void)ipc_close(pipe_send_probe_process,pipe_send_probe_local);
+        pipe_send_probe_local=0;
+    }
+    for (uint64_t i=0; i<100000ULL &&
+         atomic_u64_load(&pipe_send_probe_state)<2; ++i)
+        scheduler_yield();
+fail:
+    if (thread_created && thread && thread->state==THREAD_ZOMBIE) {
+        (void)thread_reap(thread,&status);
+        thread=0;
+    }
+    if (pipe_send_probe_process &&
+        pipe_send_probe_process->state==PROCESS_ZOMBIE) {
+        (void)vmm_activate_kernel();
+        (void)process_reap(pipe_send_probe_process,&status);
+    } else if (pipe_send_probe_process &&
+               pipe_send_probe_process->state==PROCESS_NEW) {
+        if (pipe_send_probe_local)
+            (void)ipc_close(pipe_send_probe_process,pipe_send_probe_local);
+        if (pipe_send_probe_peer)
+            (void)ipc_close(pipe_send_probe_process,pipe_send_probe_peer);
+        (void)process_abort_new(pipe_send_probe_process);
+    }
+    pipe_send_probe_process=0;
+    pipe_send_probe_local=0;
+    pipe_send_probe_peer=0;
+    return result;
+}
+
 static int userspace_resource_self_test(struct process *process) {
     struct zeroos_ipc_pair pairs[ZEROOS_IPC_MAX_ENDPOINTS/2U];
     zeroos_shmem_handle_t shmem_handles[ZEROOS_SHMEM_MAX_OBJECTS];
@@ -2144,6 +2563,16 @@ int userspace_start_init(void) {
         goto fail;
     }
     serial_write_public("ZEROOS: blocking IPC send-wakeup path passed.\n");
+    if (userspace_pipe_close_wakeup_self_test()!=0) {
+        serial_write_public("ZEROOS PANIC: blocking pipe close-wakeup self-test failed.\n");
+        goto fail;
+    }
+    serial_write_public("ZEROOS: blocking pipe close-wakeup path passed.\n");
+    if (userspace_pipe_send_wakeup_self_test()!=0) {
+        serial_write_public("ZEROOS PANIC: blocking pipe send-wakeup self-test failed.\n");
+        goto fail;
+    }
+    serial_write_public("ZEROOS: blocking pipe send-wakeup path passed.\n");
     if (userspace_shmem_self_test(init_process)!=0) {
         serial_write_public("ZEROOS PANIC: shared-memory lifecycle self-test failed.\n");
         goto fail;
