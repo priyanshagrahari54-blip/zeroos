@@ -93,6 +93,18 @@ The initial v1 calls are:
 | 8 | `IPC_CLOSE` | revoke the caller's capability |
 | 9 | `IPC_SEND` | bounded message copy into the peer queue |
 | 10 | `IPC_RECEIVE` | receive or peek one bounded message |
+| 11 | `SPAWN` | copy a bounded static ELF plus argv/envp into a child process |
+| 12 | `WAIT` | wait for and reap an owned child, returning its generation-tagged PID |
+
+`SPAWN` accepts bounded vectors (16 arguments and 16 environment strings, each
+at most 128 bytes) and constructs an initial stack containing `argc`, argv,
+envp, and a bounded auxiliary vector (`AT_ENTRY`, `AT_PHNUM`, `AT_PHENT`,
+`AT_PAGESZ`, `AT_BASE`, and the explicit static-loader `AT_PHDR=0` policy).
+The child gets a private address space and one user thread; all image-copy,
+stack-map, ELF-load, and thread-publication failures roll back transactionally.
+`WAIT` validates child ownership before sleeping/polling, supports a bounded
+`R10` tick timeout and nonblocking mode, and reaps all zombie threads before
+destroying the child address space.
 
 IPC handles are process-scoped capabilities, not global file-like integers.
 The kernel checks owner, generation, rights and endpoint lifetime on every

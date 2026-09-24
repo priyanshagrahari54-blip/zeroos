@@ -1,5 +1,6 @@
 #include "user.h"
 #include "elf.h"
+#include "exec.h"
 #include "memory.h"
 #include "process.h"
 #include "thread.h"
@@ -426,7 +427,8 @@ int userspace_system_init(void) {
     if (userspace_initialized)
         return 0;
     if (syscall_debug_validate()!=0 || ipc_debug_validate()!=0 ||
-        elf_debug_validate()!=0 || elf_system_init()!=0)
+        elf_debug_validate()!=0 || elf_system_init()!=0 ||
+        exec_system_init()!=0 || exec_debug_validate()!=0)
         return -1;
     init_process=0;
     init_thread=0;

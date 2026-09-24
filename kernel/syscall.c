@@ -3,7 +3,9 @@
 #include "process.h"
 #include "thread.h"
 #include "task.h"
+#include "timer.h"
 #include "vmm.h"
+#include "exec.h"
 #include "cpu.h"
 #include "ipc.h"
 
@@ -99,6 +101,31 @@ static void syscall_write(struct interrupt_frame *frame) {
     buffer[length]='\0';
     serial_write_public(buffer);
     frame->rax=length;
+}
+
+static int syscall_reap_child(struct process *parent,
+                               process_id_t pid,
+                               uint64_t *status_out) {
+    struct process *child=process_find_child(parent,pid);
+    uint64_t status=0;
+
+    if (!child || child->state!=PROCESS_ZOMBIE)
+        return child ? -ZEROOS_EAGAIN : -ZEROOS_ECHILD;
+    if (child->first_child || child->creating_threads ||
+        child->live_thread_count!=0)
+        return -ZEROOS_EBUSY;
+    while (child->first_thread) {
+        struct thread *thread=child->first_thread;
+        if (thread->state!=THREAD_ZOMBIE ||
+            thread_reap(thread,&status)!=0)
+            return -ZEROOS_EBUSY;
+    }
+    if (vmm_activate_kernel()!=0 || process_reap(child,&status)!=0 ||
+        vmm_space_activate(&parent->address_space)!=0)
+        return -ZEROOS_EBUSY;
+    if (status_out)
+        *status_out=status;
+    return 0;
 }
 
 void syscall_dispatch(struct interrupt_frame *frame) {
@@ -247,6 +274,67 @@ void syscall_dispatch(struct interrupt_frame *frame) {
         frame->rax=syscall_result(result);
         break;
     }
+    case ZEROOS_SYS_SPAWN: {
+        struct zeroos_exec_spawn_result spawn={0};
+        int result=exec_spawn(process,frame->rdi,frame->rsi,frame->rdx,
+                              frame->r10,frame->r8,frame->r9,&spawn);
+        frame->rax=result==0 ? spawn.pid : syscall_result(result);
+        break;
+    }
+    case ZEROOS_SYS_WAIT: {
+        uint64_t status_address=frame->rsi;
+        uint64_t timeout=frame->r10;
+        uint64_t deadline=0;
+        int result=-ZEROOS_EINTR;
+
+        if ((frame->rdx&~ZEROOS_WAIT_VALID_FLAGS)!=0 ||
+            (status_address &&
+             !process_address_space_is_user_range(process,status_address,
+                                                  sizeof(uint64_t),1))) {
+            frame->rax=syscall_error(ZEROOS_EFAULT);
+            break;
+        }
+        if (timeout) {
+            deadline=timer_ticks()+timeout;
+            if (deadline<timer_ticks())
+                deadline=~0ULL;
+        }
+        for (;;) {
+            struct process *child=process_find_child(process,frame->rdi);
+            if (!child && (frame->rdi!=0 || process_child_count(process)==0)) {
+                result=-ZEROOS_ECHILD;
+                break;
+            }
+            if (child && child->state==PROCESS_ZOMBIE) {
+                process_id_t child_pid=child->pid;
+                uint64_t status=0;
+                result=syscall_reap_child(process,child_pid,&status);
+                if (result==0 && status_address &&
+                    copy_to_user(status_address,&status,sizeof(status))!=0)
+                    result=-ZEROOS_EFAULT;
+                if (result==0)
+                    frame->rax=child_pid;
+                else
+                    frame->rax=syscall_result(result);
+                break;
+            }
+            if (frame->rdx&ZEROOS_WAIT_FLAG_NONBLOCK) {
+                result=-ZEROOS_EAGAIN;
+                break;
+            }
+            if (timeout && (long long)(deadline-timer_ticks())<=0) {
+                result=-ZEROOS_ETIMEDOUT;
+                break;
+            }
+            if (task_sleep_ticks(1)!=0) {
+                result=-ZEROOS_EINTR;
+                break;
+            }
+        }
+        if (result!=0)
+            frame->rax=syscall_result(result);
+        break;
+    }
     default:
         frame->rax=syscall_error(ZEROOS_ENOSYS);
         break;
@@ -258,7 +346,7 @@ int syscall_debug_validate(void) {
     if (ZEROOS_SYSCALL_VECTOR<32 || ZEROOS_SYSCALL_VECTOR>=256 ||
         ZEROOS_SYSCALL_ABI_VERSION==0 || sizeof(info)!=24U ||
         ZEROOS_SYSCALL_MAX_TRANSFER==0 ||
-        ZEROOS_SYS_IPC_RECEIVE+1U!=ZEROOS_SYS_MAX)
+        ZEROOS_SYS_WAIT+1U!=ZEROOS_SYS_MAX)
         return -1;
     return 0;
 }

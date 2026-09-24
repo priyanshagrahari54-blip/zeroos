@@ -185,6 +185,31 @@ struct process *process_lookup(process_id_t pid) {
     return process;
 }
 
+struct process *process_find_child(struct process *parent, process_id_t pid) {
+    uint64_t flags;
+    struct process *child;
+    struct process *match=0;
+
+    if (!parent)
+        return 0;
+    flags=spin_lock_irqsave(&process_lock);
+    if (process_lookup_locked(parent->pid)!=parent ||
+        parent->state==PROCESS_UNUSED || parent->state==PROCESS_ZOMBIE) {
+        spin_unlock_irqrestore(&process_lock,flags);
+        return 0;
+    }
+    for (child=parent->first_child; child; child=child->next_sibling) {
+        if (pid!=0 && child->pid!=pid)
+            continue;
+        if (pid==0 && child->state!=PROCESS_ZOMBIE)
+            continue;
+        match=child;
+        break;
+    }
+    spin_unlock_irqrestore(&process_lock,flags);
+    return match;
+}
+
 int process_thread_reserve(struct process *process) {
     uint64_t flags=spin_lock_irqsave(&process_lock);
 

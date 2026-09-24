@@ -91,6 +91,7 @@ jobs:
             grep -q "ZEROOS: Ring-3 GDT and versioned syscall ABI initialized." build/serial.log
             grep -q "ZEROOS: bounded capability IPC core initialized." build/serial.log
             grep -q "ZEROOS: ELF loader, W^X mapping, and capability IPC gates initialized." build/serial.log
+            grep -q "ZEROOS: executable spawn/argv/auxv and wait ABI initialized." build/serial.log
             grep -q "ZEROOS: userspace init process published." build/serial.log
             grep -q "ZEROOS: capability IPC queue/backpressure self-test passed." build/serial.log
             grep -q "ZEROOS: capability IPC negative/timeout semantics passed." build/serial.log

@@ -53,6 +53,9 @@ int process_system_init(void);
 
 int process_create(struct process *parent, process_id_t *pid_out);
 struct process *process_lookup(process_id_t pid);
+/* Returns a live child owned by parent, preferring a zombie child when pid is
+ * zero. The pointer is stable until the caller reaps that child. */
+struct process *process_find_child(struct process *parent, process_id_t pid);
 
 int process_thread_reserve(struct process *process);
 int process_thread_unreserve(struct process *process);

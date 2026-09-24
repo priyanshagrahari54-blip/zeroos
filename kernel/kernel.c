@@ -981,6 +981,7 @@ static void scheduler_self_test(void) {
         kernel_panic("userspace core initialization failed");
     serial_write_public("ZEROOS: Ring-3 GDT and versioned syscall ABI initialized.\n");
     serial_write_public("ZEROOS: ELF loader, W^X mapping, and capability IPC gates initialized.\n");
+    serial_write_public("ZEROOS: executable spawn/argv/auxv and wait ABI initialized.\n");
 
     if (task_create(scheduler_probe_worker,0,&worker_id)!=0)
         kernel_panic("scheduler worker creation failed");
