@@ -37,6 +37,10 @@ static int abi_compile_probe(void) {
                                    ZEROOS_IPC_FLAG_NONBLOCK,0);
     (void)zeroos_runtime_ipc_receive(&runtime,pair.peer,buffer,sizeof(buffer),
                                       ZEROOS_IPC_FLAG_NONBLOCK,&length,0);
+    (void)zeroos_runtime_pipe_write(&runtime,pair.local,buffer,sizeof(buffer),
+                                     ZEROOS_IPC_FLAG_NONBLOCK,0);
+    (void)zeroos_runtime_pipe_read(&runtime,pair.peer,buffer,sizeof(buffer),
+                                    ZEROOS_IPC_FLAG_NONBLOCK,&length,0);
     (void)zeroos_runtime_spawn(&runtime,buffer,sizeof(buffer),0,0,0,0);
     (void)zeroos_runtime_wait(&runtime,1,&length,ZEROOS_WAIT_FLAG_NONBLOCK,0);
     return (int)info.version;

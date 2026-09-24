@@ -9,6 +9,7 @@ struct process;
 #define ZEROOS_IPC_MAX_CAPABILITIES 128U
 #define ZEROOS_IPC_QUEUE_DEPTH 8U
 #define ZEROOS_IPC_MAX_MESSAGE 256U
+#define ZEROOS_IPC_PIPE_CAPACITY (ZEROOS_IPC_MAX_MESSAGE * 8U)
 
 #define ZEROOS_IPC_FLAG_NONBLOCK (1ULL << 0)
 #define ZEROOS_IPC_FLAG_PEEK     (1ULL << 1)
@@ -16,6 +17,7 @@ struct process;
 #define ZEROOS_IPC_TIMEOUT_FOREVER (~0ULL)
 #define ZEROOS_IPC_KIND_MESSAGE 0U
 #define ZEROOS_IPC_KIND_EVENT   1U
+#define ZEROOS_IPC_KIND_PIPE    2U
 
 #define ZEROOS_IPC_RIGHT_SEND  (1U << 0)
 #define ZEROOS_IPC_RIGHT_RECV  (1U << 1)
@@ -36,6 +38,8 @@ struct zeroos_ipc_pair {
 int ipc_system_init(void);
 int ipc_create(struct process *owner, zeroos_ipc_handle_t *local_out,
               zeroos_ipc_handle_t *peer_out);
+int ipc_create_pipe(struct process *owner, zeroos_ipc_handle_t *local_out,
+                    zeroos_ipc_handle_t *peer_out);
 int ipc_create_event(struct process *owner, zeroos_ipc_handle_t *signal_out,
                      zeroos_ipc_handle_t *wait_out);
 int ipc_event_signal(struct process *owner, zeroos_ipc_handle_t handle,
@@ -59,6 +63,12 @@ int ipc_receive(struct process *owner, zeroos_ipc_handle_t handle,
 int ipc_receive_timeout(struct process *owner, zeroos_ipc_handle_t handle,
                         void *data, uint64_t capacity, uint64_t flags,
                         uint64_t *length_out, uint64_t timeout_ticks);
+int ipc_pipe_write_timeout(struct process *owner, zeroos_ipc_handle_t handle,
+                           const void *data, uint64_t length, uint64_t flags,
+                           uint64_t timeout_ticks);
+int ipc_pipe_read_timeout(struct process *owner, zeroos_ipc_handle_t handle,
+                          void *data, uint64_t capacity, uint64_t flags,
+                          uint64_t *length_out, uint64_t timeout_ticks);
 int ipc_process_revoke(struct process *owner);
 int ipc_debug_validate(void);
 

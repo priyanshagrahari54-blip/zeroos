@@ -95,9 +95,9 @@ The initial v1 calls are:
 | 10 | `IPC_RECEIVE` | receive or peek one bounded message |
 | 11 | `SPAWN` | copy a bounded static ELF plus argv/envp into a child process |
 | 12 | `WAIT` | wait for and reap an owned child, returning its generation-tagged PID |
-| 13 | `PIPE_CREATE` | create a bounded record-pipe pair (same capability lifetime rules as IPC) |
-| 14 | `PIPE_WRITE` | send one bounded record with the IPC backpressure/timeout contract |
-| 15 | `PIPE_READ` | receive one bounded record with the IPC peek/timeout contract |
+| 13 | `PIPE_CREATE` | create a bounded byte-stream pipe pair (same capability lifetime rules as IPC) |
+| 14 | `PIPE_WRITE` | write up to `ZEROOS_SYSCALL_MAX_TRANSFER` bytes with backpressure/timeout |
+| 15 | `PIPE_READ` | read up to the requested byte count with peek/timeout semantics |
 | 16 | `EVENT_CREATE` | create a signal endpoint and its wait endpoint |
 | 17 | `EVENT_SIGNAL` | coalescing, nonblocking notification signal |
 | 18 | `EVENT_WAIT` | consume or peek one notification, with nonblocking/timeout behavior |
@@ -165,13 +165,16 @@ second gate fills a bounded queue, blocks a real sender, drains one record,
 and requires the sender to complete; this covers the opposite backpressure
 wake direction rather than relying only on service receive wakeups.
 
-`PIPE_CREATE`, `PIPE_WRITE`, and `PIPE_READ` are the first bounded pipe ABI:
-they intentionally expose record semantics (one write is one message, capped at
-`ZEROOS_IPC_MAX_MESSAGE`) rather than claiming an unimplemented byte-stream
-contract. Pipe writes and reads use the same generation-tagged handles,
-backpressure, `PEEK`, `NONBLOCK`, timeout, peer-close, and rollback behavior as
-message IPC. This makes the current contract useful for service framing while
-leaving byte-stream conversion explicit future work.
+`PIPE_CREATE`, `PIPE_WRITE`, and `PIPE_READ` expose a bounded byte stream with
+`ZEROOS_IPC_PIPE_CAPACITY` bytes of kernel buffering. A write blocks until the
+whole requested chunk fits (or returns `EAGAIN`, `ETIMEDOUT`, `EINTR`, or
+`EPIPE`); a read returns any available bytes up to the requested capacity and
+may split one write across multiple reads. `PEEK` copies without consuming and
+therefore does not wake blocked writers. After the peer closes, buffered bytes
+remain readable and the empty pipe returns `EPIPE`. Pipe endpoints use the same
+generation-tagged handles, rights, wait-queue publication, cancellation, and
+rollback rules as message IPC, while the message channel retains its discrete
+record semantics.
 
 `EVENT_CREATE` returns a signal handle and a wait handle. `EVENT_SIGNAL` sets a
 single pending bit on the peer and wakes one waiter; repeated signals while the
@@ -300,10 +303,9 @@ This is not the Stage 2 exit claim. The remaining production gates are:
   dependency graphs, health checks, crash diagnostics, shutdown policy and
   multi-service resource accounting;
 - capability credentials/rights policy and a public userspace runtime library;
-- byte-stream pipe semantics and socket foundations built on the
-  bounded/backpressure and cancellation contracts (the current record-pipe,
-  coalescing-event, and page-granular shared-memory ABI is only the first
-  foundation);
+- socket foundations built on the bounded/backpressure and cancellation
+  contracts (the byte-stream pipe, coalescing-event, and page-granular
+  shared-memory ABI is only the first foundation);
 - stronger concurrent capability-lifetime proofs and multi-process/multi-CPU
   stress coverage for grant, close, exit, and reaping races;
 - negative, fault-injection, timeout, cancellation, resource-exhaustion and

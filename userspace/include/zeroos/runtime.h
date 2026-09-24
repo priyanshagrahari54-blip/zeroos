@@ -23,6 +23,14 @@ int64_t zeroos_runtime_ipc_receive(const struct zeroos_runtime *runtime,
                                    zeroos_ipc_handle_t handle, void *data,
                                    uint64_t capacity, uint64_t flags,
                                    uint64_t *length, uint64_t timeout);
+int64_t zeroos_runtime_pipe_write(const struct zeroos_runtime *runtime,
+                                  zeroos_ipc_handle_t handle, const void *data,
+                                  uint64_t length, uint64_t flags,
+                                  uint64_t timeout);
+int64_t zeroos_runtime_pipe_read(const struct zeroos_runtime *runtime,
+                                 zeroos_ipc_handle_t handle, void *data,
+                                 uint64_t capacity, uint64_t flags,
+                                 uint64_t *length, uint64_t timeout);
 int64_t zeroos_runtime_spawn(const struct zeroos_runtime *runtime,
                              const void *image, uint64_t image_size,
                              const uint64_t *argv, uint64_t argc,

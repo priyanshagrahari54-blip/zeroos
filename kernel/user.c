@@ -1032,6 +1032,82 @@ static int userspace_ipc_self_test(struct process *process) {
         return -1;
 
     {
+        zeroos_ipc_handle_t pipe_local=0;
+        zeroos_ipc_handle_t pipe_peer=0;
+        uint8_t pipe_data[ZEROOS_SYSCALL_MAX_TRANSFER];
+        uint8_t pipe_read[ZEROOS_SYSCALL_MAX_TRANSFER];
+        uint64_t pipe_length=0;
+        int pipe_result;
+
+        for (uint32_t i=0; i<sizeof(pipe_data); ++i)
+            pipe_data[i]=(uint8_t)('a'+(i%26U));
+        if (ipc_create_pipe(process,&pipe_local,&pipe_peer)!=0)
+            return -1;
+        if (ipc_pipe_write_timeout(process,pipe_local,pipe_data,3,
+                                   ZEROOS_IPC_FLAG_NONBLOCK,0)!=3 ||
+            ipc_pipe_read_timeout(process,pipe_peer,pipe_read,2,
+                                  ZEROOS_IPC_FLAG_PEEK,&pipe_length,0)!=2 ||
+            pipe_length!=2 || pipe_read[0]!='a' || pipe_read[1]!='b' ||
+            ipc_pipe_read_timeout(process,pipe_peer,pipe_read,2,
+                                  ZEROOS_IPC_FLAG_NONBLOCK,&pipe_length,0)!=2 ||
+            pipe_length!=2 ||
+            ipc_pipe_read_timeout(process,pipe_peer,pipe_read,2,
+                                  ZEROOS_IPC_FLAG_NONBLOCK,&pipe_length,0)!=1 ||
+            pipe_length!=1 || pipe_read[0]!='c' ||
+            ipc_pipe_read_timeout(process,pipe_peer,pipe_read,2,0,
+                                  &pipe_length,0)!=-ZEROOS_ETIMEDOUT ||
+            ipc_pipe_write_timeout(process,pipe_local,pipe_data,1,
+                                   ZEROOS_IPC_FLAG_PEEK,0)!=-ZEROOS_EINVAL ||
+            ipc_pipe_read_timeout(process,pipe_peer,pipe_read,
+                                  ZEROOS_SYSCALL_MAX_TRANSFER+1ULL,0,
+                                  &pipe_length,0)!=-ZEROOS_EOVERFLOW) {
+            (void)ipc_close(process,pipe_local);
+            (void)ipc_close(process,pipe_peer);
+            return -1;
+        }
+        for (uint32_t i=0; i<4; ++i)
+            if (ipc_pipe_write_timeout(process,pipe_local,pipe_data,
+                                       sizeof(pipe_data),
+                                       ZEROOS_IPC_FLAG_NONBLOCK,0)!=
+                                       (int)sizeof(pipe_data)) {
+                (void)ipc_close(process,pipe_local);
+                (void)ipc_close(process,pipe_peer);
+                return -1;
+            }
+        if (ipc_pipe_write_timeout(process,pipe_local,pipe_data,1,
+                                   ZEROOS_IPC_FLAG_NONBLOCK,0)!=-ZEROOS_EAGAIN ||
+            ipc_pipe_write_timeout(process,pipe_local,pipe_data,1,0,0)!=
+                -ZEROOS_ETIMEDOUT ||
+            ipc_pipe_read_timeout(process,pipe_peer,pipe_read,1,
+                                  ZEROOS_IPC_FLAG_NONBLOCK,&pipe_length,0)!=1 ||
+            pipe_length!=1 ||
+            ipc_pipe_write_timeout(process,pipe_local,pipe_data,1,
+                                   ZEROOS_IPC_FLAG_NONBLOCK,0)!=1 ||
+            ipc_pipe_write_timeout(process,pipe_local,pipe_data,
+                                   ZEROOS_SYSCALL_MAX_TRANSFER+1ULL,0,0)!=
+                                   -ZEROOS_EOVERFLOW ||
+            ipc_pipe_read_timeout(process,pipe_peer,pipe_read,1,1ULL<<2,
+                                  &pipe_length,0)!=-ZEROOS_EINVAL) {
+            (void)ipc_close(process,pipe_local);
+            (void)ipc_close(process,pipe_peer);
+            return -1;
+        }
+        if (ipc_close(process,pipe_local)!=0) {
+            (void)ipc_close(process,pipe_peer);
+            return -1;
+        }
+        do {
+            pipe_result=ipc_pipe_read_timeout(process,pipe_peer,pipe_read,
+                                              sizeof(pipe_read),
+                                              ZEROOS_IPC_FLAG_NONBLOCK,
+                                              &pipe_length,0);
+        } while (pipe_result==(int)sizeof(pipe_read));
+        if (pipe_result!=-ZEROOS_EPIPE || ipc_close(process,pipe_peer)!=0 ||
+            ipc_debug_validate()!=0)
+            return -1;
+    }
+
+    {
         zeroos_ipc_handle_t signal_handle=0;
         zeroos_ipc_handle_t wait_handle=0;
         if (ipc_create_event(process,&signal_handle,&wait_handle)!=0 ||

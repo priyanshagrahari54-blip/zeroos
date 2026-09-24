@@ -8,8 +8,9 @@ locks.
 The wrappers preserve the register contract (`RAX`, `RDI`, `RSI`, `RDX`, `R10`,
 `R8`, `R9`) and return signed `-ZEROOS_E*` values. Pointer arguments remain
 owned by the caller; the kernel validates every range before copying or
-mapping. IPC, record pipes, coalescing events, shared-memory capabilities,
-spawn, wait, diagnostics, and process identity all have named wrappers.
+mapping. IPC, bounded byte-stream pipes, coalescing events, shared-memory
+capabilities, spawn, wait, diagnostics, and process identity all have named
+wrappers.
 
 `include/zeroos/runtime.h` and `runtime.c` provide the first freestanding
 policy layer above those wrappers. `zeroos_runtime_init` negotiates the

@@ -132,7 +132,7 @@ static int syscall_reap_child(struct process *parent,
 
 static void syscall_create_channel(struct interrupt_frame *frame,
                                    struct process *process,
-                                   uint8_t event) {
+                                   uint8_t kind) {
     struct zeroos_ipc_pair pair={0};
     int result;
 
@@ -142,8 +142,12 @@ static void syscall_create_channel(struct interrupt_frame *frame,
         frame->rax=syscall_error(ZEROOS_EFAULT);
         return;
     }
-    result=event ? ipc_create_event(process,&pair.local,&pair.peer) :
-                   ipc_create(process,&pair.local,&pair.peer);
+    if (kind==ZEROOS_IPC_KIND_EVENT)
+        result=ipc_create_event(process,&pair.local,&pair.peer);
+    else if (kind==ZEROOS_IPC_KIND_PIPE)
+        result=ipc_create_pipe(process,&pair.local,&pair.peer);
+    else
+        result=ipc_create(process,&pair.local,&pair.peer);
     if (result!=0) {
         frame->rax=syscall_result(result);
         return;
@@ -226,15 +230,13 @@ void syscall_dispatch(struct interrupt_frame *frame) {
         frame->rax=0;
         break;
     case ZEROOS_SYS_IPC_CREATE:
-        syscall_create_channel(frame,process,0);
+        syscall_create_channel(frame,process,ZEROOS_IPC_KIND_MESSAGE);
         break;
     case ZEROOS_SYS_PIPE_CREATE:
-        /* Pipes use the same bounded record/backpressure contract as IPC
-         * queues, but have a dedicated ABI name for future byte-stream mode. */
-        syscall_create_channel(frame,process,0);
+        syscall_create_channel(frame,process,ZEROOS_IPC_KIND_PIPE);
         break;
     case ZEROOS_SYS_EVENT_CREATE:
-        syscall_create_channel(frame,process,1);
+        syscall_create_channel(frame,process,ZEROOS_IPC_KIND_EVENT);
         break;
     case ZEROOS_SYS_IPC_GRANT: {
         zeroos_ipc_handle_t target_handle=0;
@@ -274,8 +276,7 @@ void syscall_dispatch(struct interrupt_frame *frame) {
     case ZEROOS_SYS_IPC_CLOSE:
         frame->rax=syscall_result(ipc_close(process,frame->rdi));
         break;
-    case ZEROOS_SYS_IPC_SEND:
-    case ZEROOS_SYS_PIPE_WRITE: {
+    case ZEROOS_SYS_IPC_SEND: {
         uint64_t length=frame->rdx;
         uint8_t message[ZEROOS_IPC_MAX_MESSAGE];
         if (length==0) {
@@ -295,8 +296,27 @@ void syscall_dispatch(struct interrupt_frame *frame) {
             frame->r9 ? frame->r9 : ZEROOS_IPC_TIMEOUT_FOREVER));
         break;
     }
-    case ZEROOS_SYS_IPC_RECEIVE:
-    case ZEROOS_SYS_PIPE_READ: {
+    case ZEROOS_SYS_PIPE_WRITE: {
+        uint64_t length=frame->rdx;
+        uint8_t bytes[ZEROOS_SYSCALL_MAX_TRANSFER];
+        if (length==0) {
+            frame->rax=syscall_error(ZEROOS_EINVAL);
+            break;
+        }
+        if (length>sizeof(bytes)) {
+            frame->rax=syscall_error(ZEROOS_EOVERFLOW);
+            break;
+        }
+        if (copy_from_user(bytes,frame->rsi,length)!=0) {
+            frame->rax=syscall_error(ZEROOS_EFAULT);
+            break;
+        }
+        frame->rax=syscall_result(ipc_pipe_write_timeout(
+            process,frame->rdi,bytes,length,frame->r10,
+            frame->r9 ? frame->r9 : ZEROOS_IPC_TIMEOUT_FOREVER));
+        break;
+    }
+    case ZEROOS_SYS_IPC_RECEIVE: {
         uint8_t message[ZEROOS_IPC_MAX_MESSAGE];
         uint64_t length=0;
         int result;
@@ -324,6 +344,40 @@ void syscall_dispatch(struct interrupt_frame *frame) {
             frame->r9 ? frame->r9 : ZEROOS_IPC_TIMEOUT_FOREVER);
         if (result>=0) {
             if (copy_to_user(frame->rsi,message,length)!=0 ||
+                copy_to_user(frame->r8,&length,sizeof(length))!=0)
+                result=-ZEROOS_EFAULT;
+        }
+        frame->rax=syscall_result(result);
+        break;
+    }
+    case ZEROOS_SYS_PIPE_READ: {
+        uint8_t bytes[ZEROOS_SYSCALL_MAX_TRANSFER];
+        uint64_t length=0;
+        int result;
+        if (frame->rsi==0 || frame->r8==0) {
+            frame->rax=syscall_error(ZEROOS_EFAULT);
+            break;
+        }
+        if (frame->rdx==0) {
+            frame->rax=syscall_error(ZEROOS_EINVAL);
+            break;
+        }
+        if (frame->rdx>sizeof(bytes)) {
+            frame->rax=syscall_error(ZEROOS_EOVERFLOW);
+            break;
+        }
+        if (!process_address_space_is_user_range(process,frame->rsi,
+                                                 frame->rdx,1) ||
+            !process_address_space_is_user_range(process,frame->r8,
+                                                 sizeof(length),1)) {
+            frame->rax=syscall_error(ZEROOS_EFAULT);
+            break;
+        }
+        result=ipc_pipe_read_timeout(
+            process,frame->rdi,bytes,frame->rdx,frame->r10,&length,
+            frame->r9 ? frame->r9 : ZEROOS_IPC_TIMEOUT_FOREVER);
+        if (result>=0) {
+            if (copy_to_user(frame->rsi,bytes,length)!=0 ||
                 copy_to_user(frame->r8,&length,sizeof(length))!=0)
                 result=-ZEROOS_EFAULT;
         }

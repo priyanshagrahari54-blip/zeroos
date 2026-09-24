@@ -57,8 +57,9 @@ for name in (
     if macro(PUBLIC, name) != macro(KERNEL, name):
         raise SystemExit(f"macro drift for {name}")
 
-if macro(PUBLIC, "ZEROOS_IPC_MAX_MESSAGE") != macro(IPC, "ZEROOS_IPC_MAX_MESSAGE"):
-    raise SystemExit("macro drift for ZEROOS_IPC_MAX_MESSAGE")
+for name in ("ZEROOS_IPC_MAX_MESSAGE", "ZEROOS_IPC_PIPE_CAPACITY"):
+    if macro(PUBLIC, name) != macro(IPC, name):
+        raise SystemExit(f"macro drift for {name}")
 
 public_errors = enum_values(PUBLIC, "zeroos_error")
 kernel_errors = enum_values(KERNEL, "zeroos_syscall_error")

@@ -71,6 +71,36 @@ int64_t zeroos_runtime_ipc_receive(const struct zeroos_runtime *runtime,
     return zeroos_ipc_receive(handle,data,capacity,flags,length,timeout);
 }
 
+int64_t zeroos_runtime_pipe_write(const struct zeroos_runtime *runtime,
+                                  zeroos_ipc_handle_t handle, const void *data,
+                                  uint64_t length, uint64_t flags,
+                                  uint64_t timeout) {
+    if (!runtime_ready(runtime))
+        return -ZEROOS_EPERM;
+    if (!(runtime->abi.features&ZEROOS_ABI_FEATURE_PIPE))
+        return -ZEROOS_ENOSYS;
+    if (!data || !length)
+        return -ZEROOS_EINVAL;
+    if (length>runtime->abi.max_transfer)
+        return -ZEROOS_EOVERFLOW;
+    return zeroos_pipe_write(handle,data,length,flags,timeout);
+}
+
+int64_t zeroos_runtime_pipe_read(const struct zeroos_runtime *runtime,
+                                 zeroos_ipc_handle_t handle, void *data,
+                                 uint64_t capacity, uint64_t flags,
+                                 uint64_t *length, uint64_t timeout) {
+    if (!runtime_ready(runtime))
+        return -ZEROOS_EPERM;
+    if (!(runtime->abi.features&ZEROOS_ABI_FEATURE_PIPE))
+        return -ZEROOS_ENOSYS;
+    if (!data || !length || !capacity)
+        return -ZEROOS_EINVAL;
+    if (capacity>runtime->abi.max_transfer)
+        return -ZEROOS_EOVERFLOW;
+    return zeroos_pipe_read(handle,data,capacity,flags,length,timeout);
+}
+
 int64_t zeroos_runtime_spawn(const struct zeroos_runtime *runtime,
                              const void *image, uint64_t image_size,
                              const uint64_t *argv, uint64_t argc,
