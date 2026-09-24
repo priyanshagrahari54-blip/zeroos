@@ -14,6 +14,7 @@
 #include "smp.h"
 #include "wait.h"
 #include "user.h"
+#include "ipc.h"
 
 #define COM1 0x3F8
 #define VMM_SELF_TEST_VA 0x00007f0000000000ULL
@@ -973,9 +974,13 @@ static void scheduler_self_test(void) {
         kernel_panic("process system initialization failed");
     if (thread_system_init()!=0)
         kernel_panic("thread system initialization failed");
+    if (ipc_system_init()!=0 || ipc_debug_validate()!=0)
+        kernel_panic("IPC capability core initialization failed");
+    serial_write_public("ZEROOS: bounded capability IPC core initialized.\n");
     if (userspace_system_init()!=0)
         kernel_panic("userspace core initialization failed");
     serial_write_public("ZEROOS: Ring-3 GDT and versioned syscall ABI initialized.\n");
+    serial_write_public("ZEROOS: ELF loader, W^X mapping, and capability IPC gates initialized.\n");
 
     if (task_create(scheduler_probe_worker,0,&worker_id)!=0)
         kernel_panic("scheduler worker creation failed");

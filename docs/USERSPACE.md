@@ -88,10 +88,42 @@ The initial v1 calls are:
 | 3 | `GETPID` | return the owning generation-tagged PID |
 | 4 | `GETTID` | return the owning generation-tagged TID |
 | 5 | `YIELD` | request interrupt-return rescheduling; no cooperative switch on an ISR stack |
+| 6 | `IPC_CREATE` | create a bounded channel pair and return generation-checked handles |
+| 7 | `IPC_GRANT` | copy a capability to a generation-checked live process |
+| 8 | `IPC_CLOSE` | revoke the caller's capability |
+| 9 | `IPC_SEND` | bounded message copy into the peer queue |
+| 10 | `IPC_RECEIVE` | receive or peek one bounded message |
+
+IPC handles are process-scoped capabilities, not global file-like integers.
+The kernel checks owner, generation, rights and endpoint lifetime on every
+operation. Queues have a fixed depth and message size, so exhaustion returns
+`-ZEROOS_EAGAIN` rather than allocating unbounded kernel memory. A closed peer
+returns `-ZEROOS_EPIPE`. The current core deliberately exposes nonblocking
+semantics; interrupt-safe blocking, cancellation and timeout integration remain
+an explicit Stage 2 gate rather than a busy-wait approximation.
 
 The kernel never trusts a user pointer, user length, file descriptor, or
 syscall ID. Unsupported IDs return `-ZEROOS_ENOSYS`; invalid pointers return
 `-ZEROOS_EFAULT`; oversized transfers return `-ZEROOS_EOVERFLOW`.
+
+## Executable loading
+
+`kernel/elf.c` validates ELF64 little-endian x86-64 images before allocating
+anything: checked header/program-header bounds, supported type, PT_LOAD
+overflow and alignment rules, `filesz <= memsz`, canonical/user PML4 range,
+entry-in-an-executable-segment, non-overlapping pages, and W^X segment flags.
+ET_EXEC is loaded at its declared address and ET_DYN receives a fixed bias at
+the ZEROOS user base. PT_INTERP is rejected until a dynamic-loader policy is
+implemented; accepting an interpreter-less static binary is explicit rather
+than an accidental jump into unvalidated bytes.
+
+Each load is transactional. Pages are zero-filled, mapped with segment-derived
+permissions, populated only from validated file ranges, and rolled back through
+the process-owned VMM accounting on any allocation or mapping failure. The
+loader workspace is serialized and bounded so the 4 KiB kernel task stack is
+not used as an unbounded program-header scratch area. The bootstrap init image
+is now built as a real two-segment ELF (RX code/data header and RW NX data),
+then receives its separately mapped RW NX stack.
 
 ## Init bootstrap and recovery
 

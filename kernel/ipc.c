@@ -1,0 +1,397 @@
+#include "ipc.h"
+#include "process.h"
+#include "sync.h"
+#include "syscall.h"
+
+struct ipc_message {
+    uint16_t length;
+    uint16_t reserved;
+    uint64_t sequence;
+    uint8_t data[ZEROOS_IPC_MAX_MESSAGE];
+};
+
+struct ipc_endpoint {
+    uint32_t generation;
+    uint16_t count;
+    uint16_t head;
+    uint16_t tail;
+    uint8_t used;
+    uint16_t reserved;
+    struct ipc_endpoint *peer;
+    struct ipc_message messages[ZEROOS_IPC_QUEUE_DEPTH];
+};
+
+struct ipc_capability {
+    uint32_t generation;
+    uint8_t used;
+    uint8_t rights;
+    uint16_t reserved;
+    struct process *owner;
+    struct ipc_endpoint *endpoint;
+};
+
+static struct spinlock ipc_lock;
+static struct ipc_endpoint endpoints[ZEROOS_IPC_MAX_ENDPOINTS];
+static struct ipc_capability capabilities[ZEROOS_IPC_MAX_CAPABILITIES];
+static uint64_t next_sequence;
+
+static int process_exists(const struct process *process) {
+    return process && process->state!=PROCESS_UNUSED;
+}
+
+static int process_can_use(const struct process *process) {
+    return process_exists(process) && process->state!=PROCESS_ZOMBIE;
+}
+
+static uint64_t capability_make_handle(uint32_t slot, uint32_t generation) {
+    return ((uint64_t)generation << 8) | ((uint64_t)slot + 1ULL);
+}
+
+static int capability_decode(zeroos_ipc_handle_t handle,
+                             uint32_t *slot_out, uint32_t *generation_out) {
+    uint32_t encoded_slot=(uint32_t)(handle & 0xffULL);
+    uint64_t generation=handle >> 8;
+    if (encoded_slot==0 || encoded_slot>ZEROOS_IPC_MAX_CAPABILITIES ||
+        generation==0 || generation>0xffffffffULL)
+        return -1;
+    *slot_out=encoded_slot-1U;
+    *generation_out=(uint32_t)generation;
+    return 0;
+}
+
+static struct ipc_capability *capability_lookup_locked(
+        struct process *owner, zeroos_ipc_handle_t handle) {
+    uint32_t slot;
+    uint32_t generation;
+    if (!process_can_use(owner) ||
+        capability_decode(handle,&slot,&generation)!=0)
+        return 0;
+    struct ipc_capability *capability=&capabilities[slot];
+    if (!capability->used || capability->generation!=generation ||
+        capability->owner!=owner || !capability->endpoint ||
+        !capability->endpoint->used)
+        return 0;
+    return capability;
+}
+
+static void endpoint_destroy_locked(struct ipc_endpoint *endpoint) {
+    struct ipc_endpoint *peer;
+    if (!endpoint || !endpoint->used)
+        return;
+    peer=endpoint->peer;
+    endpoint->used=0;
+    endpoint->peer=0;
+    endpoint->count=0;
+    endpoint->head=0;
+    endpoint->tail=0;
+    if (peer && peer->used && peer->peer==endpoint)
+        peer->peer=0;
+}
+
+static void capability_drop_locked(struct ipc_capability *capability) {
+    struct ipc_endpoint *endpoint;
+    if (!capability || !capability->used)
+        return;
+    endpoint=capability->endpoint;
+    capability->used=0;
+    capability->owner=0;
+    capability->endpoint=0;
+    capability->rights=0;
+    if (endpoint && endpoint->used && endpoint->count==0) {
+        /* `count` is the queued-message count; the capability reference
+         * count is kept in the reserved field of the endpoint. */
+        uint16_t references=endpoint->reserved;
+        if (references)
+            --references;
+        endpoint->reserved=references;
+        if (references==0)
+            endpoint_destroy_locked(endpoint);
+    } else if (endpoint && endpoint->used) {
+        uint16_t references=endpoint->reserved;
+        if (references)
+            --references;
+        endpoint->reserved=references;
+        if (references==0)
+            endpoint_destroy_locked(endpoint);
+    }
+}
+
+static int capability_alloc_locked(struct process *owner,
+                                   struct ipc_endpoint *endpoint,
+                                   uint8_t rights,
+                                   zeroos_ipc_handle_t *handle_out) {
+    for (uint32_t i=0; i<ZEROOS_IPC_MAX_CAPABILITIES; ++i) {
+        struct ipc_capability *capability=&capabilities[i];
+        if (capability->used || capability->generation==0xffffffffU)
+            continue;
+        capability->generation+=1U;
+        if (capability->generation==0)
+            continue;
+        capability->used=1;
+        capability->rights=rights;
+        capability->owner=owner;
+        capability->endpoint=endpoint;
+        ++endpoint->reserved;
+        if (handle_out)
+            *handle_out=capability_make_handle(i,capability->generation);
+        return 0;
+    }
+    return -ZEROOS_ENOMEM;
+}
+
+int ipc_system_init(void) {
+    spinlock_init(&ipc_lock);
+    next_sequence=0;
+    for (uint32_t i=0; i<ZEROOS_IPC_MAX_ENDPOINTS; ++i) {
+        endpoints[i].generation=0;
+        endpoints[i].count=0;
+        endpoints[i].head=0;
+        endpoints[i].tail=0;
+        endpoints[i].used=0;
+        endpoints[i].peer=0;
+        endpoints[i].reserved=0;
+    }
+    for (uint32_t i=0; i<ZEROOS_IPC_MAX_CAPABILITIES; ++i) {
+        capabilities[i].generation=0;
+        capabilities[i].used=0;
+        capabilities[i].rights=0;
+        capabilities[i].owner=0;
+        capabilities[i].endpoint=0;
+    }
+    return 0;
+}
+
+int ipc_create(struct process *owner, zeroos_ipc_handle_t *local_out,
+              zeroos_ipc_handle_t *peer_out) {
+    struct ipc_endpoint *local=0;
+    struct ipc_endpoint *peer=0;
+    uint64_t flags;
+    int result=-ZEROOS_ENOMEM;
+
+    if (!process_can_use(owner) || !local_out || !peer_out)
+        return -ZEROOS_EINVAL;
+    flags=spin_lock_irqsave(&ipc_lock);
+    for (uint32_t i=0; i<ZEROOS_IPC_MAX_ENDPOINTS; ++i) {
+        if (endpoints[i].used || endpoints[i].generation==0xffffffffU)
+            continue;
+        if (!local) {
+            local=&endpoints[i];
+            continue;
+        }
+        peer=&endpoints[i];
+        break;
+    }
+    if (!local || !peer)
+        goto out;
+
+    ++local->generation;
+    ++peer->generation;
+    local->used=1;
+    peer->used=1;
+    local->count=peer->count=0;
+    local->head=peer->head=0;
+    local->tail=peer->tail=0;
+    local->reserved=peer->reserved=0;
+    local->peer=peer;
+    peer->peer=local;
+
+    result=capability_alloc_locked(owner,local,ZEROOS_IPC_ALL_RIGHTS,local_out);
+    if (result!=0) {
+        endpoint_destroy_locked(local);
+        endpoint_destroy_locked(peer);
+        goto out;
+    }
+    result=capability_alloc_locked(owner,peer,ZEROOS_IPC_ALL_RIGHTS,peer_out);
+    if (result!=0) {
+        struct ipc_capability *capability=capability_lookup_locked(owner,*local_out);
+        capability_drop_locked(capability);
+        endpoint_destroy_locked(peer);
+        *local_out=0;
+        goto out;
+    }
+
+out:
+    spin_unlock_irqrestore(&ipc_lock,flags);
+    return result;
+}
+
+int ipc_grant(struct process *owner, zeroos_ipc_handle_t source,
+              uint64_t target_pid, zeroos_ipc_handle_t *target_out) {
+    struct process *target;
+    uint64_t flags;
+    int result;
+
+    if (!process_can_use(owner) || !target_out || target_pid==0)
+        return -ZEROOS_EINVAL;
+    target=process_lookup(target_pid);
+    if (!process_can_use(target))
+        return -ZEROOS_ENOENT;
+
+    flags=spin_lock_irqsave(&ipc_lock);
+    struct ipc_capability *source_cap=capability_lookup_locked(owner,source);
+    if (!source_cap || !(source_cap->rights&ZEROOS_IPC_RIGHT_GRANT))
+        result=-ZEROOS_EBADF;
+    else
+        result=capability_alloc_locked(target,source_cap->endpoint,
+                                       source_cap->rights,target_out);
+    spin_unlock_irqrestore(&ipc_lock,flags);
+    return result;
+}
+
+int ipc_close(struct process *owner, zeroos_ipc_handle_t handle) {
+    uint64_t flags;
+    if (!process_can_use(owner))
+        return -ZEROOS_EPERM;
+    flags=spin_lock_irqsave(&ipc_lock);
+    struct ipc_capability *capability=capability_lookup_locked(owner,handle);
+    if (!capability || !(capability->rights&ZEROOS_IPC_RIGHT_CLOSE)) {
+        spin_unlock_irqrestore(&ipc_lock,flags);
+        return -ZEROOS_EBADF;
+    }
+    capability_drop_locked(capability);
+    spin_unlock_irqrestore(&ipc_lock,flags);
+    return 0;
+}
+
+int ipc_send(struct process *owner, zeroos_ipc_handle_t handle,
+             const void *data, uint64_t length, uint64_t flags) {
+    uint64_t irq_flags;
+    struct ipc_capability *capability;
+    struct ipc_endpoint *peer;
+    struct ipc_message *message;
+
+    if (!process_can_use(owner) || !data || length==0 ||
+        length>ZEROOS_IPC_MAX_MESSAGE || (flags&~ZEROOS_IPC_VALID_FLAGS))
+        return -ZEROOS_EINVAL;
+    irq_flags=spin_lock_irqsave(&ipc_lock);
+    capability=capability_lookup_locked(owner,handle);
+    if (!capability || !(capability->rights&ZEROOS_IPC_RIGHT_SEND)) {
+        spin_unlock_irqrestore(&ipc_lock,irq_flags);
+        return -ZEROOS_EBADF;
+    }
+    peer=capability->endpoint->peer;
+    if (!peer || !peer->used) {
+        spin_unlock_irqrestore(&ipc_lock,irq_flags);
+        return -ZEROOS_EPIPE;
+    }
+    if (peer->count>=ZEROOS_IPC_QUEUE_DEPTH) {
+        spin_unlock_irqrestore(&ipc_lock,irq_flags);
+        return -ZEROOS_EAGAIN;
+    }
+    message=&peer->messages[peer->tail];
+    for (uint64_t i=0; i<length; ++i)
+        message->data[i]=((const uint8_t *)data)[i];
+    message->length=(uint16_t)length;
+    message->sequence=++next_sequence;
+    peer->tail=(uint16_t)((peer->tail+1U)%ZEROOS_IPC_QUEUE_DEPTH);
+    ++peer->count;
+    spin_unlock_irqrestore(&ipc_lock,irq_flags);
+    return (int)length;
+}
+
+int ipc_receive(struct process *owner, zeroos_ipc_handle_t handle,
+                void *data, uint64_t capacity, uint64_t flags,
+                uint64_t *length_out) {
+    uint64_t irq_flags;
+    struct ipc_capability *capability;
+    struct ipc_endpoint *endpoint;
+    struct ipc_message *message;
+    uint64_t length;
+
+    if (!process_can_use(owner) || !data || capacity==0 || !length_out ||
+        (flags&~ZEROOS_IPC_VALID_FLAGS))
+        return -ZEROOS_EINVAL;
+    irq_flags=spin_lock_irqsave(&ipc_lock);
+    capability=capability_lookup_locked(owner,handle);
+    if (!capability || !(capability->rights&ZEROOS_IPC_RIGHT_RECV)) {
+        spin_unlock_irqrestore(&ipc_lock,irq_flags);
+        return -ZEROOS_EBADF;
+    }
+    endpoint=capability->endpoint;
+    if (endpoint->count==0) {
+        /* A disconnected but drained endpoint is distinguishable from an
+         * empty live queue, allowing a service to terminate rather than spin. */
+        int result=endpoint->peer ? -ZEROOS_EAGAIN : -ZEROOS_EPIPE;
+        spin_unlock_irqrestore(&ipc_lock,irq_flags);
+        return result;
+    }
+    message=&endpoint->messages[endpoint->head];
+    length=message->length;
+    if (capacity<length) {
+        spin_unlock_irqrestore(&ipc_lock,irq_flags);
+        return -ZEROOS_EOVERFLOW;
+    }
+    for (uint64_t i=0; i<length; ++i)
+        ((uint8_t *)data)[i]=message->data[i];
+    *length_out=length;
+    if (!(flags&ZEROOS_IPC_FLAG_PEEK)) {
+        endpoint->head=(uint16_t)((endpoint->head+1U)%ZEROOS_IPC_QUEUE_DEPTH);
+        --endpoint->count;
+    }
+    spin_unlock_irqrestore(&ipc_lock,irq_flags);
+    return (int)length;
+}
+
+int ipc_process_revoke(struct process *owner) {
+    uint64_t flags;
+    uint64_t revoked=0;
+    if (!owner)
+        return -ZEROOS_EINVAL;
+    flags=spin_lock_irqsave(&ipc_lock);
+    for (uint32_t i=0; i<ZEROOS_IPC_MAX_CAPABILITIES; ++i) {
+        if (capabilities[i].used && capabilities[i].owner==owner) {
+            capability_drop_locked(&capabilities[i]);
+            ++revoked;
+        }
+    }
+    spin_unlock_irqrestore(&ipc_lock,flags);
+    return (int)revoked;
+}
+
+int ipc_debug_validate(void) {
+    uint64_t flags=spin_lock_irqsave(&ipc_lock);
+    for (uint32_t i=0; i<ZEROOS_IPC_MAX_ENDPOINTS; ++i) {
+        struct ipc_endpoint *endpoint=&endpoints[i];
+        uint32_t refs=0;
+        if (!endpoint->used) {
+            if (endpoint->count || endpoint->head || endpoint->tail ||
+                endpoint->peer || endpoint->reserved) {
+                spin_unlock_irqrestore(&ipc_lock,flags);
+                return -1;
+            }
+            continue;
+        }
+        if (endpoint->count>ZEROOS_IPC_QUEUE_DEPTH ||
+            endpoint->head>=ZEROOS_IPC_QUEUE_DEPTH ||
+            endpoint->tail>=ZEROOS_IPC_QUEUE_DEPTH ||
+            (endpoint->peer && !endpoint->peer->used)) {
+            spin_unlock_irqrestore(&ipc_lock,flags);
+            return -1;
+        }
+        for (uint32_t j=0; j<ZEROOS_IPC_MAX_CAPABILITIES; ++j)
+            if (capabilities[j].used && capabilities[j].endpoint==endpoint)
+                ++refs;
+        if (refs!=endpoint->reserved) {
+            spin_unlock_irqrestore(&ipc_lock,flags);
+            return -1;
+        }
+        for (uint32_t j=0; j<ZEROOS_IPC_QUEUE_DEPTH; ++j)
+            if (endpoint->messages[j].length>ZEROOS_IPC_MAX_MESSAGE) {
+                spin_unlock_irqrestore(&ipc_lock,flags);
+                return -1;
+            }
+    }
+    for (uint32_t i=0; i<ZEROOS_IPC_MAX_CAPABILITIES; ++i) {
+        struct ipc_capability *capability=&capabilities[i];
+        if (!capability->used)
+            continue;
+        if (!process_exists(capability->owner) ||
+            !capability->endpoint || !capability->endpoint->used ||
+            capability->rights==0) {
+            spin_unlock_irqrestore(&ipc_lock,flags);
+            return -1;
+        }
+    }
+    spin_unlock_irqrestore(&ipc_lock,flags);
+    return 0;
+}

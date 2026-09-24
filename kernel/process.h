@@ -65,6 +65,9 @@ int process_thread_reap_begin(struct thread *thread,
 int process_thread_reap_finish(struct process *process);
 
 int process_reap(struct process *process, uint64_t *exit_status_out);
+/* Destroy a process that has never published a thread. This is the
+ * transactional rollback path for exec/spawn setup failures. */
+int process_abort_new(struct process *process);
 int process_set_limits(struct process *process, uint64_t max_threads,
                        uint64_t max_children,
                        uint64_t max_address_space_pages);

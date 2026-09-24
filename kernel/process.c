@@ -1,6 +1,7 @@
 #include "process.h"
 #include "sync.h"
 #include "thread.h"
+#include "ipc.h"
 
 #define ZEROOS_MAX_PROCESSES 16U
 #define ZEROOS_PROCESS_SLOT_BITS 16U
@@ -401,6 +402,15 @@ int process_reap(struct process *process, uint64_t *exit_status_out) {
     if (exit_status_out)
         *exit_status_out=process->exit_status;
 
+    /* Capability references are revoked before the process object is reset.
+     * ipc_process_revoke() only takes the IPC lock, so this lock order is
+     * stable against grant/send/receive paths and no stale owner pointer can
+     * survive process reuse. */
+    if (ipc_process_revoke(process)<0) {
+        spin_unlock_irqrestore(&process_lock,flags);
+        return -1;
+    }
+
     parent=process->parent;
 
     /*
@@ -414,6 +424,41 @@ int process_reap(struct process *process, uint64_t *exit_status_out) {
         spin_unlock_irqrestore(&process_lock,flags);
         return -1;
     }
+    if (parent) {
+        struct process **cursor=&parent->first_child;
+        while (*cursor && *cursor!=process)
+            cursor=&(*cursor)->next_sibling;
+        if (*cursor==process) {
+            *cursor=process->next_sibling;
+            if (parent->child_count)
+                --parent->child_count;
+        }
+    }
+    process_reset_locked(process);
+    spin_unlock_irqrestore(&process_lock,flags);
+    return 0;
+}
+
+int process_abort_new(struct process *process) {
+    uint64_t flags;
+    struct process *parent;
+
+    if (!process)
+        return -1;
+    flags=spin_lock_irqsave(&process_lock);
+    if (process_lookup_locked(process->pid)!=process ||
+        process->state!=PROCESS_NEW || process->thread_count!=0 ||
+        process->live_thread_count!=0 || process->creating_threads!=0 ||
+        process->reaping_threads!=0 || process->first_child!=0) {
+        spin_unlock_irqrestore(&process_lock,flags);
+        return -1;
+    }
+    if (ipc_process_revoke(process)<0 ||
+        vmm_space_destroy(&process->address_space)!=0) {
+        spin_unlock_irqrestore(&process_lock,flags);
+        return -1;
+    }
+    parent=process->parent;
     if (parent) {
         struct process **cursor=&parent->first_child;
         while (*cursor && *cursor!=process)

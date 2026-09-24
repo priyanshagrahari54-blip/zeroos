@@ -14,6 +14,11 @@ enum zeroos_syscall_id {
     ZEROOS_SYS_GETPID = 3,
     ZEROOS_SYS_GETTID = 4,
     ZEROOS_SYS_YIELD = 5,
+    ZEROOS_SYS_IPC_CREATE = 6,
+    ZEROOS_SYS_IPC_GRANT = 7,
+    ZEROOS_SYS_IPC_CLOSE = 8,
+    ZEROOS_SYS_IPC_SEND = 9,
+    ZEROOS_SYS_IPC_RECEIVE = 10,
     ZEROOS_SYS_MAX
 };
 
@@ -29,6 +34,7 @@ enum zeroos_syscall_error {
     ZEROOS_EINVAL = 22,
     ZEROOS_ENOSYS = 38,
     ZEROOS_EOVERFLOW = 75,
+    ZEROOS_EPIPE = 32,
     ZEROOS_ECANCELED = 125
 };
 

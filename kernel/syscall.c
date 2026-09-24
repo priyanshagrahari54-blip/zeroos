@@ -5,11 +5,16 @@
 #include "task.h"
 #include "vmm.h"
 #include "cpu.h"
+#include "ipc.h"
 
 extern void serial_write_public(const char *text);
 
 static uint64_t syscall_error(uint64_t error) {
     return 0ULL-error;
+}
+
+static uint64_t syscall_result(int result) {
+    return result<0 ? syscall_error((uint64_t)(-result)) : (uint64_t)result;
 }
 
 static struct process *current_process(void) {
@@ -120,6 +125,7 @@ void syscall_dispatch(struct interrupt_frame *frame) {
             .size=(uint32_t)sizeof(info),
             .features=ZEROOS_ABI_FEATURE_PROCESS |
                       ZEROOS_ABI_FEATURE_MEMORY |
+                      ZEROOS_ABI_FEATURE_IPC |
                       ZEROOS_ABI_FEATURE_INIT,
             .max_transfer=ZEROOS_SYSCALL_MAX_TRANSFER
         };
@@ -160,6 +166,85 @@ void syscall_dispatch(struct interrupt_frame *frame) {
             task_current()->need_resched=1;
         frame->rax=0;
         break;
+    case ZEROOS_SYS_IPC_CREATE: {
+        struct zeroos_ipc_pair pair={0};
+        int result;
+        if (frame->rdi==0 || frame->rsi<sizeof(pair) ||
+            !process_address_space_is_user_range(process,frame->rdi,
+                                                 sizeof(pair),1)) {
+            frame->rax=syscall_error(ZEROOS_EFAULT);
+            break;
+        }
+        result=ipc_create(process,&pair.local,&pair.peer);
+        if (result!=0) {
+            frame->rax=syscall_result(result);
+            break;
+        }
+        if (copy_to_user(frame->rdi,&pair,sizeof(pair))!=0) {
+            (void)ipc_close(process,pair.local);
+            (void)ipc_close(process,pair.peer);
+            frame->rax=syscall_error(ZEROOS_EFAULT);
+        } else {
+            frame->rax=0;
+        }
+        break;
+    }
+    case ZEROOS_SYS_IPC_GRANT: {
+        zeroos_ipc_handle_t target_handle=0;
+        int result;
+        if (frame->rdx==0 ||
+            !process_address_space_is_user_range(process,frame->rdx,
+                                                 sizeof(target_handle),1)) {
+            frame->rax=syscall_error(ZEROOS_EFAULT);
+            break;
+        }
+        result=ipc_grant(process,frame->rdi,frame->rsi,&target_handle);
+        if (result==0 && copy_to_user(frame->rdx,&target_handle,
+                                      sizeof(target_handle))!=0)
+            result=-ZEROOS_EFAULT;
+        frame->rax=syscall_result(result);
+        break;
+    }
+    case ZEROOS_SYS_IPC_CLOSE:
+        frame->rax=syscall_result(ipc_close(process,frame->rdi));
+        break;
+    case ZEROOS_SYS_IPC_SEND: {
+        uint64_t length=frame->rdx;
+        uint8_t message[ZEROOS_IPC_MAX_MESSAGE];
+        if (length==0 || length>sizeof(message) ||
+            copy_from_user(message,frame->rsi,length)!=0) {
+            frame->rax=length>sizeof(message) ?
+                       syscall_error(ZEROOS_EOVERFLOW) :
+                       syscall_error(ZEROOS_EFAULT);
+            break;
+        }
+        frame->rax=syscall_result(ipc_send(process,frame->rdi,message,
+                                           length,frame->r10));
+        break;
+    }
+    case ZEROOS_SYS_IPC_RECEIVE: {
+        uint8_t message[ZEROOS_IPC_MAX_MESSAGE];
+        uint64_t length=0;
+        int result;
+        if (frame->rsi==0 || frame->rdx==0 || frame->r8==0 ||
+            frame->rdx>sizeof(message) ||
+            !process_address_space_is_user_range(process,frame->rsi,
+                                                 frame->rdx,1) ||
+            !process_address_space_is_user_range(process,frame->r8,
+                                                 sizeof(length),1)) {
+            frame->rax=syscall_error(ZEROOS_EFAULT);
+            break;
+        }
+        result=ipc_receive(process,frame->rdi,message,frame->rdx,
+                           frame->r10,&length);
+        if (result>=0) {
+            if (copy_to_user(frame->rsi,message,length)!=0 ||
+                copy_to_user(frame->r8,&length,sizeof(length))!=0)
+                result=-ZEROOS_EFAULT;
+        }
+        frame->rax=syscall_result(result);
+        break;
+    }
     default:
         frame->rax=syscall_error(ZEROOS_ENOSYS);
         break;
@@ -170,7 +255,8 @@ int syscall_debug_validate(void) {
     struct zeroos_syscall_abi_info info={0};
     if (ZEROOS_SYSCALL_VECTOR<32 || ZEROOS_SYSCALL_VECTOR>=256 ||
         ZEROOS_SYSCALL_ABI_VERSION==0 || sizeof(info)!=24U ||
-        ZEROOS_SYSCALL_MAX_TRANSFER==0)
+        ZEROOS_SYSCALL_MAX_TRANSFER==0 ||
+        ZEROOS_SYS_IPC_RECEIVE+1U!=ZEROOS_SYS_MAX)
         return -1;
     return 0;
 }
