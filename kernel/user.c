@@ -39,6 +39,7 @@ static const char init_message[]=
 #define INIT_ELF_EVENT_OFFSET 0x3000ULL
 #define INIT_ELF_PIPE_BUFFER_OFFSET 0x3200ULL
 #define INIT_ELF_PIPE_LENGTH_OFFSET 0x3300ULL
+#define INIT_ELF_ABI_OFFSET 0x3400ULL
 #define INIT_ELF_DATA_FILE_END (INIT_ELF_STATUS_OFFSET+sizeof(uint64_t))
 #define INIT_ELF_DATA_MEMORY_SIZE ((INIT_ELF_DATA_FILE_END-INIT_ELF_DATA_OFFSET+\
                                     VMM_PAGE_SIZE-1ULL)&~(VMM_PAGE_SIZE-1ULL))
@@ -153,7 +154,7 @@ static uint64_t build_child_elf(void) {
  * later service binaries will use. */
 static uint64_t build_init_code(uint8_t *code) {
     uint64_t offset=0;
-    uint64_t failure_jumps[19];
+    uint64_t failure_jumps[20];
     uint32_t failure_jump_count=0;
     uint64_t failure_label;
 
@@ -164,6 +165,17 @@ static uint64_t build_init_code(uint8_t *code) {
     code[offset++]=0xba;
     put_u32(&code[offset],(uint32_t)(sizeof(init_message)-1U)); offset+=4;
     code[offset++]=0xcd; code[offset++]=0x80;
+
+    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_ABI_INFO); offset+=4;
+    code[offset++]=0x48; code[offset++]=0xbf;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE+
+            (INIT_ELF_ABI_OFFSET-INIT_ELF_DATA_OFFSET)); offset+=8;
+    code[offset++]=0xbe; put_u32(&code[offset],24); offset+=4;
+    code[offset++]=0xcd; code[offset++]=0x80;
+    code[offset++]=0x48; code[offset++]=0x85; code[offset++]=0xc0;
+    failure_jumps[failure_jump_count++]=offset;
+    code[offset++]=0x0f; code[offset++]=0x88;
+    put_u32(&code[offset],0); offset+=4;
 
     /* Negative ABI probes run from Ring 3 and must fail closed without
      * creating a capability, child, or address-space side effect. */
