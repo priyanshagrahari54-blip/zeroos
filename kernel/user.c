@@ -7,6 +7,7 @@
 #include "vmm.h"
 #include "syscall.h"
 #include "ipc.h"
+#include "shmem.h"
 
 extern void serial_write_public(const char *text);
 extern void zeroos_user_enter(uint64_t entry, uint64_t stack);
@@ -152,7 +153,7 @@ static uint64_t build_child_elf(void) {
  * later service binaries will use. */
 static uint64_t build_init_code(uint8_t *code) {
     uint64_t offset=0;
-    uint64_t failure_jumps[15];
+    uint64_t failure_jumps[19];
     uint32_t failure_jump_count=0;
     uint64_t failure_label;
 
@@ -351,6 +352,56 @@ static uint64_t build_init_code(uint8_t *code) {
     code[offset++]=0x0f; code[offset++]=0x88;
     put_u32(&code[offset],0); offset+=4;
 
+    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_SHM_CREATE); offset+=4;
+    code[offset++]=0xbf; put_u32(&code[offset],VMM_PAGE_SIZE); offset+=4;
+    code[offset++]=0x48; code[offset++]=0x31; code[offset++]=0xf6;
+    code[offset++]=0x48; code[offset++]=0xba;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE+
+            (INIT_ELF_EVENT_OFFSET-INIT_ELF_DATA_OFFSET+32ULL)); offset+=8;
+    code[offset++]=0xcd; code[offset++]=0x80;
+    code[offset++]=0x48; code[offset++]=0x85; code[offset++]=0xc0;
+    failure_jumps[failure_jump_count++]=offset;
+    code[offset++]=0x0f; code[offset++]=0x88;
+    put_u32(&code[offset],0); offset+=4;
+
+    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_SHM_MAP); offset+=4;
+    code[offset++]=0x48; code[offset++]=0xbf;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE+
+            (INIT_ELF_EVENT_OFFSET-INIT_ELF_DATA_OFFSET+32ULL)); offset+=8;
+    code[offset++]=0x48; code[offset++]=0x8b; code[offset++]=0x3f;
+    code[offset++]=0x48; code[offset++]=0xbe;
+    put_u64(&code[offset],ZEROOS_USER_BASE+0x10000ULL); offset+=8;
+    code[offset++]=0xba; put_u32(&code[offset],ZEROOS_SHMEM_MAP_WRITE); offset+=4;
+    code[offset++]=0xcd; code[offset++]=0x80;
+    code[offset++]=0x48; code[offset++]=0x85; code[offset++]=0xc0;
+    failure_jumps[failure_jump_count++]=offset;
+    code[offset++]=0x0f; code[offset++]=0x88;
+    put_u32(&code[offset],0); offset+=4;
+    code[offset++]=0x49; code[offset++]=0x89; code[offset++]=0xc4;
+
+    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_SHM_UNMAP); offset+=4;
+    code[offset++]=0x48; code[offset++]=0xbf;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE+
+            (INIT_ELF_EVENT_OFFSET-INIT_ELF_DATA_OFFSET+32ULL)); offset+=8;
+    code[offset++]=0x48; code[offset++]=0x8b; code[offset++]=0x3f;
+    code[offset++]=0x4c; code[offset++]=0x89; code[offset++]=0xe6;
+    code[offset++]=0xcd; code[offset++]=0x80;
+    code[offset++]=0x48; code[offset++]=0x85; code[offset++]=0xc0;
+    failure_jumps[failure_jump_count++]=offset;
+    code[offset++]=0x0f; code[offset++]=0x88;
+    put_u32(&code[offset],0); offset+=4;
+
+    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_SHM_CLOSE); offset+=4;
+    code[offset++]=0x48; code[offset++]=0xbf;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE+
+            (INIT_ELF_EVENT_OFFSET-INIT_ELF_DATA_OFFSET+32ULL)); offset+=8;
+    code[offset++]=0x48; code[offset++]=0x8b; code[offset++]=0x3f;
+    code[offset++]=0xcd; code[offset++]=0x80;
+    code[offset++]=0x48; code[offset++]=0x85; code[offset++]=0xc0;
+    failure_jumps[failure_jump_count++]=offset;
+    code[offset++]=0x0f; code[offset++]=0x88;
+    put_u32(&code[offset],0); offset+=4;
+
     code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_SPAWN); offset+=4;
     code[offset++]=0x48; code[offset++]=0xbf;
     put_u64(&code[offset],ZEROOS_USER_DATA_BASE+
@@ -435,7 +486,10 @@ static uint64_t build_init_elf(void) {
     data_segment->memory_size=INIT_ELF_DATA_MEMORY_SIZE;
     data_segment->alignment=VMM_PAGE_SIZE;
 
-    (void)build_init_code(init_elf_image+INIT_ELF_ENTRY_OFFSET);
+    if (build_init_code(init_elf_image+INIT_ELF_ENTRY_OFFSET)>VMM_PAGE_SIZE) {
+        serial_write_public("ZEROOS PANIC: init syscall probe image exceeds one code page.\n");
+        return 0;
+    }
     for (uint64_t i=0; i<sizeof(init_message)-1U; ++i)
         init_elf_image[INIT_ELF_DATA_OFFSET+i]=(uint8_t)init_message[i];
     for (uint64_t i=0; i<child_image_size; ++i)
@@ -648,6 +702,84 @@ static int userspace_ipc_self_test(struct process *process) {
 fail:
     (void)ipc_close(process,local);
     (void)ipc_close(process,peer);
+    return -1;
+}
+
+static int userspace_shmem_self_test(struct process *process) {
+    zeroos_shmem_handle_t handle=0;
+    zeroos_shmem_handle_t target_handle=0;
+    process_id_t target_pid=0;
+    struct process *target=0;
+    uint64_t first_address=ZEROOS_USER_BASE+0x10000ULL;
+    uint64_t second_address=ZEROOS_USER_BASE+0x20000ULL;
+    uint64_t target_address=ZEROOS_USER_BASE+0x10000ULL;
+    uint64_t mapped=0;
+    uint64_t physical=0;
+
+    if (!process || shmem_create(process,0,0,&handle)!=-ZEROOS_EINVAL ||
+        shmem_create(process,VMM_PAGE_SIZE*(ZEROOS_SHMEM_MAX_PAGES+1ULL),
+                     0,&handle)!=-ZEROOS_EINVAL ||
+        shmem_create(process,VMM_PAGE_SIZE,1,&handle)!=-ZEROOS_EINVAL ||
+        shmem_create(process,VMM_PAGE_SIZE*2ULL,0,&handle)!=0)
+        goto fail;
+    if (shmem_map(process,handle,first_address+1ULL,0,&mapped)!=-ZEROOS_EINVAL ||
+        shmem_map(process,handle,first_address,ZEROOS_SHMEM_MAP_WRITE,
+                  &mapped)!=0)
+        goto fail;
+    physical=vmm_space_translate(&process->address_space,first_address);
+    if (!physical || memory_page_references(physical)!=2 ||
+        !process_address_space_is_user_range(process,first_address,
+                                             VMM_PAGE_SIZE*2ULL,1) ||
+        !process_address_space_is_user_range(process,first_address,
+                                             VMM_PAGE_SIZE*2ULL,0))
+        goto fail;
+    ((uint8_t *)(uint64_t)physical)[0]=0x5a;
+
+    if (shmem_map(process,handle,second_address,0,&mapped)!=0 ||
+        vmm_space_translate(&process->address_space,second_address)!=physical ||
+        process_address_space_is_user_range(process,second_address,
+                                            VMM_PAGE_SIZE*2ULL,1) ||
+        ((uint8_t *)(uint64_t)vmm_space_translate(
+            &process->address_space,second_address))[0]!=0x5a ||
+        shmem_close(process,handle)!=-ZEROOS_EBUSY ||
+        shmem_map(process,handle,first_address,0,&mapped)==0 ||
+        shmem_unmap(process,handle,first_address+VMM_PAGE_SIZE)!=-ZEROOS_EINVAL ||
+        shmem_unmap(process,handle+0x100ULL,first_address)!=-ZEROOS_EBADF)
+        goto fail;
+    if (shmem_unmap(process,handle,second_address)!=0 ||
+        shmem_unmap(process,handle,first_address)!=0 ||
+        memory_page_references(physical)!=1)
+        goto fail;
+
+    if (process_create(process,&target_pid)!=0)
+        goto fail;
+    target=process_lookup(target_pid);
+    if (!target || shmem_grant(process,handle,target_pid,
+                               ZEROOS_SHMEM_RIGHT_MAP|ZEROOS_SHMEM_RIGHT_CLOSE,
+                               &target_handle)!=0 ||
+        shmem_map(target,target_handle,target_address,0,&mapped)!=0 ||
+        shmem_map(target,target_handle,target_address+0x10000ULL,
+                  ZEROOS_SHMEM_MAP_WRITE,&mapped)!=-ZEROOS_EPERM ||
+        shmem_unmap(target,target_handle,target_address)!=0 ||
+        shmem_close(target,target_handle)!=0 ||
+        process_abort_new(target)!=0)
+        goto fail;
+    target=0;
+    target_handle=0;
+
+    if (shmem_close(process,handle)!=0 || shmem_debug_validate()!=0)
+        goto fail;
+    handle=0;
+    return 0;
+
+fail:
+    if (target)
+        (void)process_abort_new(target);
+    if (target_handle && target)
+        (void)shmem_close(target,target_handle);
+    if (handle)
+        (void)shmem_close(process,handle);
+    (void)shmem_debug_validate();
     return -1;
 }
 
@@ -959,6 +1091,11 @@ int userspace_start_init(void) {
     serial_write_public("ZEROOS: capability IPC queue/backpressure self-test passed.\n");
     serial_write_public("ZEROOS: capability IPC negative/timeout semantics passed.\n");
     serial_write_public("ZEROOS: event and pipe IPC foundations self-test passed.\n");
+    if (userspace_shmem_self_test(init_process)!=0) {
+        serial_write_public("ZEROOS PANIC: shared-memory lifecycle self-test failed.\n");
+        goto fail;
+    }
+    serial_write_public("ZEROOS: shared-memory map/grant/lifecycle self-test passed.\n");
     if (userspace_resource_self_test(init_process)!=0) {
         serial_write_public("ZEROOS PANIC: userspace resource exhaustion self-test failed.\n");
         goto fail;

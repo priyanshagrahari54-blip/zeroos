@@ -102,6 +102,11 @@ The initial v1 calls are:
 | 17 | `EVENT_SIGNAL` | coalescing, nonblocking notification signal |
 | 18 | `EVENT_WAIT` | consume or peek one notification, with nonblocking/timeout behavior |
 | 19 | `EVENT_CLOSE` | close an event capability |
+| 20 | `SHM_CREATE` | allocate zero-filled, page-granular shared memory and return a capability |
+| 21 | `SHM_GRANT` | grant selected map/write/grant/close rights to another live process |
+| 22 | `SHM_MAP` | map the whole object at a caller-selected user address with read or read/write permissions |
+| 23 | `SHM_UNMAP` | unmap one whole-object mapping and release its page references |
+| 24 | `SHM_CLOSE` | close a shared-memory capability; active mappings keep their pages alive |
 
 `SPAWN` accepts bounded vectors (16 arguments and 16 environment strings, each
 at most 128 bytes) and constructs an initial stack containing `argc`, argv,
@@ -148,6 +153,19 @@ pending notification, returns one without consuming it with `PEEK`, returns
 empty wait, and `-ZEROOS_EPIPE` after the peer closes. Event endpoints carry no
 message queue, so their lifecycle and wait-queue cancellation are validated by
 the same endpoint reference accounting as IPC.
+
+`SHM_CREATE` allocates at most 16 zero-filled pages and returns a
+process-scoped generation-tagged capability. `SHM_GRANT` can reduce rights;
+`SHM_MAP` accepts only a page-aligned address in the isolated user PML4 and
+maps the object read-only by default or read/write with the explicit write
+right. Shared mappings retain physical-page references independently of the
+object capability, are tracked per process, and are removed before process
+address-space destruction. Closing a capability with one of the caller's
+mappings active returns `-ZEROOS_EBUSY`; the mapping must be unmapped
+explicitly first. A mapping in another process keeps its physical pages alive
+after the source capability is closed, and process teardown removes every
+tracked mapping transactionally. A failed multi-page map rolls back every page
+already mapped and a failed output copy rolls back a newly-created capability.
 
 The kernel never trusts a user pointer, user length, file descriptor, or
 syscall ID. Unsupported IDs return `-ZEROOS_ENOSYS`; invalid pointers return
@@ -237,9 +255,10 @@ This is not the Stage 2 exit claim. The remaining production gates are:
   bootstrap supervisor, including dependency ordering, health checks, crash
   diagnostics, shutdown policy and multi-service resource accounting;
 - capability credentials/rights policy and a public userspace runtime library;
-- byte-stream pipe semantics, shared-memory lifecycle, and socket foundations
-  built on the bounded/backpressure and cancellation contracts (the current
-  record-pipe and coalescing-event ABI is only the first foundation);
+- byte-stream pipe semantics and socket foundations built on the
+  bounded/backpressure and cancellation contracts (the current record-pipe,
+  coalescing-event, and page-granular shared-memory ABI is only the first
+  foundation);
 - stronger concurrent capability-lifetime proofs and multi-process/multi-CPU
   stress coverage for grant, close, exit, and reaping races;
 - negative, fault-injection, timeout, cancellation, resource-exhaustion and

@@ -8,6 +8,7 @@
 #include "exec.h"
 #include "cpu.h"
 #include "ipc.h"
+#include "shmem.h"
 
 extern void serial_write_public(const char *text);
 
@@ -183,7 +184,8 @@ void syscall_dispatch(struct interrupt_frame *frame) {
                       ZEROOS_ABI_FEATURE_IPC |
                       ZEROOS_ABI_FEATURE_INIT |
                       ZEROOS_ABI_FEATURE_PIPE |
-                      ZEROOS_ABI_FEATURE_EVENT,
+                      ZEROOS_ABI_FEATURE_EVENT |
+                      ZEROOS_ABI_FEATURE_SHMEM,
             .max_transfer=ZEROOS_SYSCALL_MAX_TRANSFER
         };
         if (frame->rdi==0 || frame->rsi<sizeof(info) ||
@@ -336,6 +338,62 @@ void syscall_dispatch(struct interrupt_frame *frame) {
     case ZEROOS_SYS_EVENT_CLOSE:
         frame->rax=syscall_result(ipc_close(process,frame->rdi));
         break;
+    case ZEROOS_SYS_SHM_CREATE: {
+        zeroos_shmem_handle_t handle=0;
+        int result;
+        if (frame->rdx==0 ||
+            !process_address_space_is_user_range(process,frame->rdx,
+                                                 sizeof(handle),1)) {
+            frame->rax=syscall_error(ZEROOS_EFAULT);
+            break;
+        }
+        result=shmem_create(process,frame->rdi,frame->rsi,&handle);
+        if (result==0 && copy_to_user(frame->rdx,&handle,sizeof(handle))!=0) {
+            (void)shmem_close(process,handle);
+            result=-ZEROOS_EFAULT;
+        }
+        frame->rax=syscall_result(result);
+        break;
+    }
+    case ZEROOS_SYS_SHM_GRANT: {
+        zeroos_shmem_handle_t target_handle=0;
+        struct process *target=0;
+        int result;
+        if (frame->rdx==0 ||
+            !process_address_space_is_user_range(process,frame->rdx,
+                                                 sizeof(target_handle),1)) {
+            frame->rax=syscall_error(ZEROOS_EFAULT);
+            break;
+        }
+        if (frame->r10==0 || frame->r10>ZEROOS_SHMEM_ALL_RIGHTS) {
+            frame->rax=syscall_error(ZEROOS_EINVAL);
+            break;
+        }
+        result=shmem_grant(process,frame->rdi,frame->rsi,
+                           (uint8_t)frame->r10,&target_handle);
+        if (result==0 && copy_to_user(frame->rdx,&target_handle,
+                                      sizeof(target_handle))!=0) {
+            target=process_lookup(frame->rsi);
+            if (target)
+                (void)shmem_close(target,target_handle);
+            result=-ZEROOS_EFAULT;
+        }
+        frame->rax=syscall_result(result);
+        break;
+    }
+    case ZEROOS_SYS_SHM_MAP: {
+        uint64_t mapped=0;
+        int result=shmem_map(process,frame->rdi,frame->rsi,frame->rdx,
+                             &mapped);
+        frame->rax=result==0 ? mapped : syscall_result(result);
+        break;
+    }
+    case ZEROOS_SYS_SHM_UNMAP:
+        frame->rax=syscall_result(shmem_unmap(process,frame->rdi,frame->rsi));
+        break;
+    case ZEROOS_SYS_SHM_CLOSE:
+        frame->rax=syscall_result(shmem_close(process,frame->rdi));
+        break;
     case ZEROOS_SYS_SPAWN: {
         struct zeroos_exec_spawn_result spawn={0};
         int result=exec_spawn(process,frame->rdi,frame->rsi,frame->rdx,
@@ -408,7 +466,7 @@ int syscall_debug_validate(void) {
     if (ZEROOS_SYSCALL_VECTOR<32 || ZEROOS_SYSCALL_VECTOR>=256 ||
         ZEROOS_SYSCALL_ABI_VERSION==0 || sizeof(info)!=24U ||
         ZEROOS_SYSCALL_MAX_TRANSFER==0 ||
-        ZEROOS_SYS_EVENT_CLOSE+1U!=ZEROOS_SYS_MAX)
+        ZEROOS_SYS_SHM_CLOSE+1U!=ZEROOS_SYS_MAX)
         return -1;
     return 0;
 }
