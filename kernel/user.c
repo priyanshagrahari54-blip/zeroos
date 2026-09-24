@@ -518,9 +518,10 @@ static uint64_t build_service_code(uint8_t *code,
     code[offset++]=0x41; code[offset++]=0xba;
     put_u32(&code[offset],ZEROOS_IPC_RIGHT_SEND); offset+=4;
     code[offset++]=0xcd; code[offset++]=0x80;
-    code[offset++]=0x48; code[offset++]=0x85; code[offset++]=0xc0;
+    code[offset++]=0x48; code[offset++]=0x83; code[offset++]=0xf8;
+    code[offset++]=(uint8_t)(0U-ZEROOS_EBADF);
     permission_failure_jump=offset;
-    code[offset++]=0x0f; code[offset++]=0x89;
+    code[offset++]=0x0f; code[offset++]=0x85;
     put_u32(&code[offset],0); offset+=4;
 
     /* Block until the supervisor has observed this task in the scheduler's
