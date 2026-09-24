@@ -1,4 +1,5 @@
 #include <zeroos/syscall.h>
+#include <zeroos/runtime.h>
 
 static int abi_compile_probe(void) {
     struct zeroos_abi_info info={0};
@@ -6,8 +7,10 @@ static int abi_compile_probe(void) {
     zeroos_shmem_handle_t shared=0;
     uint64_t length=0;
     char buffer[8]={0};
+    struct zeroos_runtime runtime={0};
 
     (void)zeroos_abi_info(&info);
+    (void)zeroos_runtime_init(&runtime);
     (void)zeroos_getpid();
     (void)zeroos_gettid();
     (void)zeroos_yield();
@@ -29,6 +32,13 @@ static int abi_compile_probe(void) {
     (void)zeroos_shmem_map(shared,0x7f0000010000ULL,ZEROOS_SHMEM_MAP_WRITE);
     (void)zeroos_shmem_unmap(shared,0x7f0000010000ULL);
     (void)zeroos_shmem_close(shared);
+    (void)zeroos_runtime_write(&runtime,1,buffer,sizeof(buffer));
+    (void)zeroos_runtime_ipc_send(&runtime,pair.local,buffer,sizeof(buffer),
+                                   ZEROOS_IPC_FLAG_NONBLOCK,0);
+    (void)zeroos_runtime_ipc_receive(&runtime,pair.peer,buffer,sizeof(buffer),
+                                      ZEROOS_IPC_FLAG_NONBLOCK,&length,0);
+    (void)zeroos_runtime_spawn(&runtime,buffer,sizeof(buffer),0,0,0,0);
+    (void)zeroos_runtime_wait(&runtime,1,&length,ZEROOS_WAIT_FLAG_NONBLOCK,0);
     return (int)info.version;
 }
 

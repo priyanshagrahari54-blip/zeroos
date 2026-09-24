@@ -18,8 +18,8 @@ jobs:
       - name: Build ZEROOS
         run: make
 
-      - name: Check public userspace ABI
-        run: make userspace-abi-check
+      - name: Check public userspace ABI and runtime
+        run: make userspace-abi-check userspace-runtime-check
 
       - name: Verify kernel image
         run: |
