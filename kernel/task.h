@@ -120,6 +120,9 @@ int task_prepare_block(void);
 int task_block(void);
 /* Block while interrupts are already disabled; restores the supplied flags when resumed. */
 int task_block_irqsave(uint64_t flags);
+/* Block a prepared waiter with a scheduler-owned deadline. Returns after a
+ * wake or timeout; interrupts must be disabled on entry. */
+int task_block_until_irqsave(uint64_t flags, uint64_t deadline);
 int task_wake(struct task *task);
 int task_sleep_until(uint64_t deadline);
 int task_sleep_ticks(uint64_t ticks);
