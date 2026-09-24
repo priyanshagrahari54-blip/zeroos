@@ -99,6 +99,7 @@ jobs:
             grep -q "ZEROOS: capability IPC queue/backpressure self-test passed." build/serial.log
             grep -q "ZEROOS: capability IPC negative/timeout semantics passed." build/serial.log
             grep -q "ZEROOS: event and pipe IPC foundations self-test passed." build/serial.log
+            grep -q "ZEROOS: blocking event wait/wake path passed." build/serial.log
             grep -q "ZEROOS: shared-memory map/grant/lifecycle self-test passed." build/serial.log
             grep -q "ZEROOS: userspace resource exhaustion/recovery passed." build/serial.log
             grep -q "ZEROOS: service capability least-privilege grant passed." build/serial.log
@@ -152,6 +153,7 @@ jobs:
           grep -q "ZEROOS: userspace init syscall path passed." build/serial-smp4.log
           grep -q "ZEROOS: userspace resource exhaustion/recovery passed." build/serial-smp4.log
           grep -q "ZEROOS: event and pipe IPC foundations self-test passed." build/serial-smp4.log
+          grep -q "ZEROOS: blocking event wait/wake path passed." build/serial-smp4.log
           grep -q "ZEROOS: shared-memory map/grant/lifecycle self-test passed." build/serial-smp4.log
           grep -q "ZEROOS: userspace negative syscall/fault/malformed-ELF probes passed." build/serial-smp4.log
           grep -q "ZEROOS: Ring-3 transition, syscall ABI, and init recovery passed." build/serial-smp4.log
@@ -188,6 +190,7 @@ jobs:
           grep -q "ZEROOS: userspace init syscall path passed." build/serial-nx-off.log
           grep -q "ZEROOS: userspace resource exhaustion/recovery passed." build/serial-nx-off.log
           grep -q "ZEROOS: event and pipe IPC foundations self-test passed." build/serial-nx-off.log
+          grep -q "ZEROOS: blocking event wait/wake path passed." build/serial-nx-off.log
           grep -q "ZEROOS: shared-memory map/grant/lifecycle self-test passed." build/serial-nx-off.log
           grep -q "ZEROOS: userspace negative syscall/fault/malformed-ELF probes passed." build/serial-nx-off.log
           grep -q "ZEROOS: Ring-3 transition, syscall ABI, and init recovery passed." build/serial-nx-off.log
@@ -218,6 +221,7 @@ jobs:
           grep -q "ZEROOS: userspace init syscall path passed." build-fault/serial.log
           grep -q "ZEROOS: userspace resource exhaustion/recovery passed." build-fault/serial.log
           grep -q "ZEROOS: event and pipe IPC foundations self-test passed." build-fault/serial.log
+          grep -q "ZEROOS: blocking event wait/wake path passed." build-fault/serial.log
           grep -q "ZEROOS: shared-memory map/grant/lifecycle self-test passed." build-fault/serial.log
           grep -q "ZEROOS: userspace negative syscall/fault/malformed-ELF probes passed." build-fault/serial.log
           grep -q "ZEROOS: Ring-3 transition, syscall ABI, and init recovery passed." build-fault/serial.log

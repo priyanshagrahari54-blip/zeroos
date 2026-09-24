@@ -163,7 +163,11 @@ pending notification, returns one without consuming it with `PEEK`, returns
 `-ZEROOS_EAGAIN` for an empty nonblocking wait, `-ZEROOS_ETIMEDOUT` on a timed
 empty wait, and `-ZEROOS_EPIPE` after the peer closes. Event endpoints carry no
 message queue, so their lifecycle and wait-queue cancellation are validated by
-the same endpoint reference accounting as IPC.
+the same endpoint reference accounting as IPC. The boot userspace gate also
+creates a temporary kernel-thread-backed process, proves that an event waiter
+reaches `TASK_BLOCKED`, signals it from the supervisor, and reaps the process;
+this exercises the event wait queue's lost-wakeup and endpoint-lifetime path,
+not only nonblocking polling.
 
 `SHM_CREATE` allocates at most 16 zero-filled pages and returns a
 process-scoped generation-tagged capability. `SHM_GRANT` can reduce rights;
