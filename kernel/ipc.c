@@ -380,15 +380,22 @@ int ipc_send_timeout(struct process *owner, zeroos_ipc_handle_t handle,
                 return -ZEROOS_EAGAIN;
             }
             if (timeout_ticks!=ZEROOS_IPC_TIMEOUT_FOREVER) {
-                int sleep_result;
                 if ((long long)(deadline-timer_ticks())<=0) {
                     spin_unlock_irqrestore(&ipc_lock,irq_flags);
                     return -ZEROOS_ETIMEDOUT;
                 }
-                spin_unlock_irqrestore(&ipc_lock,irq_flags);
-                sleep_result=task_sleep_ticks(1);
-                if (sleep_result!=0)
-                    return -ZEROOS_EINTR;
+                {
+                    int wait_result;
+                    if (wait_queue_prepare(&peer->send_waiters,&block_flags)!=0) {
+                        spin_unlock_irqrestore(&ipc_lock,irq_flags);
+                        return -ZEROOS_EBUSY;
+                    }
+                    spin_unlock(&ipc_lock);
+                    wait_result=wait_queue_commit_until(block_flags,deadline);
+                    (void)wait_queue_remove_current(&peer->send_waiters);
+                    if (wait_result<0)
+                        return -ZEROOS_EINTR;
+                }
                 continue;
             }
             /* The condition (full) and waiter publication are serialized by
@@ -465,14 +472,19 @@ int ipc_receive_timeout(struct process *owner, zeroos_ipc_handle_t handle,
                 return -ZEROOS_EAGAIN;
             }
             if (timeout_ticks!=ZEROOS_IPC_TIMEOUT_FOREVER) {
-                int sleep_result;
+                int wait_result;
                 if ((long long)(deadline-timer_ticks())<=0) {
                     spin_unlock_irqrestore(&ipc_lock,irq_flags);
                     return -ZEROOS_ETIMEDOUT;
                 }
-                spin_unlock_irqrestore(&ipc_lock,irq_flags);
-                sleep_result=task_sleep_ticks(1);
-                if (sleep_result!=0)
+                if (wait_queue_prepare(&endpoint->receive_waiters,&block_flags)!=0) {
+                    spin_unlock_irqrestore(&ipc_lock,irq_flags);
+                    return -ZEROOS_EBUSY;
+                }
+                spin_unlock(&ipc_lock);
+                wait_result=wait_queue_commit_until(block_flags,deadline);
+                (void)wait_queue_remove_current(&endpoint->receive_waiters);
+                if (wait_result<0)
                     return -ZEROOS_EINTR;
                 continue;
             }
@@ -543,14 +555,20 @@ int ipc_pipe_write_timeout(struct process *owner, zeroos_ipc_handle_t handle,
                 return -ZEROOS_EAGAIN;
             }
             if (timeout_ticks!=ZEROOS_IPC_TIMEOUT_FOREVER) {
-                int sleep_result;
+                uint64_t block_flags;
+                int wait_result;
                 if ((long long)(deadline-timer_ticks())<=0) {
                     spin_unlock_irqrestore(&ipc_lock,irq_flags);
                     return -ZEROOS_ETIMEDOUT;
                 }
-                spin_unlock_irqrestore(&ipc_lock,irq_flags);
-                sleep_result=task_sleep_ticks(1);
-                if (sleep_result!=0)
+                if (wait_queue_prepare(&peer->send_waiters,&block_flags)!=0) {
+                    spin_unlock_irqrestore(&ipc_lock,irq_flags);
+                    return -ZEROOS_EBUSY;
+                }
+                spin_unlock(&ipc_lock);
+                wait_result=wait_queue_commit_until(block_flags,deadline);
+                (void)wait_queue_remove_current(&peer->send_waiters);
+                if (wait_result<0)
                     return -ZEROOS_EINTR;
                 continue;
             }
@@ -618,14 +636,19 @@ int ipc_pipe_read_timeout(struct process *owner, zeroos_ipc_handle_t handle,
                 return -ZEROOS_EAGAIN;
             }
             if (timeout_ticks!=ZEROOS_IPC_TIMEOUT_FOREVER) {
-                int sleep_result;
+                int wait_result;
                 if ((long long)(deadline-timer_ticks())<=0) {
                     spin_unlock_irqrestore(&ipc_lock,irq_flags);
                     return -ZEROOS_ETIMEDOUT;
                 }
-                spin_unlock_irqrestore(&ipc_lock,irq_flags);
-                sleep_result=task_sleep_ticks(1);
-                if (sleep_result!=0)
+                if (wait_queue_prepare(&endpoint->receive_waiters,&block_flags)!=0) {
+                    spin_unlock_irqrestore(&ipc_lock,irq_flags);
+                    return -ZEROOS_EBUSY;
+                }
+                spin_unlock(&ipc_lock);
+                wait_result=wait_queue_commit_until(block_flags,deadline);
+                (void)wait_queue_remove_current(&endpoint->receive_waiters);
+                if (wait_result<0)
                     return -ZEROOS_EINTR;
                 continue;
             }
@@ -728,14 +751,20 @@ int ipc_event_wait_timeout(struct process *owner, zeroos_ipc_handle_t handle,
             return -ZEROOS_EAGAIN;
         }
         if (timeout_ticks!=ZEROOS_IPC_TIMEOUT_FOREVER) {
-            int sleep_result;
+            uint64_t block_flags;
+            int wait_result;
             if ((long long)(deadline-timer_ticks())<=0) {
                 spin_unlock_irqrestore(&ipc_lock,irq_flags);
                 return -ZEROOS_ETIMEDOUT;
             }
-            spin_unlock_irqrestore(&ipc_lock,irq_flags);
-            sleep_result=task_sleep_ticks(1);
-            if (sleep_result!=0)
+            if (wait_queue_prepare(&endpoint->receive_waiters,&block_flags)!=0) {
+                spin_unlock_irqrestore(&ipc_lock,irq_flags);
+                return -ZEROOS_EBUSY;
+            }
+            spin_unlock(&ipc_lock);
+            wait_result=wait_queue_commit_until(block_flags,deadline);
+            (void)wait_queue_remove_current(&endpoint->receive_waiters);
+            if (wait_result<0)
                 return -ZEROOS_EINTR;
             continue;
         }
