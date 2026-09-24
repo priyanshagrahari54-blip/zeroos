@@ -221,6 +221,7 @@ int exec_spawn(struct process *parent, uint64_t user_image,
     uint8_t image_loaded=0;
     uint8_t stack_mapped=0;
     int copy_result;
+    int failure_result=-ZEROOS_ENOMEM;
 
     if (!exec_workspace.initialized || !parent || !result ||
         image_size==0 || image_size>ZEROOS_EXEC_MAX_IMAGE ||
@@ -235,40 +236,55 @@ int exec_spawn(struct process *parent, uint64_t user_image,
     exec_workspace.string_bytes=0;
     copy_result=exec_copy_from_user(parent,user_image,exec_workspace.image,
                                     image_size);
-    if (copy_result!=0)
+    if (copy_result!=0) {
+        failure_result=copy_result;
         goto fail_locked;
+    }
     copy_result=exec_copy_vectors(parent,user_argv,argc,
                                   exec_workspace.argument_offsets);
-    if (copy_result!=0)
+    if (copy_result!=0) {
+        failure_result=copy_result;
         goto fail_locked;
+    }
     copy_result=exec_copy_vectors(parent,user_envp,envc,
                                   exec_workspace.environment_offsets);
-    if (copy_result!=0)
+    if (copy_result!=0) {
+        failure_result=copy_result;
         goto fail_locked;
+    }
 
     header=(const struct zeroos_elf64_ehdr *)exec_workspace.image;
-    if (image_size<sizeof(*header) || header->phnum==0)
+    if (image_size<sizeof(*header) || header->phnum==0) {
+        failure_result=-ZEROOS_EINVAL;
         goto fail_locked;
+    }
 
     if (process_create(parent,&pid)!=0)
         goto fail_locked;
     child=process_lookup(pid);
     if (!child || process_set_limits(child,4,4,64)!=0)
         goto fail_locked;
-    if (elf_load_image(child,exec_workspace.image,image_size,&load_result)!=0)
+    failure_result=elf_load_image(child,exec_workspace.image,image_size,&load_result);
+    if (failure_result!=0)
         goto fail_locked;
     image_loaded=1;
 
     stack_page=page_alloc_zero();
-    if (!stack_page ||
-        process_address_space_map_page(child,ZEROOS_USER_STACK_PAGE,
-                                       (uint64_t)stack_page,
-                                       VMM_USER|VMM_WRITABLE|VMM_NO_EXECUTE)!=0)
+    if (!stack_page) {
+        failure_result=-ZEROOS_ENOMEM;
         goto fail_locked;
+    }
+    if (process_address_space_map_page(child,ZEROOS_USER_STACK_PAGE,
+                                       (uint64_t)stack_page,
+                                       VMM_USER|VMM_WRITABLE|VMM_NO_EXECUTE)!=0) {
+        failure_result=-ZEROOS_ENOMEM;
+        goto fail_locked;
+    }
     stack_mapped=1;
     for (uint64_t i=0; i<VMM_PAGE_SIZE; ++i)
         ((uint8_t *)(uint64_t)stack_page)[i]=0;
-    if (exec_build_stack(&load_result,argc,envc,header,&stack_pointer)!=0)
+    failure_result=exec_build_stack(&load_result,argc,envc,header,&stack_pointer);
+    if (failure_result!=0)
         goto fail_locked;
     for (uint64_t i=0; i<VMM_PAGE_SIZE; ++i)
         ((uint8_t *)(uint64_t)stack_page)[i]=exec_workspace.stack[i];
@@ -293,7 +309,7 @@ fail_locked:
     if (child && child->state==PROCESS_NEW)
         (void)process_abort_new(child);
     spin_unlock_irqrestore(&exec_workspace.lock,lock_flags);
-    return -ZEROOS_ENOMEM;
+    return failure_result;
 }
 
 int exec_debug_validate(void) {

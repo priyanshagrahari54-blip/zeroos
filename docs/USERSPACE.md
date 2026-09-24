@@ -184,10 +184,20 @@ address-space teardown, and no-stale-capability cleanup in the normal
 scheduler path.
 
 The service image is a static ET_EXEC with the same RX code and RW/NX data
-policy as init. The worker's IPC handle and restart-specific status are patched
-into the image before loading; no kernel pointer or ambient global endpoint is
-exposed to Ring 3. Controller and worker resource limits are explicit, and
-all setup failures roll back unpublished processes and mapped pages.
+policy as init. The worker's IPC handle, controller PID, and restart-specific
+status are patched into the image before loading; no kernel pointer or ambient
+global endpoint is exposed to Ring 3. Before receiving, the worker attempts an
+`IPC_GRANT` with its transferred capability. Because the grant is deliberately
+limited to `SEND|RECV|CLOSE`, this must fail and proves that a service cannot
+escalate or delegate its endpoint. Controller and worker resource limits are
+explicit, and all setup failures roll back unpublished processes and mapped
+pages.
+
+The init image also probes invalid IPC output, invalid wait status, an unmapped
+image, and a malformed ELF image; each must return a negative syscall result
+before the valid child spawn. The loader rejects non-page-aligned or
+overlapping segments before mapping and preserves distinct invalid-image and
+resource errors through the spawn ABI.
 
 ## Remaining Stage 2 work
 

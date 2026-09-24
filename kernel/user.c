@@ -149,7 +149,7 @@ static uint64_t build_child_elf(void) {
  * later service binaries will use. */
 static uint64_t build_init_code(uint8_t *code) {
     uint64_t offset=0;
-    uint64_t failure_jumps[4];
+    uint64_t failure_jumps[5];
     uint32_t failure_jump_count=0;
     uint64_t failure_label;
 
@@ -178,6 +178,21 @@ static uint64_t build_init_code(uint8_t *code) {
     put_u64(&code[offset],0x100ULL); offset+=8;
     code[offset++]=0x48; code[offset++]=0x31; code[offset++]=0xd2;
     code[offset++]=0x49; code[offset++]=0x31; code[offset++]=0xd2;
+    code[offset++]=0xcd; code[offset++]=0x80;
+    code[offset++]=0x48; code[offset++]=0x85; code[offset++]=0xc0;
+    failure_jumps[failure_jump_count++]=offset;
+    code[offset++]=0x0f; code[offset++]=0x89;
+    put_u32(&code[offset],0); offset+=4;
+
+    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_SPAWN); offset+=4;
+    code[offset++]=0x48; code[offset++]=0xbf;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE); offset+=8;
+    code[offset++]=0xbe;
+    put_u32(&code[offset],(uint32_t)(sizeof(init_message)-1U)); offset+=4;
+    code[offset++]=0x48; code[offset++]=0x31; code[offset++]=0xd2;
+    code[offset++]=0x41; code[offset++]=0xba; put_u32(&code[offset],0); offset+=4;
+    code[offset++]=0x4d; code[offset++]=0x31; code[offset++]=0xc0;
+    code[offset++]=0x4d; code[offset++]=0x31; code[offset++]=0xc9;
     code[offset++]=0xcd; code[offset++]=0x80;
     code[offset++]=0x48; code[offset++]=0x85; code[offset++]=0xc0;
     failure_jumps[failure_jump_count++]=offset;
@@ -292,9 +307,29 @@ static uint64_t build_init_elf(void) {
 
 static uint64_t build_service_code(uint8_t *code,
                                    zeroos_ipc_handle_t handle,
+                                   uint64_t target_pid,
                                    uint64_t message_length,
                                    uint64_t exit_status) {
     uint64_t offset=0;
+    uint64_t permission_failure_jump;
+
+    /* A transferred worker capability deliberately lacks GRANT. Attempting
+     * to delegate it must fail before the service enters its blocking receive. */
+    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_IPC_GRANT); offset+=4;
+    code[offset++]=0x48; code[offset++]=0xbf;
+    put_u64(&code[offset],handle); offset+=8;
+    code[offset++]=0x48; code[offset++]=0xbe;
+    put_u64(&code[offset],target_pid); offset+=8;
+    code[offset++]=0x48; code[offset++]=0xba;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE+
+            SERVICE_RECEIVE_LENGTH_OFFSET); offset+=8;
+    code[offset++]=0x41; code[offset++]=0xba;
+    put_u32(&code[offset],ZEROOS_IPC_RIGHT_SEND); offset+=4;
+    code[offset++]=0xcd; code[offset++]=0x80;
+    code[offset++]=0x48; code[offset++]=0x85; code[offset++]=0xc0;
+    permission_failure_jump=offset;
+    code[offset++]=0x0f; code[offset++]=0x89;
+    put_u32(&code[offset],0); offset+=4;
 
     /* Block until the supervisor has observed this task in the scheduler's
      * wait state. The reply remains in a separate data-page slot because the
@@ -332,10 +367,19 @@ static uint64_t build_service_code(uint8_t *code,
     code[offset++]=0xbf; put_u32(&code[offset],(uint32_t)exit_status); offset+=4;
     code[offset++]=0xcd; code[offset++]=0x80;
     code[offset++]=0xf4;
+
+    uint64_t permission_failure_label=offset;
+    put_u32(&code[permission_failure_jump+2],
+            (uint32_t)(permission_failure_label-(permission_failure_jump+6ULL)));
+    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_EXIT); offset+=4;
+    code[offset++]=0xbf; put_u32(&code[offset],9); offset+=4;
+    code[offset++]=0xcd; code[offset++]=0x80;
+    code[offset++]=0xf4;
     return offset;
 }
 
 static uint64_t build_service_elf(zeroos_ipc_handle_t handle,
+                                  uint64_t target_pid,
                                   const char *message,
                                   uint64_t message_length,
                                   uint64_t exit_status) {
@@ -384,7 +428,7 @@ static uint64_t build_service_elf(zeroos_ipc_handle_t handle,
     data_segment->alignment=VMM_PAGE_SIZE;
 
     (void)build_service_code(service_elf_image+SERVICE_ELF_ENTRY_OFFSET,
-                             handle,message_length,exit_status);
+                             handle,target_pid,message_length,exit_status);
     for (uint64_t i=0; i<message_length; ++i)
         service_elf_image[SERVICE_ELF_DATA_OFFSET+SERVICE_ACK_OFFSET+i]=
             (uint8_t)message[i];
@@ -475,7 +519,7 @@ static int userspace_start_service(uint64_t attempt) {
         message_length=sizeof(service_message_two)-1U;
         request_length=sizeof(service_request_two)-1U;
     }
-    image_size=build_service_elf(0,message,message_length,
+    image_size=build_service_elf(0,0,message,message_length,
                                  attempt==1 ? 7U : 0U);
     if (!image_size)
         return -1;
@@ -501,8 +545,8 @@ static int userspace_start_service(uint64_t attempt) {
                          ZEROOS_IPC_RIGHT_CLOSE,
                          &worker_handle)!=0)
         goto fail;
-    image_size=build_service_elf(worker_handle,message,message_length,
-                                 attempt==1 ? 7U : 0U);
+    image_size=build_service_elf(worker_handle,controller->pid,message,
+                                 message_length,attempt==1 ? 7U : 0U);
     if (!image_size ||
         elf_load_image(worker,service_elf_image,image_size,&load_result)!=0 ||
         load_result.entry!=ZEROOS_USER_CODE_BASE+SERVICE_ELF_ENTRY_OFFSET)
@@ -623,6 +667,7 @@ static int userspace_finish_service(void) {
     if (service_attempt==1) {
         if (status!=7)
             return -1;
+        serial_write_public("ZEROOS: service worker grant denial passed.\n");
         serial_write_public("ZEROOS: service manager restarted failed service after IPC delivery.\n");
         if (userspace_start_service(2)!=0)
             return -1;
@@ -765,7 +810,7 @@ int userspace_service_step(void) {
     if (status!=0)
         return -1;
     init_reaped=1;
-    serial_write_public("ZEROOS: userspace negative syscall/fault probes passed.\n");
+    serial_write_public("ZEROOS: userspace negative syscall/fault/malformed-ELF probes passed.\n");
     serial_write_public("ZEROOS: init userspace process reaped cleanly.\n");
     return 0;
 }

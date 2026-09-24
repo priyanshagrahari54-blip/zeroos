@@ -4,6 +4,7 @@
 #include "user.h"
 #include "vmm.h"
 #include "sync.h"
+#include "syscall.h"
 
 struct elf_load_segment {
     struct zeroos_elf64_phdr header;
@@ -31,6 +32,11 @@ static int canonical_address(uint64_t address) {
     uint64_t sign=(address>>47)&1ULL;
     uint64_t upper=address>>48;
     return sign ? upper==0xffffULL : upper==0;
+}
+
+static int align_down_page(uint64_t value, uint64_t *result) {
+    *result=value&~(VMM_PAGE_SIZE-1ULL);
+    return 0;
 }
 
 static int align_up_page(uint64_t value, uint64_t *result) {
@@ -81,7 +87,7 @@ static int elf_collect(const void *image, uint64_t image_size,
     uint8_t executable=0;
 
     if (!image || image_size<sizeof(*header))
-        return -1;
+        return -ZEROOS_EINVAL;
     header=(const struct zeroos_elf64_ehdr *)image;
     if (header->ident[0]!=0x7f || header->ident[1]!='E' ||
         header->ident[2]!='L' || header->ident[3]!='F' ||
@@ -93,11 +99,11 @@ static int elf_collect(const void *image, uint64_t image_size,
         header->ehsize!=sizeof(*header) ||
         header->phentsize!=sizeof(struct zeroos_elf64_phdr) ||
         header->phnum==0 || header->phnum>ZEROOS_ELF_MAX_PROGRAM_HEADERS)
-        return -1;
+        return -ZEROOS_EINVAL;
     if (header->phoff>image_size ||
         (uint64_t)header->phnum*header->phentsize>
             image_size-header->phoff)
-        return -1;
+        return -ZEROOS_EINVAL;
     phdr_bytes=(uint64_t)header->phnum*header->phentsize;
     phdr_end=header->phoff+phdr_bytes;
     (void)phdr_end;
@@ -112,7 +118,7 @@ static int elf_collect(const void *image, uint64_t image_size,
         uint64_t page_count;
 
         if (program->type==ZEROOS_ELF_PT_INTERP)
-            return -1; /* No implicit dynamic loader policy in v1. */
+            return -ZEROOS_EINVAL; /* No implicit dynamic loader policy in v1. */
         if (program->type!=ZEROOS_ELF_PT_LOAD)
             continue;
         if (segment_count>=ZEROOS_ELF_MAX_PROGRAM_HEADERS ||
@@ -121,21 +127,21 @@ static int elf_collect(const void *image, uint64_t image_size,
             program->file_size>image_size-program->offset ||
             ((program->flags&ZEROOS_ELF_PF_W) &&
              (program->flags&ZEROOS_ELF_PF_X)))
-            return -1;
+            return -ZEROOS_EINVAL;
         if (program->alignment>1ULL &&
             ((program->alignment&(program->alignment-1ULL))!=0 ||
              ((program->virtual_address-program->offset)&
               (program->alignment-1ULL))!=0))
-            return -1;
+            return -ZEROOS_EINVAL;
         if (range_end(program->virtual_address,program->memory_size,
                       &memory_end)!=0 ||
-            align_up_page(program->virtual_address,&page_start)!=0 ||
+            align_down_page(program->virtual_address,&page_start)!=0 ||
             align_up_page(memory_end,&page_end)!=0 ||
             page_end<=page_start)
-            return -1;
+            return -ZEROOS_EINVAL;
         page_count=(page_end-page_start)/VMM_PAGE_SIZE;
         if (page_count==0 || total_pages>ZEROOS_ELF_MAX_TOTAL_PAGES-page_count)
-            return -1;
+            return -ZEROOS_EINVAL;
         total_pages+=page_count;
         if (page_start<minimum_page)
             minimum_page=page_start;
@@ -150,11 +156,11 @@ static int elf_collect(const void *image, uint64_t image_size,
     }
 
     if (!segment_count || !executable || minimum_page==~0ULL)
-        return -1;
+        return -ZEROOS_EINVAL;
     uint64_t load_bias=0;
     if (header->type==ZEROOS_ELF_ET_DYN) {
         if (minimum_page>ZEROOS_USER_BASE)
-            return -1;
+            return -ZEROOS_EINVAL;
         load_bias=ZEROOS_USER_BASE-minimum_page;
     }
 
@@ -162,7 +168,7 @@ static int elf_collect(const void *image, uint64_t image_size,
     uint64_t adjusted_high=0;
     uint64_t entry;
     if (range_end(header->entry,load_bias,&entry)!=0)
-        return -1;
+        return -ZEROOS_EINVAL;
     /* The expression above computes entry + bias without accepting wrap.
      * It is intentionally separate from segment validation for ET_EXEC. */
     for (uint32_t i=0; i<segment_count; ++i) {
@@ -171,7 +177,7 @@ static int elf_collect(const void *image, uint64_t image_size,
         if (range_end(segment->page_start,load_bias,&start)!=0 ||
             range_end(segment->page_end,load_bias,&end)!=0 ||
             end<=start || !user_page(start) || !user_page(end-1ULL))
-            return -1;
+            return -ZEROOS_EINVAL;
         segment->page_start=start;
         segment->page_end=end;
         if (start<adjusted_low)
@@ -181,7 +187,7 @@ static int elf_collect(const void *image, uint64_t image_size,
         for (uint32_t j=0; j<i; ++j) {
             if (segment->page_start<segments[j].page_end &&
                 segments[j].page_start<segment->page_end)
-                return -1;
+                return -ZEROOS_EINVAL;
         }
         if (segment->header.flags&ZEROOS_ELF_PF_X) {
             uint64_t segment_start;
@@ -198,7 +204,7 @@ static int elf_collect(const void *image, uint64_t image_size,
         }
     }
     if (executable!=2 || !canonical_address(entry))
-        return -1;
+        return -ZEROOS_EINVAL;
 
     *segment_count_out=segment_count;
     *load_bias_out=load_bias;
@@ -239,14 +245,14 @@ int elf_load_image(struct process *process, const void *image,
     uint64_t mapped_index=0;
 
     if (!elf_workspace.initialized || !process || !image || !result)
-        return -1;
+        return -ZEROOS_EINVAL;
     lock_flags=spin_lock_irqsave(&elf_workspace.lock);
     for (uint32_t i=0; i<sizeof(elf_workspace.mapped); ++i)
         mapped[i]=0;
     if (elf_collect(image,image_size,segments,&segment_count,&load_bias,
                     &entry,&lowest,&highest,&total_pages)!=0) {
         spin_unlock_irqrestore(&elf_workspace.lock,lock_flags);
-        return -1;
+        return -ZEROOS_EINVAL;
     }
 
     for (uint32_t i=0; i<segment_count; ++i) {
@@ -317,7 +323,7 @@ int elf_load_image(struct process *process, const void *image,
 fail:
     elf_unmap_mapped(process,segments,segment_count,mapped);
     spin_unlock_irqrestore(&elf_workspace.lock,lock_flags);
-    return -1;
+    return -ZEROOS_ENOMEM;
 }
 
 int elf_unload_image(struct process *process, const void *image,
@@ -331,18 +337,21 @@ int elf_unload_image(struct process *process, const void *image,
     uint64_t highest=0;
     uint64_t total_pages=0;
     if (!elf_workspace.initialized || !process)
-        return -1;
+        return -ZEROOS_EINVAL;
     lock_flags=spin_lock_irqsave(&elf_workspace.lock);
     if (elf_collect(image,image_size,segments,&segment_count,&load_bias,
                     &entry,&lowest,&highest,&total_pages)!=0) {
         spin_unlock_irqrestore(&elf_workspace.lock,lock_flags);
-        return -1;
+        return -ZEROOS_EINVAL;
     }
     for (uint32_t i=0; i<segment_count; ++i)
         for (uint64_t address=segments[i].page_start;
              address<segments[i].page_end;
              address+=VMM_PAGE_SIZE)
-            (void)process_address_space_unmap_page(process,address);
+            if (process_address_space_unmap_page(process,address)!=0) {
+                spin_unlock_irqrestore(&elf_workspace.lock,lock_flags);
+                return -ZEROOS_EBUSY;
+            }
     spin_unlock_irqrestore(&elf_workspace.lock,lock_flags);
     return 0;
 }
