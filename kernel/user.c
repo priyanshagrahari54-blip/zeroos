@@ -1193,6 +1193,7 @@ int userspace_system_init(void) {
     if (userspace_initialized)
         return 0;
     if (syscall_debug_validate()!=0 || ipc_debug_validate()!=0 ||
+        shmem_debug_validate()!=0 ||
         elf_debug_validate()!=0 || elf_system_init()!=0 ||
         exec_system_init()!=0 || exec_debug_validate()!=0)
         return -1;

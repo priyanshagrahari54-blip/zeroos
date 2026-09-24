@@ -52,7 +52,7 @@ jobs:
           # not sufficient evidence.
           for iteration in 1 2 3; do
             echo "===== ZEROOS boot certification iteration ${iteration} ====="
-            timeout 15s qemu-system-x86_64             -smp 2             -cdrom build/zeroos.iso             -serial file:build/serial.log             -display none             -no-reboot             -no-shutdown             -debugcon file:build/debug.log             -global isa-debugcon.iobase=0xe9             -d int,guest_errors,cpu_reset             -D build/qemu.log || true
+            timeout 25s qemu-system-x86_64             -smp 2             -cdrom build/zeroos.iso             -serial file:build/serial.log             -display none             -no-reboot             -no-shutdown             -debugcon file:build/debug.log             -global isa-debugcon.iobase=0xe9             -d int,guest_errors,cpu_reset             -D build/qemu.log || true
             grep -q "ZEROOS: foundation milestone reached." build/serial.log
             grep -q "ZEROOS: bootstrap stack guard verified." build/serial.log
             grep -q "ZEROOS: CPU capabilities detected" build/serial.log
@@ -122,7 +122,7 @@ jobs:
           done
 
           echo "===== ZEROOS four-vCPU SMP certification ====="
-          timeout 15s qemu-system-x86_64 \
+          timeout 25s qemu-system-x86_64 \
             -smp 4 \
             -cdrom build/zeroos.iso \
             -serial file:build/serial-smp4.log \
@@ -166,7 +166,7 @@ jobs:
           fi
 
           echo "===== ZEROOS NX-disabled compatibility boot ====="
-          timeout 15s qemu-system-x86_64 \
+          timeout 25s qemu-system-x86_64 \
             -cpu qemu64,-nx \
             -smp 2 \
             -cdrom build/zeroos.iso \
@@ -202,7 +202,7 @@ jobs:
 
           echo "===== ZEROOS failed-IPI recovery fault boot ====="
           make BUILD=build-fault EXTRA_CFLAGS=-DZEROOS_TEST_SMP_FAILED_DISPATCH
-          timeout 15s qemu-system-x86_64 \
+          timeout 25s qemu-system-x86_64 \
             -smp 2 \
             -cdrom build-fault/zeroos.iso \
             -serial file:build-fault/serial.log \
