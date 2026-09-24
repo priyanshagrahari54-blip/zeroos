@@ -270,15 +270,26 @@ creation, fills the bounded IPC endpoint table, verifies the expected
 rejects non-page-aligned or overlapping segments before mapping and preserves
 distinct invalid-image and resource errors through the spawn ABI.
 
+After init and the IPC service recovery path, a separate Ring-3 service-manager
+process is published. It owns an explicit child limit, launches a worker,
+waits for its unhealthy exit status, patches only manager-owned image data for a
+fresh restart, launches a new child generation, and requires a healthy exit
+before publishing the dependency/restart certificate. The manager then exits
+cleanly and is reaped by the kernel supervisor. This adds a real userspace
+parent/child dependency and restart lifecycle to the bootstrap monitor's
+capability-service test; it does not yet claim a general dynamic service
+registry or long-running daemon protocol.
+
 ## Remaining Stage 2 work
 
 This is not the Stage 2 exit claim. The remaining production gates are:
 
 - ELF process construction with argv/env/auxv, executable identity and a
   defined relocation/dynamic-loader policy;
-- a persistent userspace init/service-manager process rather than only the
-  bootstrap supervisor, including dependency ordering, health checks, crash
-  diagnostics, shutdown policy and multi-service resource accounting;
+- a persistent userspace init/service-manager daemon and general service
+  registry rather than the bounded bootstrap manager process, including
+  dependency graphs, health checks, crash diagnostics, shutdown policy and
+  multi-service resource accounting;
 - capability credentials/rights policy and a public userspace runtime library;
 - byte-stream pipe semantics and socket foundations built on the
   bounded/backpressure and cancellation contracts (the current record-pipe,

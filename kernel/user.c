@@ -21,6 +21,10 @@ static struct process *service_process;
 static struct thread *service_thread;
 static struct process *service_controller;
 static zeroos_ipc_handle_t service_controller_handle;
+static struct process *manager_process;
+static struct thread *manager_thread;
+static uint8_t manager_started;
+static uint8_t manager_reaped;
 static zeroos_ipc_handle_t service_controller_peer;
 static uint64_t service_attempt;
 static uint64_t service_expected_length;
@@ -94,6 +98,28 @@ static const char service_request_two[]=
 
 #define SERVICE_ACK_OFFSET 0x80ULL
 #define SERVICE_RECEIVE_LENGTH_OFFSET 0x100ULL
+
+#define MANAGER_ELF_DATA_OFFSET 0x1000ULL
+#define MANAGER_ELF_ENTRY_OFFSET 0x100ULL
+#define MANAGER_WORKER_FILE_OFFSET 0x2000ULL
+#define MANAGER_WORKER_DATA_OFFSET 0x1000ULL
+#define MANAGER_WORKER_STATUS_OFFSET 0x80ULL
+#define MANAGER_STATUS_OFFSET 0x180ULL
+#define MANAGER_SUCCESS_OFFSET 0x200ULL
+#define MANAGER_DATA_FILE_END 0x4000ULL
+#define MANAGER_ELF_DATA_MEMORY_SIZE \
+    ((MANAGER_DATA_FILE_END-MANAGER_ELF_DATA_OFFSET+VMM_PAGE_SIZE-1ULL)&~(VMM_PAGE_SIZE-1ULL))
+#define MANAGER_ELF_IMAGE_SIZE MANAGER_DATA_FILE_END
+#define MANAGER_WORKER_ELF_IMAGE_SIZE (MANAGER_WORKER_DATA_OFFSET+0x81ULL)
+static uint8_t manager_elf_image[MANAGER_ELF_IMAGE_SIZE];
+static uint8_t manager_worker_elf_image[MANAGER_WORKER_ELF_IMAGE_SIZE];
+
+static const char manager_message[]=
+    "ZEROOS: userspace service manager entered Ring 3.\n";
+static const char manager_success_message[]=
+    "ZEROOS: userspace service manager dependency/restart lifecycle passed.\n";
+static const char manager_worker_message[]=
+    "ZEROOS: isolated manager worker executed.\n";
 
 static void put_u32(uint8_t *buffer, uint32_t value) {
     buffer[0]=(uint8_t)value;
@@ -594,6 +620,232 @@ static uint64_t build_init_elf(void) {
     for (uint64_t i=0; i<sizeof(init_child_environment_zero); ++i)
         init_elf_image[INIT_ELF_ENV0_OFFSET+i]=init_child_environment_zero[i];
     return INIT_ELF_IMAGE_SIZE;
+}
+
+static uint64_t build_manager_worker_code(uint8_t *code) {
+    uint64_t offset=0;
+
+    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_WRITE); offset+=4;
+    code[offset++]=0xbf; put_u32(&code[offset],1); offset+=4;
+    code[offset++]=0x48; code[offset++]=0xbe;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE); offset+=8;
+    code[offset++]=0xba;
+    put_u32(&code[offset],(uint32_t)(sizeof(manager_worker_message)-1U)); offset+=4;
+    code[offset++]=0xcd; code[offset++]=0x80;
+    code[offset++]=0x48; code[offset++]=0xa1;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE+
+            MANAGER_WORKER_STATUS_OFFSET); offset+=8;
+    code[offset++]=0x48; code[offset++]=0x89; code[offset++]=0xc7;
+    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_EXIT); offset+=4;
+    code[offset++]=0xcd; code[offset++]=0x80;
+    code[offset++]=0xf4;
+    return offset;
+}
+
+static uint64_t build_manager_worker_elf(void) {
+    struct zeroos_elf64_ehdr *header=
+        (struct zeroos_elf64_ehdr *)(uint64_t)manager_worker_elf_image;
+    struct zeroos_elf64_phdr *code_segment=
+        (struct zeroos_elf64_phdr *)(uint64_t)(manager_worker_elf_image+
+                                               sizeof(*header));
+    struct zeroos_elf64_phdr *data_segment=code_segment+1;
+    for (uint64_t i=0; i<sizeof(manager_worker_elf_image); ++i)
+        manager_worker_elf_image[i]=0;
+    header->ident[0]=0x7f;
+    header->ident[1]='E';
+    header->ident[2]='L';
+    header->ident[3]='F';
+    header->ident[4]=2;
+    header->ident[5]=1;
+    header->ident[6]=1;
+    header->type=ZEROOS_ELF_ET_EXEC;
+    header->machine=ZEROOS_ELF_EM_X86_64;
+    header->version=1;
+    header->entry=ZEROOS_USER_CODE_BASE+MANAGER_ELF_ENTRY_OFFSET;
+    header->phoff=sizeof(*header);
+    header->ehsize=sizeof(*header);
+    header->phentsize=sizeof(*code_segment);
+    header->phnum=2;
+    code_segment->type=ZEROOS_ELF_PT_LOAD;
+    code_segment->flags=ZEROOS_ELF_PF_R|ZEROOS_ELF_PF_X;
+    code_segment->offset=0;
+    code_segment->virtual_address=ZEROOS_USER_CODE_BASE;
+    code_segment->file_size=VMM_PAGE_SIZE;
+    code_segment->memory_size=VMM_PAGE_SIZE;
+    code_segment->alignment=VMM_PAGE_SIZE;
+    data_segment->type=ZEROOS_ELF_PT_LOAD;
+    data_segment->flags=ZEROOS_ELF_PF_R|ZEROOS_ELF_PF_W;
+    data_segment->offset=MANAGER_WORKER_DATA_OFFSET;
+    data_segment->virtual_address=ZEROOS_USER_DATA_BASE;
+    data_segment->file_size=MANAGER_WORKER_STATUS_OFFSET+1ULL;
+    data_segment->memory_size=VMM_PAGE_SIZE;
+    data_segment->alignment=VMM_PAGE_SIZE;
+    (void)build_manager_worker_code(manager_worker_elf_image+
+                                    MANAGER_ELF_ENTRY_OFFSET);
+    for (uint64_t i=0; i<sizeof(manager_worker_message)-1U; ++i)
+        manager_worker_elf_image[MANAGER_WORKER_DATA_OFFSET+i]=
+            (uint8_t)manager_worker_message[i];
+    manager_worker_elf_image[MANAGER_WORKER_DATA_OFFSET+
+                              MANAGER_WORKER_STATUS_OFFSET]=7;
+    return sizeof(manager_worker_elf_image);
+}
+
+static void manager_emit_spawn(uint8_t *code, uint64_t *offset,
+                               uint64_t child_size) {
+    uint64_t cursor=*offset;
+    code[cursor++]=0xb8; put_u32(&code[cursor],ZEROOS_SYS_SPAWN); cursor+=4;
+    code[cursor++]=0x48; code[cursor++]=0xbf;
+    put_u64(&code[cursor],ZEROOS_USER_DATA_BASE+
+            (MANAGER_WORKER_FILE_OFFSET-MANAGER_ELF_DATA_OFFSET)); cursor+=8;
+    code[cursor++]=0x48; code[cursor++]=0xbe;
+    put_u64(&code[cursor],child_size); cursor+=8;
+    code[cursor++]=0x48; code[cursor++]=0x31; code[cursor++]=0xd2;
+    code[cursor++]=0x45; code[cursor++]=0x31; code[cursor++]=0xd2;
+    code[cursor++]=0x45; code[cursor++]=0x31; code[cursor++]=0xc0;
+    code[cursor++]=0x45; code[cursor++]=0x31; code[cursor++]=0xc9;
+    code[cursor++]=0xcd; code[cursor++]=0x80;
+    *offset=cursor;
+}
+
+static void manager_emit_wait(uint8_t *code, uint64_t *offset) {
+    uint64_t cursor=*offset;
+    code[cursor++]=0x48; code[cursor++]=0x89; code[cursor++]=0xc7;
+    code[cursor++]=0xb8; put_u32(&code[cursor],ZEROOS_SYS_WAIT); cursor+=4;
+    code[cursor++]=0x48; code[cursor++]=0xbb;
+    put_u64(&code[cursor],ZEROOS_USER_DATA_BASE+MANAGER_STATUS_OFFSET); cursor+=8;
+    code[cursor++]=0x48; code[cursor++]=0x89; code[cursor++]=0xde;
+    code[cursor++]=0x48; code[cursor++]=0x31; code[cursor++]=0xd2;
+    code[cursor++]=0x45; code[cursor++]=0x31; code[cursor++]=0xd2;
+    code[cursor++]=0xcd; code[cursor++]=0x80;
+    *offset=cursor;
+}
+
+static uint64_t build_manager_code(uint8_t *code, uint64_t child_size) {
+    uint64_t offset=0;
+    uint64_t failure_jumps[8];
+    uint32_t failure_jump_count=0;
+    uint64_t failure_label;
+
+    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_WRITE); offset+=4;
+    code[offset++]=0xbf; put_u32(&code[offset],1); offset+=4;
+    code[offset++]=0x48; code[offset++]=0xbe;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE); offset+=8;
+    code[offset++]=0xba;
+    put_u32(&code[offset],(uint32_t)(sizeof(manager_message)-1U)); offset+=4;
+    code[offset++]=0xcd; code[offset++]=0x80;
+
+    manager_emit_spawn(code,&offset,child_size);
+    code[offset++]=0x48; code[offset++]=0x85; code[offset++]=0xc0;
+    failure_jumps[failure_jump_count++]=offset;
+    code[offset++]=0x0f; code[offset++]=0x88; put_u32(&code[offset],0); offset+=4;
+    manager_emit_wait(code,&offset);
+    code[offset++]=0x48; code[offset++]=0x85; code[offset++]=0xc0;
+    failure_jumps[failure_jump_count++]=offset;
+    code[offset++]=0x0f; code[offset++]=0x88; put_u32(&code[offset],0); offset+=4;
+    code[offset++]=0x48; code[offset++]=0xbb;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE+MANAGER_STATUS_OFFSET); offset+=8;
+    code[offset++]=0x48; code[offset++]=0x83; code[offset++]=0x3b; code[offset++]=7;
+    failure_jumps[failure_jump_count++]=offset;
+    code[offset++]=0x0f; code[offset++]=0x85; put_u32(&code[offset],0); offset+=4;
+
+    /* The first worker is intentionally unhealthy. Restarting it uses the
+     * same image and changes only its declared exit status in manager-owned
+     * data, proving that failure recovery does not reuse a stale child PID or
+     * address space. */
+    code[offset++]=0x48; code[offset++]=0xb8;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE+
+            (MANAGER_WORKER_FILE_OFFSET-MANAGER_ELF_DATA_OFFSET+
+             MANAGER_WORKER_DATA_OFFSET+MANAGER_WORKER_STATUS_OFFSET)); offset+=8;
+    code[offset++]=0xc6; code[offset++]=0x00; code[offset++]=0;
+
+    manager_emit_spawn(code,&offset,child_size);
+    code[offset++]=0x48; code[offset++]=0x85; code[offset++]=0xc0;
+    failure_jumps[failure_jump_count++]=offset;
+    code[offset++]=0x0f; code[offset++]=0x88; put_u32(&code[offset],0); offset+=4;
+    manager_emit_wait(code,&offset);
+    code[offset++]=0x48; code[offset++]=0x85; code[offset++]=0xc0;
+    failure_jumps[failure_jump_count++]=offset;
+    code[offset++]=0x0f; code[offset++]=0x88; put_u32(&code[offset],0); offset+=4;
+    code[offset++]=0x48; code[offset++]=0xbb;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE+MANAGER_STATUS_OFFSET); offset+=8;
+    code[offset++]=0x48; code[offset++]=0x83; code[offset++]=0x3b; code[offset++]=0;
+    failure_jumps[failure_jump_count++]=offset;
+    code[offset++]=0x0f; code[offset++]=0x85; put_u32(&code[offset],0); offset+=4;
+
+    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_WRITE); offset+=4;
+    code[offset++]=0xbf; put_u32(&code[offset],1); offset+=4;
+    code[offset++]=0x48; code[offset++]=0xbe;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE+MANAGER_SUCCESS_OFFSET); offset+=8;
+    code[offset++]=0xba;
+    put_u32(&code[offset],(uint32_t)(sizeof(manager_success_message)-1U)); offset+=4;
+    code[offset++]=0xcd; code[offset++]=0x80;
+    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_EXIT); offset+=4;
+    code[offset++]=0xbf; put_u32(&code[offset],0); offset+=4;
+    code[offset++]=0xcd; code[offset++]=0x80;
+    code[offset++]=0xf4;
+
+    failure_label=offset;
+    for (uint32_t i=0; i<failure_jump_count; ++i)
+        put_u32(&code[failure_jumps[i]+2],
+                (uint32_t)(failure_label-(failure_jumps[i]+6ULL)));
+    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_EXIT); offset+=4;
+    code[offset++]=0xbf; put_u32(&code[offset],9); offset+=4;
+    code[offset++]=0xcd; code[offset++]=0x80;
+    code[offset++]=0xf4;
+    return offset;
+}
+
+static uint64_t build_manager_elf(void) {
+    struct zeroos_elf64_ehdr *header=
+        (struct zeroos_elf64_ehdr *)(uint64_t)manager_elf_image;
+    struct zeroos_elf64_phdr *code_segment=
+        (struct zeroos_elf64_phdr *)(uint64_t)(manager_elf_image+
+                                               sizeof(*header));
+    struct zeroos_elf64_phdr *data_segment=code_segment+1;
+    uint64_t child_size=build_manager_worker_elf();
+    for (uint64_t i=0; i<sizeof(manager_elf_image); ++i)
+        manager_elf_image[i]=0;
+    header->ident[0]=0x7f;
+    header->ident[1]='E';
+    header->ident[2]='L';
+    header->ident[3]='F';
+    header->ident[4]=2;
+    header->ident[5]=1;
+    header->ident[6]=1;
+    header->type=ZEROOS_ELF_ET_EXEC;
+    header->machine=ZEROOS_ELF_EM_X86_64;
+    header->version=1;
+    header->entry=ZEROOS_USER_CODE_BASE+MANAGER_ELF_ENTRY_OFFSET;
+    header->phoff=sizeof(*header);
+    header->ehsize=sizeof(*header);
+    header->phentsize=sizeof(*code_segment);
+    header->phnum=2;
+    code_segment->type=ZEROOS_ELF_PT_LOAD;
+    code_segment->flags=ZEROOS_ELF_PF_R|ZEROOS_ELF_PF_X;
+    code_segment->offset=0;
+    code_segment->virtual_address=ZEROOS_USER_CODE_BASE;
+    code_segment->file_size=VMM_PAGE_SIZE;
+    code_segment->memory_size=VMM_PAGE_SIZE;
+    code_segment->alignment=VMM_PAGE_SIZE;
+    data_segment->type=ZEROOS_ELF_PT_LOAD;
+    data_segment->flags=ZEROOS_ELF_PF_R|ZEROOS_ELF_PF_W;
+    data_segment->offset=MANAGER_ELF_DATA_OFFSET;
+    data_segment->virtual_address=ZEROOS_USER_DATA_BASE;
+    data_segment->file_size=MANAGER_DATA_FILE_END-MANAGER_ELF_DATA_OFFSET;
+    data_segment->memory_size=MANAGER_ELF_DATA_MEMORY_SIZE;
+    data_segment->alignment=VMM_PAGE_SIZE;
+    if (build_manager_code(manager_elf_image+MANAGER_ELF_ENTRY_OFFSET,
+                           child_size)>VMM_PAGE_SIZE)
+        return 0;
+    for (uint64_t i=0; i<sizeof(manager_message)-1U; ++i)
+        manager_elf_image[MANAGER_ELF_DATA_OFFSET+i]=(uint8_t)manager_message[i];
+    for (uint64_t i=0; i<sizeof(manager_success_message)-1U; ++i)
+        manager_elf_image[MANAGER_ELF_DATA_OFFSET+MANAGER_SUCCESS_OFFSET+i]=
+            (uint8_t)manager_success_message[i];
+    for (uint64_t i=0; i<child_size; ++i)
+        manager_elf_image[MANAGER_WORKER_FILE_OFFSET+i]=
+            manager_worker_elf_image[i];
+    return MANAGER_ELF_IMAGE_SIZE;
 }
 
 static uint64_t build_service_code(uint8_t *code,
@@ -1309,6 +1561,62 @@ static void userspace_release_page(struct process *process,
         page_free(physical);
 }
 
+static int userspace_start_manager(void) {
+    uint64_t image_size=build_manager_elf();
+    uint64_t pid=0;
+    thread_id_t tid=0;
+    struct process *process=0;
+    struct thread *thread=0;
+    struct zeroos_elf_load_result load_result={0};
+    void *stack_page=0;
+    uint8_t image_loaded=0;
+    uint8_t stack_mapped=0;
+
+    if (!image_size || manager_started)
+        return manager_started ? 0 : -1;
+    if (process_create(0,&pid)!=0)
+        return -1;
+    process=process_lookup(pid);
+    if (!process || process_set_limits(process,1,2,8)!=0)
+        goto fail;
+    if (elf_load_image(process,manager_elf_image,image_size,&load_result)!=0 ||
+        load_result.entry!=ZEROOS_USER_CODE_BASE+MANAGER_ELF_ENTRY_OFFSET)
+        goto fail;
+    image_loaded=1;
+    stack_page=page_alloc_zero();
+    if (!stack_page ||
+        process_address_space_map_page(process,ZEROOS_USER_STACK_PAGE,
+                                       (uint64_t)stack_page,
+                                       VMM_USER|VMM_WRITABLE|VMM_NO_EXECUTE)!=0)
+        goto fail;
+    page_free(stack_page);
+    stack_page=0;
+    stack_mapped=1;
+    if (thread_create_user(process,load_result.entry,
+                           ZEROOS_USER_STACK_TOP,&tid)!=0)
+        goto fail;
+    thread=thread_lookup(tid);
+    if (!thread)
+        goto fail;
+    manager_process=process;
+    manager_thread=thread;
+    manager_started=1;
+    manager_reaped=0;
+    serial_write_public("ZEROOS: userspace service manager process published.\n");
+    return 0;
+
+fail:
+    if (stack_page)
+        page_free(stack_page);
+    if (stack_mapped && process)
+        userspace_release_page(process,ZEROOS_USER_STACK_PAGE,0);
+    if (image_loaded && process)
+        (void)elf_unload_image(process,manager_elf_image,image_size);
+    if (process && process->state==PROCESS_NEW)
+        (void)process_abort_new(process);
+    return -1;
+}
+
 static int userspace_start_service(uint64_t attempt) {
     const char *message;
     uint64_t message_length;
@@ -1523,6 +1831,10 @@ int userspace_system_init(void) {
     service_controller=0;
     service_controller_handle=0;
     service_controller_peer=0;
+    manager_process=0;
+    manager_thread=0;
+    manager_started=0;
+    manager_reaped=0;
     service_attempt=0;
     service_expected_length=0;
     service_request_length=0;
@@ -1645,36 +1957,53 @@ int user_thread_enter(struct thread *thread) {
 
 int userspace_service_step(void) {
     uint64_t status=0;
-    if (!init_started || init_reaped)
+    if (!init_started)
         return 0;
-    if (service_started) {
-        if (userspace_finish_service()!=0)
-            return -1;
-        if (service_started || !service_recovered)
+    if (!init_reaped) {
+        if (service_started) {
+            if (userspace_finish_service()!=0)
+                return -1;
+            if (service_started || !service_recovered)
+                return 0;
+        }
+        if (!init_thread || init_thread->state!=THREAD_ZOMBIE)
             return 0;
+        if (thread_reap(init_thread,&status)!=0)
+            return -1;
+        if (!init_process || init_process->state!=PROCESS_ZOMBIE)
+            return -1;
+        if (vmm_activate_kernel()!=0 || process_reap(init_process,&status)!=0 ||
+            ipc_debug_validate()!=0)
+            return -1;
+        if (status!=0)
+            return -1;
+        init_reaped=1;
+        serial_write_public("ZEROOS: userspace negative syscall/fault/malformed-ELF probes passed.\n");
+        serial_write_public("ZEROOS: init userspace process reaped cleanly.\n");
     }
-    if (!init_thread || init_thread->state!=THREAD_ZOMBIE)
+    if (!service_recovered)
         return 0;
-    if (thread_reap(init_thread,&status)!=0)
+    if (!manager_started)
+        return userspace_start_manager();
+    if (!manager_thread || manager_thread->state!=THREAD_ZOMBIE)
+        return 0;
+    if (thread_reap(manager_thread,&status)!=0 ||
+        !manager_process || manager_process->state!=PROCESS_ZOMBIE ||
+        vmm_activate_kernel()!=0 || process_reap(manager_process,&status)!=0 ||
+        status!=0)
         return -1;
-    if (!init_process || init_process->state!=PROCESS_ZOMBIE)
-        return -1;
-    if (vmm_activate_kernel()!=0 || process_reap(init_process,&status)!=0 ||
-        ipc_debug_validate()!=0)
-        return -1;
-    if (status!=0)
-        return -1;
-    init_reaped=1;
-    serial_write_public("ZEROOS: userspace negative syscall/fault/malformed-ELF probes passed.\n");
-    serial_write_public("ZEROOS: init userspace process reaped cleanly.\n");
+    manager_reaped=1;
+    serial_write_public("ZEROOS: userspace service manager reaped cleanly.\n");
     return 0;
 }
 
 int userspace_debug_validate(void) {
     if (!userspace_initialized)
         return -1;
-    if (init_reaped && (!init_process || !init_thread ||
-                        service_started || !service_recovered))
+    if (init_reaped && (!init_process || !init_thread || service_started ||
+                        !service_recovered))
         return -1;
-    return init_reaped ? 1 : 0;
+    if (manager_started && !manager_reaped)
+        return 0;
+    return init_reaped && service_recovered && manager_reaped ? 1 : 0;
 }
