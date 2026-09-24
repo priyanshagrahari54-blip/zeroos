@@ -632,6 +632,13 @@ static uint64_t build_manager_worker_code(uint8_t *code) {
     code[offset++]=0xba;
     put_u32(&code[offset],(uint32_t)(sizeof(manager_worker_message)-1U)); offset+=4;
     code[offset++]=0xcd; code[offset++]=0x80;
+    /* Give the manager a scheduling window to enter WAIT while this worker
+     * is still live; the parent wake path is therefore exercised as a real
+     * block/wake, not only as an already-zombie poll. */
+    for (uint32_t i=0; i<3; ++i) {
+        code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_YIELD); offset+=4;
+        code[offset++]=0xcd; code[offset++]=0x80;
+    }
     code[offset++]=0x48; code[offset++]=0xa1;
     put_u64(&code[offset],ZEROOS_USER_DATA_BASE+
             MANAGER_WORKER_STATUS_OFFSET); offset+=8;
