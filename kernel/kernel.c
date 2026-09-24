@@ -922,6 +922,12 @@ static void scheduler_probe_monitor(void *argument) {
             if (!userspace_reported && userspace_debug_validate()==1) {
                 userspace_reported=1;
                 serial_write_public("ZEROOS: Ring-3 transition, syscall ABI, and init recovery passed.\n");
+                /* Stage 5A readback: Ring-3 presented the probe pattern
+                 * through the real syscall; verify it through the real
+                 * scanout read path before certifying the contract. */
+                if (fb_present_active() && fb_probe_verify()!=0)
+                    kernel_panic("display present readback mismatch");
+                serial_write_public("ZEROOS: display present contract verified.\n");
             }
         }
 

@@ -39,6 +39,7 @@ enum zeroos_syscall_id {
     ZEROOS_SYS_SHM_UNMAP = 23,
     ZEROOS_SYS_SHM_CLOSE = 24,
     ZEROOS_SYS_DISPLAY_INFO = 25,
+    ZEROOS_SYS_DISPLAY_PRESENT = 26,
     ZEROOS_SYS_MAX
 };
 
@@ -97,7 +98,8 @@ enum zeroos_error {
 #define ZEROOS_ABI_FEATURE_PIPE    (1ULL << 4)
 #define ZEROOS_ABI_FEATURE_EVENT   (1ULL << 5)
 #define ZEROOS_ABI_FEATURE_SHMEM   (1ULL << 6)
-#define ZEROOS_ABI_FEATURE_DISPLAY (1ULL << 7)
+#define ZEROOS_ABI_FEATURE_DISPLAY  (1ULL << 7)
+#define ZEROOS_ABI_FEATURE_PRESENT  (1ULL << 8)
 
 /* Display geometry (ABI): must match kernel/fb.h and kernel/syscall.h. */
 #define ZEROOS_DISPLAY_FORMAT_INDEXED     0U
@@ -316,6 +318,19 @@ static inline int64_t zeroos_display_info(struct zeroos_display_info *info) {
     return zeroos_syscall_result(zeroos_syscall6(
         ZEROOS_SYS_DISPLAY_INFO,(uint64_t)(uintptr_t)info,sizeof(*info),
         0,0,0,0));
+}
+
+/* Pixel-mapping present: copy a source rectangle of the scanout format
+ * into the live framebuffer. stride is the source row pitch in bytes;
+ * pixels must reference a readable buffer of (height-1)*stride +
+ * width*bpp/8 bytes. Fails ENOENT when no linear framebuffer is live. */
+static inline int64_t zeroos_display_present(uint32_t x, uint32_t y,
+                                             uint32_t width, uint32_t height,
+                                             uint32_t stride,
+                                             const void *pixels) {
+    return zeroos_syscall_result(zeroos_syscall6(
+        ZEROOS_SYS_DISPLAY_PRESENT,(uint64_t)x,(uint64_t)y,(uint64_t)width,
+        (uint64_t)height,(uint64_t)stride,(uint64_t)(uintptr_t)pixels));
 }
 
 #endif

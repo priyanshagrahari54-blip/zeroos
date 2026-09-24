@@ -35,4 +35,27 @@ int fb_init(uint64_t multiboot_info);
  * whether a linear scanout buffer exists (PRESENT) or the boot degraded. */
 const struct zeroos_display_info *fb_display_info(void);
 
+/* ---- Pixel-mapping (DISPLAY_PRESENT) primitives, Stage 5A ----
+ *
+ * fb_present_active() reports whether scanout writes can be accepted.
+ * fb_write_pixels()/fb_read_pixel() are the only code allowed to touch
+ * scanout memory after init: bounds-checked row reads/writes in the
+ * framebuffer's native format, serialized by an internal lock so
+ * concurrent syscalls stay memory-safe (the display service is the single
+ * writer by desktop policy; the kernel only guarantees integrity).
+ *
+ * The fb_probe_* helpers implement the boot readback contract: a
+ * deterministic 4x4 XRGB pattern at (0,0) that Ring-3 presents through the
+ * real syscall and the kernel verifies through the real read path. */
+#define FB_PRESENT_PROBE_W 4U
+#define FB_PRESENT_PROBE_H 4U
+
+int fb_present_active(void);
+int fb_write_pixels(uint32_t x, uint32_t y, uint32_t count,
+                    const uint8_t *source);
+int fb_read_pixel(uint32_t x, uint32_t y, uint32_t *xrgb_out);
+uint32_t fb_probe_pixel(uint32_t x, uint32_t y);
+int fb_fill_probe_native(uint8_t *destination, uint64_t capacity);
+int fb_probe_verify(void);
+
 #endif

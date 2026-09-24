@@ -13,6 +13,7 @@ static int abi_compile_probe(void) {
     (void)zeroos_abi_info(&info);
     (void)zeroos_display_info(&display);
     (void)display.flags;
+    (void)zeroos_display_present(0,0,4,4,16,buffer);
     (void)zeroos_runtime_init(&runtime);
     (void)zeroos_getpid();
     (void)zeroos_gettid();

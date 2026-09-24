@@ -34,6 +34,7 @@ enum zeroos_syscall_id {
     ZEROOS_SYS_SHM_UNMAP = 23,
     ZEROOS_SYS_SHM_CLOSE = 24,
     ZEROOS_SYS_DISPLAY_INFO = 25,
+    ZEROOS_SYS_DISPLAY_PRESENT = 26,
     ZEROOS_SYS_MAX
 };
 
@@ -67,6 +68,7 @@ enum zeroos_syscall_error {
 #define ZEROOS_ABI_FEATURE_EVENT    (1ULL << 5)
 #define ZEROOS_ABI_FEATURE_SHMEM    (1ULL << 6)
 #define ZEROOS_ABI_FEATURE_DISPLAY  (1ULL << 7)
+#define ZEROOS_ABI_FEATURE_PRESENT  (1ULL << 8)
 
 /* Display geometry: ABI copy of kernel/fb.h (abi_consistency.py gates the
  * struct body against the public header). */

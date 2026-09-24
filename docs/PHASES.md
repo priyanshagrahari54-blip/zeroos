@@ -65,8 +65,10 @@ Exit: practical hardware I/O works on defined test hardware.
 Display abstraction and GPU interface.
 Status: kernel display primitive landed (Multiboot2 framebuffer discovery,
 reservation, UC MMIO mapping, `DISPLAY_INFO` syscall, active/degraded boot
-milestones). GPU acceleration and the pixel-mapping/display-service
-userspace process are the next batch.
+milestones) plus the `DISPLAY_PRESENT` pixel-mapping syscall (ID 26,
+host-tested bounds/stride validation, ENOENT degraded contract, Ring-3
+probe with kernel readback certification). GPU acceleration and the
+userspace display-service process are the next batch.
 ### 5.2 Compositor
 Windows, surfaces, damage tracking.
 Status: desktop platform core implemented and unit-tested in
