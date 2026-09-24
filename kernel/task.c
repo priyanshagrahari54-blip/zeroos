@@ -1764,12 +1764,14 @@ int task_cpu_offline(uint32_t cpu_id) {
     const struct smp_cpu_record *record;
     uint64_t start;
     uint64_t last_signal=0;
+    uint32_t online_before;
 
     if (cpu_current_id()!=0)
         return -11;
     if (cpu_id==0 || cpu_id>=ZEROOS_MAX_CPUS)
         return -12;
-    if (smp_online_count()<=1)
+    online_before=smp_online_count();
+    if (online_before<=1)
         return -13;
     if (!task_scheduler_ready())
         return -14;
@@ -1829,7 +1831,7 @@ int task_cpu_offline(uint32_t cpu_id) {
     }
 
     if (__atomic_load_n(&cpu_local_for_id(cpu_id)->online,__ATOMIC_ACQUIRE) ||
-        tlb_cpu_is_online(cpu_id) || smp_online_count()>=2)
+        tlb_cpu_is_online(cpu_id) || smp_online_count()!=online_before-1)
         return -7;
     return 0;
 }
