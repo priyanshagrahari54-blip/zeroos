@@ -112,6 +112,7 @@ int task_create_owned_staged(task_entry_t entry, void *argument,
                              struct thread *thread, uint64_t *task_id);
 int task_publish_staged(uint64_t task_id);
 struct task *task_current(void);
+struct task *task_lookup(uint64_t task_id);
 /* Clears the current task's thread-owner link at the thread lifetime boundary. */
 void task_detach_thread(void);
 void task_yield(void);

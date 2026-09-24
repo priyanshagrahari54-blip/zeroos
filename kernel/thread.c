@@ -245,6 +245,18 @@ static int thread_create_common(struct process *process,
         spin_unlock_irqrestore(&thread_lock,publish_flags);
     }
 
+    /* The first user image is deliberately pinned to the BSP until the
+     * secondary-CPU interrupt-return scheduler has a complete userspace
+     * policy. This is a scheduling policy, not a privilege shortcut: it
+     * still crosses the same private CR3, TSS.RSP0, IDT and syscall paths. */
+    if (user_mode) {
+        struct task *created=task_lookup(task_id);
+        if (!created || task_set_affinity(created,1ULL)!=0) {
+            serial_write_public("ZEROOS PANIC: failed to pin initial user thread.\n");
+            for (;;) __asm__ volatile ("cli; hlt");
+        }
+    }
+
     if (process_thread_attach(process,thread)!=0) {
         /*
          * We cannot safely make task_exit() happen from this caller, so keep

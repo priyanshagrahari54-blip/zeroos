@@ -1255,6 +1255,22 @@ struct task *task_current(void) {
     return current_task;
 }
 
+struct task *task_lookup(uint64_t task_id) {
+    uint64_t flags;
+    struct task *result=0;
+    if (!task_id)
+        return 0;
+    flags=spin_lock_irqsave(&task_lock);
+    for (uint32_t i=2; i<ZEROOS_MAX_TASKS; ++i) {
+        if (tasks[i].id==task_id && tasks[i].state!=TASK_UNUSED) {
+            result=&tasks[i];
+            break;
+        }
+    }
+    spin_unlock_irqrestore(&task_lock,flags);
+    return result;
+}
+
 void task_detach_thread(void) {
     uint64_t flags=spin_lock_irqsave(&task_lock);
     if (current_task)
