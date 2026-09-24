@@ -16,7 +16,9 @@
 mechanism #1, respecting multifunction headers. It records vendor/device and
 class identity, snapshots currently assigned BAR addresses/types without
 writing configuration space, and follows conventional capability pointers
-with cycle and bounds checks. The inventory is fixed-size; overflow is
+with cycle and bounds checks. It reports MSI/MSI-X capability metadata only;
+these capabilities are never enabled, and table offsets cannot be trusted until
+BAR sizing/range validation exists. The inventory is fixed-size; overflow is
 reported as truncated. This is not PCIe ECAM support and does not enumerate
 nonzero PCI segments. It does not enable bus mastering, allocate resources,
 map device MMIO, or activate interrupts. A listed device is discovered, not

@@ -29,15 +29,34 @@ static void parse_caps(struct pci_device *d) {
     uint8_t seen[64]={0};
     while(pos>=0x40 && pos<=0xfc && d->capability_count<PCI_MAX_CAPABILITIES) {
         uint8_t index=(uint8_t)((pos-0x40)/4);
-        if(seen[index]) { d->capability_count=0; return; }
+        if(seen[index]) { d->capability_count=0; d->msi.present=0; d->msix.present=0; return; }
         seen[index]=1;
         struct pci_capability *c=&d->capabilities[d->capability_count++];
         c->id=byte(d->bus,d->slot,d->function,pos); c->offset=pos;
         uint8_t next=(uint8_t)(byte(d->bus,d->slot,d->function,(uint8_t)(pos+1))&~3U);
+        if(c->id==0x05 && pos<=0xf4) {
+            uint16_t control=(uint16_t)(read_config(d->bus,d->slot,d->function,(uint8_t)(pos+2))>>16);
+            uint8_t is64=(uint8_t)((control>>7)&1U), mask=(uint8_t)((control>>8)&1U);
+            uint32_t required=pos+(is64?14U:10U)+(mask?10U:0U);
+            if(required<=0x100U) {
+                d->msi.present=1; d->msi.enabled=(uint8_t)(control&1U);
+                d->msi.is_64bit=is64; d->msi.per_vector_mask=mask;
+                d->msi.multiple_message_capable=(uint8_t)((control>>1)&7U);
+            }
+        } else if(c->id==0x11 && pos<=0xf4) {
+            uint16_t control=(uint16_t)(read_config(d->bus,d->slot,d->function,(uint8_t)(pos+2))>>16);
+            uint32_t table=read_config(d->bus,d->slot,d->function,(uint8_t)(pos+4));
+            uint32_t pba=read_config(d->bus,d->slot,d->function,(uint8_t)(pos+8));
+            d->msix.present=1; d->msix.enabled=(uint8_t)((control>>15)&1U);
+            d->msix.function_masked=(uint8_t)((control>>14)&1U);
+            d->msix.table_size=(uint16_t)((control&0x7ffU)+1U);
+            d->msix.table_bir=(uint8_t)(table&7U); d->msix.table_offset=table&~7U;
+            d->msix.pba_bir=(uint8_t)(pba&7U); d->msix.pba_offset=pba&~7U;
+        }
         if(next==pos) { d->capability_count=0; return; }
         pos=next;
     }
-    if(pos && (pos<0x40 || pos>0xfc)) d->capability_count=0;
+    if(pos && (pos<0x40 || pos>0xfc)) { d->capability_count=0; d->msi.present=0; d->msix.present=0; }
 }
 static int scan_function(struct pci_inventory *o,uint8_t b,uint8_t s,uint8_t f) {
     uint32_t id=read_config(b,s,f,0); uint16_t vendor=(uint16_t)id;

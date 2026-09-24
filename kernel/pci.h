@@ -11,8 +11,12 @@
 enum pci_bar_kind { PCI_BAR_NONE=0, PCI_BAR_IO=1, PCI_BAR_MEMORY=2 };
 struct pci_bar { uint64_t address; uint8_t kind; uint8_t is_64bit; uint8_t prefetchable; };
 struct pci_capability { uint8_t id, offset; };
+struct pci_msi_info { uint8_t present, enabled, is_64bit, per_vector_mask; uint8_t multiple_message_capable; };
+struct pci_msix_info { uint8_t present, enabled, function_masked, table_bir, pba_bir; uint16_t table_size; uint32_t table_offset, pba_offset; };
 struct pci_device {
     uint8_t bus, slot, function, header_type;
+    struct pci_msi_info msi;
+    struct pci_msix_info msix;
     uint16_t vendor_id, device_id, command, status;
     uint8_t class_code, subclass, programming_interface, revision;
     struct pci_bar bars[6];
