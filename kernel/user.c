@@ -31,8 +31,22 @@ static const char init_message[]=
 
 #define INIT_ELF_DATA_OFFSET 0x1000ULL
 #define INIT_ELF_ENTRY_OFFSET 0x100ULL
-#define INIT_ELF_IMAGE_SIZE (INIT_ELF_DATA_OFFSET+sizeof(init_message)-1U)
+#define INIT_ELF_CHILD_FILE_OFFSET 0x2000ULL
+#define INIT_ELF_STATUS_OFFSET 0x4000ULL
+#define INIT_ELF_DATA_FILE_END (INIT_ELF_STATUS_OFFSET+sizeof(uint64_t))
+#define INIT_ELF_DATA_MEMORY_SIZE ((INIT_ELF_DATA_FILE_END-INIT_ELF_DATA_OFFSET+\
+                                    VMM_PAGE_SIZE-1ULL)&~(VMM_PAGE_SIZE-1ULL))
+#define INIT_ELF_IMAGE_SIZE INIT_ELF_DATA_FILE_END
 static uint8_t init_elf_image[INIT_ELF_IMAGE_SIZE];
+
+static const char init_child_message[]=
+    "ZEROOS: spawned child argv/envp runtime path passed.\n";
+
+#define INIT_CHILD_ELF_DATA_OFFSET 0x1000ULL
+#define INIT_CHILD_ELF_ENTRY_OFFSET 0x100ULL
+#define INIT_CHILD_ELF_IMAGE_SIZE \
+    (INIT_CHILD_ELF_DATA_OFFSET+sizeof(init_child_message)-1U)
+static uint8_t init_child_elf_image[INIT_CHILD_ELF_IMAGE_SIZE];
 
 #define SERVICE_ELF_DATA_OFFSET 0x1000ULL
 #define SERVICE_ELF_ENTRY_OFFSET 0x100ULL
@@ -56,11 +70,78 @@ static void put_u64(uint8_t *buffer, uint64_t value) {
         buffer[i]=(uint8_t)(value>>(i*8U));
 }
 
+static uint64_t build_child_code(uint8_t *code) {
+    uint64_t offset=0;
+
+    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_WRITE); offset+=4;
+    code[offset++]=0xbf; put_u32(&code[offset],1); offset+=4;
+    code[offset++]=0x48; code[offset++]=0xbe;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE); offset+=8;
+    code[offset++]=0xba;
+    put_u32(&code[offset],(uint32_t)(sizeof(init_child_message)-1U)); offset+=4;
+    code[offset++]=0xcd; code[offset++]=0x80;
+    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_EXIT); offset+=4;
+    code[offset++]=0xbf; put_u32(&code[offset],0); offset+=4;
+    code[offset++]=0xcd; code[offset++]=0x80;
+    code[offset++]=0xf4;
+    return offset;
+}
+
+static uint64_t build_child_elf(void) {
+    struct zeroos_elf64_ehdr *header=
+        (struct zeroos_elf64_ehdr *)(uint64_t)init_child_elf_image;
+    struct zeroos_elf64_phdr *code_segment=
+        (struct zeroos_elf64_phdr *)(uint64_t)(init_child_elf_image+sizeof(*header));
+    struct zeroos_elf64_phdr *data_segment=code_segment+1;
+    for (uint64_t i=0; i<sizeof(init_child_elf_image); ++i)
+        init_child_elf_image[i]=0;
+
+    header->ident[0]=0x7f;
+    header->ident[1]='E';
+    header->ident[2]='L';
+    header->ident[3]='F';
+    header->ident[4]=2;
+    header->ident[5]=1;
+    header->ident[6]=1;
+    header->type=ZEROOS_ELF_ET_EXEC;
+    header->machine=ZEROOS_ELF_EM_X86_64;
+    header->version=1;
+    header->entry=ZEROOS_USER_CODE_BASE+INIT_CHILD_ELF_ENTRY_OFFSET;
+    header->phoff=sizeof(*header);
+    header->ehsize=sizeof(*header);
+    header->phentsize=sizeof(*code_segment);
+    header->phnum=2;
+
+    code_segment->type=ZEROOS_ELF_PT_LOAD;
+    code_segment->flags=ZEROOS_ELF_PF_R|ZEROOS_ELF_PF_X;
+    code_segment->offset=0;
+    code_segment->virtual_address=ZEROOS_USER_CODE_BASE;
+    code_segment->file_size=VMM_PAGE_SIZE;
+    code_segment->memory_size=VMM_PAGE_SIZE;
+    code_segment->alignment=VMM_PAGE_SIZE;
+
+    data_segment->type=ZEROOS_ELF_PT_LOAD;
+    data_segment->flags=ZEROOS_ELF_PF_R|ZEROOS_ELF_PF_W;
+    data_segment->offset=INIT_CHILD_ELF_DATA_OFFSET;
+    data_segment->virtual_address=ZEROOS_USER_DATA_BASE;
+    data_segment->file_size=sizeof(init_child_message)-1U;
+    data_segment->memory_size=VMM_PAGE_SIZE;
+    data_segment->alignment=VMM_PAGE_SIZE;
+
+    (void)build_child_code(init_child_elf_image+INIT_CHILD_ELF_ENTRY_OFFSET);
+    for (uint64_t i=0; i<sizeof(init_child_message)-1U; ++i)
+        init_child_elf_image[INIT_CHILD_ELF_DATA_OFFSET+i]=
+            (uint8_t)init_child_message[i];
+    return INIT_CHILD_ELF_IMAGE_SIZE;
+}
+
 /* A deliberately tiny statically linked init image. It is represented as a
  * real ET_EXEC ELF object so every boot exercises the same loader checks that
  * later service binaries will use. */
 static uint64_t build_init_code(uint8_t *code) {
     uint64_t offset=0;
+    uint64_t failure_jump;
+    uint64_t failure_label;
 
     code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_WRITE); offset+=4;
     code[offset++]=0xbf; put_u32(&code[offset],1); offset+=4;
@@ -70,8 +151,40 @@ static uint64_t build_init_code(uint8_t *code) {
     put_u32(&code[offset],(uint32_t)(sizeof(init_message)-1U)); offset+=4;
     code[offset++]=0xcd; code[offset++]=0x80;
 
+    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_SPAWN); offset+=4;
+    code[offset++]=0x48; code[offset++]=0xbf;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE+
+            (INIT_ELF_CHILD_FILE_OFFSET-INIT_ELF_DATA_OFFSET)); offset+=8;
+    code[offset++]=0x48; code[offset++]=0xbe;
+    put_u64(&code[offset],INIT_CHILD_ELF_IMAGE_SIZE); offset+=8;
+    code[offset++]=0x48; code[offset++]=0x31; code[offset++]=0xd2;
+    code[offset++]=0x41; code[offset++]=0xba; put_u32(&code[offset],0); offset+=4;
+    code[offset++]=0x4d; code[offset++]=0x31; code[offset++]=0xc0;
+    code[offset++]=0x4d; code[offset++]=0x31; code[offset++]=0xc9;
+    code[offset++]=0xcd; code[offset++]=0x80;
+    code[offset++]=0x49; code[offset++]=0x89; code[offset++]=0xc4;
+
+    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_WAIT); offset+=4;
+    code[offset++]=0x4c; code[offset++]=0x89; code[offset++]=0xe7;
+    code[offset++]=0x48; code[offset++]=0xbe;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE+
+            (INIT_ELF_STATUS_OFFSET-INIT_ELF_DATA_OFFSET)); offset+=8;
+    code[offset++]=0x48; code[offset++]=0x31; code[offset++]=0xd2;
+    code[offset++]=0x4d; code[offset++]=0x31; code[offset++]=0xd2;
+    code[offset++]=0xcd; code[offset++]=0x80;
+    code[offset++]=0x48; code[offset++]=0x85; code[offset++]=0xc0;
+    failure_jump=offset;
+    code[offset++]=0x78; code[offset++]=0;
+
     code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_EXIT); offset+=4;
     code[offset++]=0xbf; put_u32(&code[offset],0); offset+=4;
+    code[offset++]=0xcd; code[offset++]=0x80;
+    code[offset++]=0xf4;
+
+    failure_label=offset;
+    code[failure_jump+1]=(uint8_t)(failure_label-(failure_jump+2ULL));
+    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_EXIT); offset+=4;
+    code[offset++]=0xbf; put_u32(&code[offset],9); offset+=4;
     code[offset++]=0xcd; code[offset++]=0x80;
     code[offset++]=0xf4;
     return offset;
@@ -83,6 +196,7 @@ static uint64_t build_init_elf(void) {
     struct zeroos_elf64_phdr *code_segment=
         (struct zeroos_elf64_phdr *)(uint64_t)(init_elf_image+sizeof(*header));
     struct zeroos_elf64_phdr *data_segment=code_segment+1;
+    uint64_t child_image_size=build_child_elf();
     for (uint64_t i=0; i<sizeof(init_elf_image); ++i)
         init_elf_image[i]=0;
 
@@ -114,13 +228,15 @@ static uint64_t build_init_elf(void) {
     data_segment->flags=ZEROOS_ELF_PF_R|ZEROOS_ELF_PF_W;
     data_segment->offset=INIT_ELF_DATA_OFFSET;
     data_segment->virtual_address=ZEROOS_USER_DATA_BASE;
-    data_segment->file_size=sizeof(init_message)-1U;
-    data_segment->memory_size=VMM_PAGE_SIZE;
+    data_segment->file_size=INIT_ELF_IMAGE_SIZE-INIT_ELF_DATA_OFFSET;
+    data_segment->memory_size=INIT_ELF_DATA_MEMORY_SIZE;
     data_segment->alignment=VMM_PAGE_SIZE;
 
     (void)build_init_code(init_elf_image+INIT_ELF_ENTRY_OFFSET);
     for (uint64_t i=0; i<sizeof(init_message)-1U; ++i)
         init_elf_image[INIT_ELF_DATA_OFFSET+i]=(uint8_t)init_message[i];
+    for (uint64_t i=0; i<child_image_size; ++i)
+        init_elf_image[INIT_ELF_CHILD_FILE_OFFSET+i]=init_child_elf_image[i];
     return INIT_ELF_IMAGE_SIZE;
 }
 
@@ -547,6 +663,8 @@ int userspace_service_step(void) {
         return -1;
     if (vmm_activate_kernel()!=0 || process_reap(init_process,&status)!=0 ||
         ipc_debug_validate()!=0)
+        return -1;
+    if (status!=0)
         return -1;
     init_reaped=1;
     serial_write_public("ZEROOS: init userspace process reaped cleanly.\n");
