@@ -75,8 +75,8 @@ static int elf_collect(const void *image, uint64_t image_size,
                        struct elf_load_segment *segments,
                        uint32_t *segment_count_out,
                        uint64_t *load_bias_out, uint64_t *entry_out,
-                       uint64_t *lowest_out, uint64_t *highest_out,
-                       uint64_t *total_pages_out) {
+                       uint64_t *program_header_out, uint64_t *lowest_out,
+                       uint64_t *highest_out, uint64_t *total_pages_out) {
     const struct zeroos_elf64_ehdr *header;
     uint64_t phdr_bytes;
     uint64_t phdr_end;
@@ -84,6 +84,7 @@ static int elf_collect(const void *image, uint64_t image_size,
     uint64_t maximum_page=0;
     uint32_t segment_count=0;
     uint64_t total_pages=0;
+    uint64_t program_header_address=0;
     uint8_t executable=0;
 
     if (!image || image_size<sizeof(*header))
@@ -206,9 +207,37 @@ static int elf_collect(const void *image, uint64_t image_size,
     if (executable!=2 || !canonical_address(entry))
         return -ZEROOS_EINVAL;
 
+    /* Publish AT_PHDR only when the table is actually covered by a readable
+     * PT_LOAD. This keeps the auxiliary vector truthful for both ET_EXEC and
+     * ET_DYN images; callers must treat zero as the no-PHDR contract. */
+    if (phdr_end>=header->phoff) {
+        for (uint32_t i=0; i<segment_count; ++i) {
+            const struct zeroos_elf64_phdr *program=&segments[i].header;
+            uint64_t file_end=program->offset+program->file_size;
+            uint64_t table_offset;
+            uint64_t table_address;
+            uint64_t table_end;
+            if (!(program->flags&ZEROOS_ELF_PF_R) ||
+                header->phoff<program->offset || phdr_end>file_end)
+                continue;
+            table_offset=header->phoff-program->offset;
+            if (range_end(program->virtual_address,load_bias,
+                          &table_address)!=0 ||
+                range_end(table_address,table_offset,&table_address)!=0 ||
+                range_end(table_address,phdr_bytes,&table_end)!=0 ||
+                table_address<segments[i].page_start ||
+                table_end>segments[i].page_end ||
+                !canonical_address(table_address))
+                continue;
+            program_header_address=table_address;
+            break;
+        }
+    }
+
     *segment_count_out=segment_count;
     *load_bias_out=load_bias;
     *entry_out=entry;
+    *program_header_out=program_header_address;
     *lowest_out=adjusted_low;
     *highest_out=adjusted_high;
     *total_pages_out=total_pages;
@@ -239,6 +268,7 @@ int elf_load_image(struct process *process, const void *image,
     uint64_t lock_flags;
     uint64_t load_bias=0;
     uint64_t entry=0;
+    uint64_t program_header_address=0;
     uint64_t lowest=0;
     uint64_t highest=0;
     uint64_t total_pages=0;
@@ -250,7 +280,8 @@ int elf_load_image(struct process *process, const void *image,
     for (uint32_t i=0; i<sizeof(elf_workspace.mapped); ++i)
         mapped[i]=0;
     if (elf_collect(image,image_size,segments,&segment_count,&load_bias,
-                    &entry,&lowest,&highest,&total_pages)!=0) {
+                    &entry,&program_header_address,&lowest,&highest,
+                    &total_pages)!=0) {
         spin_unlock_irqrestore(&elf_workspace.lock,lock_flags);
         return -ZEROOS_EINVAL;
     }
@@ -314,6 +345,7 @@ int elf_load_image(struct process *process, const void *image,
 
     result->entry=entry;
     result->load_bias=load_bias;
+    result->program_header_address=program_header_address;
     result->lowest_address=lowest;
     result->highest_address=highest;
     result->mapped_pages=total_pages;
@@ -333,6 +365,7 @@ int elf_unload_image(struct process *process, const void *image,
     uint32_t segment_count=0;
     uint64_t load_bias=0;
     uint64_t entry=0;
+    uint64_t program_header_address=0;
     uint64_t lowest=0;
     uint64_t highest=0;
     uint64_t total_pages=0;
@@ -340,7 +373,8 @@ int elf_unload_image(struct process *process, const void *image,
         return -ZEROOS_EINVAL;
     lock_flags=spin_lock_irqsave(&elf_workspace.lock);
     if (elf_collect(image,image_size,segments,&segment_count,&load_bias,
-                    &entry,&lowest,&highest,&total_pages)!=0) {
+                    &entry,&program_header_address,&lowest,&highest,
+                    &total_pages)!=0) {
         spin_unlock_irqrestore(&elf_workspace.lock,lock_flags);
         return -ZEROOS_EINVAL;
     }

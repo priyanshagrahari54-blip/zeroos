@@ -47,6 +47,9 @@ struct __attribute__((packed)) zeroos_elf64_phdr {
 struct zeroos_elf_load_result {
     uint64_t entry;
     uint64_t load_bias;
+    /* Runtime address of the program-header table when a readable PT_LOAD
+     * contains it; zero means the static image has no mapped PHDR contract. */
+    uint64_t program_header_address;
     uint64_t lowest_address;
     uint64_t highest_address;
     uint64_t mapped_pages;

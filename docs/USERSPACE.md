@@ -99,9 +99,11 @@ The initial v1 calls are:
 `SPAWN` accepts bounded vectors (16 arguments and 16 environment strings, each
 at most 128 bytes) and constructs an initial stack containing `argc`, argv,
 envp, and a bounded auxiliary vector (`AT_ENTRY`, `AT_PHNUM`, `AT_PHENT`,
-`AT_PAGESZ`, `AT_BASE`, and the explicit static-loader `AT_PHDR=0` policy).
-The child gets a private address space and one user thread; all image-copy,
-stack-map, ELF-load, and thread-publication failures roll back transactionally.
+`AT_PAGESZ`, `AT_BASE`, and `AT_PHDR`). `AT_PHDR` is the mapped program-header
+address when a readable `PT_LOAD` covers the table; otherwise it is explicitly
+zero, the no-PHDR value for this static-loader ABI. The child gets a private
+address space and one user thread; all image-copy, stack-map, ELF-load, and
+thread-publication failures roll back transactionally.
 `WAIT` validates child ownership before sleeping/polling, supports a bounded
 `R10` tick timeout and nonblocking mode, and reaps all zombie threads before
 destroying the child address space.
@@ -195,9 +197,11 @@ pages.
 
 The init image also probes invalid IPC output, invalid wait status, an unmapped
 image, and a malformed ELF image; each must return a negative syscall result
-before the valid child spawn. The loader rejects non-page-aligned or
-overlapping segments before mapping and preserves distinct invalid-image and
-resource errors through the spawn ABI.
+before the valid child spawn. The bootstrap self-test temporarily limits child
+creation, fills the bounded IPC endpoint table, verifies the expected
+`ENOMEM` boundary, and closes every resource before continuing. The loader
+rejects non-page-aligned or overlapping segments before mapping and preserves
+distinct invalid-image and resource errors through the spawn ABI.
 
 ## Remaining Stage 2 work
 

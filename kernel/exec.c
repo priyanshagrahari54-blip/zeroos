@@ -142,7 +142,7 @@ static int exec_build_stack(const struct zeroos_elf_load_result *load_result,
     }
 
     /* Push the auxiliary vector from high address to low address. AT_PHDR is
-     * zero in this static-loader ABI because there is no PT_PHDR contract. */
+     * zero only when the loader could not prove that the table is mapped. */
     if (exec_stack_push(&cursor,0) != 0 ||
         exec_stack_push(&cursor,ZEROOS_AUXV_NULL) != 0 ||
         exec_stack_push(&cursor,load_result->entry) != 0 ||
@@ -155,7 +155,7 @@ static int exec_build_stack(const struct zeroos_elf_load_result *load_result,
         exec_stack_push(&cursor,ZEROOS_AUXV_PHNUM) != 0 ||
         exec_stack_push(&cursor,header->phentsize) != 0 ||
         exec_stack_push(&cursor,ZEROOS_AUXV_PHENT) != 0 ||
-        exec_stack_push(&cursor,0) != 0 ||
+        exec_stack_push(&cursor,load_result->program_header_address) != 0 ||
         exec_stack_push(&cursor,ZEROOS_AUXV_PHDR) != 0)
         return -ZEROOS_E2BIG;
 
