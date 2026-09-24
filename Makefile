@@ -1,7 +1,7 @@
 BUILD := build
 KERNEL := $(BUILD)/zeroos.elf
 ISO := $(BUILD)/zeroos.iso
-HARDWARE_CORE_NAMES := net_core net_route net_transport net_conntrack net_l2 net_ipv6 dns_core dhcp_core input_core usb_core audio_core display_core driver_core dma
+HARDWARE_CORE_NAMES := net_core net_route net_transport net_conntrack net_l2 net_ipv6 dns_core dhcp_core input_core usb_core audio_core display_core driver_core dma resource_core
 HARDWARE_CORE_OBJS := $(addprefix $(BUILD)/hardware-,$(addsuffix .o,$(HARDWARE_CORE_NAMES)))
 
 CC := gcc
@@ -148,6 +148,8 @@ hardware-core-test: | $(BUILD)
 	$(BUILD)/net-ipv6-test
 	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/net_conntrack_test.c kernel/net_conntrack.c -o $(BUILD)/net-conntrack-test
 	$(BUILD)/net-conntrack-test
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/resource_core_test.c kernel/resource_core.c -o $(BUILD)/resource-core-test
+	$(BUILD)/resource-core-test
 
 $(BUILD)/gdt.o: kernel/gdt.c kernel/gdt.h kernel/memory.h kernel/cpu.h kernel/types.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
