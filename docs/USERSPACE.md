@@ -122,7 +122,10 @@ destroying the child address space.
 
 IPC handles are process-scoped capabilities, not global file-like integers.
 The kernel checks owner, generation, rights and endpoint lifetime on every
-operation. Queues have a fixed depth and message size, so exhaustion returns
+operation. Cross-process grants acquire a generation-checked process lifetime
+pin before publishing the target capability; reaping and the final thread-exit
+transition wait for that pin, so a reused process slot cannot receive a stale
+grant. Queues have a fixed depth and message size, so exhaustion returns
 `-ZEROOS_EAGAIN` for `NONBLOCK` rather than allocating unbounded kernel memory.
 A closed peer returns `-ZEROOS_EPIPE`.
 

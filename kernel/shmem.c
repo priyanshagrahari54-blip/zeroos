@@ -233,34 +233,28 @@ int shmem_grant(struct process *owner, zeroos_shmem_handle_t source,
     if (!process_can_use(owner) || !target_out || target_pid==0 ||
         !rights || (rights&~ZEROOS_SHMEM_ALL_RIGHTS)!=0)
         return -ZEROOS_EINVAL;
-    target=process_lookup(target_pid);
-    if (!process_can_use(target) || target->pid!=target_pid)
+    if (process_acquire_live(target_pid,&target)!=0)
         return -ZEROOS_ENOENT;
     *target_out=0;
+    /* As with IPC grants, pin the process before taking the subsystem lock;
+     * process teardown takes the process lock first and then revokes caps. */
     irq_flags=spin_lock_irqsave(&shmem_lock);
     {
         struct shmem_capability *capability=
             capability_lookup_locked(owner,source);
-        if (!capability || !(capability->rights&ZEROOS_SHMEM_RIGHT_GRANT)) {
-            spin_unlock_irqrestore(&shmem_lock,irq_flags);
-            return -ZEROOS_EBADF;
+        if (!capability || !(capability->rights&ZEROOS_SHMEM_RIGHT_GRANT))
+            result=-ZEROOS_EBADF;
+        else {
+            rights&=capability->rights;
+            if (!rights)
+                result=-ZEROOS_EPERM;
+            else
+                result=capability_alloc_locked(target,capability->object,
+                                               rights,target_out);
         }
-        /* Recheck the generation-tagged target identity while serialized with
-         * capability publication. A complete process pin protocol is still a
-         * separate lifetime-hardening task. */
-        if (!process_can_use(target) || target->pid!=target_pid) {
-            spin_unlock_irqrestore(&shmem_lock,irq_flags);
-            return -ZEROOS_ENOENT;
-        }
-        rights&=capability->rights;
-        if (!rights) {
-            spin_unlock_irqrestore(&shmem_lock,irq_flags);
-            return -ZEROOS_EPERM;
-        }
-        result=capability_alloc_locked(target,capability->object,rights,
-                                       target_out);
     }
     spin_unlock_irqrestore(&shmem_lock,irq_flags);
+    (void)process_release_live(target);
     return result;
 }
 

@@ -36,6 +36,10 @@ struct process {
     /* A detached zombie remains process-owned until its thread object is
      * reset; this prevents process reap from racing thread-object reuse. */
     uint64_t reaping_threads;
+    /* Temporary kernel pins prevent a target process from being reaped or
+     * transitioning to zombie while a cross-process capability grant is
+     * being published. */
+    uint64_t lifetime_refs;
 
     /* Explicit resource ceilings; zero is never interpreted as unlimited. */
     uint64_t max_threads;
@@ -53,6 +57,10 @@ int process_system_init(void);
 
 int process_create(struct process *parent, process_id_t *pid_out);
 struct process *process_lookup(process_id_t pid);
+/* Acquire/release a generation-checked live-process pin. A pinned process
+ * cannot be published as zombie or reaped until the release. */
+int process_acquire_live(process_id_t pid, struct process **process_out);
+int process_release_live(struct process *process);
 /* Returns a live child owned by parent, preferring a zombie child when pid is
  * zero. The pointer is stable until the caller reaps that child. */
 struct process *process_find_child(struct process *parent, process_id_t pid);

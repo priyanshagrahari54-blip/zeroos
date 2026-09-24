@@ -274,18 +274,15 @@ int ipc_grant_rights(struct process *owner, zeroos_ipc_handle_t source,
     if (!process_can_use(owner) || !target_out || target_pid==0 ||
         rights==0 || (rights&~ZEROOS_IPC_ALL_RIGHTS)!=0)
         return -ZEROOS_EINVAL;
-    target=process_lookup(target_pid);
-    if (!process_can_use(target))
+    if (process_acquire_live(target_pid,&target)!=0)
         return -ZEROOS_ENOENT;
 
+    /* The process pin is acquired before the IPC lock. Reaping takes the
+     * process lock before revoking capabilities, so this order prevents a
+     * process-lock/IPC-lock inversion while also making target publication
+     * lifetime-safe. */
     flags=spin_lock_irqsave(&ipc_lock);
-    /* The lookup is repeated under the IPC lock and the generation-tagged PID
-     * is checked again. A target slot may have gone zombie and been reused
-     * between process_lookup() and capability publication; never attach a
-     * grant to that replacement process. */
-    if (!target || target->pid!=target_pid || !process_can_use(target))
-        result=-ZEROOS_ENOENT;
-    else {
+    {
         struct ipc_capability *source_cap=
             capability_lookup_locked(owner,source);
         if (!source_cap || !(source_cap->rights&ZEROOS_IPC_RIGHT_GRANT))
@@ -297,6 +294,7 @@ int ipc_grant_rights(struct process *owner, zeroos_ipc_handle_t source,
                                            rights,target_out);
     }
     spin_unlock_irqrestore(&ipc_lock,flags);
+    (void)process_release_live(target);
     return result;
 }
 

@@ -71,6 +71,7 @@ static void process_reset_locked(struct process *process) {
     process->live_thread_count=0;
     process->creating_threads=0;
     process->reaping_threads=0;
+    process->lifetime_refs=0;
     process->max_threads=0;
     process->max_children=0;
     process->max_address_space_pages=0;
@@ -97,6 +98,7 @@ int process_system_init(void) {
         processes[i].live_thread_count=0;
         processes[i].creating_threads=0;
         processes[i].reaping_threads=0;
+        processes[i].lifetime_refs=0;
         processes[i].max_threads=0;
         processes[i].max_children=0;
         processes[i].max_address_space_pages=0;
@@ -160,6 +162,7 @@ int process_create(struct process *parent, process_id_t *pid_out) {
     process->live_thread_count=0;
     process->creating_threads=0;
     process->reaping_threads=0;
+    process->lifetime_refs=0;
     process->max_threads=ZEROOS_PROCESS_DEFAULT_MAX_THREADS;
     process->max_children=ZEROOS_PROCESS_DEFAULT_MAX_CHILDREN;
     process->max_address_space_pages=ZEROOS_PROCESS_DEFAULT_MAX_ADDRESS_SPACE_PAGES;
@@ -184,6 +187,44 @@ struct process *process_lookup(process_id_t pid) {
     struct process *process=process_lookup_locked(pid);
     spin_unlock_irqrestore(&process_lock,flags);
     return process;
+}
+
+int process_acquire_live(process_id_t pid, struct process **process_out) {
+    uint64_t flags;
+    struct process *process;
+    if (!process_out)
+        return -1;
+    *process_out=0;
+    flags=spin_lock_irqsave(&process_lock);
+    process=process_lookup_locked(pid);
+    if (!process || (process->state!=PROCESS_NEW &&
+                     process->state!=PROCESS_RUNNING) ||
+        process->lifetime_refs==~0ULL) {
+        spin_unlock_irqrestore(&process_lock,flags);
+        return -1;
+    }
+    ++process->lifetime_refs;
+    *process_out=process;
+    spin_unlock_irqrestore(&process_lock,flags);
+    return 0;
+}
+
+int process_release_live(struct process *process) {
+    uint64_t flags;
+    if (!process)
+        return -1;
+    flags=spin_lock_irqsave(&process_lock);
+    if (process_lookup_locked(process->pid)!=process ||
+        process->lifetime_refs==0) {
+        spin_unlock_irqrestore(&process_lock,flags);
+        return -1;
+    }
+    --process->lifetime_refs;
+    if (process->lifetime_refs==0 && process->state==PROCESS_RUNNING &&
+        process->live_thread_count==0 && process->creating_threads==0)
+        process->state=PROCESS_ZOMBIE;
+    spin_unlock_irqrestore(&process_lock,flags);
+    return 0;
 }
 
 struct process *process_find_child(struct process *parent, process_id_t pid) {
@@ -316,7 +357,8 @@ int process_thread_exited(struct thread *thread, uint64_t exit_status) {
     if (process->live_thread_count==0 &&
         process->creating_threads==0) {
         process->exit_status=exit_status;
-        process->state=PROCESS_ZOMBIE;
+        if (process->lifetime_refs==0)
+            process->state=PROCESS_ZOMBIE;
     }
 
     spin_unlock_irqrestore(&process_lock,flags);
@@ -418,6 +460,7 @@ int process_reap(struct process *process, uint64_t *exit_status_out) {
         process->live_thread_count!=0 ||
         process->creating_threads!=0 ||
         process->reaping_threads!=0 ||
+        process->lifetime_refs!=0 ||
         process->first_child!=0 ||
         process->resident_pages!=
             vmm_space_mapped_pages(&process->address_space)) {
@@ -477,7 +520,8 @@ int process_abort_new(struct process *process) {
     if (process_lookup_locked(process->pid)!=process ||
         process->state!=PROCESS_NEW || process->thread_count!=0 ||
         process->live_thread_count!=0 || process->creating_threads!=0 ||
-        process->reaping_threads!=0 || process->first_child!=0) {
+        process->reaping_threads!=0 || process->lifetime_refs!=0 ||
+        process->first_child!=0) {
         spin_unlock_irqrestore(&process_lock,flags);
         return -1;
     }
@@ -680,7 +724,8 @@ int process_debug_validate(void) {
          * lifetime state for corruption. process_reap() still requires the
          * list to be empty before destruction. */
         if (process->state==PROCESS_ZOMBIE &&
-            (process->live_thread_count || process->creating_threads)) {
+            (process->live_thread_count || process->creating_threads ||
+             process->lifetime_refs)) {
             spin_unlock_irqrestore(&process_lock,flags);
             return -1;
         }

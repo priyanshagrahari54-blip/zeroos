@@ -252,17 +252,21 @@ void syscall_dispatch(struct interrupt_frame *frame) {
             break;
         }
         rights=frame->r10 ? (uint8_t)frame->r10 : ZEROOS_IPC_ALL_RIGHTS;
-        result=ipc_grant_rights(process,frame->rdi,frame->rsi,
-                                rights,&target_handle);
-        if (result==0 && copy_to_user(frame->rdx,&target_handle,
-                                      sizeof(target_handle))!=0) {
-            /* The target owns the newly created capability. Roll it back
-             * before returning EFAULT so a faulting output pointer cannot
-             * consume a capability-table slot or extend endpoint lifetime. */
-            target=process_lookup(frame->rsi);
-            if (target)
+        if (process_acquire_live(frame->rsi,&target)!=0)
+            result=-ZEROOS_ENOENT;
+        else {
+            result=ipc_grant_rights(process,frame->rdi,frame->rsi,
+                                    rights,&target_handle);
+            if (result==0 && copy_to_user(frame->rdx,&target_handle,
+                                          sizeof(target_handle))!=0) {
+                /* The target owns the newly created capability. Roll it back
+                 * before returning EFAULT so a faulting output pointer cannot
+                 * consume a capability-table slot or extend endpoint
+                 * lifetime. The outer process pin keeps close/reuse stable. */
                 (void)ipc_close(target,target_handle);
-            result=-ZEROOS_EFAULT;
+                result=-ZEROOS_EFAULT;
+            }
+            (void)process_release_live(target);
         }
         frame->rax=syscall_result(result);
         break;
@@ -369,14 +373,17 @@ void syscall_dispatch(struct interrupt_frame *frame) {
             frame->rax=syscall_error(ZEROOS_EINVAL);
             break;
         }
-        result=shmem_grant(process,frame->rdi,frame->rsi,
-                           (uint8_t)frame->r10,&target_handle);
-        if (result==0 && copy_to_user(frame->rdx,&target_handle,
-                                      sizeof(target_handle))!=0) {
-            target=process_lookup(frame->rsi);
-            if (target)
+        if (process_acquire_live(frame->rsi,&target)!=0)
+            result=-ZEROOS_ENOENT;
+        else {
+            result=shmem_grant(process,frame->rdi,frame->rsi,
+                               (uint8_t)frame->r10,&target_handle);
+            if (result==0 && copy_to_user(frame->rdx,&target_handle,
+                                          sizeof(target_handle))!=0) {
                 (void)shmem_close(target,target_handle);
-            result=-ZEROOS_EFAULT;
+                result=-ZEROOS_EFAULT;
+            }
+            (void)process_release_live(target);
         }
         frame->rax=syscall_result(result);
         break;
