@@ -805,6 +805,7 @@ fail:
 
 static void event_probe_entry(void *argument) {
     struct process *process=(struct process *)argument;
+    atomic_u64_store(&event_probe_state,1);
     int result=ipc_event_wait_timeout(process,event_probe_wait,0,
                                       ZEROOS_IPC_TIMEOUT_FOREVER);
     atomic_u64_store(&event_probe_state,result==1 ? 2 : 3);
