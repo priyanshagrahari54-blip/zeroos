@@ -558,7 +558,7 @@ int syscall_debug_validate(void) {
     if (ZEROOS_SYSCALL_VECTOR<32 || ZEROOS_SYSCALL_VECTOR>=256 ||
         ZEROOS_SYSCALL_ABI_VERSION==0 || sizeof(info)!=24U ||
         ZEROOS_SYSCALL_MAX_TRANSFER==0 ||
-        ZEROOS_SYS_SHM_CLOSE+1U!=ZEROOS_SYS_MAX)
+        ZEROOS_SYS_DISPLAY_INFO+1U!=ZEROOS_SYS_MAX)
         return -1;
     return 0;
 }
