@@ -9,6 +9,9 @@ void memory_init(uint64_t multiboot_info);
 void *page_alloc(void);
 void *page_alloc_below(uint64_t physical_limit);
 void *page_alloc_zero(void);
+/* Physically contiguous single-owner frames (kernel stacks, DMA rings). */
+void *page_alloc_contiguous(uint64_t count);
+void page_free_contiguous(void *address, uint64_t count);
 /* page_free releases one allocator/reference owner; it is not a raw bitmap clear. */
 void page_free(void *address);
 int memory_page_retain(uint64_t address);

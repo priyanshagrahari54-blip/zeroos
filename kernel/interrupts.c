@@ -8,6 +8,7 @@
 #include "task.h"
 #include "thread.h"
 #include "tlb.h"
+#include "sync.h"
 #include "syscall.h"
 
 struct idt_entry {
@@ -21,6 +22,12 @@ struct irq_binding { irq_handler_t handler; void *context; };
 
 static struct idt_entry idt[256];
 static struct irq_binding irq_bindings[16];
+/* Message-signalled device vectors. Allocation is serialized by a spinlock;
+ * the dispatcher reads the handler with acquire ordering, and the context is
+ * published before the handler. */
+static struct irq_binding device_vectors[ZEROOS_DEVICE_VECTOR_COUNT];
+static struct spinlock device_vector_lock;
+static uint64_t device_vector_spurious;
 static struct idtr runtime_idtr;
 
 extern void *isr_stub_table[256];
@@ -233,6 +240,26 @@ uint64_t interrupt_dispatch(struct interrupt_frame *frame) {
         return result;
     }
 
+    if (frame->vector >= ZEROOS_DEVICE_VECTOR_BASE &&
+        frame->vector < ZEROOS_DEVICE_VECTOR_BASE+ZEROOS_DEVICE_VECTOR_COUNT) {
+        struct irq_binding *binding=
+            &device_vectors[frame->vector-ZEROOS_DEVICE_VECTOR_BASE];
+        irq_handler_t handler=__atomic_load_n(&binding->handler,__ATOMIC_ACQUIRE);
+        if (handler)
+            handler((uint8_t)frame->vector,frame,binding->context);
+        else
+            ++device_vector_spurious;
+        /* MSI/MSI-X are edge messages to the local APIC. */
+        apic_eoi();
+        if (cpu_current_id()!=0) {
+            cpu_irq_exit();
+            return (uint64_t)frame;
+        }
+        result=task_reschedule_from_interrupt(frame);
+        cpu_irq_exit();
+        return result;
+    }
+
     if (frame->vector >= 32 && frame->vector < 48) {
         uint8_t irq=(uint8_t)(frame->vector-32);
         struct irq_binding *binding=&irq_bindings[irq];
@@ -269,6 +296,39 @@ int irq_register(uint8_t irq, irq_handler_t handler, void *context) {
     return 0;
 }
 
+int irq_vector_alloc(irq_handler_t handler, void *context) {
+    int vector=-1;
+    if (!handler)
+        return -1;
+    uint64_t flags=spin_lock_irqsave(&device_vector_lock);
+    for (uint32_t i=0; i<ZEROOS_DEVICE_VECTOR_COUNT; ++i) {
+        if (device_vectors[i].handler)
+            continue;
+        device_vectors[i].context=context;
+        __atomic_store_n(&device_vectors[i].handler,handler,__ATOMIC_RELEASE);
+        vector=(int)(ZEROOS_DEVICE_VECTOR_BASE+i);
+        break;
+    }
+    spin_unlock_irqrestore(&device_vector_lock,flags);
+    return vector;
+}
+
+int irq_vector_free(int vector) {
+    if (vector<(int)ZEROOS_DEVICE_VECTOR_BASE ||
+        vector>=(int)(ZEROOS_DEVICE_VECTOR_BASE+ZEROOS_DEVICE_VECTOR_COUNT))
+        return -1;
+    uint64_t flags=spin_lock_irqsave(&device_vector_lock);
+    struct irq_binding *binding=&device_vectors[vector-ZEROOS_DEVICE_VECTOR_BASE];
+    __atomic_store_n(&binding->handler,(irq_handler_t)0,__ATOMIC_RELEASE);
+    binding->context=0;
+    spin_unlock_irqrestore(&device_vector_lock,flags);
+    return 0;
+}
+
+uint64_t irq_vector_spurious_count(void) {
+    return device_vector_spurious;
+}
+
 int irq_unregister(uint8_t irq, irq_handler_t handler, void *context) {
     if (irq>=16 || handler==0) return -1;
     if (irq_bindings[irq].handler!=handler || irq_bindings[irq].context!=context) return -1;
@@ -281,6 +341,7 @@ void interrupts_init(void) {
     pic_init();
     timer_init();
 
+    spinlock_init(&device_vector_lock);
     for (uint16_t i=0;i<256;++i) idt_set_gate((uint8_t)i,isr_stub_table[i]);
     /* User software may enter only through the versioned syscall vector;
      * every other gate remains supervisor-only (DPL0). */

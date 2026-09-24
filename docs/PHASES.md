@@ -140,7 +140,7 @@ Every stage targets the production architecture appropriate to its scope:
 - Stage 0: production engineering, reproducibility, CI and architecture governance.
 - Stage 1: production kernel, scheduler, memory, process/thread and interrupt architecture.
 - Stage 2: production userspace, syscall ABI, executable runtime, services and IPC.
-- Stage 3: production storage, VFS, filesystem, cache, recovery and persistent-data integrity.
+- Stage 3: production storage, VFS, filesystem, cache, recovery and persistent-data integrity (implemented; see STORAGE.md, VFS.md, ZJFS.md — PARTIAL items are listed in STORAGE.md §12).
 - Stage 4: production hardware, drivers, networking, audio, display, power and thermal architecture.
 - Stage 5: production graphics, compositor, window system, shell, search, settings, notifications and accessibility.
 

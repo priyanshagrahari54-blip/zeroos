@@ -398,7 +398,7 @@ int ipc_send_timeout(struct process *owner, zeroos_ipc_handle_t handle,
                 return -ZEROOS_EBUSY;
             }
             spin_unlock(&ipc_lock);
-            if (wait_queue_commit(block_flags)!=0)
+            if (wait_queue_commit(irq_flags)!=0)
                 return -ZEROOS_EINTR;
             continue;
         }
@@ -481,7 +481,7 @@ int ipc_receive_timeout(struct process *owner, zeroos_ipc_handle_t handle,
                 return -ZEROOS_EBUSY;
             }
             spin_unlock(&ipc_lock);
-            if (wait_queue_commit(block_flags)!=0)
+            if (wait_queue_commit(irq_flags)!=0)
                 return -ZEROOS_EINTR;
             continue;
         }
@@ -561,7 +561,7 @@ int ipc_pipe_write_timeout(struct process *owner, zeroos_ipc_handle_t handle,
                     return -ZEROOS_EBUSY;
                 }
                 spin_unlock(&ipc_lock);
-                if (wait_queue_commit(block_flags)!=0)
+                if (wait_queue_commit(irq_flags)!=0)
                     return -ZEROOS_EINTR;
             }
             continue;
@@ -634,7 +634,7 @@ int ipc_pipe_read_timeout(struct process *owner, zeroos_ipc_handle_t handle,
                 return -ZEROOS_EBUSY;
             }
             spin_unlock(&ipc_lock);
-            if (wait_queue_commit(block_flags)!=0)
+            if (wait_queue_commit(irq_flags)!=0)
                 return -ZEROOS_EINTR;
             continue;
         }
@@ -746,7 +746,7 @@ int ipc_event_wait_timeout(struct process *owner, zeroos_ipc_handle_t handle,
                 return -ZEROOS_EBUSY;
             }
             spin_unlock(&ipc_lock);
-            if (wait_queue_commit(block_flags)!=0)
+            if (wait_queue_commit(irq_flags)!=0)
                 return -ZEROOS_EINTR;
         }
     }

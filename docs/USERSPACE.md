@@ -107,6 +107,7 @@ The initial v1 calls are:
 | 22 | `SHM_MAP` | map the whole object at a caller-selected user address with read or read/write permissions |
 | 23 | `SHM_UNMAP` | unmap one whole-object mapping and release its page references |
 | 24 | `SHM_CLOSE` | close a shared-memory capability; active mappings keep their pages alive |
+| 25–50 | file/VFS calls | Stage 3, additive, gated by `ZEROOS_ABI_FEATURE_FILES` (bit 7). Semantics, structures and migration notes are in [VFS.md](VFS.md) §7; wrappers are in `userspace/include/zeroos/storage.h` |
 
 The public freestanding wrapper surface is
 `userspace/include/zeroos/syscall.h`. It contains the fixed-width ABI

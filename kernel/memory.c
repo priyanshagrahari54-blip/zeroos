@@ -135,8 +135,11 @@ static void reserve_range(uint64_t start, uint64_t end) {
     if (end>ZEROOS_MAX_PHYS_MEM)
         end=ZEROOS_MAX_PHYS_MEM;
 
-    uint64_t first=align_up_page(start)/ZEROOS_PAGE_SIZE;
-    uint64_t last=end/ZEROOS_PAGE_SIZE;
+    /* Reservations must cover every page the range touches: round the start
+     * down and the end up. Rounding inward (as usable ranges do) would leave a
+     * sub-page boot-info block or the kernel's final partial page allocatable. */
+    uint64_t first=(start & ~(ZEROOS_PAGE_SIZE-1ULL))/ZEROOS_PAGE_SIZE;
+    uint64_t last=align_up_page(end)/ZEROOS_PAGE_SIZE;
     if (last>ZEROOS_MAX_PAGES)
         last=ZEROOS_MAX_PAGES;
     if (last<=first)
@@ -356,6 +359,53 @@ void *page_alloc_below(uint64_t physical_limit) {
     }
     spin_unlock_irqrestore(&memory_lock,flags);
     return (void *)0;
+}
+
+/*
+ * Physically contiguous run allocation for multi-page kernel stacks and DMA
+ * rings. The run is searched top-down so contiguous requests do not fragment
+ * the low region that page_alloc_below() consumers (the AP trampoline) need.
+ * Each page of the run is an independent single-reference frame, so the run
+ * may be released with page_free_contiguous() or page-by-page.
+ */
+void *page_alloc_contiguous(uint64_t count) {
+    if (count==0 || count>ZEROOS_MAX_PAGES)
+        return (void *)0;
+    if (count==1)
+        return page_alloc();
+
+    uint64_t flags=spin_lock_irqsave(&memory_lock);
+    uint64_t run=0;
+    for (uint64_t page=ZEROOS_MAX_PAGES; page>0; --page) {
+        uint64_t candidate=page-1ULL;
+        if (!usable_test(candidate) || bitmap_test(candidate)) {
+            run=0;
+            continue;
+        }
+        if (++run<count)
+            continue;
+        for (uint64_t i=0; i<count; ++i) {
+            bitmap_set(candidate+i);
+            page_references[candidate+i]=1;
+            if (free_pages)
+                --free_pages;
+        }
+        for (uint64_t word=candidate>>6; word<=((candidate+count-1ULL)>>6);
+             ++word)
+            summary_refresh(word);
+        spin_unlock_irqrestore(&memory_lock,flags);
+        return (void *)(candidate*ZEROOS_PAGE_SIZE);
+    }
+    spin_unlock_irqrestore(&memory_lock,flags);
+    return (void *)0;
+}
+
+void page_free_contiguous(void *address, uint64_t count) {
+    uint64_t base=(uint64_t)address;
+    if (!address || count==0 || (base%ZEROOS_PAGE_SIZE)!=0)
+        return;
+    for (uint64_t i=0; i<count; ++i)
+        (void)memory_page_release(base+i*ZEROOS_PAGE_SIZE);
 }
 
 void page_free(void *address) {

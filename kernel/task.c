@@ -264,6 +264,21 @@ static int task_current_owner(const struct task *task) {
     return 0;
 }
 
+/*
+ * Any CPU may be inside its own context_switch_ex() handoff while this CPU
+ * validates under task_lock: handoff_tasks[cpu] is published under task_lock
+ * before the lock is dropped for the assembly switch and cleared only after
+ * the outgoing context is fully saved. Such a task's saved_stack/return slot
+ * still holds the previous switch's (now stale) values, so it is exempt from
+ * saved-context checks exactly like the local handoff task.
+ */
+static int task_handoff_in_flight(const struct task *task) {
+    for (uint32_t cpu=0; cpu<ZEROOS_MAX_CPUS; ++cpu)
+        if (handoff_tasks[cpu]==task)
+            return 1;
+    return 0;
+}
+
 static int task_slot_for_pointer(const struct task *task) {
     uint64_t address;
     uint64_t base;
@@ -399,7 +414,7 @@ static void task_validate_table_at(const char *where,
         }
 
         /* The handoff task's saved context is mid-write. */
-        if (task==handoff)
+        if (task==handoff || task_handoff_in_flight(task))
             continue;
 
         if (task->interrupt_frame) {
@@ -432,7 +447,8 @@ static void task_validate_table_at(const char *where,
             ++running;
         } else if (idle->state==TASK_ZOMBIE || idle->run_next) {
             task_context_panic("ZEROOS PANIC: AP idle queue state invalid.\n",idle);
-        } else if (idle!=handoff && idle->interrupt_frame==0 && idle->saved_stack!=0 &&
+        } else if (idle!=handoff && !task_handoff_in_flight(idle) &&
+                   idle->interrupt_frame==0 && idle->saved_stack!=0 &&
                    (!task_saved_stack_ok(idle) || !task_saved_context_ok(idle))) {
             task_saved_context_panic(idle);
         }
@@ -562,6 +578,9 @@ static void task_prepare_stack(struct task *task) {
     uint64_t *sp;
 
     *(uint64_t *)(uint64_t)task->stack_base=ZEROOS_TASK_STACK_GUARD;
+    for (uint64_t *paint=(uint64_t *)(uint64_t)(task->stack_base+8ULL);
+         (uint64_t)paint<top-64ULL; ++paint)
+        *paint=ZEROOS_TASK_STACK_PAINT;
 
     /*
      * context_switch_ex restores six callee-saved registers then retq. The
@@ -639,7 +658,7 @@ static void reap_zombies_locked(void) {
         }
         if (task_current_owner(task))
             task_context_panic("ZEROOS PANIC: zombie task still owns a CPU.\n",task);
-        page_free((void *)task->stack_base);
+        page_free_contiguous((void *)task->stack_base,ZEROOS_TASK_STACK_PAGES);
         task->id=0;
         task->state=TASK_UNUSED;
         task->saved_stack=0;
@@ -1029,7 +1048,7 @@ int task_system_init(void) {
         (tasks[0].kernel_stack_top & 0xfULL)!=0)
         return -1;
 
-    idle_stack=page_alloc();
+    idle_stack=page_alloc_contiguous(ZEROOS_TASK_STACK_PAGES);
     if (!idle_stack) return -1;
 
     tasks[ZEROOS_IDLE_SLOT].id=1;
@@ -1095,7 +1114,7 @@ static int task_create_owned_internal(task_entry_t entry, void *argument,
         return -1;
     }
 
-    void *stack=page_alloc();
+    void *stack=page_alloc_contiguous(ZEROOS_TASK_STACK_PAGES);
     if (!stack) {
         spin_unlock_irqrestore(&task_lock,flags);
         return -1;
@@ -1134,7 +1153,7 @@ static int task_create_owned_internal(task_entry_t entry, void *argument,
     if (publish) {
         int owner=task_choose_cpu_locked(task);
         if (owner<0) {
-            page_free(stack);
+            page_free_contiguous(stack,ZEROOS_TASK_STACK_PAGES);
             task->id=0;
             task->state=TASK_UNUSED;
             spin_unlock_irqrestore(&task_lock,flags);
@@ -1979,4 +1998,16 @@ uint64_t task_count(void) {
         if (tasks[i].state!=TASK_UNUSED)
             ++count;
     return count;
+}
+
+uint64_t task_stack_high_water(const struct task *task) {
+    const uint64_t *cursor;
+    uint64_t end;
+    if (!task || !task->stack_base)
+        return 0;
+    end=task->stack_base+ZEROOS_TASK_STACK_SIZE;
+    cursor=(const uint64_t *)(uint64_t)(task->stack_base+8ULL);
+    while ((uint64_t)cursor<end && *cursor==ZEROOS_TASK_STACK_PAINT)
+        ++cursor;
+    return end-(uint64_t)cursor;
 }

@@ -155,6 +155,10 @@ Before merging a major subsystem:
 - SYNCHRONIZATION.md
 - VIRTUAL_MEMORY.md
 - BUILD.md
+- USERSPACE.md
+- STORAGE.md (Stage 3 storage stack: block layer, drivers, GPT, page cache, security, recovery)
+- VFS.md (VFS objects, semantics, file syscall ABI)
+- ZJFS.md (initial filesystem format, journaling, fsck)
 
 ## Final rule
 

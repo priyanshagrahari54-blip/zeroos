@@ -153,6 +153,23 @@ device -> block layer -> cache -> filesystem -> VFS -> permissions -> userspace 
 
 Snapshots and backups are layered above filesystem primitives.
 
+Stage 3 implementation (details: STORAGE.md, VFS.md, ZJFS.md):
+- discovery: PCI class 01 → AHCI (NCQ, MSI) and NVMe (MSI-X, per-CPU
+  queues) drivers. Legacy IDE is PARTIAL (reported, not driven);
+- block layer: fixed request pools, priority + aging scheduler (HDD C-SCAN,
+  SSD FIFO, NVMe multi-queue), merging, flush barriers, retries, an
+  event-driven timeout watchdog, and controller reset with a bounded
+  drain;
+- GPT validation with backup recovery. Only ZEROOS-typed ZJFS partitions
+  are mounted, and disks are never auto-formatted;
+- bounded page cache (dirty limits, background flusher, sticky writeback
+  errors, pinned mmap pages) and the ZJFS journaling filesystem (ordered
+  data, checksummed metadata, replay, orphans, fsck/repair);
+- VFS with explicit refcounted ownership and uid/gid permissions, exposed
+  to Ring 3 through syscalls 25–50 (`ZEROOS_ABI_FEATURE_FILES`);
+- one storage manager task that becomes the event-driven storage worker
+  (periodic commit, deferred process-exit cleanup).
+
 ## 13. Driver Architecture
 Drivers should expose capability-oriented interfaces.
 Bus enumeration identifies hardware.

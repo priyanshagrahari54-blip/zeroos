@@ -95,11 +95,29 @@ Requirements:
 - fsync,
 - error recovery.
 
+Implemented (Stage 3): VFS.md specifies the objects, lock order,
+per-operation blocking/error/concurrency/crash semantics and the file
+syscall ABI (numbers 25–50, feature bit 7, additive to ABI v1).
+ZJFS.md specifies the on-disk format v1, the journal commit/replay
+protocol, error behavior and the fsck/repair contract.
+
 ## 9. Storage
 Block layer provides sector/block I/O and queueing.
 I/O scheduler adapts to HDD/SSD/NVMe.
 HDD policy: sequential batching and low random background I/O.
 NVMe policy: queue depth and parallelism may increase when safe.
+
+Implemented (Stage 3, STORAGE.md):
+- priorities FOREGROUND/NORMAL/BACKGROUND with 50-tick aging;
+- background I/O capped at 1/4 of the hardware depth and kept out of the
+  last 1/4 of the request pool;
+- HDD C-SCAN, SSD FIFO, and NVMe FIFO over up to 4 CPU-local hardware
+  queues;
+- back-merging up to 32 segments;
+- up to 2 retries for failed reads and writes;
+- 5 s timeouts, with poll-before-reset lost-interrupt recovery;
+- the page cache limited to min(4096 pages, free/4), with a 25% dirty
+  limit and a 10% background threshold.
 
 ## 10. Networking
 Required layers:

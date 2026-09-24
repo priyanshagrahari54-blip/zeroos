@@ -66,4 +66,24 @@ kernel_errors = enum_values(KERNEL, "zeroos_syscall_error")
 if public_errors != kernel_errors:
     raise SystemExit("syscall error drift between public and kernel headers")
 
+# Feature bits and the file/VFS ABI (additive to v1) must match exactly.
+FILE_MACROS = sorted(set(re.findall(r"^#define\s+(ZEROOS_(?:ABI_FEATURE_|O_|SEEK_|S_IF|FSYNC_|MMAP_|FILE_|PATH_MAX|NAME_MAX|MAX_FDS)[A-Z0-9_]*)\s", PUBLIC, re.MULTILINE)))
+if len(FILE_MACROS) < 20:
+    raise SystemExit("file ABI macros missing from public header")
+for name in FILE_MACROS:
+    if macro(PUBLIC, name) != macro(KERNEL, name):
+        raise SystemExit(f"macro drift for {name}")
+
+
+def struct_body(text: str, name: str) -> str:
+    match = re.search(rf"struct\s+{name}\s*\{{(?P<body>.*?)\}};", text, re.DOTALL)
+    if not match:
+        raise SystemExit(f"missing struct {name}")
+    return " ".join(match.group("body").split())
+
+
+for name in ("zeroos_stat", "zeroos_statfs", "zeroos_dirent"):
+    if struct_body(PUBLIC, name) != struct_body(KERNEL, name):
+        raise SystemExit(f"struct layout drift for {name}")
+
 print("ZEROOS public/kernel ABI consistency passed.")

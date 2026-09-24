@@ -16,6 +16,7 @@
 #include "user.h"
 #include "ipc.h"
 #include "shmem.h"
+#include "storage/storage.h"
 
 #define COM1 0x3F8
 #define VMM_SELF_TEST_VA 0x00007f0000000000ULL
@@ -920,6 +921,8 @@ static void scheduler_probe_monitor(void *argument) {
             if (!userspace_reported && userspace_debug_validate()==1) {
                 userspace_reported=1;
                 serial_write_public("ZEROOS: Ring-3 transition, syscall ABI, and init recovery passed.\n");
+                /* Stage 3: storage bring-up runs in its own task. */
+                storage_start();
             }
         }
 

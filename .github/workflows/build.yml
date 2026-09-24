@@ -124,6 +124,19 @@ jobs:
             grep -q "ZEROOS: userspace negative syscall/fault/malformed-ELF probes passed." build/serial.log
             grep -q "ZEROOS: init userspace process reaped cleanly." build/serial.log
             grep -q "ZEROOS: Ring-3 transition, syscall ABI, and init recovery passed." build/serial.log
+            grep -q "ZEROOS: storage block layer scheduler/fault/timeout self-test passed." build/serial.log
+            grep -q "ZEROOS: storage GPT validation/recovery self-test passed." build/serial.log
+            grep -q "ZEROOS: storage VFS/ZJFS/page-cache self-test passed." build/serial.log
+            grep -q "ZEROOS: storage crash-consistency (power-cut/replay/fsck) self-test passed." build/serial.log
+            grep -q "ZEROOS: storage stack certification passed" build/serial.log
+            grep -q "ZEROOS: storage worker periodic commit verified" build/serial.log
+            grep -q "ZEROOS: storage userspace probe passed." build/serial.log
+            grep -q "ZEROOS: storage userspace probe reaped; descriptors and mappings released" build/serial.log
+            grep -q "ZEROOS: storage Stage 3 certification complete." build/serial.log
+            if grep -q "storage.*FAILED" build/serial.log; then
+              grep "FAILED" build/serial.log
+              exit 1
+            fi
 
             if grep -q "ZEROOS PANIC:" build/serial.log; then
               echo "ZEROOS scheduler/runtime panic detected:"
@@ -175,6 +188,7 @@ jobs:
           grep -q "ZEROOS: blocking IPC close-wakeup path passed." build/serial-smp4.log
           grep -q "ZEROOS: blocking IPC send-wakeup path passed." build/serial-smp4.log
           grep -q "ZEROOS: isolated service process setup complete." build/serial-smp4.log
+          grep -q "ZEROOS: storage Stage 3 certification complete." build/serial-smp4.log
           grep -q "ZEROOS: shared-memory map/grant/lifecycle self-test passed." build/serial-smp4.log
           grep -q "ZEROOS: userspace negative syscall/fault/malformed-ELF probes passed." build/serial-smp4.log
           grep -q "ZEROOS: Ring-3 transition, syscall ABI, and init recovery passed." build/serial-smp4.log
@@ -271,6 +285,76 @@ jobs:
             grep "ZEROOS PANIC:" build-fault/serial.log
             exit 1
           fi
+
+      - name: Storage host tools self-test
+        run: |
+          set -e
+          T=$(mktemp -d)
+          truncate -s 64M $T/t.img
+          python3 tools/storage/gpt.py create $T/t.img --part zjfs:40:data --part scratch:rest:scratch
+          python3 tools/storage/zjfs.py --part 1 $T/t.img mkfs --label ci
+          head -c 3000000 /dev/urandom > $T/blob
+          python3 tools/storage/zjfs.py --part 1 $T/t.img mkdir /d
+          python3 tools/storage/zjfs.py --part 1 $T/t.img put $T/blob /d/blob
+          python3 tools/storage/zjfs.py --part 1 $T/t.img cat /d/blob | cmp - $T/blob
+          python3 tools/storage/zjfs.py --part 1 $T/t.img fsck
+          # Corrupt the primary superblock: fsck must fall back to the backup.
+          OFF=$(python3 tools/storage/gpt.py offset $T/t.img 1 | cut -d" " -f1)
+          printf 'XXXX' | dd of=$T/t.img bs=1 seek=$OFF conv=notrunc status=none
+          python3 tools/storage/zjfs.py --part 1 $T/t.img fsck | grep -q "using backup"
+          python3 tools/storage/zjfs.py --part 1 $T/t.img fsck --repair
+          python3 tools/storage/zjfs.py --part 1 $T/t.img fsck | grep -q "RESULT clean"
+          # GPT: damaged primary -> backup fallback -> byte-exact repair;
+          # both copies damaged -> repair refuses (exit 2) and writes nothing.
+          cp $T/t.img $T/good.img
+          printf 'XXXX' | dd of=$T/t.img bs=1 seek=512 conv=notrunc status=none
+          python3 tools/storage/gpt.py list $T/t.img 2>&1 | grep -q "using backup"
+          python3 tools/storage/gpt.py repair $T/t.img | grep -q "primary GPT rebuilt from backup"
+          cmp $T/t.img $T/good.img
+          printf 'XXXX' | dd of=$T/t.img bs=1 seek=512 conv=notrunc status=none
+          printf 'Z' | dd of=$T/t.img bs=1 seek=$((64*1024*1024-512+20)) conv=notrunc status=none
+          cp $T/t.img $T/bad.img
+          rc=0; python3 tools/storage/gpt.py repair $T/t.img || rc=$?
+          test "$rc" = 2
+          cmp $T/t.img $T/bad.img
+
+      - name: Storage persistence certification (q35 AHCI + NVMe, two boots)
+        run: |
+          set -e
+          mkdir -p build/disks
+          for d in sata nvme; do
+            rm -f build/disks/$d.img
+            truncate -s 64M build/disks/$d.img
+            python3 tools/storage/gpt.py create build/disks/$d.img --part zjfs:40:data --part scratch:rest:scratch
+            python3 tools/storage/zjfs.py --part 1 build/disks/$d.img mkfs --label $d
+          done
+          echo "hello from the host" > build/disks/hello.txt
+          python3 tools/storage/zjfs.py --part 1 build/disks/sata.img put build/disks/hello.txt /hello.txt
+          for boot in 1 2; do
+            timeout 45s qemu-system-x86_64 -machine q35 -smp 4 -m 256M \
+              -cdrom build/zeroos.iso -boot d \
+              -drive file=build/disks/sata.img,if=none,id=d0,format=raw -device ide-hd,drive=d0,bus=ide.0 \
+              -drive file=build/disks/nvme.img,if=none,id=n0,format=raw -device nvme,serial=zeroos1,drive=n0 \
+              -serial file:build/serial-disk$boot.log -display none -no-reboot -no-shutdown || true
+            L=build/serial-disk$boot.log
+            grep -q "ZEROOS: storage discovery: sata_disks=1 nvme_namespaces=1." $L
+            grep -q "ZEROOS: storage driver test sata0 destructive (on sata0p2) passed." $L
+            grep -q "ZEROOS: storage driver test nvme0n1 destructive (on nvme0n1p2) passed." $L
+            grep -q "ZEROOS: vfs: mounted sata0p1 (zjfs) at /data." $L
+            grep -q "ZEROOS: storage persistence: /data boot counter $boot (previous $((boot-1)))." $L
+            grep -q "ZEROOS: storage persistence: host file /data/hello.txt bytes=20" $L
+            grep -q "ZEROOS: storage persistence check passed" $L
+            grep -q "ZEROOS: storage userspace probe wrote /data/user-probe.txt (fsync ok)." $L
+            grep -q "ZEROOS: storage Stage 3 certification complete." $L
+            if grep -qE "ZEROOS PANIC:|FAILED" $L; then grep -E "ZEROOS PANIC:|FAILED" $L; exit 1; fi
+            # QEMU was killed: an unclean shutdown. The host checker must see a
+            # consistent filesystem and the Ring-3 write.
+            python3 tools/storage/zjfs.py --part 1 build/disks/sata.img fsck
+            python3 tools/storage/zjfs.py --part 1 build/disks/sata.img cat /user-probe.txt | grep -q "written from ring 3"
+            test "$(python3 tools/storage/zjfs.py --part 1 build/disks/sata.img get-counter)" = "$boot"
+          done
+          python3 tools/storage/zjfs.py --part 1 build/disks/sata.img fsck --repair
+          python3 tools/storage/zjfs.py --part 1 build/disks/sata.img info | grep -q "state=CLEAN"
 
       - name: Serial summary
         if: always()
@@ -380,3 +464,5 @@ jobs:
             build/serial-smp4.log
             build/debug-smp4.log
             build/qemu-smp4.log
+            build/serial-disk1.log
+            build/serial-disk2.log

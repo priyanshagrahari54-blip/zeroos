@@ -2,8 +2,12 @@
 #define ZEROOS_TASK_H
 #include "types.h"
 
-#define ZEROOS_MAX_TASKS 32
-#define ZEROOS_TASK_STACK_SIZE 4096ULL
+#define ZEROOS_MAX_TASKS 48
+/* Four contiguous pages: storage call chains (VFS -> journal -> cache ->
+ * block -> driver) plus a nested IRQ frame must fit with headroom. */
+#define ZEROOS_TASK_STACK_PAGES 4ULL
+#define ZEROOS_TASK_STACK_SIZE (ZEROOS_TASK_STACK_PAGES * 4096ULL)
+#define ZEROOS_TASK_STACK_PAINT 0x5354414b50414e54ULL
 #define ZEROOS_TASK_STACK_GUARD 0x5a45524f5441534bULL
 #define ZEROOS_TASK_PRIORITY_MIN 0U
 #define ZEROOS_TASK_PRIORITY_DEFAULT 16U
@@ -157,6 +161,9 @@ void task_start_secondary_cpu(void);
 void task_publish_scheduler_start(void);
 int task_scheduler_ready(void);
 uint64_t task_count(void);
+/* Deepest observed use of the current task's kernel stack in bytes, measured
+ * from the untouched paint pattern (observability for deep I/O paths). */
+uint64_t task_stack_high_water(const struct task *task);
 
 /*
  * Deterministic scheduler test/diagnostic hooks.

@@ -236,7 +236,7 @@ static int smp_start_ap(uint32_t cpu_id) {
         records[cpu_id].startup_attempts=attempt;
         uint64_t field=trampoline_offset(ap_trampoline_stack);
         *(uint64_t *)(copy+field)=records[cpu_id].bootstrap_stack+
-                                   ZEROOS_PAGE_SIZE;
+                                   ZEROOS_TASK_STACK_SIZE;
         field=trampoline_offset(ap_trampoline_cpu_id);
         *(uint32_t *)(copy+field)=(generation<<16)|cpu_id;
         atomic_store_u32(&records[cpu_id].state,ZEROOS_SMP_CPU_STARTING);
@@ -349,7 +349,10 @@ int smp_init(void) {
         if (cpu_prepare_local(cpu_id,apic_id)!=0)
             atomic_store_u32(&records[cpu_id].state,ZEROOS_SMP_CPU_FAILED);
         else {
-            records[cpu_id].bootstrap_stack=(uint64_t)page_alloc();
+            /* The bootstrap stack becomes the AP idle task's kernel stack,
+             * so it has the full task stack size. */
+            records[cpu_id].bootstrap_stack=
+                (uint64_t)page_alloc_contiguous(ZEROOS_TASK_STACK_PAGES);
             if (!records[cpu_id].bootstrap_stack)
                 atomic_store_u32(&records[cpu_id].state,ZEROOS_SMP_CPU_FAILED);
         }
