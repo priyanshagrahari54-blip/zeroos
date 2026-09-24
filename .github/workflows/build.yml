@@ -95,6 +95,7 @@ jobs:
             grep -q "ZEROOS: userspace init process published." build/serial.log
             grep -q "ZEROOS: capability IPC queue/backpressure self-test passed." build/serial.log
             grep -q "ZEROOS: capability IPC negative/timeout semantics passed." build/serial.log
+            grep -q "ZEROOS: userspace resource exhaustion/recovery passed." build/serial.log
             grep -q "ZEROOS: service capability least-privilege grant passed." build/serial.log
             grep -q "ZEROOS: service worker grant denial passed." build/serial.log
             grep -q "ZEROOS: service manager launched isolated IPC service attempt 1." build/serial.log
@@ -144,6 +145,7 @@ jobs:
           grep -q "ZEROOS: service worker grant denial passed." build/serial-smp4.log
           grep -q "ZEROOS: isolated service IPC/restart recovery passed." build/serial-smp4.log
           grep -q "ZEROOS: userspace init syscall path passed." build/serial-smp4.log
+          grep -q "ZEROOS: userspace resource exhaustion/recovery passed." build/serial-smp4.log
           grep -q "ZEROOS: userspace negative syscall/fault/malformed-ELF probes passed." build/serial-smp4.log
           grep -q "ZEROOS: Ring-3 transition, syscall ABI, and init recovery passed." build/serial-smp4.log
           if grep -q "ZEROOS PANIC:" build/serial-smp4.log; then
@@ -177,6 +179,7 @@ jobs:
           grep -q "ZEROOS: CPU hot-offline queue evacuation and parking passed." build/serial-nx-off.log
           grep -q "ZEROOS: service worker grant denial passed." build/serial-nx-off.log
           grep -q "ZEROOS: userspace init syscall path passed." build/serial-nx-off.log
+          grep -q "ZEROOS: userspace resource exhaustion/recovery passed." build/serial-nx-off.log
           grep -q "ZEROOS: userspace negative syscall/fault/malformed-ELF probes passed." build/serial-nx-off.log
           grep -q "ZEROOS: Ring-3 transition, syscall ABI, and init recovery passed." build/serial-nx-off.log
           if grep -q "ZEROOS PANIC:" build/serial-nx-off.log; then
@@ -204,6 +207,7 @@ jobs:
           grep -q "ZEROOS: scheduler certification passed." build-fault/serial.log
           grep -q "ZEROOS: service worker grant denial passed." build-fault/serial.log
           grep -q "ZEROOS: userspace init syscall path passed." build-fault/serial.log
+          grep -q "ZEROOS: userspace resource exhaustion/recovery passed." build-fault/serial.log
           grep -q "ZEROOS: userspace negative syscall/fault/malformed-ELF probes passed." build-fault/serial.log
           grep -q "ZEROOS: Ring-3 transition, syscall ABI, and init recovery passed." build-fault/serial.log
           if grep -q "ZEROOS PANIC:" build-fault/serial.log; then

@@ -218,6 +218,8 @@ void syscall_dispatch(struct interrupt_frame *frame) {
     }
     case ZEROOS_SYS_IPC_GRANT: {
         zeroos_ipc_handle_t target_handle=0;
+        struct process *target=0;
+        uint8_t rights;
         int result;
         if (frame->rdx==0 ||
             !process_address_space_is_user_range(process,frame->rdx,
@@ -225,13 +227,23 @@ void syscall_dispatch(struct interrupt_frame *frame) {
             frame->rax=syscall_error(ZEROOS_EFAULT);
             break;
         }
-        result=ipc_grant_rights(
-            process,frame->rdi,frame->rsi,
-            frame->r10 ? (uint8_t)frame->r10 : ZEROOS_IPC_ALL_RIGHTS,
-            &target_handle);
+        if (frame->r10>ZEROOS_IPC_ALL_RIGHTS) {
+            frame->rax=syscall_error(ZEROOS_EINVAL);
+            break;
+        }
+        rights=frame->r10 ? (uint8_t)frame->r10 : ZEROOS_IPC_ALL_RIGHTS;
+        result=ipc_grant_rights(process,frame->rdi,frame->rsi,
+                                rights,&target_handle);
         if (result==0 && copy_to_user(frame->rdx,&target_handle,
-                                      sizeof(target_handle))!=0)
+                                      sizeof(target_handle))!=0) {
+            /* The target owns the newly created capability. Roll it back
+             * before returning EFAULT so a faulting output pointer cannot
+             * consume a capability-table slot or extend endpoint lifetime. */
+            target=process_lookup(frame->rsi);
+            if (target)
+                (void)ipc_close(target,target_handle);
             result=-ZEROOS_EFAULT;
+        }
         frame->rax=syscall_result(result);
         break;
     }
@@ -241,11 +253,16 @@ void syscall_dispatch(struct interrupt_frame *frame) {
     case ZEROOS_SYS_IPC_SEND: {
         uint64_t length=frame->rdx;
         uint8_t message[ZEROOS_IPC_MAX_MESSAGE];
-        if (length==0 || length>sizeof(message) ||
-            copy_from_user(message,frame->rsi,length)!=0) {
-            frame->rax=length>sizeof(message) ?
-                       syscall_error(ZEROOS_EOVERFLOW) :
-                       syscall_error(ZEROOS_EFAULT);
+        if (length==0) {
+            frame->rax=syscall_error(ZEROOS_EINVAL);
+            break;
+        }
+        if (length>sizeof(message)) {
+            frame->rax=syscall_error(ZEROOS_EOVERFLOW);
+            break;
+        }
+        if (copy_from_user(message,frame->rsi,length)!=0) {
+            frame->rax=syscall_error(ZEROOS_EFAULT);
             break;
         }
         frame->rax=syscall_result(ipc_send_timeout(
@@ -257,9 +274,19 @@ void syscall_dispatch(struct interrupt_frame *frame) {
         uint8_t message[ZEROOS_IPC_MAX_MESSAGE];
         uint64_t length=0;
         int result;
-        if (frame->rsi==0 || frame->rdx==0 || frame->r8==0 ||
-            frame->rdx>sizeof(message) ||
-            !process_address_space_is_user_range(process,frame->rsi,
+        if (frame->rsi==0 || frame->r8==0) {
+            frame->rax=syscall_error(ZEROOS_EFAULT);
+            break;
+        }
+        if (frame->rdx==0) {
+            frame->rax=syscall_error(ZEROOS_EINVAL);
+            break;
+        }
+        if (frame->rdx>sizeof(message)) {
+            frame->rax=syscall_error(ZEROOS_EOVERFLOW);
+            break;
+        }
+        if (!process_address_space_is_user_range(process,frame->rsi,
                                                  frame->rdx,1) ||
             !process_address_space_is_user_range(process,frame->r8,
                                                  sizeof(length),1)) {

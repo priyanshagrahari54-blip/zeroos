@@ -481,6 +481,66 @@ fail:
     return -1;
 }
 
+static int userspace_resource_self_test(struct process *process) {
+    struct zeroos_ipc_pair pairs[ZEROOS_IPC_MAX_ENDPOINTS/2U];
+    process_id_t first_pid=0;
+    process_id_t second_pid=0;
+    struct process *first=0;
+    struct process *second=0;
+    uint32_t pair_count=0;
+    int result=-1;
+
+    if (!process || process_set_limits(process,4,1,16)!=0)
+        return -1;
+    if (process_create(process,&first_pid)!=0)
+        goto restore_limit;
+    first=process_lookup(first_pid);
+    if (!first || first->state!=PROCESS_NEW)
+        goto cleanup_children;
+    if (process_create(process,&second_pid)==0) {
+        second=process_lookup(second_pid);
+        goto cleanup_children;
+    }
+    if (process_abort_new(first)!=0)
+        goto restore_limit;
+    first=0;
+    if (process_set_limits(process,4,4,16)!=0)
+        return -1;
+
+    while (pair_count<ZEROOS_IPC_MAX_ENDPOINTS/2U) {
+        if (ipc_create(process,&pairs[pair_count].local,
+                       &pairs[pair_count].peer)!=0)
+            goto cleanup_ipc;
+        ++pair_count;
+    }
+    {
+        zeroos_ipc_handle_t extra_local=0;
+        zeroos_ipc_handle_t extra_peer=0;
+        if (ipc_create(process,&extra_local,&extra_peer)!=-ZEROOS_ENOMEM)
+            goto cleanup_ipc;
+    }
+    result=0;
+
+cleanup_ipc:
+    while (pair_count) {
+        --pair_count;
+        (void)ipc_close(process,pairs[pair_count].local);
+        (void)ipc_close(process,pairs[pair_count].peer);
+    }
+    if (result==0 && ipc_debug_validate()!=0)
+        result=-1;
+    return result;
+
+cleanup_children:
+    if (second && second->state==PROCESS_NEW)
+        (void)process_abort_new(second);
+    if (first && first->state==PROCESS_NEW)
+        (void)process_abort_new(first);
+restore_limit:
+    (void)process_set_limits(process,4,4,16);
+    return -1;
+}
+
 static void userspace_release_page(struct process *process,
                                    uint64_t virtual_address,
                                    void *physical) {
@@ -728,6 +788,11 @@ int userspace_start_init(void) {
     }
     serial_write_public("ZEROOS: capability IPC queue/backpressure self-test passed.\n");
     serial_write_public("ZEROOS: capability IPC negative/timeout semantics passed.\n");
+    if (userspace_resource_self_test(init_process)!=0) {
+        serial_write_public("ZEROOS PANIC: userspace resource exhaustion self-test failed.\n");
+        goto fail;
+    }
+    serial_write_public("ZEROOS: userspace resource exhaustion/recovery passed.\n");
 
     if (elf_load_image(init_process,init_elf_image,image_size,
                        &load_result)!=0 ||
