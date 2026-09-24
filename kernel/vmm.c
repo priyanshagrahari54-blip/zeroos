@@ -577,8 +577,13 @@ int vmm_space_create(struct vmm_space *space) {
     space->mapped_pages = 0;
     space->max_pages = ~0ULL;
 
-    /* Slot 0 contains the kernel's identity/direct map and is shared. */
+    /* Slot 0 contains the kernel's identity/direct map and is shared. The
+     * kernel MMIO window is also shared: user-mode IRQ/syscall entry keeps the
+     * current process CR3 active while the interrupt controller is acknowledged
+     * on the kernel's mapped LAPIC/IOAPIC pages. These entries are never user
+     * accessible and are not reclaimed by vmm_space_destroy(). */
     space->root[0] = root_table[0];
+    space->root[VMM_MMIO_PML4_INDEX] = root_table[VMM_MMIO_PML4_INDEX];
     return 0;
 }
 
