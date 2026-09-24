@@ -97,10 +97,19 @@ The initial v1 calls are:
 IPC handles are process-scoped capabilities, not global file-like integers.
 The kernel checks owner, generation, rights and endpoint lifetime on every
 operation. Queues have a fixed depth and message size, so exhaustion returns
-`-ZEROOS_EAGAIN` rather than allocating unbounded kernel memory. A closed peer
-returns `-ZEROOS_EPIPE`. The current core deliberately exposes nonblocking
-semantics; interrupt-safe blocking, cancellation and timeout integration remain
-an explicit Stage 2 gate rather than a busy-wait approximation.
+`-ZEROOS_EAGAIN` for `NONBLOCK` rather than allocating unbounded kernel memory.
+A closed peer returns `-ZEROOS_EPIPE`.
+
+Blocking send/receive paths publish the current task on an endpoint wait queue
+while holding the IPC condition lock, then perform the ordinary scheduler
+block transition. Enqueue/dequeue and endpoint destruction wake the opposite
+waiter class, so a full or empty queue cannot lose a wakeup and capability
+revocation cancels blocked operations. The timed variants use the `R9` syscall
+argument as a bounded tick timeout (`R9 == 0` means no timeout for ABI
+compatibility); expiry returns `-ZEROOS_ETIMEDOUT`, and a failed scheduler
+block returns `-ZEROOS_EINTR`. `PEEK` does not wake blocked senders because it
+does not free queue capacity. The public kernel helpers expose both infinite
+and timed forms so service code and fault tests use the same semantics.
 
 The kernel never trusts a user pointer, user length, file descriptor, or
 syscall ID. Unsupported IDs return `-ZEROOS_ENOSYS`; invalid pointers return
@@ -144,19 +153,42 @@ that CR3 activation, TSS.RSP0, user pointer validation, syscall return, user
 exit, task zombie reclamation, thread reaping, and process address-space
 teardown compose without kernel corruption.
 
+## Init service manager and recovery bootstrap
+
+The bootstrap monitor now supervises a real isolated service image in addition
+to init. It creates a controller process with an endpoint pair, grants only
+the worker-side capability to a separately loaded Ring-3 service, and validates
+the message after the worker exits. Attempt one deliberately exits with a
+failure status after delivering its bounded IPC message. The monitor reaps the
+thread and address space, revokes the worker capability, closes the controller
+endpoints, and launches attempt two with a fresh generation-checked channel.
+Attempt two must deliver the message and exit successfully before init is
+considered recovered. This exercises cross-process capability transfer,
+backpressure/endpoint lifetime, failure detection, restart, address-space
+teardown, and no-stale-capability cleanup in the normal scheduler path.
+
+The service image is a static ET_EXEC with the same RX code and RW/NX data
+policy as init. The worker's IPC handle and restart-specific status are patched
+into the image before loading; no kernel pointer or ambient global endpoint is
+exposed to Ring 3. Controller and worker resource limits are explicit, and
+all setup failures roll back unpublished processes and mapped pages.
+
 ## Remaining Stage 2 work
 
 This is not the Stage 2 exit claim. The remaining production gates are:
 
-- ELF segment loader with overflow/permission checks, stack/argv/env/auxv
-  construction and a defined relocation/dynamic-loader policy;
-- blocking syscall paths with cancellation and timeout semantics;
-- capability credentials and secure generation-checked handles;
-- pipes, bounded message queues, events, shared-memory lifecycle and socket
-  foundations with backpressure;
-- init/service manager dependency ordering, supervision, health checks, crash
-  diagnostics and restart/shutdown policy;
-- userspace runtime wrappers and negative/fault-injection/stress coverage.
+- ELF process construction with argv/env/auxv, executable identity and a
+  defined relocation/dynamic-loader policy;
+- a persistent userspace init/service-manager process rather than only the
+  bootstrap supervisor, including dependency ordering, health checks, crash
+  diagnostics, shutdown policy and multi-service resource accounting;
+- capability credentials/rights policy and a public userspace runtime library;
+- pipes, shared-memory lifecycle, events and socket foundations built on the
+  bounded/backpressure and cancellation contracts;
+- negative, fault-injection, timeout, cancellation, resource-exhaustion and
+  multi-CPU stress coverage for the live syscall paths.
 
 The implementation must pass the Stage 2 exit gate only when multiple isolated
-services can execute, communicate, fail, restart and cleanly terminate.
+services can execute, communicate, fail, restart and cleanly terminate under
+all required functional, negative, stress, security, recovery, documentation,
+CI and QEMU gates.

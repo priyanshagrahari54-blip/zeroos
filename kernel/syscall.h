@@ -35,6 +35,7 @@ enum zeroos_syscall_error {
     ZEROOS_ENOSYS = 38,
     ZEROOS_EOVERFLOW = 75,
     ZEROOS_EPIPE = 32,
+    ZEROOS_ETIMEDOUT = 110,
     ZEROOS_ECANCELED = 125
 };
 

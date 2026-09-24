@@ -218,8 +218,9 @@ void syscall_dispatch(struct interrupt_frame *frame) {
                        syscall_error(ZEROOS_EFAULT);
             break;
         }
-        frame->rax=syscall_result(ipc_send(process,frame->rdi,message,
-                                           length,frame->r10));
+        frame->rax=syscall_result(ipc_send_timeout(
+            process,frame->rdi,message,length,frame->r10,
+            frame->r9 ? frame->r9 : ZEROOS_IPC_TIMEOUT_FOREVER));
         break;
     }
     case ZEROOS_SYS_IPC_RECEIVE: {
@@ -235,8 +236,9 @@ void syscall_dispatch(struct interrupt_frame *frame) {
             frame->rax=syscall_error(ZEROOS_EFAULT);
             break;
         }
-        result=ipc_receive(process,frame->rdi,message,frame->rdx,
-                           frame->r10,&length);
+        result=ipc_receive_timeout(
+            process,frame->rdi,message,frame->rdx,frame->r10,&length,
+            frame->r9 ? frame->r9 : ZEROOS_IPC_TIMEOUT_FOREVER);
         if (result>=0) {
             if (copy_to_user(frame->rsi,message,length)!=0 ||
                 copy_to_user(frame->r8,&length,sizeof(length))!=0)

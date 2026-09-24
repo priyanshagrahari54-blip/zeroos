@@ -13,6 +13,7 @@ struct process;
 #define ZEROOS_IPC_FLAG_NONBLOCK (1ULL << 0)
 #define ZEROOS_IPC_FLAG_PEEK     (1ULL << 1)
 #define ZEROOS_IPC_VALID_FLAGS  (ZEROOS_IPC_FLAG_NONBLOCK | ZEROOS_IPC_FLAG_PEEK)
+#define ZEROOS_IPC_TIMEOUT_FOREVER (~0ULL)
 
 #define ZEROOS_IPC_RIGHT_SEND  (1U << 0)
 #define ZEROOS_IPC_RIGHT_RECV  (1U << 1)
@@ -38,9 +39,15 @@ int ipc_grant(struct process *owner, zeroos_ipc_handle_t source,
 int ipc_close(struct process *owner, zeroos_ipc_handle_t handle);
 int ipc_send(struct process *owner, zeroos_ipc_handle_t handle,
              const void *data, uint64_t length, uint64_t flags);
+int ipc_send_timeout(struct process *owner, zeroos_ipc_handle_t handle,
+                     const void *data, uint64_t length, uint64_t flags,
+                     uint64_t timeout_ticks);
 int ipc_receive(struct process *owner, zeroos_ipc_handle_t handle,
                 void *data, uint64_t capacity, uint64_t flags,
                 uint64_t *length_out);
+int ipc_receive_timeout(struct process *owner, zeroos_ipc_handle_t handle,
+                        void *data, uint64_t capacity, uint64_t flags,
+                        uint64_t *length_out, uint64_t timeout_ticks);
 int ipc_process_revoke(struct process *owner);
 int ipc_debug_validate(void);
 

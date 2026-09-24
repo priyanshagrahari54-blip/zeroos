@@ -138,6 +138,8 @@ static uint64_t build_service_code(uint8_t *code,
     put_u32(&code[offset],(uint32_t)message_length); offset+=4;
     code[offset++]=0x41; code[offset++]=0xba;
     put_u32(&code[offset],ZEROOS_IPC_FLAG_NONBLOCK); offset+=4;
+    code[offset++]=0x49; code[offset++]=0xb9;
+    put_u64(&code[offset],ZEROOS_IPC_TIMEOUT_FOREVER); offset+=8;
     code[offset++]=0xcd; code[offset++]=0x80;
 
     code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_EXIT); offset+=4;
@@ -218,6 +220,13 @@ static int userspace_ipc_self_test(struct process *process) {
             goto fail;
     if (ipc_send(process,local,send_buffer,16,
                  ZEROOS_IPC_FLAG_NONBLOCK)!=-ZEROOS_EAGAIN ||
+        ipc_send_timeout(process,local,send_buffer,16,0,0)!=-ZEROOS_ETIMEDOUT ||
+        ipc_send(process,local,send_buffer,16,1ULL<<7)!=-ZEROOS_EINVAL ||
+        ipc_send(process,local,send_buffer,0,0)!=-ZEROOS_EINVAL ||
+        ipc_send(process,local+0x100ULL,send_buffer,16,
+                 ZEROOS_IPC_FLAG_NONBLOCK)!=-ZEROOS_EBADF ||
+        ipc_receive(process,peer,receive_buffer,1,
+                    ZEROOS_IPC_FLAG_NONBLOCK,&length)!=-ZEROOS_EOVERFLOW ||
         ipc_receive(process,peer,receive_buffer,sizeof(receive_buffer),
                     ZEROOS_IPC_FLAG_PEEK,&length)!=16 || length!=16 ||
         ipc_receive(process,peer,receive_buffer,sizeof(receive_buffer),
@@ -225,8 +234,12 @@ static int userspace_ipc_self_test(struct process *process) {
         goto fail;
     while (ipc_receive(process,peer,receive_buffer,sizeof(receive_buffer),
                        ZEROOS_IPC_FLAG_NONBLOCK,&length)==16) {}
-    if (ipc_close(process,local)!=0 || ipc_close(process,peer)!=0 ||
-        ipc_debug_validate()!=0)
+    if (ipc_receive_timeout(process,peer,receive_buffer,sizeof(receive_buffer),
+                            0,&length,0)!=-ZEROOS_ETIMEDOUT ||
+        ipc_close(process,local)!=0 ||
+        ipc_receive(process,peer,receive_buffer,sizeof(receive_buffer),
+                    ZEROOS_IPC_FLAG_NONBLOCK,&length)!=-ZEROOS_EPIPE ||
+        ipc_close(process,peer)!=0 || ipc_debug_validate()!=0)
         return -1;
     return 0;
 
@@ -453,6 +466,7 @@ int userspace_start_init(void) {
         goto fail;
     }
     serial_write_public("ZEROOS: capability IPC queue/backpressure self-test passed.\n");
+    serial_write_public("ZEROOS: capability IPC negative/timeout semantics passed.\n");
 
     if (elf_load_image(init_process,init_elf_image,image_size,
                        &load_result)!=0 ||

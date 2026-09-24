@@ -31,33 +31,40 @@ void wait_queue_init(struct wait_queue *queue) {
     queue->tail=0;
 }
 
-int wait_queue_block(struct wait_queue *queue) {
+int wait_queue_prepare(struct wait_queue *queue, uint64_t *flags_out) {
     struct task *task;
     uint64_t flags;
 
-    if (!queue) return -1;
+    if (!queue || !flags_out)
+        return -1;
     task=task_current();
-    if (!task) return -1;
+    if (!task)
+        return -1;
 
     flags=spin_lock_irqsave(&queue->lock);
-    if (task->state!=TASK_RUNNING || task->wait_queue) {
+    if (task->state!=TASK_RUNNING || task->wait_queue ||
+        task->sleep_armed || task_prepare_block()!=0) {
         spin_unlock_irqrestore(&queue->lock,flags);
         return -1;
     }
 
-    if (task_prepare_block()!=0) {
-        spin_unlock_irqrestore(&queue->lock,flags);
-        return -1;
-    }
-
-    /*
-     * Keep interrupts disabled from queue insertion through the context
-     * switch. Otherwise a timer IRQ can preempt the task after it has been
-     * marked BLOCKED but before task_block() saves its context.
-     */
+    /* Leave interrupts disabled for the caller. This closes the lost-wakeup
+     * window between publishing the waiter and releasing the condition lock. */
     wait_queue_push_locked(queue,task);
     spin_unlock(&queue->lock);
+    *flags_out=flags;
+    return 0;
+}
+
+int wait_queue_commit(uint64_t flags) {
     return task_block_irqsave(flags);
+}
+
+int wait_queue_block(struct wait_queue *queue) {
+    uint64_t flags;
+    if (wait_queue_prepare(queue,&flags)!=0)
+        return -1;
+    return wait_queue_commit(flags);
 }
 
 uint64_t wait_queue_wake_one(struct wait_queue *queue) {
