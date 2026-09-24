@@ -20,6 +20,8 @@ static zeroos_ipc_handle_t service_controller_handle;
 static zeroos_ipc_handle_t service_controller_peer;
 static uint64_t service_attempt;
 static uint64_t service_expected_length;
+static uint64_t service_request_length;
+static uint8_t service_request_sent;
 static uint8_t service_started;
 static uint8_t service_recovered;
 static uint8_t userspace_initialized;
@@ -50,13 +52,20 @@ static uint8_t init_child_elf_image[INIT_CHILD_ELF_IMAGE_SIZE];
 
 #define SERVICE_ELF_DATA_OFFSET 0x1000ULL
 #define SERVICE_ELF_ENTRY_OFFSET 0x100ULL
-#define SERVICE_ELF_IMAGE_SIZE (SERVICE_ELF_DATA_OFFSET+128U)
+#define SERVICE_ELF_IMAGE_SIZE (SERVICE_ELF_DATA_OFFSET+256U)
 static uint8_t service_elf_image[SERVICE_ELF_IMAGE_SIZE];
 
 static const char service_message_one[]=
     "ZEROOS: isolated service IPC attempt one.\n";
 static const char service_message_two[]=
     "ZEROOS: isolated service IPC attempt two.\n";
+static const char service_request_one[]=
+    "ZEROOS: service manager request one.\n";
+static const char service_request_two[]=
+    "ZEROOS: service manager request two.\n";
+
+#define SERVICE_ACK_OFFSET 0x80ULL
+#define SERVICE_RECEIVE_LENGTH_OFFSET 0x100ULL
 
 static void put_u32(uint8_t *buffer, uint32_t value) {
     buffer[0]=(uint8_t)value;
@@ -246,11 +255,30 @@ static uint64_t build_service_code(uint8_t *code,
                                    uint64_t exit_status) {
     uint64_t offset=0;
 
-    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_IPC_SEND); offset+=4;
+    /* Block until the supervisor has observed this task in the scheduler's
+     * wait state. The reply remains in a separate data-page slot because the
+     * receive copy is allowed to overwrite the request buffer. */
+    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_IPC_RECEIVE); offset+=4;
     code[offset++]=0x48; code[offset++]=0xbf;
     put_u64(&code[offset],handle); offset+=8;
     code[offset++]=0x48; code[offset++]=0xbe;
     put_u64(&code[offset],ZEROOS_USER_DATA_BASE); offset+=8;
+    code[offset++]=0xba;
+    put_u32(&code[offset],ZEROOS_IPC_MAX_MESSAGE); offset+=4;
+    code[offset++]=0x41; code[offset++]=0xba;
+    put_u32(&code[offset],0); offset+=4;
+    code[offset++]=0x49; code[offset++]=0xb8;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE+
+            SERVICE_RECEIVE_LENGTH_OFFSET); offset+=8;
+    code[offset++]=0x49; code[offset++]=0xb9;
+    put_u64(&code[offset],ZEROOS_IPC_TIMEOUT_FOREVER); offset+=8;
+    code[offset++]=0xcd; code[offset++]=0x80;
+
+    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_IPC_SEND); offset+=4;
+    code[offset++]=0x48; code[offset++]=0xbf;
+    put_u64(&code[offset],handle); offset+=8;
+    code[offset++]=0x48; code[offset++]=0xbe;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE+SERVICE_ACK_OFFSET); offset+=8;
     code[offset++]=0xba;
     put_u32(&code[offset],(uint32_t)message_length); offset+=4;
     code[offset++]=0x41; code[offset++]=0xba;
@@ -278,7 +306,8 @@ static uint64_t build_service_elf(zeroos_ipc_handle_t handle,
 
     for (uint64_t i=0; i<sizeof(service_elf_image); ++i)
         service_elf_image[i]=0;
-    if (message_length>sizeof(service_elf_image)-SERVICE_ELF_DATA_OFFSET)
+    if (message_length>sizeof(service_elf_image)-SERVICE_ELF_DATA_OFFSET-
+                         SERVICE_ACK_OFFSET)
         return 0;
 
     header->ident[0]=0x7f;
@@ -309,15 +338,16 @@ static uint64_t build_service_elf(zeroos_ipc_handle_t handle,
     data_segment->flags=ZEROOS_ELF_PF_R|ZEROOS_ELF_PF_W;
     data_segment->offset=SERVICE_ELF_DATA_OFFSET;
     data_segment->virtual_address=ZEROOS_USER_DATA_BASE;
-    data_segment->file_size=message_length;
+    data_segment->file_size=SERVICE_ACK_OFFSET+message_length;
     data_segment->memory_size=VMM_PAGE_SIZE;
     data_segment->alignment=VMM_PAGE_SIZE;
 
     (void)build_service_code(service_elf_image+SERVICE_ELF_ENTRY_OFFSET,
                              handle,message_length,exit_status);
     for (uint64_t i=0; i<message_length; ++i)
-        service_elf_image[SERVICE_ELF_DATA_OFFSET+i]=(uint8_t)message[i];
-    return SERVICE_ELF_DATA_OFFSET+message_length;
+        service_elf_image[SERVICE_ELF_DATA_OFFSET+SERVICE_ACK_OFFSET+i]=
+            (uint8_t)message[i];
+    return SERVICE_ELF_DATA_OFFSET+SERVICE_ACK_OFFSET+message_length;
 }
 
 static int userspace_ipc_self_test(struct process *process) {
@@ -377,6 +407,7 @@ static void userspace_release_page(struct process *process,
 static int userspace_start_service(uint64_t attempt) {
     const char *message;
     uint64_t message_length;
+    uint64_t request_length;
     uint64_t image_size;
     uint64_t worker_pid=0;
     uint64_t controller_pid=0;
@@ -397,9 +428,11 @@ static int userspace_start_service(uint64_t attempt) {
     if (attempt==1) {
         message=service_message_one;
         message_length=sizeof(service_message_one)-1U;
+        request_length=sizeof(service_request_one)-1U;
     } else {
         message=service_message_two;
         message_length=sizeof(service_message_two)-1U;
+        request_length=sizeof(service_request_two)-1U;
     }
     image_size=build_service_elf(0,message,message_length,
                                  attempt==1 ? 7U : 0U);
@@ -423,7 +456,8 @@ static int userspace_start_service(uint64_t attempt) {
      * services rather than a same-owner shortcut. */
     if (ipc_create(controller,&controller_handle,&controller_peer)!=0 ||
         ipc_grant_rights(controller,controller_peer,worker->pid,
-                         ZEROOS_IPC_RIGHT_SEND|ZEROOS_IPC_RIGHT_CLOSE,
+                         ZEROOS_IPC_RIGHT_SEND|ZEROOS_IPC_RIGHT_RECV|
+                         ZEROOS_IPC_RIGHT_CLOSE,
                          &worker_handle)!=0)
         goto fail;
     image_size=build_service_elf(worker_handle,message,message_length,
@@ -460,6 +494,8 @@ static int userspace_start_service(uint64_t attempt) {
     service_controller_peer=controller_peer;
     service_attempt=attempt;
     service_expected_length=message_length;
+    service_request_length=request_length;
+    service_request_sent=0;
     service_started=1;
     if (attempt==1)
         serial_write_public("ZEROOS: service capability least-privilege grant passed.\n");
@@ -494,8 +530,23 @@ static int userspace_finish_service(void) {
     int receive_result;
 
     if (!service_started || !service_controller || !service_process ||
-        !service_thread || service_thread->state!=THREAD_ZOMBIE)
+        !service_thread)
+        return -1;
+    if (service_thread->state!=THREAD_ZOMBIE) {
+        struct task *task=task_lookup(service_thread->scheduler_task_id);
+        if (!service_request_sent && task && task->state==TASK_BLOCKED) {
+            const char *request=service_attempt==1 ?
+                               service_request_one : service_request_two;
+            if (ipc_send(service_controller,service_controller_handle,
+                         request,service_request_length,
+                         ZEROOS_IPC_FLAG_NONBLOCK)!=
+                    (int)service_request_length)
+                return -1;
+            service_request_sent=1;
+            serial_write_public("ZEROOS: blocking IPC wait/wake path passed.\n");
+        }
         return 0;
+    }
     receive_result=ipc_receive(service_controller,service_controller_handle,
                                receive_buffer,sizeof(receive_buffer),
                                ZEROOS_IPC_FLAG_NONBLOCK,&received_length);
@@ -559,6 +610,8 @@ int userspace_system_init(void) {
     service_controller_peer=0;
     service_attempt=0;
     service_expected_length=0;
+    service_request_length=0;
+    service_request_sent=0;
     service_started=0;
     service_recovered=0;
     init_started=0;
