@@ -46,6 +46,8 @@ struct zd_input_router {
     uint32_t overlay_takes_keyboard;
     int32_t pointer_x;              /* physical desktop coordinates */
     int32_t pointer_y;
+    int32_t screen_w;               /* clamp bounds for relative motion */
+    int32_t screen_h;               /* (0 = unclamped) */
     uint32_t buttons_down;          /* bit N = button N held */
     struct zd_input_router_stats stats;
 };
@@ -69,6 +71,19 @@ struct zd_input_delivery zd_input_pointer_move(struct zd_input_router *router,
 struct zd_input_delivery zd_input_pointer_button(struct zd_input_router *router,
                                                  uint32_t button,
                                                  uint32_t pressed);
+
+/* Relative pointer motion (PS/2 deltas): clamps the absolute position to
+ * the screen bounds (set below; 0 = unclamped) and routes through
+ * zd_input_pointer_move. Device y grows down in desktop space (deltas are
+ * applied as-is — translation from device orientation belongs to the
+ * producer). */
+struct zd_input_delivery zd_input_pointer_relative(struct zd_input_router *router,
+                                                   int32_t dx, int32_t dy);
+
+/* Screen bounds used by zd_input_pointer_relative, fed from display info
+ * at startup and whenever the layout changes. */
+void zd_input_set_screen_bounds(struct zd_input_router *router, int32_t width,
+                                int32_t height);
 
 /* Key press/release: overlay (when it takes the keyboard) wins, else the
  * focused window of the active workspace. */

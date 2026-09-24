@@ -53,6 +53,9 @@ jobs:
           # runtime invariant suite, and the interrupt-frame ownership defect
           # this gates against was nondeterministic. A single green boot is
           # not sufficient evidence.
+          # On any grep failure, surface the serial tail so the exact missing
+          # milestone (or the lines before a hang) is visible in annotations.
+          trap 'echo "boot milestone failed; serial tail follows"; tail -c 6000 build/serial.log | tr "\\r\\n" "  "; echo' ERR
           for iteration in 1 2 3; do
             echo "===== ZEROOS boot certification iteration ${iteration} ====="
             timeout 45s qemu-system-x86_64             -smp 2             -cdrom build/zeroos.iso             -serial file:build/serial.log             -display none             -no-reboot             -no-shutdown             -debugcon file:build/debug.log             -global isa-debugcon.iobase=0xe9             -d int,guest_errors,cpu_reset             -D build/qemu.log || true
@@ -69,6 +72,7 @@ jobs:
           grep -q "ZEROOS: display present contract verified." build/serial.log
           grep -Eq 'ZEROOS: (PS/2 keyboard input stack ready|input stack degraded \([^)]*\))\.' build/serial.log
           grep -q "ZEROOS: input blocking wait/wake path passed." build/serial.log
+          grep -Eq 'ZEROOS: (PS/2 mouse pointer ready|mouse pointer degraded \([^)]*\))\.' build/serial.log
             grep -q "ZEROOS: user fault containment policy armed." build/serial.log
             grep -q "ZEROOS: ACPI routing discovery:" build/serial.log
             grep -q "ZEROOS: SMP startup self-test passed." build/serial.log
@@ -253,6 +257,7 @@ jobs:
           fi
 
           echo "===== ZEROOS failed-IPI recovery fault boot ====="
+          trap 'echo "fault-boot milestone failed; serial tail follows"; tail -c 6000 build-fault/serial.log | tr "\\r\\n" "  "; echo' ERR
           make BUILD=build-fault EXTRA_CFLAGS=-DZEROOS_TEST_SMP_FAILED_DISPATCH
           timeout 45s qemu-system-x86_64 \
             -smp 2 \
@@ -428,6 +433,7 @@ jobs:
         run: |
           # Exact panic lines first: annotation messages are capped near 4KB
           # and the full serial tails truncate precisely where they matter.
+          trap - ERR
           for log in build/serial.log build/serial-smp4.log build/serial-nx-off.log build-fault/serial.log; do
             if test -f "$log" && grep -q "ZEROOS PANIC:" "$log"; then
               panic_line=$(grep -m1 -o "ZEROOS PANIC:.*" "$log")

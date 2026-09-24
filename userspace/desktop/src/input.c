@@ -22,8 +22,48 @@ void zd_input_router_init(struct zd_input_router *router, struct zd_wm *wm) {
     router->overlay_takes_keyboard = 0;
     router->pointer_x = 0;
     router->pointer_y = 0;
+    router->screen_w = 0;
+    router->screen_h = 0;
     router->buttons_down = 0;
     router->stats = (struct zd_input_router_stats){0};
+}
+
+void zd_input_set_screen_bounds(struct zd_input_router *router, int32_t width,
+                                int32_t height) {
+    if (!router)
+        return;
+    router->screen_w = width > 0 ? width : 0;
+    router->screen_h = height > 0 ? height : 0;
+}
+
+struct zd_input_delivery zd_input_pointer_relative(struct zd_input_router *router,
+                                                   int32_t dx, int32_t dy) {
+    struct zd_input_delivery routed;
+    int64_t x, y;
+
+    if (!router)
+        return delivery(ZD_INPUT_DROPPED, ZD_INVALID_WINDOW, 0, 0, 0);
+
+    x = (int64_t)router->pointer_x + dx;
+    y = (int64_t)router->pointer_y + dy;
+    if (router->screen_w > 0) {
+        if (x < 0)
+            x = 0;
+        if (x > (int64_t)router->screen_w - 1)
+            x = (int64_t)router->screen_w - 1;
+    }
+    if (router->screen_h > 0) {
+        if (y < 0)
+            y = 0;
+        if (y > (int64_t)router->screen_h - 1)
+            y = (int64_t)router->screen_h - 1;
+    }
+    router->pointer_x = (int32_t)x;
+    router->pointer_y = (int32_t)y;
+
+    routed = zd_input_pointer_move(router, router->pointer_x,
+                                   router->pointer_y);
+    return routed;
 }
 
 int zd_input_set_overlay(struct zd_input_router *router, zd_window_id overlay,

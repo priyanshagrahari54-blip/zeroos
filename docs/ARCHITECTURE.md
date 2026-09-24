@@ -199,15 +199,18 @@ Implemented (this stage):
   (`display present contract verified`). Degraded boots fail ENOENT by
   contract; concurrent submitters stay memory-safe via the fb lock, with a
   single display-service writer as desktop policy.
-- Input stack (`kernel/input.c` + `scancode_core` + INPUT_POLL/WAIT):
-  i8042 controller bring-up, IRQ1 routing on both the IOAPIC and PIC
-  topologies (`apic_route_legacy_irq`, `pic_unmask_irq`), set-1 scancode
-  decoding into the locked `input_core` queue, event-driven wait/wake for
-  Ring-3, and a kernel waiter/waker certification probe
-  (`input blocking wait/wake path passed`). Degradation is serial-reported
-  and never fails the boot. Desktop-side event routing (pointer focus,
-  click-to-focus/raise, implicit grab, overlay priority) lives in
-  `userspace/desktop/` and is host-tested.
+- Input stack (`kernel/input.c` + `scancode_core` + `mouse_core` +
+  INPUT_POLL/WAIT): i8042 controller bring-up, IRQ1 (keyboard) and IRQ12
+  (mouse) routing on both the IOAPIC and PIC topologies
+  (`apic_route_legacy_irq`, `pic_unmask_irq`), set-1 scancode and 3-byte
+  mouse-packet decoding into the locked `input_core` queue, event-driven
+  wait/wake for Ring-3, and a kernel waiter/waker certification probe
+  (`input blocking wait/wake path passed`). Degradation is
+  serial-reported per device (keyboard readiness gates Ring-3 start; the
+  mouse is best-effort) and never fails the boot. Desktop-side event
+  routing (pointer focus, click-to-focus/raise, implicit grab, overlay
+  priority, clamped relative motion) lives in `userspace/desktop/` and is
+  host-tested.
 - Desktop platform core (`userspace/desktop/`): fixed-capacity, zero-heap,
   freestanding-clean modules for lifecycle, resource governor, window
   system, compositor (retained scene, damage, occlusion, pacing, cache,
@@ -217,7 +220,8 @@ Implemented (this stage):
 
 Not yet implemented (contracts defined, explicit in PHASES.md):
 - Userspace display service writing scanout,
-  GPU driver beyond scanout, mouse/pointer input driver, shell UI processes.
+  GPU driver beyond scanout, mouse wheel/extended aux protocols, USB HID
+  devices, shell UI processes.
 
 ## 15. Networking
 Network stack is independent of desktop UI.
@@ -321,6 +325,6 @@ drivers that claim a function (AHCI and NVMe, Stage 3 §12) enable decoding
 and bus mastering, map BARs and activate MSI/MSI-X; BARs are never
 reassigned and other devices stay unbound. ACPI remains validated
 RSDP/root/MADT topology discovery; AML and power management are not present.
-DMA/IOMMU, USB, display, audio, and complete network services are not implemented. A standalone IPv4 header validator and bounded default-deny policy evaluator exist as testable foundations. PS/2 keyboard input IS wired: `kernel/input.c` configures the i8042 controller, routes IRQ1 on IOAPIC/PIC topologies, decodes scancodes into the `input_core` queue (which the driver now serializes with its own lock), and serves the INPUT_POLL/INPUT_WAIT syscalls; the mouse/pointer path and USB HID remain unwired, and event delivery to Ring-3 is proven by boot certification rather than live keystrokes in CI. Ethernet/ARP, IPv4/IPv6 base-header, and UDP/TCP/DHCP/DNS parser/state helpers, bounded route/flow tables, an owner-scoped DMA callback contract, overlap-checked typed resource registry, and generic driver lifecycle/resource-cleanup state machine are testable foundations, not integrated kernel device-service implementations.
+DMA/IOMMU, USB, display, audio, and complete network services are not implemented. A standalone IPv4 header validator and bounded default-deny policy evaluator exist as testable foundations. PS/2 keyboard AND mouse input ARE wired: `kernel/input.c` configures the i8042 controller, routes IRQ1 and IRQ12 on IOAPIC/PIC topologies, decodes scancodes and mouse packets into the `input_core` queue (which the driver serializes with its own lock), and serves the INPUT_POLL/INPUT_WAIT syscalls; USB HID, mouse wheel/extended aux packets remain unwired, and event delivery to Ring-3 is proven by boot certification rather than live keystrokes in CI. Ethernet/ARP, IPv4/IPv6 base-header, and UDP/TCP/DHCP/DNS parser/state helpers, bounded route/flow tables, an owner-scoped DMA callback contract, overlap-checked typed resource registry, and generic driver lifecycle/resource-cleanup state machine are testable foundations, not integrated kernel device-service implementations.
 The authoritative detected-versus-operational support matrix is in
 [`HARDWARE.md`](HARDWARE.md). Detection must not be represented as support.

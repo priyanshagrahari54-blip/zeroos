@@ -1,7 +1,7 @@
 BUILD := build
 KERNEL := $(BUILD)/zeroos.elf
 ISO := $(BUILD)/zeroos.iso
-HARDWARE_CORE_NAMES := net_core net_route net_transport net_conntrack net_l2 net_ipv6 dns_core dhcp_core input_core usb_core audio_core display_core driver_core dma resource_core scancode_core
+HARDWARE_CORE_NAMES := net_core net_route net_transport net_conntrack net_l2 net_ipv6 dns_core dhcp_core input_core usb_core audio_core display_core driver_core dma resource_core scancode_core mouse_core
 HARDWARE_CORE_OBJS := $(addprefix $(BUILD)/hardware-,$(addsuffix .o,$(HARDWARE_CORE_NAMES)))
 
 CC := gcc
@@ -77,7 +77,7 @@ $(BUILD)/syscall.o: kernel/syscall.c kernel/syscall.h kernel/interrupts.h kernel
 $(BUILD)/fb.o: kernel/fb.c kernel/fb.h kernel/memory.h kernel/vmm.h kernel/sync.h kernel/types.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
-$(BUILD)/input.o: kernel/input.c kernel/input.h kernel/input_core.h kernel/scancode_core.h kernel/interrupts.h kernel/apic.h kernel/pic.h kernel/wait.h kernel/sync.h kernel/timer.h kernel/task.h kernel/syscall.h | $(BUILD)
+$(BUILD)/input.o: kernel/input.c kernel/input.h kernel/input_core.h kernel/scancode_core.h kernel/mouse_core.h kernel/interrupts.h kernel/apic.h kernel/pic.h kernel/wait.h kernel/sync.h kernel/timer.h kernel/task.h kernel/syscall.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
 $(BUILD)/ipc.o: kernel/ipc.c kernel/ipc.h kernel/process.h kernel/sync.h kernel/wait.h kernel/task.h kernel/timer.h kernel/syscall.h | $(BUILD)
@@ -155,6 +155,8 @@ hardware-core-test: | $(BUILD)
 	$(BUILD)/resource-core-test
 	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/scancode_core_test.c kernel/scancode_core.c -o $(BUILD)/scancode-core-test
 	$(BUILD)/scancode-core-test
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/mouse_core_test.c kernel/mouse_core.c -o $(BUILD)/mouse-core-test
+	$(BUILD)/mouse-core-test
 
 $(BUILD)/gdt.o: kernel/gdt.c kernel/gdt.h kernel/memory.h kernel/cpu.h kernel/types.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@

@@ -9,6 +9,7 @@ PUBLIC = (ROOT / "userspace/include/zeroos/syscall.h").read_text()
 KERNEL = (ROOT / "kernel/syscall.h").read_text()
 IPC = (ROOT / "kernel/ipc.h").read_text()
 INPUT_CORE = (ROOT / "kernel/input_core.h").read_text()
+MOUSE_CORE = (ROOT / "kernel/mouse_core.h").read_text()
 
 
 def enum_values(text: str, name: str) -> dict[str, int]:
@@ -119,6 +120,15 @@ def raw_enum_values(text: str, name: str) -> list[int]:
 
 if list(public_kinds.values()) != raw_enum_values(INPUT_CORE, "input_kind"):
     raise SystemExit("zeroos_input_kind values drift vs kernel/input_core.h")
+
+# Pointer button codes (zeroos_pointer_code) must match across the ABI,
+# the kernel input queue and the mouse decoder the driver uses.
+public_pointers = enum_values(PUBLIC, "zeroos_pointer_code")
+kernel_pointers = enum_values(KERNEL, "zeroos_pointer_code")
+if public_pointers != kernel_pointers:
+    raise SystemExit("pointer-code enum drift between public and kernel headers")
+if list(public_pointers.values()) != raw_enum_values(MOUSE_CORE, "pointer_code"):
+    raise SystemExit("zeroos_pointer_code values drift vs kernel/mouse_core.h")
 
 def feature_bits(text: str, source: str) -> dict[str, str]:
     bits = dict(

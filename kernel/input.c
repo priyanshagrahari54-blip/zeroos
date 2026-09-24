@@ -1,6 +1,7 @@
 #include "input.h"
 #include "input_core.h"
 #include "scancode_core.h"
+#include "mouse_core.h"
 #include "interrupts.h"
 #include "apic.h"
 #include "pic.h"
@@ -22,6 +23,8 @@ extern void serial_write_public(const char *text);
 #define I8042_CMD_READ_CFG    0x20U
 #define I8042_CMD_WRITE_CFG   0x60U
 #define I8042_CMD_ENABLE_KBD  0xaeU
+#define I8042_CMD_WRITE_AUX   0xd4U
+#define I8042_CMD_ENABLE_AUX  0xa8U
 #define I8042_CFG_IRQ_KBD     (1U << 0)
 #define I8042_CFG_IRQ_AUX     (1U << 1)
 #define I8042_CFG_KBD_NOCLOCK (1U << 4)
@@ -44,7 +47,9 @@ static struct wait_queue input_waiters;
 static struct input_queue queue;
 static struct input_registry registry;
 static struct scancode_decoder decoder;
+static struct mouse_decoder mouse_decoder;
 static uint32_t keyboard_device_id;
+static uint32_t mouse_device_id;
 static uint8_t live;
 
 static int wait_buffer_empty(void) {
@@ -72,7 +77,8 @@ static void drain_output(void) {
 }
 
 /* Configure the controller: keyboard IRQ on, translation on (set 2 -> 1
- * codes for the decoder), mouse port left disabled for a later batch. */
+ * codes for the decoder). The auxiliary port and its IRQ are enabled
+ * later, per device, by mouse_setup. */
 static int controller_setup(void) {
     uint8_t config;
 
@@ -148,6 +154,121 @@ static void keyboard_irq(uint8_t irq, struct interrupt_frame *frame,
     decode_and_push(input_inb(I8042_DATA));
 }
 
+/* Mouse IRQ: aux bytes are never delivered on IRQ1 (the keyboard handler
+ * ignores them); the i8042 routes them to IRQ12 once mouse_setup enables
+ * the auxiliary interrupt. */
+static void mouse_irq(uint8_t irq, struct interrupt_frame *frame,
+                      void *context) {
+    uint8_t status, byte;
+    uint64_t flags;
+    int pushed = 0;
+    struct mouse_event pointer;
+
+    (void)irq;
+    (void)frame;
+    (void)context;
+    status = input_inb(I8042_STATUS);
+    if (!(status & I8042_STATUS_OBF) || !(status & I8042_STATUS_AUX))
+        return;
+    byte = input_inb(I8042_DATA);
+
+    flags = spin_lock_irqsave(&input_lock);
+    (void)mouse_decoder_feed(&mouse_decoder, byte);
+    while (mouse_decoder_next(&mouse_decoder, &pointer)) {
+        struct input_event native;
+        native.timestamp = timer_ticks();
+        native.device_id = mouse_device_id;
+        native.x = 0;
+        native.y = 0;
+        native.value = 0;
+        native.code = 0;
+        native.kind = INPUT_POINTER;
+        native.flags = 0;
+        if (pointer.kind == MOUSE_EV_MOTION) {
+            /* Relative deltas in device orientation (y up). */
+            native.x = pointer.dx;
+            native.y = pointer.dy;
+            native.value = pointer.buttons;
+        } else {
+            native.code = pointer.button;
+            native.value = pointer.pressed;
+        }
+        if (input_queue_push(&queue, &native) == 0)
+            pushed = 1;
+    }
+    spin_unlock_irqrestore(&input_lock, flags);
+    if (pushed)
+        (void)wait_queue_wake_one(&input_waiters);
+}
+
+/* Send one aux command (0xD4 prefix) and consume its response. 0xFE asks
+ * for a bounded retry; anything else unexpected fails the bring-up. */
+static int mouse_command(uint8_t command, uint8_t *response) {
+    for (uint32_t attempt = 0; attempt < 3; ++attempt) {
+        uint8_t reply;
+        if (wait_buffer_empty() != 0)
+            return -1;
+        input_outb(I8042_STATUS, I8042_CMD_WRITE_AUX);
+        if (wait_buffer_empty() != 0)
+            return -1;
+        input_outb(I8042_DATA, command);
+        if (wait_buffer_full() != 0)
+            return -1;
+        reply = input_inb(I8042_DATA);
+        if (reply == 0xfeU)
+            continue; /* device asked for a resend */
+        if (reply == 0xfaU) {
+            *response = reply;
+            return 0;
+        }
+        return -1;
+    }
+    return -1;
+}
+
+/* Enable the auxiliary device and IRQ12. Failures are reported but never
+ * fail the input stack: keyboard input and certification stay authoritative. */
+static const char *mouse_setup(void) {
+    uint8_t config;
+    uint8_t ack;
+
+    mouse_decoder_init(&mouse_decoder);
+    if (input_device_add(&registry, &mouse_device_id) != 0)
+        return "device registry";
+    if (wait_buffer_empty() != 0)
+        return "i8042 aux enable";
+    input_outb(I8042_STATUS, I8042_CMD_ENABLE_AUX);
+    if (wait_buffer_empty() != 0)
+        return "i8042 controller";
+    input_outb(I8042_STATUS, I8042_CMD_READ_CFG);
+    if (wait_buffer_full() != 0)
+        return "i8042 controller";
+    config = input_inb(I8042_DATA);
+    config |= I8042_CFG_IRQ_AUX;
+    if (wait_buffer_empty() != 0)
+        return "i8042 controller";
+    input_outb(I8042_STATUS, I8042_CMD_WRITE_CFG);
+    if (wait_buffer_empty() != 0)
+        return "i8042 controller";
+    input_outb(I8042_DATA, config);
+
+    if (mouse_command(0xf6U, &ack) != 0)
+        return "mouse defaults ACK";
+    if (mouse_command(0xf4U, &ack) != 0)
+        return "mouse enable ACK";
+
+    if (irq_register(12, mouse_irq, 0) != 0)
+        return "IRQ12 registration";
+    if (apic_controller() == ZEROOS_IRQ_CONTROLLER_LAPIC_IOAPIC) {
+        if (apic_route_legacy_irq(12) != 0)
+            return "IOAPIC IRQ12 route";
+    } else {
+        pic_unmask_irq(12);
+    }
+    drain_output();
+    return 0;
+}
+
 int input_init(void) {
     const char *reason = 0;
 
@@ -189,11 +310,24 @@ int input_init(void) {
         serial_write_public("ZEROOS: input stack degraded (");
         serial_write_public(reason);
         serial_write_public(").\n");
-        return -1;
+    } else {
+        live = 1;
+        serial_write_public("ZEROOS: PS/2 keyboard input stack ready.\n");
     }
-    live = 1;
-    serial_write_public("ZEROOS: PS/2 keyboard input stack ready.\n");
-    return 0;
+
+    /* Pointer device is best-effort: its status is reported, but a
+     * missing/failed mouse never blocks Ring-3 start or keyboard input. */
+    {
+        const char *mouse_reason = mouse_setup();
+        if (mouse_reason) {
+            serial_write_public("ZEROOS: mouse pointer degraded (");
+            serial_write_public(mouse_reason);
+            serial_write_public(").\n");
+        } else {
+            serial_write_public("ZEROOS: PS/2 mouse pointer ready.\n");
+        }
+    }
+    return reason ? -1 : 0;
 }
 
 int input_live(void) {

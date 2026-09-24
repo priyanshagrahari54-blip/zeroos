@@ -83,16 +83,16 @@ process, thread, memory, file, directory, time, IPC, synchronization, device, ne
 
 Stage 5 additions: `DISPLAY_INFO` (ID 51) — display geometry read-only query;
 `DISPLAY_PRESENT` (ID 52) — pixel-mapping scanout submit;
-`INPUT_POLL` (ID 53) / `INPUT_WAIT` (ID 54) — input event drain and blocking
-wait; ABI feature bits 8 (`ZEROOS_ABI_FEATURE_DISPLAY`),
+`INPUT_POLL` (ID 53) / `INPUT_WAIT` (ID 54) — keyboard/pointer event drain
+and blocking wait; ABI feature bits 8 (`ZEROOS_ABI_FEATURE_DISPLAY`),
 9 (`ZEROOS_ABI_FEATURE_PRESENT`) and 10 (`ZEROOS_ABI_FEATURE_INPUT`). (Before
 the Stage 3/Stage 5 merge the unreleased Stage 5 branch used IDs 25/26 and
 bits 7/8, which collided with the Stage 3 file ABI; they were renumbered
 before reaching main. IDs 25–50 and bit 7 belong to the file ABI, see VFS.md
 §7.) Any new syscall ID must be mirrored in `kernel/syscall.h`,
 `userspace/include/zeroos/syscall.h` and pass
-`userspace/tests/abi_consistency.py` (enum, feature-bit uniqueness/drift and
-shared-struct/input-struct drift gates).
+`userspace/tests/abi_consistency.py` (enum/keycode/pointer-code,
+feature-bit uniqueness/drift and shared-struct/input-struct drift gates).
 
 ## 8. Filesystem/VFS
 VFS objects:
@@ -174,18 +174,24 @@ Stage 5 implemented contracts:
   real read path (`ZEROOS: display present contract verified.`). Scanout
   writes are serialized; the display service is the single writer by
   desktop policy, while the kernel guarantees memory safety for any caller.
-- `ZEROOS_SYS_INPUT_POLL` (ID 27) and `ZEROOS_SYS_INPUT_WAIT` (ID 28,
-  feature bit 9) deliver `struct zeroos_input_event` records (ABI copy of
+- `ZEROOS_SYS_INPUT_POLL` (ID 53) and `ZEROOS_SYS_INPUT_WAIT` (ID 54,
+  feature bit 10) deliver `struct zeroos_input_event` records (ABI copy of
   `input_core.h`, struct-gated) from the kernel input queue. POLL drains
   nonblocking (-EAGAIN when empty); WAIT accepts `ZEROOS_WAIT_FLAG_NONBLOCK`
   and a scheduler-tick timeout (0 = forever) with -ETIMEDOUT/-EINTR, using
   the same wait-queue and tick-deadline discipline as the IPC syscalls.
-  Events come from the PS/2 i8042 keyboard driver (`kernel/input.c`):
-  controller configuration, IRQ1 routing on both IOAPIC and PIC
-  topologies, and scancode-set-1 decoding (`scancode_core`, host-tested).
-  A degraded controller prints a reason and keeps the queue/syscalls
-  usable; boot certification proves the empty-queue, timeout, argument
-  fault, and blocking wait/wake paths.
+  Events come from the PS/2 i8042 driver (`kernel/input.c`): keyboard on
+  IRQ1 (set-1 decoding via `scancode_core`) and mouse on IRQ12 (3-byte
+  auxiliary packets via `mouse_core`), both host-tested and routed on
+  IOAPIC and PIC topologies. KIND_POINTER motion events carry relative
+  deltas (device orientation, y up) with value = button mask; button
+  transitions use `zeroos_pointer_code` 1..5 with value = pressed, the
+  same numbering the desktop router consumes via
+  `zd_input_pointer_relative` (clamped absolute conversion in userspace).
+  A degraded device prints a reason and keeps the queue/syscalls usable
+  (keyboard readiness gates Ring-3 start; the mouse is best-effort);
+  boot certification proves the empty-queue, timeout, argument fault,
+  and blocking wait/wake paths.
 - Userspace desktop platform core in `userspace/desktop/` follows the
   signed 0/-ZD_E* error convention, fixed capacities (64 windows, 4
   monitors, 8 workspaces, 1024 search documents, 64 notifications, 256
@@ -348,4 +354,4 @@ records typed ranges, checks overflow and overlap, supports containment
 checks, and protects reserved intervals from release. All calls require
 caller-side IRQ-safe serialization, and it does not program the PCI
 resource tree (it is not yet consulted by `pci_map_bar`). PCIe ECAM and
-extended capabilities are outside scope. Portable `net_core`, `input_core`, `usb_core`, `audio_core`, and `display_core` helpers provide bounded parsing/queues and input-level validity checks. They are not wired to hardware, sockets, synchronization, or device engines, with one Stage-5 exception: the `input_core` queue is now consumed by the kernel PS/2 keyboard driver (`kernel/input.c`), which supplies its locking, IRQ delivery and Ring-3 syscalls. `net_core` validates IPv4 header length/checksum and evaluates an ordered default-deny table; `usb_core` only validates descriptor framing/minimum sizes; audio is a bounded sample ring; display validates bounded framebuffer mode dimensions; input defines a bounded device registry/event queue plus the host-tested scancode decoder (`scancode_core`). `make hardware-core-test` covers helper-level allow/deny, malformed input, queue backpressure, descriptor truncation, audio underrun/overrun, and display bounds. `net_l2` bounds Ethernet/VLAN and ARP frames; `net_ipv6` validates only the IPv6 base header (no extension-header processing); `net_conntrack` stores bounded flow observations with expiration/eviction; `net_route` provides a bounded IPv4 longest-prefix/metric lookup table; `net_transport` validates UDP framing and offers a limited TCP state/timeout helper (not RFC-complete TCP, retransmission/congestion/window management, or sockets); `dhcp_core` bounds BOOTP/DHCP option parsing but has no client state machine; `dns_core` validates bounded DNS message framing/name compression but does not resolve or cache names. `dma` defines an owner-scoped callback contract and refuses owner destruction while mappings remain, but supplies no IOMMU/cache-coherency backend. `driver_core` provides an explicit lifecycle transition and reverse-order exactly-once release bookkeeping. These helpers, aside from the keyboard path noted above, are not wired to a bus, hardware resources, a network interface, sockets, or a synchronized kernel registry. They are foundations—not operational drivers or complete subsystem implementations. See `HARDWARE.md` for the support matrix.
+extended capabilities are outside scope. Portable `net_core`, `input_core`, `usb_core`, `audio_core`, and `display_core` helpers provide bounded parsing/queues and input-level validity checks. They are not wired to hardware, sockets, synchronization, or device engines, with one Stage-5 exception: the `input_core` queue is now consumed by the kernel PS/2 driver (`kernel/input.c` — keyboard IRQ1 + mouse IRQ12), which supplies its locking, IRQ delivery and Ring-3 syscalls. `net_core` validates IPv4 header length/checksum and evaluates an ordered default-deny table; `usb_core` only validates descriptor framing/minimum sizes; audio is a bounded sample ring; display validates bounded framebuffer mode dimensions; input defines a bounded device registry/event queue plus the host-tested scancode (`scancode_core`) and mouse-packet (`mouse_core`) decoders. `make hardware-core-test` covers helper-level allow/deny, malformed input, queue backpressure, descriptor truncation, audio underrun/overrun, and display bounds. `net_l2` bounds Ethernet/VLAN and ARP frames; `net_ipv6` validates only the IPv6 base header (no extension-header processing); `net_conntrack` stores bounded flow observations with expiration/eviction; `net_route` provides a bounded IPv4 longest-prefix/metric lookup table; `net_transport` validates UDP framing and offers a limited TCP state/timeout helper (not RFC-complete TCP, retransmission/congestion/window management, or sockets); `dhcp_core` bounds BOOTP/DHCP option parsing but has no client state machine; `dns_core` validates bounded DNS message framing/name compression but does not resolve or cache names. `dma` defines an owner-scoped callback contract and refuses owner destruction while mappings remain, but supplies no IOMMU/cache-coherency backend. `driver_core` provides an explicit lifecycle transition and reverse-order exactly-once release bookkeeping. These helpers, aside from the PS/2 input paths noted above, are not wired to a bus, hardware resources, a network interface, sockets, or a synchronized kernel registry. They are foundations—not operational drivers or complete subsystem implementations. See `HARDWARE.md` for the support matrix.

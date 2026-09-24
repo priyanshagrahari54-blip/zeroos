@@ -249,6 +249,20 @@ enum zeroos_keycode {
     ZEROOS_KEY_CAPS_LOCK = 312
 };
 
+/* Pointer codes for KIND_POINTER events. Motion uses code 0 with x/y as
+ * relative deltas (device orientation, y up) and value = button mask;
+ * button transitions use codes 1..5 with value = pressed (1/0).
+ * Values mirror kernel/mouse_core.h enum pointer_code (gated by
+ * abi_consistency.py). */
+enum zeroos_pointer_code {
+    ZEROOS_POINTER_MOTION = 0,
+    ZEROOS_POINTER_BTN_LEFT = 1,
+    ZEROOS_POINTER_BTN_RIGHT = 2,
+    ZEROOS_POINTER_BTN_MIDDLE = 3,
+    ZEROOS_POINTER_BTN_SIDE = 4,
+    ZEROOS_POINTER_BTN_EXTRA = 5
+};
+
 #define ZEROOS_INPUT_FLAG_DOWN   (1U << 0)
 #define ZEROOS_INPUT_FLAG_REPEAT (1U << 1)
 

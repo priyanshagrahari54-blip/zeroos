@@ -77,8 +77,9 @@ subtraction, frame pacing, LRU surface cache, software raster fallback,
 buffer-generation rejection, crash drop path) — see `make desktop-check`.
 Event-level input routing (pointer focus, click-to-focus/raise, implicit
 grab, overlay priority) is implemented and tested in
-`userspace/desktop/src/input.c`. Wire-up to a live scanout surface depends
-on the display-service batch.
+`userspace/desktop/src/input.c`, including clamped conversion of PS/2
+relative motion to absolute coordinates (`zd_input_pointer_relative`).
+Wire-up to a live scanout surface depends on the display-service batch.
 ### 5.3 Shell
 ZERO Bar, launcher, notifications, workspaces.
 Status: shell platform services (lifecycle, workspaces, search, settings,

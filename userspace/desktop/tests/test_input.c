@@ -209,6 +209,53 @@ static void test_key_without_focus(void) {
     ZD_CHECK_EQ(router.stats.key_events, 1);
 }
 
+static void test_relative_motion(void) {
+    struct zd_input_router router;
+    struct zd_input_delivery got;
+
+    setup();
+    zd_input_router_init(&router, &wm);
+    zd_input_set_screen_bounds(&router, 800, 600);
+
+    /* Relative deltas walk the cursor and clamp at the screen edge. */
+    got = zd_input_pointer_relative(&router, 40, 30);
+    ZD_CHECK_EQ(router.pointer_x, 40);
+    ZD_CHECK_EQ(router.pointer_y, 30);
+    ZD_CHECK_EQ(got.result, ZD_INPUT_DROPPED); /* empty background */
+    got = zd_input_pointer_relative(&router, -1000, -1000);
+    ZD_CHECK_EQ(router.pointer_x, 0);
+    ZD_CHECK_EQ(router.pointer_y, 0);
+    got = zd_input_pointer_relative(&router, 5000, 5000);
+    ZD_CHECK_EQ(router.pointer_x, 799);
+    ZD_CHECK_EQ(router.pointer_y, 599);
+    ZD_CHECK_EQ(router.stats.pointer_moves, 3);
+
+    /* Window hit still works through the relative path. */
+    {
+        struct zd_window_create_info info = make_info(client_a, 600, 500,
+                                                      150, 80);
+        zd_window_id win = ZD_INVALID_WINDOW;
+        ZD_CHECK_OK(zd_wm_create_window(&wm, &info, &win));
+        /* walk from the clamp corner (799,599) into the window */
+        got = zd_input_pointer_relative(&router, -50, -30);
+        ZD_CHECK_EQ(got.result, ZD_INPUT_TO_WINDOW);
+        ZD_CHECK_EQ(got.window, win);
+        ZD_CHECK_EQ(zd_input_pointer_focus(&router), win);
+    }
+
+    /* Unclamped router (bounds 0) still routes deltas. */
+    zd_input_router_init(&router, &wm);
+    got = zd_input_pointer_relative(&router, -5, -7);
+    ZD_CHECK_EQ(router.pointer_x, -5);
+    ZD_CHECK_EQ(router.pointer_y, -7);
+    ZD_CHECK_EQ(got.result, ZD_INPUT_DROPPED);
+
+    /* Null router is dropped, not a crash. */
+    got = zd_input_pointer_relative(0, 1, 1);
+    ZD_CHECK_EQ(got.result, ZD_INPUT_DROPPED);
+    zd_input_set_screen_bounds(0, 100, 100);
+}
+
 void zd_test_input_suite(void) {
     zd_test_current = "input";
     test_move_and_focus();
@@ -216,5 +263,6 @@ void zd_test_input_suite(void) {
     test_overlay_priority();
     test_no_wm_guards();
     test_key_without_focus();
+    test_relative_motion();
     zd_test_current = "main";
 }
