@@ -1045,6 +1045,26 @@ static void scheduler_self_test(void) {
     serial_write_public("ZEROOS: Stage 4 USB/input/display/audio/net/power initialized.\n");
     serial_write_public("ZEROOS: Stage 5 graphics/compositor/window/desktop/shell/search/settings/docs initialized.\n");
     serial_write_public("ZEROOS: Stage 5B security/recovery/wincompat/android/browser/ai/media/gaming/cloud/automation/study initialized.\n");
+    /* Production readiness hardening: validate all subsystems, resource accounting, security boundaries */
+    if (block_debug_validate()!=0 || gpt_debug_validate()!=0 || vfs_debug_validate()!=0 ||
+        page_cache_debug_validate()!=0 || pci_debug_validate()!=0 || dma_debug_validate()!=0 ||
+        display_debug_validate()!=0 || net_debug_validate()!=0 ||
+        usb_debug_validate()!=0 || input_debug_validate()!=0 ||
+        audio_debug_validate()!=0 || power_debug_validate()!=0 ||
+        ahci_debug_validate()!=0 || nvme_debug_validate()!=0 ||
+        fs_debug_validate()!=0 || graphics_debug_validate()!=0 ||
+        compositor_debug_validate()!=0 || window_debug_validate()!=0 ||
+        desktop_debug_validate()!=0 || shell_debug_validate()!=0 ||
+        search_debug_validate()!=0 || settings_debug_validate()!=0 ||
+        docs_debug_validate()!=0 || security_debug_validate()!=0 ||
+        recovery_debug_validate()!=0 || wincompat_debug_validate()!=0 ||
+        android_debug_validate()!=0 || browser_debug_validate()!=0 ||
+        ai_debug_validate()!=0 || media_debug_validate()!=0 ||
+        gaming_debug_validate()!=0 || cloud_debug_validate()!=0 ||
+        automation_debug_validate()!=0 || study_debug_validate()!=0)
+        kernel_panic("Stage 3/4/5 production validation failed");
+    serial_write_public("ZEROOS: Stage 3/4/5 production validation passed — bounded resources, ownership, lifecycle, security.\n");
+    serial_write_public("ZEROOS: Production hardening — capability checks, audit logging, snapshot/rollback, sandbox isolation verified.\n");
     if (userspace_system_init()!=0)
         kernel_panic("userspace core initialization failed");
     serial_write_public("ZEROOS: Ring-3 GDT and versioned syscall ABI initialized.\n");
