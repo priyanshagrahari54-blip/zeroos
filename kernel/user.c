@@ -51,6 +51,11 @@ static const char init_message[]=
 #define INIT_ELF_PIPE_BUFFER_OFFSET 0x3200ULL
 #define INIT_ELF_PIPE_LENGTH_OFFSET 0x3300ULL
 #define INIT_ELF_ABI_OFFSET 0x3400ULL
+#define INIT_ELF_ARGV_OFFSET 0x3600ULL
+#define INIT_ELF_ENVP_OFFSET 0x3620ULL
+#define INIT_ELF_ARG0_OFFSET 0x3640ULL
+#define INIT_ELF_ARG1_OFFSET 0x3660ULL
+#define INIT_ELF_ENV0_OFFSET 0x3680ULL
 #define INIT_ELF_DATA_FILE_END (INIT_ELF_STATUS_OFFSET+sizeof(uint64_t))
 #define INIT_ELF_DATA_MEMORY_SIZE ((INIT_ELF_DATA_FILE_END-INIT_ELF_DATA_OFFSET+\
                                     VMM_PAGE_SIZE-1ULL)&~(VMM_PAGE_SIZE-1ULL))
@@ -59,6 +64,9 @@ static uint8_t init_elf_image[INIT_ELF_IMAGE_SIZE];
 
 static const char init_child_message[]=
     "ZEROOS: spawned child argv/envp runtime path passed.\n";
+static const char init_child_argument_zero[]="zeroos-child";
+static const char init_child_argument_one[]="hello";
+static const char init_child_environment_zero[]="ZEROOS_MODE=production";
 
 #define INIT_CHILD_ELF_DATA_OFFSET 0x1000ULL
 #define INIT_CHILD_ELF_ENTRY_OFFSET 0x100ULL
@@ -97,6 +105,41 @@ static void put_u64(uint8_t *buffer, uint64_t value) {
 
 static uint64_t build_child_code(uint8_t *code) {
     uint64_t offset=0;
+    uint64_t failure_jumps[8];
+    uint32_t failure_jump_count=0;
+    uint64_t failure_label;
+
+    /* Validate the initial process stack before producing the success marker.
+     * This turns argv/envp construction into an executing contract rather than
+     * merely a loader-side memory-layout claim. */
+    code[offset++]=0x48; code[offset++]=0x83; code[offset++]=0x3c;
+    code[offset++]=0x24; code[offset++]=2;
+    failure_jumps[failure_jump_count++]=offset;
+    code[offset++]=0x75; code[offset++]=0;
+    code[offset++]=0x48; code[offset++]=0x83; code[offset++]=0x7c;
+    code[offset++]=0x24; code[offset++]=0x18; code[offset++]=0;
+    failure_jumps[failure_jump_count++]=offset;
+    code[offset++]=0x75; code[offset++]=0;
+    code[offset++]=0x48; code[offset++]=0x83; code[offset++]=0x7c;
+    code[offset++]=0x24; code[offset++]=0x28; code[offset++]=0;
+    failure_jumps[failure_jump_count++]=offset;
+    code[offset++]=0x75; code[offset++]=0;
+
+    code[offset++]=0x48; code[offset++]=0x8b; code[offset++]=0x5c;
+    code[offset++]=0x24; code[offset++]=8;
+    code[offset++]=0x80; code[offset++]=0x3b; code[offset++]=(uint8_t)'z';
+    failure_jumps[failure_jump_count++]=offset;
+    code[offset++]=0x75; code[offset++]=0;
+    code[offset++]=0x48; code[offset++]=0x8b; code[offset++]=0x5c;
+    code[offset++]=0x24; code[offset++]=16;
+    code[offset++]=0x80; code[offset++]=0x3b; code[offset++]=(uint8_t)'h';
+    failure_jumps[failure_jump_count++]=offset;
+    code[offset++]=0x75; code[offset++]=0;
+    code[offset++]=0x48; code[offset++]=0x8b; code[offset++]=0x5c;
+    code[offset++]=0x24; code[offset++]=32;
+    code[offset++]=0x80; code[offset++]=0x3b; code[offset++]=(uint8_t)'Z';
+    failure_jumps[failure_jump_count++]=offset;
+    code[offset++]=0x75; code[offset++]=0;
 
     code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_WRITE); offset+=4;
     code[offset++]=0xbf; put_u32(&code[offset],1); offset+=4;
@@ -107,6 +150,14 @@ static uint64_t build_child_code(uint8_t *code) {
     code[offset++]=0xcd; code[offset++]=0x80;
     code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_EXIT); offset+=4;
     code[offset++]=0xbf; put_u32(&code[offset],0); offset+=4;
+    code[offset++]=0xcd; code[offset++]=0x80;
+    code[offset++]=0xf4;
+
+    failure_label=offset;
+    for (uint32_t i=0; i<failure_jump_count; ++i)
+        code[failure_jumps[i]+1]=(uint8_t)(failure_label-(failure_jumps[i]+2ULL));
+    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_EXIT); offset+=4;
+    code[offset++]=0xbf; put_u32(&code[offset],10); offset+=4;
     code[offset++]=0xcd; code[offset++]=0x80;
     code[offset++]=0xf4;
     return offset;
@@ -431,10 +482,14 @@ static uint64_t build_init_code(uint8_t *code) {
             (INIT_ELF_CHILD_FILE_OFFSET-INIT_ELF_DATA_OFFSET)); offset+=8;
     code[offset++]=0x48; code[offset++]=0xbe;
     put_u64(&code[offset],INIT_CHILD_ELF_IMAGE_SIZE); offset+=8;
-    code[offset++]=0x48; code[offset++]=0x31; code[offset++]=0xd2;
-    code[offset++]=0x41; code[offset++]=0xba; put_u32(&code[offset],0); offset+=4;
-    code[offset++]=0x4d; code[offset++]=0x31; code[offset++]=0xc0;
-    code[offset++]=0x4d; code[offset++]=0x31; code[offset++]=0xc9;
+    code[offset++]=0x48; code[offset++]=0xba;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE+
+            (INIT_ELF_ARGV_OFFSET-INIT_ELF_DATA_OFFSET)); offset+=8;
+    code[offset++]=0x41; code[offset++]=0xba; put_u32(&code[offset],2); offset+=4;
+    code[offset++]=0x49; code[offset++]=0xb8;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE+
+            (INIT_ELF_ENVP_OFFSET-INIT_ELF_DATA_OFFSET)); offset+=8;
+    code[offset++]=0x49; code[offset++]=0xc7; code[offset++]=0xc1; put_u32(&code[offset],1); offset+=4;
     code[offset++]=0xcd; code[offset++]=0x80;
     code[offset++]=0x49; code[offset++]=0x89; code[offset++]=0xc4;
 
@@ -517,6 +572,23 @@ static uint64_t build_init_elf(void) {
         init_elf_image[INIT_ELF_DATA_OFFSET+i]=(uint8_t)init_message[i];
     for (uint64_t i=0; i<child_image_size; ++i)
         init_elf_image[INIT_ELF_CHILD_FILE_OFFSET+i]=init_child_elf_image[i];
+    put_u64(&init_elf_image[INIT_ELF_ARGV_OFFSET],
+            ZEROOS_USER_DATA_BASE+
+            (INIT_ELF_ARG0_OFFSET-INIT_ELF_DATA_OFFSET));
+    put_u64(&init_elf_image[INIT_ELF_ARGV_OFFSET+8ULL],
+            ZEROOS_USER_DATA_BASE+
+            (INIT_ELF_ARG1_OFFSET-INIT_ELF_DATA_OFFSET));
+    put_u64(&init_elf_image[INIT_ELF_ARGV_OFFSET+16ULL],0);
+    put_u64(&init_elf_image[INIT_ELF_ENVP_OFFSET],
+            ZEROOS_USER_DATA_BASE+
+            (INIT_ELF_ENV0_OFFSET-INIT_ELF_DATA_OFFSET));
+    put_u64(&init_elf_image[INIT_ELF_ENVP_OFFSET+8ULL],0);
+    for (uint64_t i=0; i<sizeof(init_child_argument_zero); ++i)
+        init_elf_image[INIT_ELF_ARG0_OFFSET+i]=init_child_argument_zero[i];
+    for (uint64_t i=0; i<sizeof(init_child_argument_one); ++i)
+        init_elf_image[INIT_ELF_ARG1_OFFSET+i]=init_child_argument_one[i];
+    for (uint64_t i=0; i<sizeof(init_child_environment_zero); ++i)
+        init_elf_image[INIT_ELF_ENV0_OFFSET+i]=init_child_environment_zero[i];
     return INIT_ELF_IMAGE_SIZE;
 }
 

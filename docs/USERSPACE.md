@@ -123,7 +123,11 @@ envp, and a bounded auxiliary vector (`AT_ENTRY`, `AT_PHNUM`, `AT_PHENT`,
 address when a readable `PT_LOAD` covers the table; otherwise it is explicitly
 zero, the no-PHDR value for this static-loader ABI. The child gets a private
 address space and one user thread; all image-copy, stack-map, ELF-load, and
-thread-publication failures roll back transactionally.
+thread-publication failures roll back transactionally. The boot child consumes
+its initial stack in Ring 3: it checks argc, argv terminators, environment
+termination, and representative argument/environment bytes before emitting
+its success message, so argv/envp delivery is an executing runtime gate rather
+than only a kernel layout check.
 `WAIT` validates child ownership before sleeping/polling, supports a bounded
 `R10` tick timeout and nonblocking mode, and reaps all zombie threads before
 destroying the child address space.
@@ -146,7 +150,10 @@ argument as a bounded tick timeout (`R9 == 0` means no timeout for ABI
 compatibility); expiry returns `-ZEROOS_ETIMEDOUT`, and a failed scheduler
 block returns `-ZEROOS_EINTR`. `PEEK` does not wake blocked senders because it
 does not free queue capacity. The public kernel helpers expose both infinite
-and timed forms so service code and fault tests use the same semantics.
+and timed forms so service code and fault tests use the same semantics. The
+boot gate also blocks a real receiver, closes its peer endpoint, requires the
+receiver to wake with `-ZEROOS_EPIPE`, and then reaps the temporary process;
+peer-close cancellation is therefore covered independently of event signaling.
 
 `PIPE_CREATE`, `PIPE_WRITE`, and `PIPE_READ` are the first bounded pipe ABI:
 they intentionally expose record semantics (one write is one message, capped at
