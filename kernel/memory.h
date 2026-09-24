@@ -20,5 +20,9 @@ int memory_page_is_allocated(uint64_t address);
 uint64_t memory_total_pages(void);
 uint64_t memory_free_pages(void);
 uint64_t memory_max_physical(void);
+/* Boot-context only (interrupts off): mark [start, start+length) non-usable
+ * when it overlaps the managed window. No-op for addresses outside the
+ * managed range (e.g. high PCI framebuffer BARs). */
+void memory_reserve_physical(uint64_t start, uint64_t length);
 
 #endif

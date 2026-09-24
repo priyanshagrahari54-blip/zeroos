@@ -66,4 +66,38 @@ kernel_errors = enum_values(KERNEL, "zeroos_syscall_error")
 if public_errors != kernel_errors:
     raise SystemExit("syscall error drift between public and kernel headers")
 
+# ABI feature bits must stay in lockstep (kernel/fb.h style drift guard).
+def feature_bits(text: str, source: str) -> dict[str, str]:
+    bits = dict(
+        re.findall(
+            r"^#define\s+(ZEROOS_ABI_FEATURE_[A-Z0-9_]+)\s+\(1ULL << (\d+)\)",
+            text,
+            re.MULTILINE,
+        )
+    )
+    if not bits:
+        raise SystemExit(f"missing ABI feature bits in {source}")
+    return bits
+
+
+if feature_bits(PUBLIC, "public") != feature_bits(KERNEL, "kernel"):
+    raise SystemExit("ABI feature bit drift between public and kernel headers")
+
+# Display geometry struct must match byte-for-byte between headers.
+def struct_body(text: str, name: str) -> str:
+    block = re.search(
+        rf"struct\s+{re.escape(name)}\s*\{{(?P<body>.*?)\}}\s*;",
+        text,
+        re.DOTALL,
+    )
+    if not block:
+        raise SystemExit(f"missing struct {name}")
+    return " ".join(block.group("body").split())
+
+
+if struct_body(PUBLIC, "zeroos_display_info") != struct_body(
+    KERNEL, "zeroos_display_info"
+):
+    raise SystemExit("struct zeroos_display_info drift vs kernel/syscall.h")
+
 print("ZEROOS public/kernel ABI consistency passed.")

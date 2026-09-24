@@ -9,6 +9,7 @@
 #include "cpu.h"
 #include "ipc.h"
 #include "shmem.h"
+#include "fb.h"
 
 extern void serial_write_public(const char *text);
 
@@ -189,7 +190,8 @@ void syscall_dispatch(struct interrupt_frame *frame) {
                       ZEROOS_ABI_FEATURE_INIT |
                       ZEROOS_ABI_FEATURE_PIPE |
                       ZEROOS_ABI_FEATURE_EVENT |
-                      ZEROOS_ABI_FEATURE_SHMEM,
+                      ZEROOS_ABI_FEATURE_SHMEM |
+                      ZEROOS_ABI_FEATURE_DISPLAY,
             .max_transfer=ZEROOS_SYSCALL_MAX_TRANSFER
         };
         if (frame->rdi==0 || frame->rsi<sizeof(info) ||
@@ -532,6 +534,19 @@ void syscall_dispatch(struct interrupt_frame *frame) {
             frame->rax=syscall_result(result);
         break;
     }
+    case ZEROOS_SYS_DISPLAY_INFO: {
+        /* Geometry only: the kernel never hands scanout pixels to
+         * userspace through this path. flags bit0 distinguishes a live
+         * linear framebuffer from a degraded serial-only boot so the
+         * display service can show its offline/error state. */
+        const struct zeroos_display_info *info=fb_display_info();
+        if (frame->rdi==0 || frame->rsi<sizeof(*info) ||
+            copy_to_user(frame->rdi,info,sizeof(*info))!=0)
+            frame->rax=syscall_error(ZEROOS_EFAULT);
+        else
+            frame->rax=0;
+        break;
+    }
     default:
         frame->rax=syscall_error(ZEROOS_ENOSYS);
         break;
@@ -543,7 +558,7 @@ int syscall_debug_validate(void) {
     if (ZEROOS_SYSCALL_VECTOR<32 || ZEROOS_SYSCALL_VECTOR>=256 ||
         ZEROOS_SYSCALL_ABI_VERSION==0 || sizeof(info)!=24U ||
         ZEROOS_SYSCALL_MAX_TRANSFER==0 ||
-        ZEROOS_SYS_SHM_CLOSE+1U!=ZEROOS_SYS_MAX)
+        ZEROOS_SYS_DISPLAY_INFO+1U!=ZEROOS_SYS_MAX)
         return -1;
     return 0;
 }

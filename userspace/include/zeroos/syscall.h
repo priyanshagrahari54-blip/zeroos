@@ -38,6 +38,7 @@ enum zeroos_syscall_id {
     ZEROOS_SYS_SHM_MAP = 22,
     ZEROOS_SYS_SHM_UNMAP = 23,
     ZEROOS_SYS_SHM_CLOSE = 24,
+    ZEROOS_SYS_DISPLAY_INFO = 25,
     ZEROOS_SYS_MAX
 };
 
@@ -96,6 +97,28 @@ enum zeroos_error {
 #define ZEROOS_ABI_FEATURE_PIPE    (1ULL << 4)
 #define ZEROOS_ABI_FEATURE_EVENT   (1ULL << 5)
 #define ZEROOS_ABI_FEATURE_SHMEM   (1ULL << 6)
+#define ZEROOS_ABI_FEATURE_DISPLAY (1ULL << 7)
+
+/* Display geometry (ABI): must match kernel/fb.h and kernel/syscall.h. */
+#define ZEROOS_DISPLAY_FORMAT_INDEXED     0U
+#define ZEROOS_DISPLAY_FORMAT_RGB565      1U
+#define ZEROOS_DISPLAY_FORMAT_RGB888      2U
+#define ZEROOS_DISPLAY_FORMAT_XRGB8888    3U
+#define ZEROOS_DISPLAY_FORMAT_EGA_TEXT    4U
+
+#define ZEROOS_DISPLAY_FLAG_PRESENT       (1U << 0)
+#define ZEROOS_DISPLAY_FLAG_TEXT_FALLBACK (1U << 1)
+
+struct zeroos_display_info {
+    uint64_t physical_address;
+    uint64_t byte_size;
+    uint32_t width;
+    uint32_t height;
+    uint32_t pitch;
+    uint32_t bpp;
+    uint32_t format;
+    uint32_t flags;
+};
 
 typedef uint64_t zeroos_handle_t;
 typedef zeroos_handle_t zeroos_ipc_handle_t;
@@ -286,6 +309,13 @@ static inline int64_t zeroos_shmem_unmap(zeroos_shmem_handle_t handle,
 static inline int64_t zeroos_shmem_close(zeroos_shmem_handle_t handle) {
     return zeroos_syscall_result(zeroos_syscall6(
         ZEROOS_SYS_SHM_CLOSE,handle,0,0,0,0,0));
+}
+
+/* Display geometry; flags tell whether a linear framebuffer is live. */
+static inline int64_t zeroos_display_info(struct zeroos_display_info *info) {
+    return zeroos_syscall_result(zeroos_syscall6(
+        ZEROOS_SYS_DISPLAY_INFO,(uint64_t)(uintptr_t)info,sizeof(*info),
+        0,0,0,0));
 }
 
 #endif

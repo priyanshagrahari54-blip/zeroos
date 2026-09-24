@@ -81,6 +81,12 @@ Design principles:
 Initial syscall groups:
 process, thread, memory, file, directory, time, IPC, synchronization, device, network.
 
+Stage 5 additions: `DISPLAY_INFO` (ID 25) — display geometry read-only query;
+ABI feature bit 7 (`ZEROOS_ABI_FEATURE_DISPLAY`). Any new syscall ID must be
+mirrored in `kernel/syscall.h`, `userspace/include/zeroos/syscall.h` and pass
+`userspace/tests/abi_consistency.py` (enum, feature-bit and display-struct
+drift gates).
+
 ## 8. Filesystem/VFS
 VFS objects:
 superblock, mount, inode/node, directory entry, file object, descriptor.
@@ -117,6 +123,25 @@ Display capabilities:
 resolution, refresh rate, color depth, acceleration, multi-monitor.
 Compositor uses retained scene state and damage tracking.
 Fallback path supports software composition.
+
+Stage 5 implemented contracts:
+- Kernel `fb_init` parses the Multiboot2 framebuffer tag (type 8), accepts
+  only page-aligned RGB linear framebuffers with 16/24/32 bpp and
+  pitch >= width*bpp/8, size <= 256 MiB; maps them at
+  `VMM_MMIO_BASE + 0x20000000` (UC + NX, supervisor-only) and verifies by
+  non-destructive readback. GRUB is configured with `gfxpayload=1024x768x32`
+  plus an optional Multiboot2 header framebuffer tag (type 5).
+- `ZEROOS_SYS_DISPLAY_INFO` (ID 25) returns `struct zeroos_display_info`
+  {physical_address, byte_size, width, height, pitch, bpp, format, flags};
+  `ZEROOS_DISPLAY_FLAG_PRESENT` distinguishes a live scanout from a
+  degraded serial-only boot. No pixel channel exists yet — scanout writes
+  arrive with the display-service batch (explicit open item, not implied).
+- Userspace desktop platform core in `userspace/desktop/` follows the
+  signed 0/-ZD_E* error convention, fixed capacities (64 windows, 4
+  monitors, 8 workspaces, 1024 search documents, 64 notifications, 256
+  a11y nodes, 128 settings keys, 16 watchdog services), listener-callback
+  events, and must compile with `-ffreestanding -fno-builtin` under
+  `-Wall -Wextra -Werror` (enforced by `make desktop-check`).
 
 ## 13. Audio
 Audio graph:
