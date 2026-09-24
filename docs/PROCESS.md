@@ -11,6 +11,7 @@ The process owns:
 - the private address-space root
 - process lifecycle state
 - thread membership and thread counts
+- explicit thread/child/address-space resource ceilings
 - process exit status
 
 The thread owns:
@@ -74,10 +75,33 @@ struct vmm_space.
 The VMM currently gives each space a private user PML4 slot while sharing the
 kernel mapping root used by the existing bootstrap architecture. The process
 object is the lifecycle owner of that address-space root and destroys it
-during process reaping.
+during process reaping. Reaping refuses to publish the slot as unused if the
+root is still active; the caller must first activate the kernel root. This
+prevents an active CR3 root from being invalidated or its page tables leaked
+through a failed teardown.
 
-User virtual-memory population, page-fault handling, demand paging, and user
-stack construction are deliberately implemented in later Stage 1 work.
+The process-owned `process_address_space_map_page()` and
+`process_address_space_unmap_page()` wrappers are the accounting boundary for
+private user mappings. They require the mapping to use the isolated user PML4
+slot, retain/release physical-page ownership through the VMM, and keep
+`resident_pages` equal to the VMM's owned mapping count. The wrappers also
+provide permission-aware `process_address_space_is_user_range()` validation
+for future syscall and fault paths. Reaping refuses an accounting mismatch and
+tears down the private root only after the process is no longer running.
+
+Demand paging, page-fault recovery, and user stack construction are deliberately
+implemented in later Stage 1 work.
+
+## Resource limits
+
+Every live process has nonzero explicit ceilings for threads, children and
+address-space pages. `process_thread_reserve()` and `process_create()` enforce
+the corresponding ceilings before publication; the address-space mapping
+wrappers enforce the page ceiling before allocating page tables or retaining a
+physical page. Lowering a limit below current usage is rejected. The limits
+are scheduler/storage-independent policy data, so later service/resource
+governance can expose them without changing process identity or lifetime
+semantics.
 
 ## Thread creation
 
@@ -116,6 +140,15 @@ be added together with the Ring-3 transition architecture rather than
 overloading this API.
 
 ## Thread lifecycle
+
+A thread's association to its scheduler task (`task->thread`) is a link, not
+an ownership claim, and is valid only while the thread is live. At
+`thread_exit()` the link is cleared at the lifetime boundary before the
+thread becomes reapable, so a reaped-and-reused thread slot can never be
+reached through a stale task link. PID/TID generation tags and the task
+association never pin a thread object alive: reaping is explicit
+(`thread_reap()` / `process_reap()`), and the scheduler task's own zombie
+reclamation is independent.
 
 The current thread lifecycle is:
 
@@ -197,15 +230,14 @@ missing are:
 - signals/events
 - file-descriptor tables
 - security credentials/capabilities
-- resource limits and accounting
-- user-thread creation
-- kernel-stack/user-stack separation for Ring 3
-- syscall ABI
 - ELF loading and exec
-- user fault containment
+- blocking wait() and cancellation semantics
+- file-descriptor tables and secure capability handles
+- user fault reporting/signals beyond deterministic fault termination
 
-These are subsequent dependencies, not hidden inside the current process
-object model.
+The interrupt layer already has a fail-closed Ring-3 exception termination
+policy; these remaining ABI features are subsequent dependencies, not hidden
+inside the current process object model.
 
 ## Certification
 

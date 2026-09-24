@@ -12,6 +12,7 @@ struct interrupt_frame {
 typedef void (*irq_handler_t)(uint8_t irq, struct interrupt_frame *frame, void *context);
 
 void interrupts_init(void);
+void interrupts_load_current_cpu(void);
 uint64_t interrupt_dispatch(struct interrupt_frame *frame);
 int irq_register(uint8_t irq, irq_handler_t handler, void *context);
 int irq_unregister(uint8_t irq, irq_handler_t handler, void *context);

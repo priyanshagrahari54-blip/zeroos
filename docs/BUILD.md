@@ -6,6 +6,11 @@ Build with:
 
     make
 
+When the host does not have GRUB/xorriso installed, build and inspect only
+the linked kernel ELF with:
+
+    make elf
+
 Run with:
 
     make run

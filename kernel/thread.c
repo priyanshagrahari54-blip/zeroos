@@ -3,6 +3,32 @@
 #include "sync.h"
 
 extern void serial_write_public(const char *text);
+extern int user_thread_enter(struct thread *thread);
+
+static void thread_write_u64(uint64_t value) {
+    char buffer[21];
+    int position=20;
+    buffer[position]='\0';
+    if (value==0) {
+        serial_write_public("0");
+        return;
+    }
+    while (value && position>0) {
+        buffer[--position]=(char)('0'+(value%10ULL));
+        value/=10ULL;
+    }
+    serial_write_public(&buffer[position]);
+}
+
+static int thread_create_failure(const char *stage,
+                                 const struct process *process) {
+    serial_write_public("ZEROOS: kernel thread creation rejected at ");
+    serial_write_public(stage);
+    serial_write_public(" (pid=");
+    thread_write_u64(process ? process->pid : 0);
+    serial_write_public(").\n");
+    return -1;
+}
 
 #define ZEROOS_MAX_THREADS 32U
 #define ZEROOS_THREAD_SLOT_BITS 16U
@@ -52,6 +78,9 @@ static void thread_reset_locked(struct thread *thread) {
     thread->process=0;
     thread->entry=0;
     thread->argument=0;
+    thread->user_mode=0;
+    thread->user_entry=0;
+    thread->user_stack=0;
     thread->scheduler_task_id=0;
     thread->exit_status=0;
     thread->next_in_process=0;
@@ -59,7 +88,10 @@ static void thread_reset_locked(struct thread *thread) {
 
 static void thread_bootstrap(void *argument) {
     struct thread *thread=(struct thread *)argument;
-    if (!thread || !thread->process || !thread->entry) {
+    uint64_t flags;
+    if (!thread || !thread->process ||
+        (!thread->user_mode && !thread->entry) ||
+        (thread->user_mode && (!thread->user_entry || !thread->user_stack))) {
         task_exit();
         return;
     }
@@ -68,7 +100,16 @@ static void thread_bootstrap(void *argument) {
         task_exit();
         return;
     }
+    flags=spin_lock_irqsave(&thread_lock);
     thread->state=THREAD_RUNNING;
+    spin_unlock_irqrestore(&thread_lock,flags);
+
+    if (thread->user_mode) {
+        if (user_thread_enter(thread)!=0)
+            (void)thread_exit(0x101ULL);
+        for (;;) __asm__ volatile ("cli; hlt");
+    }
+
     thread->entry(thread->argument);
     (void)thread_exit(0);
 
@@ -84,6 +125,9 @@ int thread_system_init(void) {
         threads[i].process=0;
         threads[i].entry=0;
         threads[i].argument=0;
+        threads[i].user_mode=0;
+        threads[i].user_entry=0;
+        threads[i].user_stack=0;
         threads[i].scheduler_task_id=0;
         threads[i].exit_status=0;
         threads[i].next_in_process=0;
@@ -103,18 +147,32 @@ struct thread *thread_lookup(thread_id_t tid) {
     return thread;
 }
 
-int thread_create_kernel(struct process *process,
-                         task_entry_t entry,
-                         void *argument,
-                         thread_id_t *tid_out) {
+int thread_is_user(const struct thread *thread) {
+    return thread && thread->user_mode!=0;
+}
+
+struct vmm_space *thread_address_space(const struct thread *thread) {
+    return thread && thread->user_mode && thread->process ?
+           &thread->process->address_space : (struct vmm_space *)0;
+}
+
+static int thread_create_common(struct process *process,
+                                 task_entry_t entry,
+                                 void *argument,
+                                 uint8_t user_mode,
+                                 uint64_t user_entry,
+                                 uint64_t user_stack,
+                                 thread_id_t *tid_out) {
     uint64_t flags;
     int slot=-1;
     struct thread *thread;
     uint64_t task_id;
 
-    if (!process || !entry ||
-        process_thread_reserve(process)!=0)
-        return -1;
+    if (!process || (!user_mode && !entry) ||
+        (user_mode && (!user_entry || !user_stack)))
+        return thread_create_failure("invalid arguments",process);
+    if (process_thread_reserve(process)!=0)
+        return thread_create_failure("process reservation",process);
 
     flags=spin_lock_irqsave(&thread_lock);
     for (uint32_t i=0;i<ZEROOS_MAX_THREADS;++i) {
@@ -128,7 +186,7 @@ int thread_create_kernel(struct process *process,
     if (slot<0) {
         spin_unlock_irqrestore(&thread_lock,flags);
         (void)process_thread_unreserve(process);
-        return -1;
+        return thread_create_failure("thread table capacity",process);
     }
 
     thread=&threads[slot];
@@ -136,7 +194,7 @@ int thread_create_kernel(struct process *process,
     if (generation==0) {
         spin_unlock_irqrestore(&thread_lock,flags);
         (void)process_thread_unreserve(process);
-        return -1;
+        return thread_create_failure("thread generation exhausted",process);
     }
 
     thread->generation=generation;
@@ -145,6 +203,9 @@ int thread_create_kernel(struct process *process,
     thread->process=process;
     thread->entry=entry;
     thread->argument=argument;
+    thread->user_mode=user_mode;
+    thread->user_entry=user_entry;
+    thread->user_stack=user_stack;
     thread->scheduler_task_id=0;
     thread->exit_status=0;
     thread->next_in_process=0;
@@ -163,20 +224,38 @@ int thread_create_kernel(struct process *process,
         thread_reset_locked(thread);
         spin_unlock_irqrestore(&thread_lock,flags);
         (void)process_thread_unreserve(process);
-        return -1;
+        return thread_create_failure("scheduler preemption boundary",process);
     }
 
-    if (task_create_owned(thread_bootstrap,thread,thread,&task_id)!=0) {
+    /* Keep the scheduler task staged until the process list owns the thread.
+     * A local preemption disable cannot stop a remote CPU from dispatching a
+     * newly runnable task on SMP. */
+    if (task_create_owned_staged(thread_bootstrap,thread,thread,&task_id)!=0) {
         (void)task_preempt_enable();
         flags=spin_lock_irqsave(&thread_lock);
         thread_reset_locked(thread);
         spin_unlock_irqrestore(&thread_lock,flags);
         (void)process_thread_unreserve(process);
-        return -1;
+        return thread_create_failure("task resource capacity",process);
     }
 
-    thread->scheduler_task_id=task_id;
-    thread->state=THREAD_RUNNABLE;
+    {
+        uint64_t publish_flags=spin_lock_irqsave(&thread_lock);
+        thread->scheduler_task_id=task_id;
+        spin_unlock_irqrestore(&thread_lock,publish_flags);
+    }
+
+    /* The first user image is deliberately pinned to the BSP until the
+     * secondary-CPU interrupt-return scheduler has a complete userspace
+     * policy. This is a scheduling policy, not a privilege shortcut: it
+     * still crosses the same private CR3, TSS.RSP0, IDT and syscall paths. */
+    if (user_mode) {
+        struct task *created=task_lookup(task_id);
+        if (!created || task_set_affinity(created,1ULL)!=0) {
+            serial_write_public("ZEROOS PANIC: failed to pin initial user thread.\n");
+            for (;;) __asm__ volatile ("cli; hlt");
+        }
+    }
 
     if (process_thread_attach(process,thread)!=0) {
         /*
@@ -188,6 +267,16 @@ int thread_create_kernel(struct process *process,
         for (;;) __asm__ volatile ("cli; hlt");
     }
 
+    {
+        uint64_t publish_flags=spin_lock_irqsave(&thread_lock);
+        thread->state=THREAD_RUNNABLE;
+        spin_unlock_irqrestore(&thread_lock,publish_flags);
+    }
+    if (task_publish_staged(task_id)!=0) {
+        serial_write_public("ZEROOS PANIC: failed to publish kernel thread.\n");
+        for (;;) __asm__ volatile ("cli; hlt");
+    }
+
     if (tid_out)
         *tid_out=thread->tid;
 
@@ -195,16 +284,45 @@ int thread_create_kernel(struct process *process,
     return 0;
 }
 
+int thread_create_kernel(struct process *process,
+                         task_entry_t entry,
+                         void *argument,
+                         thread_id_t *tid_out) {
+    return thread_create_common(process,entry,argument,0,0,0,tid_out);
+}
+
+int thread_create_user(struct process *process, uint64_t user_entry,
+                       uint64_t user_stack, thread_id_t *tid_out) {
+    if (!process || user_entry==0 || user_stack==0 ||
+        (user_entry >> 48) != 0 || (user_stack >> 48) != 0)
+        return thread_create_failure("user entry validation",process);
+    return thread_create_common(process,0,0,1,user_entry,user_stack,tid_out);
+}
+
 int thread_exit(uint64_t exit_status) {
     struct thread *thread=thread_current();
+    uint64_t flags;
+
     if (!thread || thread->state==THREAD_ZOMBIE ||
         thread->state==THREAD_UNUSED)
         return -1;
 
     if (process_thread_exited(thread,exit_status)!=0)
         return -1;
+
+    /*
+     * Lifetime boundary: the task->thread link is valid only while the
+     * thread is live. Clear it before the thread becomes reapable so a
+     * reaped-and-reused thread slot can never be reached through a stale
+     * task link. The link is not ownership: PID/TID and task association
+     * never pin a thread object alive.
+     */
+    task_detach_thread();
+
+    flags=spin_lock_irqsave(&thread_lock);
     thread->state=THREAD_ZOMBIE;
     thread->scheduler_task_id=0;
+    spin_unlock_irqrestore(&thread_lock,flags);
 
     task_exit();
     return 0;
@@ -221,7 +339,9 @@ int thread_debug_validate(void) {
 
         if (thread->state==THREAD_UNUSED) {
             if (thread->tid || thread->process || thread->entry ||
-                thread->argument || thread->scheduler_task_id ||
+                thread->argument || thread->user_mode ||
+                thread->user_entry || thread->user_stack ||
+                thread->scheduler_task_id ||
                 thread->exit_status || thread->next_in_process) {
                 spin_unlock_irqrestore(&thread_lock,flags);
                 return -1;
@@ -233,7 +353,10 @@ int thread_debug_validate(void) {
             slot!=i || generation!=thread->generation ||
             thread_lookup_locked(thread->tid)!=thread ||
             !thread->process ||
-            thread->process->state==PROCESS_UNUSED) {
+            thread->process->state==PROCESS_UNUSED ||
+            (!thread->user_mode && !thread->entry) ||
+            (thread->user_mode && (!thread->user_entry ||
+                                   !thread->user_stack))) {
             spin_unlock_irqrestore(&thread_lock,flags);
             return -1;
         }
@@ -259,9 +382,16 @@ int thread_debug_validate(void) {
 
 int thread_reap(struct thread *thread, uint64_t *exit_status_out) {
     uint64_t flags;
+    thread_id_t tid;
+    uint64_t exit_status;
+    struct process *owner;
 
     if (!thread) return -1;
 
+    /* Lock order is process_lock -> thread_lock. Do not hold thread_lock
+     * while detaching from the owning process: thread creation reserves the
+     * process before taking the thread lock, so the old thread->process
+     * order was an SMP deadlock cycle. */
     flags=spin_lock_irqsave(&thread_lock);
     if (thread_lookup_locked(thread->tid)!=thread ||
         thread->state!=THREAD_ZOMBIE ||
@@ -269,16 +399,30 @@ int thread_reap(struct thread *thread, uint64_t *exit_status_out) {
         spin_unlock_irqrestore(&thread_lock,flags);
         return -1;
     }
+    tid=thread->tid;
+    exit_status=thread->exit_status;
+    spin_unlock_irqrestore(&thread_lock,flags);
 
-    if (process_thread_detach(thread)!=0) {
+    if (process_thread_reap_begin(thread,&owner)!=0)
+        return -1;
+
+    flags=spin_lock_irqsave(&thread_lock);
+    if (thread_lookup_locked(tid)!=thread ||
+        thread->state!=THREAD_ZOMBIE ||
+        thread->scheduler_task_id!=0) {
         spin_unlock_irqrestore(&thread_lock,flags);
+        (void)process_thread_reap_finish(owner);
         return -1;
     }
 
     if (exit_status_out)
-        *exit_status_out=thread->exit_status;
+        *exit_status_out=exit_status;
 
     thread_reset_locked(thread);
     spin_unlock_irqrestore(&thread_lock,flags);
+    if (process_thread_reap_finish(owner)!=0) {
+        serial_write_public("ZEROOS PANIC: process/thread reap transaction lost.\n");
+        for (;;) __asm__ volatile ("cli; hlt");
+    }
     return 0;
 }

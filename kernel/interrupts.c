@@ -1,8 +1,14 @@
 #include "interrupts.h"
+#include "cpu.h"
+#include "apic.h"
 #include "pic.h"
 #include "timer.h"
+#include "gdt.h"
 #include "scheduler.h"
 #include "task.h"
+#include "thread.h"
+#include "tlb.h"
+#include "syscall.h"
 
 struct idt_entry {
     uint16_t offset_low; uint16_t selector; uint8_t ist; uint8_t type_attr;
@@ -15,6 +21,7 @@ struct irq_binding { irq_handler_t handler; void *context; };
 
 static struct idt_entry idt[256];
 static struct irq_binding irq_bindings[16];
+static struct idtr runtime_idtr;
 
 extern void *isr_stub_table[256];
 extern void serial_write_public(const char *text);
@@ -32,6 +39,26 @@ static void serial_write_hex(uint64_t value) {
     for (int i=0;i<16;++i) buffer[2+i]=digits[(value>>(60-i*4))&0xf];
     buffer[18]='\0';
     serial_write_public(buffer);
+}
+
+static int canonical_address(uint64_t address) {
+    uint64_t sign=(address>>47)&1ULL;
+    uint64_t upper=address>>48;
+    return sign ? upper==0xffffULL : upper==0;
+}
+
+static int interrupt_frame_sane(const struct interrupt_frame *frame) {
+    if (!frame || frame->vector>=256 ||
+        !(frame->rflags & (1ULL<<1)))
+        return 0;
+    if ((frame->cs & 3ULL)==3ULL) {
+        if ((frame->ss & 3ULL)!=3ULL || !canonical_address(frame->rip) ||
+            !canonical_address(frame->rsp))
+            return 0;
+    } else if ((frame->cs & 3ULL)!=0 || !canonical_address(frame->rip)) {
+        return 0;
+    }
+    return 1;
 }
 
 static void exception_name(uint64_t vector) {
@@ -69,8 +96,46 @@ static void halt_exception(struct interrupt_frame *frame) {
     }
     if (frame->vector == 14) {
         serial_write_public(" cr2="); serial_write_hex(read_cr2());
+        serial_write_public(" pf[protection="); serial_write_hex(frame->error_code & 1ULL);
+        serial_write_public(" write="); serial_write_hex((frame->error_code>>1)&1ULL);
+        serial_write_public(" user="); serial_write_hex((frame->error_code>>2)&1ULL);
+        serial_write_public(" reserved="); serial_write_hex((frame->error_code>>3)&1ULL);
+        serial_write_public(" instruction="); serial_write_hex((frame->error_code>>4)&1ULL);
+        serial_write_public("]");
     }
     serial_write_public("\nZEROOS: kernel halted after fatal exception.\n");
+    for (;;) __asm__ volatile ("cli; hlt");
+}
+
+static int user_exception_containable(uint64_t vector) {
+    /* Platform-fatal delivery is never converted into process termination. */
+    return vector<32 && vector!=2 && vector!=8 && vector!=15 && vector!=18;
+}
+
+static void contain_user_exception(struct interrupt_frame *frame) {
+    struct thread *thread=thread_current();
+
+    serial_write_public("ZEROOS: terminating thread after user exception ");
+    exception_name(frame->vector);
+    serial_write_public(" tid=");
+    if (thread)
+        serial_write_hex(thread->tid);
+    else
+        serial_write_public("0");
+    if (frame->vector==14) {
+        serial_write_public(" cr2=");
+        serial_write_hex(read_cr2());
+    }
+    serial_write_public(".\n");
+
+    /*
+     * User faults arrive on the task's privilege-entry/IST path, not as a
+     * resumable kernel-task frame. Termination therefore retires the faulting
+     * task without publishing the IST frame as scheduler-owned context.
+     */
+    cpu_irq_exit();
+    if (!thread || thread_exit(0x100ULL+frame->vector)!=0)
+        halt_exception(frame);
     for (;;) __asm__ volatile ("cli; hlt");
 }
 
@@ -78,7 +143,7 @@ static void idt_set_gate(uint8_t vector, void *handler) {
     uint64_t address=(uint64_t)handler;
     idt[vector].offset_low=(uint16_t)(address&0xffff);
     idt[vector].selector=0x08;
-    idt[vector].ist=0;
+    idt[vector].ist=gdt_exception_ist(vector);
     idt[vector].type_attr=0x8e;
     idt[vector].offset_mid=(uint16_t)((address>>16)&0xffff);
     idt[vector].offset_high=(uint32_t)(address>>32);
@@ -89,31 +154,112 @@ static inline void lidt(const struct idtr *descriptor) {
     __asm__ volatile ("lidt %0" : : "m"(*descriptor));
 }
 
+void interrupts_load_current_cpu(void) {
+    if (runtime_idtr.base)
+        lidt(&runtime_idtr);
+}
+
 static void timer_irq_handler(uint8_t irq, struct interrupt_frame *frame, void *context) {
     (void)irq; (void)frame; (void)context;
     timer_tick();
 }
 
 uint64_t interrupt_dispatch(struct interrupt_frame *frame) {
-    if (frame->vector < 32)
+    if (!interrupt_frame_sane(frame)) {
+        serial_write_public("ZEROOS PANIC: malformed interrupt frame.\n");
+        for (;;) __asm__ volatile("cli; hlt");
+    }
+
+    uint64_t result=(uint64_t)frame;
+    cpu_irq_enter();
+
+    if (frame->vector < 32) {
+        if ((frame->cs & 3ULL)==3ULL &&
+            user_exception_containable(frame->vector))
+            contain_user_exception(frame);
         halt_exception(frame);
+    }
+
+    if (frame->vector==ZEROOS_TLB_SHOOTDOWN_VECTOR) {
+        if (tlb_handle_ipi(cpu_current_id())!=0) {
+            serial_write_public("ZEROOS PANIC: unclaimed TLB shootdown IPI.\n");
+            for (;;) __asm__ volatile ("cli; hlt");
+        }
+        if (apic_controller()==ZEROOS_IRQ_CONTROLLER_LAPIC_IOAPIC)
+            apic_eoi();
+        cpu_irq_exit();
+        return (uint64_t)frame;
+    }
+
+    if (frame->vector==ZEROOS_SCHEDULER_WAKE_VECTOR) {
+        /* The AP scheduler gate is polled from the private bootstrap loop;
+         * this vector only releases its HLT and never performs a handoff from
+         * interrupt context. */
+        if (apic_controller()==ZEROOS_IRQ_CONTROLLER_LAPIC_IOAPIC)
+            apic_eoi();
+        cpu_irq_exit();
+        return (uint64_t)frame;
+    }
+
+    if (frame->vector==ZEROOS_SCHEDULER_OFFLINE_VECTOR) {
+        if (cpu_current_id()==0) {
+            serial_write_public("ZEROOS PANIC: BSP received CPU-offline IPI.\\n");
+            for (;;) __asm__ volatile ("cli; hlt");
+        }
+        result=task_cpu_offline_from_interrupt(frame);
+        if (apic_controller()==ZEROOS_IRQ_CONTROLLER_LAPIC_IOAPIC)
+            apic_eoi();
+        cpu_irq_exit();
+        return result;
+    }
+
+    if (frame->vector==ZEROOS_SYSCALL_VECTOR) {
+        syscall_dispatch(frame);
+        if (task_current() && task_current()->state==TASK_RUNNING &&
+            task_need_resched())
+            result=task_reschedule_from_interrupt(frame);
+        cpu_irq_exit();
+        return result;
+    }
+
+    if (frame->vector==ZEROOS_SCHEDULER_TICK_VECTOR) {
+        if (cpu_current_id()!=0 && task_scheduler_ready()) {
+            scheduler_tick_remote();
+            result=task_reschedule_from_interrupt(frame);
+        }
+        if (apic_controller()==ZEROOS_IRQ_CONTROLLER_LAPIC_IOAPIC)
+            apic_eoi();
+        cpu_irq_exit();
+        return result;
+    }
 
     if (frame->vector >= 32 && frame->vector < 48) {
         uint8_t irq=(uint8_t)(frame->vector-32);
         struct irq_binding *binding=&irq_bindings[irq];
         if (binding->handler)
             binding->handler(irq, frame, binding->context);
-        pic_send_eoi(irq);
+        if (apic_controller()==ZEROOS_IRQ_CONTROLLER_LAPIC_IOAPIC)
+            apic_eoi();
+        else
+            pic_send_eoi(irq);
+
+        /* APs do not borrow the BSP scheduler context. Their future
+         * per-CPU device/timer queues get a separate dispatch boundary. */
+        if (cpu_current_id()!=0) {
+            cpu_irq_exit();
+            return (uint64_t)frame;
+        }
 
         /*
          * Scheduling is deliberately deferred until after the device EOI
          * and handler return. The assembly epilogue then restores either
          * this frame or another task's complete frame.
          */
-        return task_reschedule_from_interrupt(frame);
+        result=task_reschedule_from_interrupt(frame);
     }
 
-    return (uint64_t)frame;
+    cpu_irq_exit();
+    return result;
 }
 
 int irq_register(uint8_t irq, irq_handler_t handler, void *context) {
@@ -136,13 +282,25 @@ void interrupts_init(void) {
     timer_init();
 
     for (uint16_t i=0;i<256;++i) idt_set_gate((uint8_t)i,isr_stub_table[i]);
+    /* User software may enter only through the versioned syscall vector;
+     * every other gate remains supervisor-only (DPL0). */
+    idt[ZEROOS_SYSCALL_VECTOR].type_attr=0xee;
 
-    struct idtr descriptor={.limit=(uint16_t)(sizeof(idt)-1),.base=(uint64_t)idt};
-    lidt(&descriptor);
+    runtime_idtr=(struct idtr){
+        .limit=(uint16_t)(sizeof(idt)-1),
+        .base=(uint64_t)idt
+    };
+    interrupts_load_current_cpu();
 
     if (irq_register(0,timer_irq_handler,0)!=0) {
         serial_write_public("ZEROOS PANIC: timer IRQ registration failed.\n");
         for (;;) __asm__ volatile ("cli; hlt");
     }
+
+    if (apic_activate_timer()==0)
+        serial_write_public("ZEROOS: LAPIC/IOAPIC timer routing activated.\n");
+    else
+        serial_write_public("ZEROOS: legacy PIC timer routing retained.\n");
+    serial_write_public("ZEROOS: user fault containment policy armed.\n");
     __asm__ volatile ("sti");
 }

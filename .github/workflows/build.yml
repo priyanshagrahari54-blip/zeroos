@@ -18,6 +18,9 @@ jobs:
       - name: Build ZEROOS
         run: make
 
+      - name: Check public userspace ABI and runtime
+        run: make userspace-abi-check userspace-runtime-check userspace-abi-consistency
+
       - name: Verify kernel image
         run: |
           test -s build/zeroos.elf
@@ -25,40 +28,276 @@ jobs:
           file build/zeroos.elf build/zeroos.iso
           readelf -h -l build/zeroos.elf
           objdump -s -j .multiboot2 build/zeroos.elf
+          test "$(readelf -rW build/zeroos.elf | grep -c 'R_X86_64' || true)" -eq 0
+          trampoline_start=$(nm -n build/zeroos.elf | awk '$3 == "ap_trampoline_start" {print "0x" $1}')
+          trampoline_end=$(nm -n build/zeroos.elf | awk '$3 == "ap_trampoline_end" {print "0x" $1}')
+          test -n "$trampoline_start" -a -n "$trampoline_end"
+          test $((trampoline_end - trampoline_start)) -gt 0
+          test $((trampoline_end - trampoline_start)) -le 4096
           echo "===== ZEROOS linker symbols ====="
-          nm -n build/zeroos.elf | grep -E '(__kernel_start|__kernel_end|stack_bottom|stack_top|tasks$|task_lock$|next_task_id$|sleep_head$|tick_hook$|ticks$|page_bitmap|free_word_summary)' || true
+          nm -n build/zeroos.elf | grep -E '(__kernel_start|__kernel_end|stack_bottom|stack_top|tasks$|task_lock$|next_task_id$|sleep_head$|frame_resume_count$|tick_hook$|ticks$|page_bitmap|usable_bitmap|free_word_summary|memory_lock$|boot_cpu$|boot_cpu_local$|state$)' || true
           echo "===== ZEROOS memory_init disassembly ====="
           objdump -d --disassemble=memory_init build/zeroos.elf
           echo "===== ZEROOS task context disassembly ====="
           objdump -d --disassemble=task_trampoline build/zeroos.elf
-          objdump -d --disassemble=switch_to_next build/zeroos.elf
+          objdump -d --disassemble=context_switch_ex build/zeroos.elf
+          objdump -d --disassemble=dispatch_locked build/zeroos.elf
           objdump -d --disassemble=task_yield build/zeroos.elf
 
       - name: Boot test
         run: |
-          timeout 10s qemu-system-x86_64             -cdrom build/zeroos.iso             -serial file:build/serial.log             -display none             -no-reboot             -no-shutdown             -debugcon file:build/debug.log             -global isa-debugcon.iobase=0xe9             -d guest_errors,cpu_reset             -D build/qemu.log || true
-          grep -q "ZEROOS: foundation milestone reached." build/serial.log
-          grep -q "ZEROOS: physical page allocator initialized." build/serial.log
-          grep -q "ZEROOS: runtime GDT/TSS self-test passed." build/serial.log
-          test -s build/debug.log
-          grep -q "B" build/debug.log
-          grep -q "L" build/debug.log
-          grep -q "ZEROOS: timer tick 100." build/serial.log
+          # Three sequential QEMU boots: scheduler/context certification is a
+          # runtime invariant suite, and the interrupt-frame ownership defect
+          # this gates against was nondeterministic. A single green boot is
+          # not sufficient evidence.
+          for iteration in 1 2 3; do
+            echo "===== ZEROOS boot certification iteration ${iteration} ====="
+            timeout 45s qemu-system-x86_64             -smp 2             -cdrom build/zeroos.iso             -serial file:build/serial.log             -display none             -no-reboot             -no-shutdown             -debugcon file:build/debug.log             -global isa-debugcon.iobase=0xe9             -d int,guest_errors,cpu_reset             -D build/qemu.log || true
+            grep -q "ZEROOS: foundation milestone reached." build/serial.log
+            grep -q "ZEROOS: bootstrap stack guard verified." build/serial.log
+            grep -q "ZEROOS: CPU capabilities detected" build/serial.log
+            grep -q "ZEROOS: physical page allocator initialized." build/serial.log
+            grep -q "ZEROOS: TLB shootdown boundary self-test passed." build/serial.log
+            grep -q "ZEROOS: runtime GDT/TSS self-test passed." build/serial.log
+            grep -q "ZEROOS: exception IST routing self-test passed." build/serial.log
+            grep -q "ZEROOS: IRQ controller capability:" build/serial.log
+            grep -Eq 'ZEROOS: (LAPIC/IOAPIC timer routing activated|legacy PIC timer routing retained)\.' build/serial.log
+            grep -q "ZEROOS: user fault containment policy armed." build/serial.log
+            grep -q "ZEROOS: ACPI routing discovery:" build/serial.log
+            grep -q "ZEROOS: SMP startup self-test passed." build/serial.log
+            grep -q "ZEROOS: SMP startup recovery contract self-test passed." build/serial.log
+            grep -q "ZEROOS: remote TLB shootdown self-test passed." build/serial.log
+            grep -q "ZEROOS: AP local LAPIC clock-event contract verified." build/serial.log
+            grep -q "ZEROOS: PIT timer configured at .*clocksource=" build/serial.log
+            grep -q "ZEROOS: synchronization primitives self-test passed." build/serial.log
+            test -s build/debug.log
+            grep -q "B" build/debug.log
+            grep -q "L" build/debug.log
+            grep -q "ZEROOS: timer tick 100." build/serial.log
 
-          echo "===== ZEROOS scheduler certification gates ====="
-          grep -q "ZEROOS: task context-switch self-test passed." build/serial.log
-          grep -q "ZEROOS: wait queue integration verified." build/serial.log
-          grep -q "ZEROOS: timed sleep integration verified." build/serial.log
-          grep -q "ZEROOS: timer-only preemption stress passed." build/serial.log
-          grep -q "ZEROOS: zombie reaping and slot-reuse stress passed." build/serial.log
-          grep -q "ZEROOS: scheduler certification passed." build/serial.log
-          grep -q "ZEROOS: process/thread object model self-test passed." build/serial.log
-          grep -q "ZEROOS: PID/TID reuse protection self-test passed." build/serial.log
+            echo "===== ZEROOS scheduler certification gates ====="
+            grep -q "ZEROOS: task context-switch self-test passed." build/serial.log
+            grep -q "ZEROOS: wait queue integration verified." build/serial.log
+            grep -q "ZEROOS: timed sleep integration verified." build/serial.log
+            grep -q "ZEROOS: scheduler policy and affinity self-test passed." build/serial.log
+            grep -q "ZEROOS: timer-only preemption stress passed." build/serial.log
+            grep -q "ZEROOS: scheduler fairness and latency stress passed." build/serial.log
+            grep -q "ZEROOS: zombie reaping and slot-reuse stress passed." build/serial.log
+            grep -q "ZEROOS: interrupt-frame ownership invariant verified." build/serial.log
+            grep -q "ZEROOS: scheduler certification passed." build/serial.log
+            grep -q "ZEROOS: per-CPU scheduler ownership verified." build/serial.log
+            grep -q "ZEROOS: CPU hot-offline queue evacuation and parking passed." build/serial.log
+            grep -q "ZEROOS: process/thread object model self-test passed." build/serial.log
+            grep -q "ZEROOS: process address-space ownership self-test passed." build/serial.log
+            grep -q "ZEROOS: PID/TID reuse protection self-test passed." build/serial.log
+            grep -q "ZEROOS: per-task kernel-stack/TSS handoff self-test passed." build/serial.log
+            grep -q "ZEROOS: Ring-3 GDT and versioned syscall ABI initialized." build/serial.log
+            grep -q "ZEROOS: bounded capability IPC core initialized." build/serial.log
+            grep -q "ZEROOS: ELF loader, W^X mapping, and capability IPC gates initialized." build/serial.log
+            grep -q "ZEROOS: executable spawn/argv/auxv and wait ABI initialized." build/serial.log
+            grep -q "ZEROOS: userspace init process published." build/serial.log
+            grep -q "ZEROOS: capability IPC queue/backpressure self-test passed." build/serial.log
+            grep -q "ZEROOS: capability IPC negative/timeout semantics passed." build/serial.log
+            grep -q "ZEROOS: IPC capability generation/revocation stress passed." build/serial.log
+            grep -q "ZEROOS: blocking child wait/wakeup path passed." build/serial.log
+            grep -q "ZEROOS: event and pipe IPC foundations self-test passed." build/serial.log
+            grep -q "ZEROOS: blocking event wait/wake path passed." build/serial.log
+            grep -q "ZEROOS: blocking IPC close-wakeup path passed." build/serial.log
+            grep -q "ZEROOS: blocking IPC send-wakeup path passed." build/serial.log
+            grep -q "ZEROOS: isolated service process setup complete." build/serial.log
+            grep -q "ZEROOS: shared-memory map/grant/lifecycle self-test passed." build/serial.log
+            grep -q "ZEROOS: userspace resource exhaustion/recovery passed." build/serial.log
+            grep -q "ZEROOS: service capability least-privilege grant passed." build/serial.log
+            grep -q "ZEROOS: service worker grant denial passed." build/serial.log
+            grep -q "ZEROOS: service manager launched isolated IPC service attempt 1." build/serial.log
+            grep -q "ZEROOS: blocking IPC wait/wake path passed." build/serial.log
+            grep -q "ZEROOS: service manager restarted failed service after IPC delivery." build/serial.log
+            grep -q "ZEROOS: service manager launched isolated IPC service attempt 2." build/serial.log
+            grep -q "ZEROOS: isolated service IPC/restart recovery passed." build/serial.log
+            grep -q "ZEROOS: userspace service manager dependency/restart lifecycle passed." build/serial.log
+            grep -q "ZEROOS: userspace service manager process published." build/serial.log
+            grep -q "ZEROOS: persistent userspace service manager published." build/serial.log
+            grep -q "ZEROOS: persistent service manager shutdown event delivered." build/serial.log
+            grep -q "ZEROOS: userspace service manager reaped cleanly." build/serial.log
+            grep -q "ZEROOS: persistent userspace service manager reaped cleanly." build/serial.log
+            grep -q "ZEROOS: userspace init syscall path passed." build/serial.log
+            grep -q "ZEROOS: userspace negative syscall/fault/malformed-ELF probes passed." build/serial.log
+            grep -q "ZEROOS: init userspace process reaped cleanly." build/serial.log
+            grep -q "ZEROOS: Ring-3 transition, syscall ABI, and init recovery passed." build/serial.log
 
-          if grep -q "ZEROOS PANIC:" build/serial.log; then
-            echo "ZEROOS scheduler/runtime panic detected:"
-            grep "ZEROOS PANIC:" build/serial.log
+            if grep -q "ZEROOS PANIC:" build/serial.log; then
+              echo "ZEROOS scheduler/runtime panic detected:"
+              grep "ZEROOS PANIC:" build/serial.log
+              exit 1
+            fi
+          done
+
+          echo "===== ZEROOS four-vCPU SMP certification ====="
+          timeout 45s qemu-system-x86_64 \
+            -smp 4 \
+            -cdrom build/zeroos.iso \
+            -serial file:build/serial-smp4.log \
+            -display none \
+            -no-reboot \
+            -no-shutdown \
+            -debugcon file:build/debug-smp4.log \
+            -global isa-debugcon.iobase=0xe9 \
+            -d int,guest_errors,cpu_reset \
+            -D build/qemu-smp4.log || true
+          if grep -q "ZEROOS PANIC:" build/serial-smp4.log; then
+            echo "ZEROOS four-vCPU boot reported a panic before scheduler gates:"
+            grep "ZEROOS PANIC:" build/serial-smp4.log
+            smp4_summary=$(tail -c 12000 build/serial-smp4.log | tr '\r\n' '  ')
+            echo "::error title=four-vCPU serial tail::$smp4_summary"
             exit 1
+          fi
+          grep -q "ZEROOS: SMP CPU topology: discovered=4 online=4." build/serial-smp4.log
+          grep -q "ZEROOS: remote TLB shootdown self-test passed." build/serial-smp4.log
+          grep -q "ZEROOS: AP local LAPIC clock-event contract verified." build/serial-smp4.log
+          grep -q "ZEROOS: scheduler certification passed." build/serial-smp4.log
+          grep -q "ZEROOS: scheduler fairness and latency stress passed." build/serial-smp4.log
+          grep -q "ZEROOS: per-CPU scheduler ownership verified." build/serial-smp4.log
+          grep -q "ZEROOS: CPU hot-offline queue evacuation and parking passed." build/serial-smp4.log
+          grep -q "ZEROOS: service manager restarted failed service after IPC delivery." build/serial-smp4.log
+          grep -q "ZEROOS: service worker grant denial passed." build/serial-smp4.log
+          grep -q "ZEROOS: isolated service IPC/restart recovery passed." build/serial-smp4.log
+          grep -q "ZEROOS: userspace service manager dependency/restart lifecycle passed." build/serial-smp4.log
+          grep -q "ZEROOS: userspace service manager process published." build/serial-smp4.log
+          grep -q "ZEROOS: persistent userspace service manager published." build/serial-smp4.log
+          grep -q "ZEROOS: persistent service manager shutdown event delivered." build/serial-smp4.log
+          grep -q "ZEROOS: userspace service manager reaped cleanly." build/serial-smp4.log
+          grep -q "ZEROOS: persistent userspace service manager reaped cleanly." build/serial-smp4.log
+          grep -q "ZEROOS: userspace init syscall path passed." build/serial-smp4.log
+          grep -q "ZEROOS: userspace resource exhaustion/recovery passed." build/serial-smp4.log
+          grep -q "ZEROOS: event and pipe IPC foundations self-test passed." build/serial-smp4.log
+          grep -q "ZEROOS: blocking event wait/wake path passed." build/serial-smp4.log
+          grep -q "ZEROOS: blocking child wait/wakeup path passed." build/serial-smp4.log
+          grep -q "ZEROOS: blocking IPC close-wakeup path passed." build/serial-smp4.log
+          grep -q "ZEROOS: blocking IPC send-wakeup path passed." build/serial-smp4.log
+          grep -q "ZEROOS: isolated service process setup complete." build/serial-smp4.log
+          grep -q "ZEROOS: shared-memory map/grant/lifecycle self-test passed." build/serial-smp4.log
+          grep -q "ZEROOS: userspace negative syscall/fault/malformed-ELF probes passed." build/serial-smp4.log
+          grep -q "ZEROOS: Ring-3 transition, syscall ABI, and init recovery passed." build/serial-smp4.log
+          if grep -q "ZEROOS PANIC:" build/serial-smp4.log; then
+            echo "ZEROOS four-vCPU boot reported a panic:"
+            grep "ZEROOS PANIC:" build/serial-smp4.log
+            smp4_summary=$(tail -c 12000 build/serial-smp4.log | tr '\r\n' '  ')
+            echo "::error title=four-vCPU serial tail::$smp4_summary"
+            exit 1
+          fi
+
+          echo "===== ZEROOS NX-disabled compatibility boot ====="
+          timeout 45s qemu-system-x86_64 \
+            -cpu qemu64,-nx \
+            -smp 2 \
+            -cdrom build/zeroos.iso \
+            -serial file:build/serial-nx-off.log \
+            -display none \
+            -no-reboot \
+            -no-shutdown \
+            -debugcon file:build/debug-nx-off.log \
+            -global isa-debugcon.iobase=0xe9 \
+            -d int,guest_errors,cpu_reset \
+            -D build/qemu-nx-off.log || true
+          grep -q "ZEROOS: CPU capabilities detected (APIC=1, NX=0" build/serial-nx-off.log
+          grep -q "ZEROOS: foundation milestone reached." build/serial-nx-off.log
+          grep -q "ZEROOS: remote TLB shootdown self-test passed." build/serial-nx-off.log
+          grep -q "ZEROOS: AP local LAPIC clock-event contract verified." build/serial-nx-off.log
+          grep -q "ZEROOS: scheduler certification passed." build/serial-nx-off.log
+          grep -q "ZEROOS: scheduler fairness and latency stress passed." build/serial-nx-off.log
+          grep -q "ZEROOS: per-CPU scheduler ownership verified." build/serial-nx-off.log
+          grep -q "ZEROOS: CPU hot-offline queue evacuation and parking passed." build/serial-nx-off.log
+          grep -q "ZEROOS: service worker grant denial passed." build/serial-nx-off.log
+          grep -q "ZEROOS: userspace service manager dependency/restart lifecycle passed." build/serial-nx-off.log
+          grep -q "ZEROOS: userspace service manager process published." build/serial-nx-off.log
+          grep -q "ZEROOS: persistent userspace service manager published." build/serial-nx-off.log
+          grep -q "ZEROOS: persistent service manager shutdown event delivered." build/serial-nx-off.log
+          grep -q "ZEROOS: userspace service manager reaped cleanly." build/serial-nx-off.log
+          grep -q "ZEROOS: persistent userspace service manager reaped cleanly." build/serial-nx-off.log
+          grep -q "ZEROOS: userspace init syscall path passed." build/serial-nx-off.log
+          grep -q "ZEROOS: userspace resource exhaustion/recovery passed." build/serial-nx-off.log
+          grep -q "ZEROOS: event and pipe IPC foundations self-test passed." build/serial-nx-off.log
+          grep -q "ZEROOS: blocking event wait/wake path passed." build/serial-nx-off.log
+          grep -q "ZEROOS: blocking child wait/wakeup path passed." build/serial-nx-off.log
+          grep -q "ZEROOS: blocking IPC close-wakeup path passed." build/serial-nx-off.log
+          grep -q "ZEROOS: blocking IPC send-wakeup path passed." build/serial-nx-off.log
+          grep -q "ZEROOS: isolated service process setup complete." build/serial-nx-off.log
+          grep -q "ZEROOS: shared-memory map/grant/lifecycle self-test passed." build/serial-nx-off.log
+          grep -q "ZEROOS: userspace negative syscall/fault/malformed-ELF probes passed." build/serial-nx-off.log
+          grep -q "ZEROOS: Ring-3 transition, syscall ABI, and init recovery passed." build/serial-nx-off.log
+          if grep -q "ZEROOS PANIC:" build/serial-nx-off.log; then
+            echo "ZEROOS NX-disabled boot reported a panic:"
+            grep "ZEROOS PANIC:" build/serial-nx-off.log
+            exit 1
+          fi
+
+          echo "===== ZEROOS failed-IPI recovery fault boot ====="
+          make BUILD=build-fault EXTRA_CFLAGS=-DZEROOS_TEST_SMP_FAILED_DISPATCH
+          timeout 45s qemu-system-x86_64 \
+            -smp 2 \
+            -cdrom build-fault/zeroos.iso \
+            -serial file:build-fault/serial.log \
+            -display none \
+            -no-reboot \
+            -no-shutdown \
+            -debugcon file:build-fault/debug.log \
+            -global isa-debugcon.iobase=0xe9 \
+            -d int,guest_errors,cpu_reset \
+            -D build-fault/qemu.log || true
+          grep -q "ZEROOS: injected SMP dispatch failure for recovery validation." build-fault/serial.log
+          grep -q "ZEROOS: SMP INIT/SIPI dispatch started (cpu=1, attempt=2)." build-fault/serial.log
+          grep -q "ZEROOS: SMP startup recovery contract self-test passed." build-fault/serial.log
+          grep -q "ZEROOS: scheduler certification passed." build-fault/serial.log
+          grep -q "ZEROOS: service worker grant denial passed." build-fault/serial.log
+          grep -q "ZEROOS: userspace service manager dependency/restart lifecycle passed." build-fault/serial.log
+          grep -q "ZEROOS: userspace service manager process published." build-fault/serial.log
+          grep -q "ZEROOS: persistent userspace service manager published." build-fault/serial.log
+          grep -q "ZEROOS: persistent service manager shutdown event delivered." build-fault/serial.log
+          grep -q "ZEROOS: userspace service manager reaped cleanly." build-fault/serial.log
+          grep -q "ZEROOS: persistent userspace service manager reaped cleanly." build-fault/serial.log
+          grep -q "ZEROOS: userspace init syscall path passed." build-fault/serial.log
+          grep -q "ZEROOS: userspace resource exhaustion/recovery passed." build-fault/serial.log
+          grep -q "ZEROOS: event and pipe IPC foundations self-test passed." build-fault/serial.log
+          grep -q "ZEROOS: blocking event wait/wake path passed." build-fault/serial.log
+          grep -q "ZEROOS: blocking child wait/wakeup path passed." build-fault/serial.log
+          grep -q "ZEROOS: blocking IPC close-wakeup path passed." build-fault/serial.log
+          grep -q "ZEROOS: blocking IPC send-wakeup path passed." build-fault/serial.log
+          grep -q "ZEROOS: isolated service process setup complete." build-fault/serial.log
+          grep -q "ZEROOS: shared-memory map/grant/lifecycle self-test passed." build-fault/serial.log
+          grep -q "ZEROOS: userspace negative syscall/fault/malformed-ELF probes passed." build-fault/serial.log
+          grep -q "ZEROOS: Ring-3 transition, syscall ABI, and init recovery passed." build-fault/serial.log
+          if grep -q "ZEROOS PANIC:" build-fault/serial.log; then
+            echo "ZEROOS failed-IPI recovery boot reported a panic:"
+            grep "ZEROOS PANIC:" build-fault/serial.log
+            exit 1
+          fi
+
+      - name: Serial summary
+        if: always()
+        run: |
+          echo "===== ZEROOS serial.log tail ====="
+          if test -f build/serial.log; then
+            tail -n 30 build/serial.log
+          else
+            echo "serial.log was not produced"
+          fi
+          echo "===== ZEROOS NX-disabled serial.log tail ====="
+          if test -f build/serial-nx-off.log; then
+            tail -n 30 build/serial-nx-off.log
+          else
+            echo "serial-nx-off.log was not produced"
+          fi
+          echo "===== ZEROOS four-vCPU serial.log tail ====="
+          if test -f build/serial-smp4.log; then
+            tail -n 30 build/serial-smp4.log
+          else
+            echo "serial-smp4.log was not produced"
+          fi
+          echo "===== ZEROOS failed-IPI recovery serial.log tail ====="
+          if test -f build-fault/serial.log; then
+            tail -n 30 build-fault/serial.log
+          else
+            echo "failed-IPI recovery serial.log was not produced"
           fi
 
       - name: Dump serial log on failure
@@ -72,9 +311,72 @@ jobs:
           fi
           echo "===== ZEROOS debug port ====="
           if test -f build/debug.log; then cat build/debug.log; else echo "debug.log was not produced"; fi
+          echo "===== ZEROOS NX-disabled serial.log ====="
+          if test -f build/serial-nx-off.log; then cat build/serial-nx-off.log; else echo "serial-nx-off.log was not produced"; fi
+          echo "===== ZEROOS four-vCPU serial.log ====="
+          if test -f build/serial-smp4.log; then cat build/serial-smp4.log; else echo "serial-smp4.log was not produced"; fi
+          echo "===== ZEROOS four-vCPU debug port ====="
+          if test -f build/debug-smp4.log; then cat build/debug-smp4.log; else echo "debug-smp4.log was not produced"; fi
+          echo "===== ZEROOS NX-disabled debug port ====="
+          if test -f build/debug-nx-off.log; then cat build/debug-nx-off.log; else echo "debug-nx-off.log was not produced"; fi
           echo "===== QEMU diagnostics ====="
           if test -f build/qemu.log; then
             cat build/qemu.log
           else
             echo "qemu.log was not produced"
           fi
+          echo "===== NX-disabled QEMU diagnostics ====="
+          if test -f build/qemu-nx-off.log; then
+            cat build/qemu-nx-off.log
+          else
+            echo "qemu-nx-off.log was not produced"
+          fi
+
+      - name: Publish boot failure summary
+        if: failure()
+        run: |
+          if test -s build/serial.log; then
+            summary=$(tr '\r\n' '  ' < build/serial.log | cut -c1-6000)
+            echo "::error title=ZEROOS serial log::$summary"
+          fi
+          if test -s build/qemu.log; then
+            qsummary=$(tail -c 2200 build/qemu.log | tr '\r\n' '  ')
+            echo "::error title=QEMU diagnostics::$qsummary"
+          fi
+          if test -s build/qemu-nx-off.log; then
+            nxsummary=$(tail -c 2200 build/qemu-nx-off.log | tr '\r\n' '  ')
+            echo "::error title=NX-disabled QEMU diagnostics::$nxsummary"
+          fi
+          if test -s build/qemu-smp4.log; then
+            smp4summary=$(tail -c 2200 build/qemu-smp4.log | tr '\r\n' '  ')
+            echo "::error title=four-vCPU QEMU diagnostics::$smp4summary"
+          fi
+          if test -s build/debug.log; then
+            dsummary=$(tail -c 2000 build/debug.log | tr '\r\n' '  ')
+            echo "::error title=QEMU debug port::$dsummary"
+          fi
+          if test -s build/debug-nx-off.log; then
+            nxdebug=$(tail -c 2000 build/debug-nx-off.log | tr '\r\n' '  ')
+            echo "::error title=NX-disabled QEMU debug port::$nxdebug"
+          fi
+          if test -s build/debug-smp4.log; then
+            smp4debug=$(tail -c 2000 build/debug-smp4.log | tr '\r\n' '  ')
+            echo "::error title=four-vCPU QEMU debug port::$smp4debug"
+          fi
+
+      - name: Preserve boot diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zeroos-boot-diagnostics
+          if-no-files-found: ignore
+          path: |
+            build/serial.log
+            build/debug.log
+            build/qemu.log
+            build/serial-nx-off.log
+            build/debug-nx-off.log
+            build/qemu-nx-off.log
+            build/serial-smp4.log
+            build/debug-smp4.log
+            build/qemu-smp4.log

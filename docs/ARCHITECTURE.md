@@ -62,7 +62,17 @@ Support planned for:
 ### Ownership
 Every physical page and major kernel object needs ownership/lifetime semantics.
 
-## 5. Execution Architecture
+## 5. CPU Architecture
+`CPU_ARCHITECTURE.md` defines capability discovery, the SSE2/FPU baseline,
+NX enablement, invariant-TSC measurement and the per-CPU ownership record.
+The current supported matrix is x86-64 QEMU/PC with a capability-probed
+legacy PIC fallback or a validated LAPIC/IOAPIC timer path. When valid MADT
+processor records and the Local APIC path are available, the SMP boundary
+prepares and handshakes bounded AP records; otherwise it selects an explicit
+BSP-only recovery mode rather than fabricating online CPUs. Multi-vCPU
+scheduling and hardware certification remain later gates.
+
+## 6. Execution Architecture
 ### Tasks
 A task represents schedulable execution state.
 
@@ -78,25 +88,35 @@ RUNNING -> ZOMBIE/EXITED where applicable.
 
 Interrupt-return context and voluntary context-switch context must not be conflated without a documented invariant.
 
-## 6. Interrupt Architecture
+## 7. Interrupt Architecture
 IDT dispatches exceptions and IRQs.
-PIC is an early platform mechanism; future APIC/IOAPIC support is required for modern multiprocessor systems.
+PIC is the validated rollback path; the current APIC/IOAPIC implementation
+owns the validated timer route and the IPI mechanisms used by the SMP boundary.
+Full modern multiprocessor support still requires non-timer routing, per-CPU
+scheduler execution and complete SMP coordination.
 Timer interrupts drive scheduling/timers.
 IRQ registration must separate hardware delivery from device-driver work.
 
-## 7. SMP Architecture
-Future:
-- CPU discovery,
-- AP startup,
-- per-CPU data,
-- per-CPU scheduler queues,
-- inter-processor interrupts,
-- TLB shootdowns,
-- lock contention instrumentation.
+## 8. SMP Architecture
+The current Stage 1 boundary provides:
 
-The initial kernel can remain single-core for stabilization, but interfaces must not make SMP impossible.
+- bounded ACPI MADT CPU discovery;
+- a low-memory real-mode/protected-mode/long-mode AP trampoline;
+- per-CPU GS records and per-CPU GDT/TSS/IDT installation;
+- INIT/SIPI startup with a generation-tagged online handshake and explicit
+  failure state;
+- one bounded INIT/SIPI retry per AP, with late-attempt rejection and BSP-only
+  recovery when an AP cannot complete initialization;
+- inter-processor TLB shootdown request/acknowledgement plumbing, including
+  removal of a failing AP from the target mask;
+- AP idle/interrupt dispatch that never borrows the BSP scheduler context.
 
-## 8. Userspace Architecture
+Per-CPU scheduler queues, AP device-IRQ ownership, FPU state policy, lock
+contention instrumentation and full multi-vCPU stress/hardware certification
+remain production gates. The AP boundary therefore fails closed during
+startup, reports degraded mode, and never fabricates an online CPU.
+
+## 9. Userspace Architecture
 Userspace begins with an init/bootstrap process.
 Core services are separate processes where practical:
 - service manager,
@@ -109,14 +129,14 @@ Core services are separate processes where practical:
 - compositor,
 - notification service.
 
-## 9. Syscall Architecture
+## 10. Syscall Architecture
 Syscalls are a versioned ABI.
 Required groups:
 process/thread, memory, files, IPC, synchronization, time, networking, devices, permissions.
 User pointers are validated.
 ABI structures have explicit sizes/version fields where extensibility is required.
 
-## 10. IPC
+## 11. IPC
 Planned mechanisms:
 - message queues,
 - shared memory,
@@ -125,7 +145,7 @@ Planned mechanisms:
 - sockets.
 IPC must support blocking and nonblocking modes without busy waiting.
 
-## 11. Storage
+## 12. Storage
 VFS provides a stable namespace.
 Filesystem drivers implement filesystem-specific operations.
 Storage stack:
@@ -133,25 +153,25 @@ device -> block layer -> cache -> filesystem -> VFS -> permissions -> userspace 
 
 Snapshots and backups are layered above filesystem primitives.
 
-## 12. Driver Architecture
+## 13. Driver Architecture
 Drivers should expose capability-oriented interfaces.
 Bus enumeration identifies hardware.
 Device manager loads only required drivers.
 Optional drivers remain dormant.
 
-## 13. Graphics
+## 14. Graphics
 Display stack:
 GPU/display discovery -> kernel/driver interface -> graphics service -> compositor -> shell/apps.
 Hardware acceleration is preferred when available.
 Software fallback is mandatory for basic operation where practical.
 
-## 14. Networking
+## 15. Networking
 Network stack is independent of desktop UI.
 Network manager handles links/configuration.
 Firewall enforces policy near the packet path.
 Diagnostics expose DNS, route, link and latency information.
 
-## 15. Resource Governor
+## 16. Resource Governor
 Every service declares:
 priority, memory budget, CPU budget, I/O class, wake policy and suspension policy.
 
@@ -161,13 +181,13 @@ DORMANT -> WARM -> ACTIVE -> THROTTLED -> SUSPENDED -> STOPPED.
 The governor reacts to:
 foreground workload, memory pressure, battery, thermal state, I/O pressure and user mode.
 
-## 16. AI Architecture
+## 17. AI Architecture
 AI service has:
 request broker -> permission check -> model/backend selector -> context provider -> inference -> action executor.
 Model execution may use CPU/GPU/NPU when available.
 No model remains actively generating or polling when no request exists.
 
-## 17. Compatibility Architecture
+## 18. Compatibility Architecture
 Windows:
 Application -> Win32/Win64 API layer -> compatibility runtime -> POSIX-like/native ZEROOS services -> kernel ABI.
 
@@ -175,22 +195,22 @@ Android:
 Android application -> Android framework/runtime -> graphics/audio/input/network adapters -> ZEROOS services.
 Runtime is separately managed and loaded on demand.
 
-## 18. Security Architecture
+## 19. Security Architecture
 Boot trust, kernel privilege separation, userspace isolation, permissions, process capabilities, encrypted storage, firewall, application sandboxing, update verification and recovery.
 
 Security services must remain available under ordinary load and become more conservative under suspicious activity.
 
-## 19. Update Architecture
+## 20. Update Architecture
 Use staged updates:
 download -> verify -> stage -> preflight -> activate -> health check -> commit or rollback.
 System-critical updates should use an A/B or equivalent atomic strategy where storage permits.
 
-## 20. Observability
+## 21. Observability
 Unified event model:
 boot milestones, kernel events, service events, driver faults, resource pressure, crash reports and update status.
 Telemetry must be opt-in where it leaves the device. Local diagnostics should be useful without cloud access.
 
-## 21. Architectural Invariants
+## 22. Architectural Invariants
 - Kernel never trusts userspace.
 - Drivers cannot bypass ownership rules.
 - Foreground work cannot be starved by background maintenance.
