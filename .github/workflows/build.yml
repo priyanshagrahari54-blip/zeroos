@@ -88,6 +88,11 @@ jobs:
             grep -q "ZEROOS: process address-space ownership self-test passed." build/serial.log
             grep -q "ZEROOS: PID/TID reuse protection self-test passed." build/serial.log
             grep -q "ZEROOS: per-task kernel-stack/TSS handoff self-test passed." build/serial.log
+            grep -q "ZEROOS: Ring-3 GDT and versioned syscall ABI initialized." build/serial.log
+            grep -q "ZEROOS: userspace init process published." build/serial.log
+            grep -q "ZEROOS: userspace init syscall path passed." build/serial.log
+            grep -q "ZEROOS: init userspace process reaped cleanly." build/serial.log
+            grep -q "ZEROOS: Ring-3 transition, syscall ABI, and init recovery passed." build/serial.log
 
             if grep -q "ZEROOS PANIC:" build/serial.log; then
               echo "ZEROOS scheduler/runtime panic detected:"
@@ -122,6 +127,8 @@ jobs:
           grep -q "ZEROOS: scheduler fairness and latency stress passed." build/serial-smp4.log
           grep -q "ZEROOS: per-CPU scheduler ownership verified." build/serial-smp4.log
           grep -q "ZEROOS: CPU hot-offline queue evacuation and parking passed." build/serial-smp4.log
+          grep -q "ZEROOS: userspace init syscall path passed." build/serial-smp4.log
+          grep -q "ZEROOS: Ring-3 transition, syscall ABI, and init recovery passed." build/serial-smp4.log
           if grep -q "ZEROOS PANIC:" build/serial-smp4.log; then
             echo "ZEROOS four-vCPU boot reported a panic:"
             grep "ZEROOS PANIC:" build/serial-smp4.log
@@ -151,6 +158,8 @@ jobs:
           grep -q "ZEROOS: scheduler fairness and latency stress passed." build/serial-nx-off.log
           grep -q "ZEROOS: per-CPU scheduler ownership verified." build/serial-nx-off.log
           grep -q "ZEROOS: CPU hot-offline queue evacuation and parking passed." build/serial-nx-off.log
+          grep -q "ZEROOS: userspace init syscall path passed." build/serial-nx-off.log
+          grep -q "ZEROOS: Ring-3 transition, syscall ABI, and init recovery passed." build/serial-nx-off.log
           if grep -q "ZEROOS PANIC:" build/serial-nx-off.log; then
             echo "ZEROOS NX-disabled boot reported a panic:"
             grep "ZEROOS PANIC:" build/serial-nx-off.log
@@ -174,6 +183,8 @@ jobs:
           grep -q "ZEROOS: SMP INIT/SIPI dispatch started (cpu=1, attempt=2)." build-fault/serial.log
           grep -q "ZEROOS: SMP startup recovery contract self-test passed." build-fault/serial.log
           grep -q "ZEROOS: scheduler certification passed." build-fault/serial.log
+          grep -q "ZEROOS: userspace init syscall path passed." build-fault/serial.log
+          grep -q "ZEROOS: Ring-3 transition, syscall ABI, and init recovery passed." build-fault/serial.log
           if grep -q "ZEROOS PANIC:" build-fault/serial.log; then
             echo "ZEROOS failed-IPI recovery boot reported a panic:"
             grep "ZEROOS PANIC:" build-fault/serial.log

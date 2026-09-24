@@ -16,6 +16,7 @@ enum thread_state {
 };
 
 struct process;
+struct vmm_space;
 
 struct thread {
     thread_id_t tid;
@@ -25,6 +26,12 @@ struct thread {
     struct process *process;
     task_entry_t entry;
     void *argument;
+
+    /* User threads enter through the architecture-owned iretq transition.
+     * They do not reuse a kernel function pointer as a Ring-3 entry. */
+    uint8_t user_mode;
+    uint64_t user_entry;
+    uint64_t user_stack;
 
     /* Low-level scheduler context owned by the task layer. */
     uint64_t scheduler_task_id;
@@ -37,11 +44,15 @@ int thread_system_init(void);
 
 struct thread *thread_current(void);
 struct thread *thread_lookup(thread_id_t tid);
+int thread_is_user(const struct thread *thread);
+struct vmm_space *thread_address_space(const struct thread *thread);
 
 int thread_create_kernel(struct process *process,
                          task_entry_t entry,
                          void *argument,
                          thread_id_t *tid_out);
+int thread_create_user(struct process *process, uint64_t user_entry,
+                       uint64_t user_stack, thread_id_t *tid_out);
 
 int thread_exit(uint64_t exit_status);
 int thread_reap(struct thread *thread, uint64_t *exit_status_out);

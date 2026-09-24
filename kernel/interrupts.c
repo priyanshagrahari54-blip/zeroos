@@ -8,6 +8,7 @@
 #include "task.h"
 #include "thread.h"
 #include "tlb.h"
+#include "syscall.h"
 
 struct idt_entry {
     uint16_t offset_low; uint16_t selector; uint8_t ist; uint8_t type_attr;
@@ -212,6 +213,15 @@ uint64_t interrupt_dispatch(struct interrupt_frame *frame) {
         return result;
     }
 
+    if (frame->vector==ZEROOS_SYSCALL_VECTOR) {
+        syscall_dispatch(frame);
+        if (task_current() && task_current()->state==TASK_RUNNING &&
+            task_need_resched())
+            result=task_reschedule_from_interrupt(frame);
+        cpu_irq_exit();
+        return result;
+    }
+
     if (frame->vector==ZEROOS_SCHEDULER_TICK_VECTOR) {
         if (cpu_current_id()!=0 && task_scheduler_ready()) {
             scheduler_tick_remote();
@@ -272,6 +282,9 @@ void interrupts_init(void) {
     timer_init();
 
     for (uint16_t i=0;i<256;++i) idt_set_gate((uint8_t)i,isr_stub_table[i]);
+    /* User software may enter only through the versioned syscall vector;
+     * every other gate remains supervisor-only (DPL0). */
+    idt[ZEROOS_SYSCALL_VECTOR].type_attr=0xee;
 
     runtime_idtr=(struct idtr){
         .limit=(uint16_t)(sizeof(idt)-1),

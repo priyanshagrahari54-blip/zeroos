@@ -44,6 +44,8 @@ uint64_t vmm_space_mapped_pages(const struct vmm_space *space);
 int vmm_space_is_user_range(const struct vmm_space *space,
                             uint64_t virtual_address, uint64_t length,
                             uint64_t write);
+int vmm_space_is_executable(const struct vmm_space *space,
+                            uint64_t virtual_address, uint64_t length);
 int vmm_space_activate(const struct vmm_space *space);
 int vmm_activate_kernel(void);
 

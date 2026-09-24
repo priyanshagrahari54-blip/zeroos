@@ -1,4 +1,5 @@
 #include "task.h"
+#include "thread.h"
 #include "memory.h"
 #include "gdt.h"
 #include "sync.h"
@@ -8,6 +9,7 @@
 #include "smp.h"
 #include "tlb.h"
 #include "apic.h"
+#include "vmm.h"
 
 extern void context_switch_ex(uint64_t *old_sp, const uint64_t *new_sp,
                               struct interrupt_frame *new_frame);
@@ -507,6 +509,14 @@ static void task_irq_restore(uint64_t flags) {
                       : "memory", "cc");
 }
 
+static void task_activate_address_space(struct task *task) {
+    struct vmm_space *space=thread_address_space(task ? task->thread : 0);
+    int result=space ? vmm_space_activate(space) : vmm_activate_kernel();
+    if (result!=0)
+        task_context_panic("ZEROOS PANIC: task address-space activation failed.\n",
+                           task);
+}
+
 static void task_idle_entry(void *argument) {
     (void)argument;
     for (;;) {
@@ -939,6 +949,7 @@ static void dispatch_locked(struct task *previous, struct task *target,
     if (gdt_set_kernel_stack(target->kernel_stack_top)!=0)
         task_context_panic("ZEROOS PANIC: target kernel stack publication failed.\n",
                            target);
+    task_activate_address_space(target);
 
     if (handoff_tasks[cpu])
         task_context_panic("ZEROOS PANIC: scheduler handoff already pending.\n",
@@ -1557,6 +1568,7 @@ uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
     if (gdt_set_kernel_stack(target->kernel_stack_top)!=0)
         task_context_panic("ZEROOS PANIC: IRQ target kernel stack publication failed.\n",
                            target);
+    task_activate_address_space(target);
     task_validate_table_at("ZEROOS PANIC: IRQ dispatch invariant failed.\n",previous);
     spin_unlock(&task_lock);
 

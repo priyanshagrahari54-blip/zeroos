@@ -3,6 +3,7 @@
 #include "sync.h"
 
 extern void serial_write_public(const char *text);
+extern int user_thread_enter(struct thread *thread);
 
 static void thread_write_u64(uint64_t value) {
     char buffer[21];
@@ -77,6 +78,9 @@ static void thread_reset_locked(struct thread *thread) {
     thread->process=0;
     thread->entry=0;
     thread->argument=0;
+    thread->user_mode=0;
+    thread->user_entry=0;
+    thread->user_stack=0;
     thread->scheduler_task_id=0;
     thread->exit_status=0;
     thread->next_in_process=0;
@@ -85,7 +89,9 @@ static void thread_reset_locked(struct thread *thread) {
 static void thread_bootstrap(void *argument) {
     struct thread *thread=(struct thread *)argument;
     uint64_t flags;
-    if (!thread || !thread->process || !thread->entry) {
+    if (!thread || !thread->process ||
+        (!thread->user_mode && !thread->entry) ||
+        (thread->user_mode && (!thread->user_entry || !thread->user_stack))) {
         task_exit();
         return;
     }
@@ -97,6 +103,13 @@ static void thread_bootstrap(void *argument) {
     flags=spin_lock_irqsave(&thread_lock);
     thread->state=THREAD_RUNNING;
     spin_unlock_irqrestore(&thread_lock,flags);
+
+    if (thread->user_mode) {
+        if (user_thread_enter(thread)!=0)
+            (void)thread_exit(0x101ULL);
+        for (;;) __asm__ volatile ("cli; hlt");
+    }
+
     thread->entry(thread->argument);
     (void)thread_exit(0);
 
@@ -112,6 +125,9 @@ int thread_system_init(void) {
         threads[i].process=0;
         threads[i].entry=0;
         threads[i].argument=0;
+        threads[i].user_mode=0;
+        threads[i].user_entry=0;
+        threads[i].user_stack=0;
         threads[i].scheduler_task_id=0;
         threads[i].exit_status=0;
         threads[i].next_in_process=0;
@@ -131,16 +147,29 @@ struct thread *thread_lookup(thread_id_t tid) {
     return thread;
 }
 
-int thread_create_kernel(struct process *process,
-                         task_entry_t entry,
-                         void *argument,
-                         thread_id_t *tid_out) {
+int thread_is_user(const struct thread *thread) {
+    return thread && thread->user_mode!=0;
+}
+
+struct vmm_space *thread_address_space(const struct thread *thread) {
+    return thread && thread->user_mode && thread->process ?
+           &thread->process->address_space : (struct vmm_space *)0;
+}
+
+static int thread_create_common(struct process *process,
+                                 task_entry_t entry,
+                                 void *argument,
+                                 uint8_t user_mode,
+                                 uint64_t user_entry,
+                                 uint64_t user_stack,
+                                 thread_id_t *tid_out) {
     uint64_t flags;
     int slot=-1;
     struct thread *thread;
     uint64_t task_id;
 
-    if (!process || !entry)
+    if (!process || (!user_mode && !entry) ||
+        (user_mode && (!user_entry || !user_stack)))
         return thread_create_failure("invalid arguments",process);
     if (process_thread_reserve(process)!=0)
         return thread_create_failure("process reservation",process);
@@ -174,6 +203,9 @@ int thread_create_kernel(struct process *process,
     thread->process=process;
     thread->entry=entry;
     thread->argument=argument;
+    thread->user_mode=user_mode;
+    thread->user_entry=user_entry;
+    thread->user_stack=user_stack;
     thread->scheduler_task_id=0;
     thread->exit_status=0;
     thread->next_in_process=0;
@@ -240,6 +272,21 @@ int thread_create_kernel(struct process *process,
     return 0;
 }
 
+int thread_create_kernel(struct process *process,
+                         task_entry_t entry,
+                         void *argument,
+                         thread_id_t *tid_out) {
+    return thread_create_common(process,entry,argument,0,0,0,tid_out);
+}
+
+int thread_create_user(struct process *process, uint64_t user_entry,
+                       uint64_t user_stack, thread_id_t *tid_out) {
+    if (!process || user_entry==0 || user_stack==0 ||
+        (user_entry >> 48) != 0 || (user_stack >> 48) != 0)
+        return thread_create_failure("user entry validation",process);
+    return thread_create_common(process,0,0,1,user_entry,user_stack,tid_out);
+}
+
 int thread_exit(uint64_t exit_status) {
     struct thread *thread=thread_current();
     uint64_t flags;
@@ -280,7 +327,9 @@ int thread_debug_validate(void) {
 
         if (thread->state==THREAD_UNUSED) {
             if (thread->tid || thread->process || thread->entry ||
-                thread->argument || thread->scheduler_task_id ||
+                thread->argument || thread->user_mode ||
+                thread->user_entry || thread->user_stack ||
+                thread->scheduler_task_id ||
                 thread->exit_status || thread->next_in_process) {
                 spin_unlock_irqrestore(&thread_lock,flags);
                 return -1;
@@ -292,7 +341,10 @@ int thread_debug_validate(void) {
             slot!=i || generation!=thread->generation ||
             thread_lookup_locked(thread->tid)!=thread ||
             !thread->process ||
-            thread->process->state==PROCESS_UNUSED) {
+            thread->process->state==PROCESS_UNUSED ||
+            (!thread->user_mode && !thread->entry) ||
+            (thread->user_mode && (!thread->user_entry ||
+                                   !thread->user_stack))) {
             spin_unlock_irqrestore(&thread_lock,flags);
             return -1;
         }

@@ -13,6 +13,7 @@
 #include "scheduler.h"
 #include "smp.h"
 #include "wait.h"
+#include "user.h"
 
 #define COM1 0x3F8
 #define VMM_SELF_TEST_VA 0x00007f0000000000ULL
@@ -771,6 +772,7 @@ static void scheduler_probe_monitor(void *argument) {
     int certification_reported=0;
     int per_cpu_reported=0;
     int hotplug_reported=0;
+    int userspace_reported=0;
     uint64_t stress_start=timer_ticks();
 
     /* Keep the certification monitor on the BSP: it owns the control-plane
@@ -894,6 +896,19 @@ static void scheduler_probe_monitor(void *argument) {
             hotplug_reported=1;
         }
 
+        /* Stage 2 begins only after the Stage 1 scheduler exit gate above.
+         * The first image is a real Ring-3 process; its completion is reaped
+         * by the BSP monitor through the ordinary process/thread lifetime
+         * path rather than by a test-only shortcut. */
+        if (hotplug_reported) {
+            if (userspace_start_init()!=0 || userspace_service_step()!=0)
+                kernel_panic("userspace init lifecycle failed");
+            if (!userspace_reported && userspace_debug_validate()==1) {
+                userspace_reported=1;
+                serial_write_public("ZEROOS: Ring-3 transition, syscall ABI, and init recovery passed.\n");
+            }
+        }
+
         if (now>=last_report+100) {
             last_report=now;
             serial_write_public("ZEROOS: timer tick 100.\n");
@@ -908,6 +923,7 @@ static void scheduler_probe_monitor(void *argument) {
             (!preempt_reported || !lifecycle_reported ||
              !fairness_reported || !frame_invariant_reported ||
              !hotplug_reported ||
+             !userspace_reported ||
              (smp_online_count()>1 && !per_cpu_reported) ||
              atomic_u64_load(&sleep_probe_state)!=2 ||
              atomic_u64_load(&wait_probe_state)!=2 ||
@@ -957,6 +973,9 @@ static void scheduler_self_test(void) {
         kernel_panic("process system initialization failed");
     if (thread_system_init()!=0)
         kernel_panic("thread system initialization failed");
+    if (userspace_system_init()!=0)
+        kernel_panic("userspace core initialization failed");
+    serial_write_public("ZEROOS: Ring-3 GDT and versioned syscall ABI initialized.\n");
 
     if (task_create(scheduler_probe_worker,0,&worker_id)!=0)
         kernel_panic("scheduler worker creation failed");

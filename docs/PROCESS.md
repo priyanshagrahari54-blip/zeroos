@@ -230,10 +230,9 @@ missing are:
 - signals/events
 - file-descriptor tables
 - security credentials/capabilities
-- user-thread creation
-- kernel-stack/user-stack separation for Ring 3
-- syscall ABI
 - ELF loading and exec
+- blocking wait() and cancellation semantics
+- file-descriptor tables and secure capability handles
 - user fault reporting/signals beyond deterministic fault termination
 
 The interrupt layer already has a fail-closed Ring-3 exception termination
