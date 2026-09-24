@@ -1061,6 +1061,68 @@ fail:
     return -1;
 }
 
+static void process_wait_probe_entry(void *argument) {
+    (void)argument;
+}
+
+static int userspace_child_wait_wakeup_self_test(void) {
+    process_id_t parent_pid=0;
+    process_id_t child_pid=0;
+    thread_id_t tid=0;
+    struct process *parent=0;
+    struct process *child=0;
+    struct thread *thread=0;
+    uint64_t wait_flags=0;
+    uint64_t status=~0ULL;
+    int result=-1;
+
+    if (process_create(0,&parent_pid)!=0)
+        return -1;
+    parent=process_lookup(parent_pid);
+    if (!parent || process_set_limits(parent,1,1,4)!=0 ||
+        process_create(parent,&child_pid)!=0)
+        goto fail;
+    child=process_lookup(child_pid);
+    if (!child || process_set_limits(child,1,1,4)!=0 ||
+        thread_create_kernel(child,process_wait_probe_entry,child,&tid)!=0)
+        goto fail;
+    thread=thread_lookup(tid);
+    if (!thread)
+        goto fail;
+
+    /* The child is runnable but has not been allowed to run by this monitor
+     * task yet. The helper must publish the monitor as a parent waiter before
+     * the scheduler switch; child exit then wakes this exact task. */
+    result=process_child_wait_prepare(parent,child_pid,&wait_flags);
+    if (result<0 || (result==0 && wait_queue_commit(wait_flags)!=0))
+        goto fail;
+    if (child->state!=PROCESS_ZOMBIE || thread->state!=THREAD_ZOMBIE ||
+        thread_reap(thread,&status)!=0 || status!=0 ||
+        vmm_activate_kernel()!=0 || process_reap(child,&status)!=0 ||
+        status!=0 || process_abort_new(parent)!=0 ||
+        process_lookup(parent_pid)!=0 || process_lookup(child_pid)!=0)
+        goto fail;
+    parent=0;
+    child=0;
+    thread=0;
+    return 0;
+
+fail:
+    if (thread && thread->state==THREAD_ZOMBIE) {
+        (void)thread_reap(thread,&status);
+        thread=0;
+    }
+    if (child && child->state==PROCESS_ZOMBIE) {
+        (void)vmm_activate_kernel();
+        (void)process_reap(child,&status);
+    } else if (child && child->state==PROCESS_NEW) {
+        (void)process_abort_new(child);
+    }
+    if (parent && parent->state==PROCESS_NEW)
+        (void)process_abort_new(parent);
+    return -1;
+}
+
 static int userspace_ipc_generation_stress(struct process *process) {
     uint8_t byte='G';
     zeroos_ipc_handle_t local=0;
@@ -1920,6 +1982,11 @@ int userspace_start_init(void) {
         goto fail;
     }
     serial_write_public("ZEROOS: IPC capability generation/revocation stress passed.\n");
+    if (userspace_child_wait_wakeup_self_test()!=0) {
+        serial_write_public("ZEROOS PANIC: child wait/wakeup self-test failed.\n");
+        goto fail;
+    }
+    serial_write_public("ZEROOS: blocking child wait/wakeup path passed.\n");
     serial_write_public("ZEROOS: event and pipe IPC foundations self-test passed.\n");
     if (userspace_event_blocking_self_test()!=0) {
         serial_write_public("ZEROOS PANIC: blocking event wait/wake self-test failed.\n");

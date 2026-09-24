@@ -3,6 +3,7 @@
 
 #include "types.h"
 #include "vmm.h"
+#include "wait.h"
 
 #define ZEROOS_PROCESS_DEFAULT_MAX_THREADS 32ULL
 #define ZEROOS_PROCESS_DEFAULT_MAX_CHILDREN 16ULL
@@ -28,6 +29,7 @@ struct process {
     struct process *first_child;
     struct process *next_sibling;
     uint64_t child_count;
+    struct wait_queue child_waiters;
 
     struct thread *first_thread;
     uint64_t thread_count;
@@ -64,6 +66,12 @@ int process_release_live(struct process *process);
 /* Returns a live child owned by parent, preferring a zombie child when pid is
  * zero. The pointer is stable until the caller reaps that child. */
 struct process *process_find_child(struct process *parent, process_id_t pid);
+/* Recheck child state while publishing the current task on the parent's wait
+ * queue. Returns 1 when a matching zombie is already present, 0 after a
+ * waiter is prepared, or a negative ZEROOS_E* value when no child/queue
+ * transition is possible. The returned flags are committed by the caller. */
+int process_child_wait_prepare(struct process *parent, process_id_t pid,
+                               uint64_t *flags_out);
 
 int process_thread_reserve(struct process *process);
 int process_thread_unreserve(struct process *process);

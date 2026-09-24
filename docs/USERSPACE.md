@@ -128,9 +128,13 @@ its initial stack in Ring 3: it checks argc, argv terminators, environment
 termination, and representative argument/environment bytes before emitting
 its success message, so argv/envp delivery is an executing runtime gate rather
 than only a kernel layout check.
-`WAIT` validates child ownership before sleeping/polling, supports a bounded
-`R10` tick timeout and nonblocking mode, and reaps all zombie threads before
-destroying the child address space.
+`WAIT` validates child ownership before waiting, publishes an indefinite wait
+on the parent's child wait queue without a lost-wakeup window, and is woken
+when the final child thread exits. Bounded `R10` tick timeouts and
+nonblocking mode retain their explicit polling/expiry behavior, while all
+successful waits revalidate ownership and reap every zombie thread before
+destroying the child address space. The boot gate also exercises the child
+wait/wakeup and reap path with a temporary process pair.
 
 IPC handles are process-scoped capabilities, not global file-like integers.
 The kernel checks owner, generation, rights and endpoint lifetime on every

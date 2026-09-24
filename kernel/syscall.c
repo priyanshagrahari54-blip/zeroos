@@ -449,7 +449,23 @@ void syscall_dispatch(struct interrupt_frame *frame) {
                 result=-ZEROOS_EAGAIN;
                 break;
             }
-            if (timeout && (long long)(deadline-timer_ticks())<=0) {
+            if (!timeout) {
+                uint64_t wait_flags=0;
+                int wait_result=process_child_wait_prepare(process,frame->rdi,
+                                                           &wait_flags);
+                if (wait_result<0) {
+                    result=wait_result;
+                    break;
+                }
+                if (wait_result>0)
+                    continue;
+                if (wait_queue_commit(wait_flags)!=0) {
+                    result=-ZEROOS_EINTR;
+                    break;
+                }
+                continue;
+            }
+            if ((long long)(deadline-timer_ticks())<=0) {
                 result=-ZEROOS_ETIMEDOUT;
                 break;
             }

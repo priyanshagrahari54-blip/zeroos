@@ -3,6 +3,7 @@
 #include "thread.h"
 #include "ipc.h"
 #include "shmem.h"
+#include "syscall.h"
 
 #define ZEROOS_MAX_PROCESSES 16U
 #define ZEROOS_PROCESS_SLOT_BITS 16U
@@ -66,6 +67,7 @@ static void process_reset_locked(struct process *process) {
     process->first_child=0;
     process->next_sibling=0;
     process->child_count=0;
+    wait_queue_init(&process->child_waiters);
     process->first_thread=0;
     process->thread_count=0;
     process->live_thread_count=0;
@@ -93,6 +95,7 @@ int process_system_init(void) {
         processes[i].first_child=0;
         processes[i].next_sibling=0;
         processes[i].child_count=0;
+        wait_queue_init(&processes[i].child_waiters);
         processes[i].first_thread=0;
         processes[i].thread_count=0;
         processes[i].live_thread_count=0;
@@ -157,6 +160,7 @@ int process_create(struct process *parent, process_id_t *pid_out) {
     process->first_child=0;
     process->next_sibling=0;
     process->child_count=0;
+    wait_queue_init(&process->child_waiters);
     process->first_thread=0;
     process->thread_count=0;
     process->live_thread_count=0;
@@ -211,6 +215,7 @@ int process_acquire_live(process_id_t pid, struct process **process_out) {
 
 int process_release_live(struct process *process) {
     uint64_t flags;
+    struct process *parent_to_wake=0;
     if (!process)
         return -1;
     flags=spin_lock_irqsave(&process_lock);
@@ -221,9 +226,13 @@ int process_release_live(struct process *process) {
     }
     --process->lifetime_refs;
     if (process->lifetime_refs==0 && process->state==PROCESS_RUNNING &&
-        process->live_thread_count==0 && process->creating_threads==0)
+        process->live_thread_count==0 && process->creating_threads==0) {
         process->state=PROCESS_ZOMBIE;
+        parent_to_wake=process->parent;
+    }
     spin_unlock_irqrestore(&process_lock,flags);
+    if (parent_to_wake)
+        (void)wait_queue_wake_all(&parent_to_wake->child_waiters);
     return 0;
 }
 
@@ -250,6 +259,46 @@ struct process *process_find_child(struct process *parent, process_id_t pid) {
     }
     spin_unlock_irqrestore(&process_lock,flags);
     return match;
+}
+
+int process_child_wait_prepare(struct process *parent, process_id_t pid,
+                               uint64_t *flags_out) {
+    struct process *child;
+    uint64_t process_flags;
+    uint64_t wait_flags;
+
+    if (!parent || !flags_out)
+        return -ZEROOS_EINVAL;
+    process_flags=spin_lock_irqsave(&process_lock);
+    if (process_lookup_locked(parent->pid)!=parent ||
+        parent->state==PROCESS_UNUSED || parent->state==PROCESS_ZOMBIE) {
+        spin_unlock_irqrestore(&process_lock,process_flags);
+        return -ZEROOS_ECHILD;
+    }
+    child=parent->first_child;
+    while (child) {
+        if ((pid==0 || child->pid==pid) && child->state!=PROCESS_UNUSED)
+            break;
+        child=child->next_sibling;
+    }
+    if (!child) {
+        spin_unlock_irqrestore(&process_lock,process_flags);
+        return -ZEROOS_ECHILD;
+    }
+    if (child->state==PROCESS_ZOMBIE) {
+        spin_unlock_irqrestore(&process_lock,process_flags);
+        return 1;
+    }
+    if (wait_queue_prepare(&parent->child_waiters,&wait_flags)!=0) {
+        spin_unlock_irqrestore(&process_lock,process_flags);
+        return -ZEROOS_EBUSY;
+    }
+    /* wait_queue_prepare intentionally leaves interrupts disabled. Release
+     * the process lock without restoring them so the condition check and the
+     * eventual task_block remain one atomic publication boundary. */
+    spin_unlock(&process_lock);
+    *flags_out=wait_flags;
+    return 0;
 }
 
 int process_thread_reserve(struct process *process) {
@@ -337,6 +386,7 @@ int process_thread_started(struct thread *thread) {
 
 int process_thread_exited(struct thread *thread, uint64_t exit_status) {
     struct process *process;
+    struct process *parent_to_wake=0;
     uint64_t flags;
 
     if (!thread || !thread->process)
@@ -357,11 +407,15 @@ int process_thread_exited(struct thread *thread, uint64_t exit_status) {
     if (process->live_thread_count==0 &&
         process->creating_threads==0) {
         process->exit_status=exit_status;
-        if (process->lifetime_refs==0)
+        if (process->lifetime_refs==0) {
             process->state=PROCESS_ZOMBIE;
+            parent_to_wake=process->parent;
+        }
     }
 
     spin_unlock_irqrestore(&process_lock,flags);
+    if (parent_to_wake)
+        (void)wait_queue_wake_all(&parent_to_wake->child_waiters);
     return 0;
 }
 
@@ -724,6 +778,7 @@ int process_debug_validate(void) {
                 process->first_thread || process->thread_count ||
                 process->live_thread_count || process->creating_threads ||
                 process->reaping_threads || process->max_threads || process->max_children ||
+                wait_queue_count(&process->child_waiters) ||
                 process->max_address_space_pages || process->resident_pages ||
                 process->address_space.root ||
                 process->address_space.root_physical ||
@@ -747,6 +802,7 @@ int process_debug_validate(void) {
             process->thread_count>process->max_threads ||
             process->reaping_threads>process->max_threads ||
             process->child_count>process->max_children ||
+            wait_queue_count(&process->child_waiters)>ZEROOS_MAX_TASKS ||
             process->resident_pages>process->max_address_space_pages ||
             !process->address_space.root ||
             process->address_space.max_pages!=
