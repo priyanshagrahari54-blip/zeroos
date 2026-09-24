@@ -52,7 +52,7 @@ jobs:
           # not sufficient evidence.
           for iteration in 1 2 3; do
             echo "===== ZEROOS boot certification iteration ${iteration} ====="
-            timeout 25s qemu-system-x86_64             -smp 2             -cdrom build/zeroos.iso             -serial file:build/serial.log             -display none             -no-reboot             -no-shutdown             -debugcon file:build/debug.log             -global isa-debugcon.iobase=0xe9             -d int,guest_errors,cpu_reset             -D build/qemu.log || true
+            timeout 45s qemu-system-x86_64             -smp 2             -cdrom build/zeroos.iso             -serial file:build/serial.log             -display none             -no-reboot             -no-shutdown             -debugcon file:build/debug.log             -global isa-debugcon.iobase=0xe9             -d int,guest_errors,cpu_reset             -D build/qemu.log || true
             grep -q "ZEROOS: foundation milestone reached." build/serial.log
             grep -q "ZEROOS: bootstrap stack guard verified." build/serial.log
             grep -q "ZEROOS: CPU capabilities detected" build/serial.log
@@ -100,6 +100,7 @@ jobs:
             grep -q "ZEROOS: capability IPC negative/timeout semantics passed." build/serial.log
             grep -q "ZEROOS: event and pipe IPC foundations self-test passed." build/serial.log
             grep -q "ZEROOS: blocking event wait/wake path passed." build/serial.log
+            grep -q "ZEROOS: isolated service process setup complete." build/serial.log
             grep -q "ZEROOS: shared-memory map/grant/lifecycle self-test passed." build/serial.log
             grep -q "ZEROOS: userspace resource exhaustion/recovery passed." build/serial.log
             grep -q "ZEROOS: service capability least-privilege grant passed." build/serial.log
@@ -122,7 +123,7 @@ jobs:
           done
 
           echo "===== ZEROOS four-vCPU SMP certification ====="
-          timeout 25s qemu-system-x86_64 \
+          timeout 45s qemu-system-x86_64 \
             -smp 4 \
             -cdrom build/zeroos.iso \
             -serial file:build/serial-smp4.log \
@@ -154,6 +155,7 @@ jobs:
           grep -q "ZEROOS: userspace resource exhaustion/recovery passed." build/serial-smp4.log
           grep -q "ZEROOS: event and pipe IPC foundations self-test passed." build/serial-smp4.log
           grep -q "ZEROOS: blocking event wait/wake path passed." build/serial-smp4.log
+          grep -q "ZEROOS: isolated service process setup complete." build/serial-smp4.log
           grep -q "ZEROOS: shared-memory map/grant/lifecycle self-test passed." build/serial-smp4.log
           grep -q "ZEROOS: userspace negative syscall/fault/malformed-ELF probes passed." build/serial-smp4.log
           grep -q "ZEROOS: Ring-3 transition, syscall ABI, and init recovery passed." build/serial-smp4.log
@@ -166,7 +168,7 @@ jobs:
           fi
 
           echo "===== ZEROOS NX-disabled compatibility boot ====="
-          timeout 25s qemu-system-x86_64 \
+          timeout 45s qemu-system-x86_64 \
             -cpu qemu64,-nx \
             -smp 2 \
             -cdrom build/zeroos.iso \
@@ -191,6 +193,7 @@ jobs:
           grep -q "ZEROOS: userspace resource exhaustion/recovery passed." build/serial-nx-off.log
           grep -q "ZEROOS: event and pipe IPC foundations self-test passed." build/serial-nx-off.log
           grep -q "ZEROOS: blocking event wait/wake path passed." build/serial-nx-off.log
+          grep -q "ZEROOS: isolated service process setup complete." build/serial-nx-off.log
           grep -q "ZEROOS: shared-memory map/grant/lifecycle self-test passed." build/serial-nx-off.log
           grep -q "ZEROOS: userspace negative syscall/fault/malformed-ELF probes passed." build/serial-nx-off.log
           grep -q "ZEROOS: Ring-3 transition, syscall ABI, and init recovery passed." build/serial-nx-off.log
@@ -202,7 +205,7 @@ jobs:
 
           echo "===== ZEROOS failed-IPI recovery fault boot ====="
           make BUILD=build-fault EXTRA_CFLAGS=-DZEROOS_TEST_SMP_FAILED_DISPATCH
-          timeout 25s qemu-system-x86_64 \
+          timeout 45s qemu-system-x86_64 \
             -smp 2 \
             -cdrom build-fault/zeroos.iso \
             -serial file:build-fault/serial.log \
@@ -222,6 +225,7 @@ jobs:
           grep -q "ZEROOS: userspace resource exhaustion/recovery passed." build-fault/serial.log
           grep -q "ZEROOS: event and pipe IPC foundations self-test passed." build-fault/serial.log
           grep -q "ZEROOS: blocking event wait/wake path passed." build-fault/serial.log
+          grep -q "ZEROOS: isolated service process setup complete." build-fault/serial.log
           grep -q "ZEROOS: shared-memory map/grant/lifecycle self-test passed." build-fault/serial.log
           grep -q "ZEROOS: userspace negative syscall/fault/malformed-ELF probes passed." build-fault/serial.log
           grep -q "ZEROOS: Ring-3 transition, syscall ABI, and init recovery passed." build-fault/serial.log

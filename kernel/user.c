@@ -1097,6 +1097,7 @@ static int userspace_start_service(uint64_t attempt) {
         serial_write_public("ZEROOS: service manager launched isolated IPC service attempt 1.\n");
     else
         serial_write_public("ZEROOS: service manager launched isolated IPC service attempt 2.\n");
+    serial_write_public("ZEROOS: isolated service process setup complete.\n");
     return 0;
 
 fail:
@@ -1145,8 +1146,15 @@ static int userspace_finish_service(void) {
                                receive_buffer,sizeof(receive_buffer),
                                ZEROOS_IPC_FLAG_NONBLOCK,&received_length);
     if (receive_result<0 || (uint64_t)receive_result!=service_expected_length ||
-        received_length!=service_expected_length)
+        received_length!=service_expected_length) {
+        if (service_thread->state==THREAD_ZOMBIE) {
+            if (service_thread->exit_status==9)
+                serial_write_public("ZEROOS PANIC: service worker exact grant-denial assertion failed.\n");
+            else
+                serial_write_public("ZEROOS PANIC: isolated service exited before IPC reply.\n");
+        }
         return -1;
+    }
     for (uint64_t i=0; i<service_expected_length; ++i) {
         uint8_t expected;
         if (service_attempt==1)
