@@ -17,7 +17,8 @@ versioned ABI, `zeroos_runtime_write` chunks output at the advertised transfer
 limit, and the IPC/spawn/wait helpers enforce public bounds before entering the
 kernel. They deliberately do not pretend to be libc or a dynamic linker.
 
-Run `make userspace-abi-check userspace-runtime-check` to compile the
-representative consumer and runtime with warnings-as-errors. This is an
-ABI/runtime-source gate, not a claim that a full libc, dynamic linker, or
-application runtime exists; those remain Stage 2 work.
+Run `make userspace-abi-check userspace-runtime-check userspace-abi-consistency`
+to compile the representative consumer and runtime with warnings-as-errors
+and compare public syscall IDs, errors, limits, and feature constants with the
+kernel headers. This is an ABI/runtime-source gate, not a claim that a full
+libc, dynamic linker, or application runtime exists; those remain Stage 2 work.

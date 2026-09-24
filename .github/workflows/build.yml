@@ -19,7 +19,7 @@ jobs:
         run: make
 
       - name: Check public userspace ABI and runtime
-        run: make userspace-abi-check userspace-runtime-check
+        run: make userspace-abi-check userspace-runtime-check userspace-abi-consistency
 
       - name: Verify kernel image
         run: |

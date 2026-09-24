@@ -11,7 +11,7 @@ CFLAGS += $(EXTRA_CFLAGS)
 ASFLAGS := -m64 -ffreestanding -fno-pic -fno-pie -nostdlib
 LDFLAGS := -m elf_x86_64 -T kernel/linker.ld -nostdlib
 
-.PHONY: all clean elf iso run userspace-abi-check userspace-runtime-check
+.PHONY: all clean elf iso run userspace-abi-check userspace-runtime-check userspace-abi-consistency
 
 all: iso
 
@@ -23,6 +23,9 @@ userspace-abi-check:
 userspace-runtime-check: | $(BUILD)
 	$(CC) -std=c11 -Wall -Wextra -Werror -ffreestanding -fno-builtin -m64 \
 		-Iuserspace/include -c userspace/runtime.c -o $(BUILD)/userspace-runtime.o
+
+userspace-abi-consistency:
+	python3 userspace/tests/abi_consistency.py
 
 $(BUILD):
 	mkdir -p $(BUILD)
