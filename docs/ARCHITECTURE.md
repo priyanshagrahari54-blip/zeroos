@@ -182,6 +182,25 @@ GPU/display discovery -> kernel/driver interface -> graphics service -> composit
 Hardware acceleration is preferred when available.
 Software fallback is mandatory for basic operation where practical.
 
+### Stage 5 status (display primitive + desktop platform core)
+Implemented (this stage):
+- Kernel display primitive (`kernel/fb.c`): Multiboot2 framebuffer discovery
+  (info tag 8), physical reservation of overlapping RAM, supervisor MMIO
+  mapping with readback verification, and the `DISPLAY_INFO` syscall
+  (ID 51, ABI feature bit 8) returning geometry + PRESENT/degraded flags.
+  Missing/unusable framebuffers degrade to the serial console milestone and
+  never fail the boot. The kernel owns no desktop policy.
+- Desktop platform core (`userspace/desktop/`): fixed-capacity, zero-heap,
+  freestanding-clean modules for lifecycle, resource governor, window
+  system, compositor (retained scene, damage, occlusion, pacing, cache,
+  software fallback), Universal Search, schema-driven settings,
+  notifications, accessibility, i18n (en+hi), and service watchdog —
+  gated by `make desktop-check` (3200+ assertions, hosted + freestanding).
+
+Not yet implemented (contracts defined, explicit in PHASES.md):
+- Pixel mapping syscall + userspace display service writing scanout,
+  GPU driver beyond scanout, input driver stack, shell UI processes.
+
 ## 15. Networking
 Network stack is independent of desktop UI.
 Network manager handles links/configuration.
@@ -275,3 +294,13 @@ Graphics must separate hardware, graphics service, compositor, shell and applica
 ### Production Boundary Rule
 
 No compatibility runtime, AI subsystem, desktop component or native application may become a hidden dependency of the kernel. Conversely, kernel contracts must be sufficiently mature that userspace does not depend on undocumented implementation details.
+
+## Stage 4 hardware boundary
+Legacy PCI mechanism #1 discovery is an observation-only service. It scans
+segment 0 and publishes bounded device identity, BAR snapshots and conventional
+capability offsets. It never assigns BARs, maps device registers, enables bus
+mastering, activates MSI/MSI-X, or binds a driver. ACPI remains validated
+RSDP/root/MADT topology discovery; AML and power management are not present.
+DMA/IOMMU, USB, input, display, audio, and complete network services are not implemented. A standalone IPv4 header validator and bounded default-deny policy evaluator, plus a fixed-capacity input event queue/device registry, exist as testable foundations. Neither is wired to hardware; concurrent queue synchronization and event delivery remain unimplemented. Ethernet/ARP, IPv4/IPv6 base-header, and UDP/TCP/DHCP/DNS parser/state helpers, bounded route/flow tables, an owner-scoped DMA callback contract, and generic driver lifecycle/resource-cleanup state machine are testable foundations, not integrated kernel device-service implementations.
+The authoritative detected-versus-operational support matrix is in
+[`HARDWARE.md`](HARDWARE.md). Detection must not be represented as support.

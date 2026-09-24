@@ -2,7 +2,7 @@
 #define ZEROOS_STORAGE_FSYSCALL_H
 #include "../types.h"
 
-/* File/VFS syscalls (ZEROOS_SYS_OPEN .. ZEROOS_SYS_MAX-1, feature
+/* File/VFS syscalls (ZEROOS_SYS_OPEN .. ZEROOS_SYS_CHOWN, feature
  * ZEROOS_ABI_FEATURE_FILES). Semantics: docs/VFS.md "System call
  * interface". Runs in the calling thread's syscall context and may block
  * (mutexes, page-cache I/O); never called from IRQ context. */

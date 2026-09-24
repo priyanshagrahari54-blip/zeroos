@@ -18,8 +18,11 @@ jobs:
       - name: Build ZEROOS
         run: make
 
-      - name: Check public userspace ABI and runtime
-        run: make userspace-abi-check userspace-runtime-check userspace-abi-consistency
+      - name: Check public userspace ABI, runtime, and hardware-core safety tests
+        run: make userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test
+
+      - name: Desktop platform core check (Stage 5)
+        run: make desktop-check
 
       - name: Verify kernel image
         run: |
@@ -62,6 +65,7 @@ jobs:
             grep -q "ZEROOS: exception IST routing self-test passed." build/serial.log
             grep -q "ZEROOS: IRQ controller capability:" build/serial.log
             grep -Eq 'ZEROOS: (LAPIC/IOAPIC timer routing activated|legacy PIC timer routing retained)\.' build/serial.log
+          grep -Eq 'ZEROOS: display primitive (ready|degraded \(serial-only\))\.' build/serial.log
             grep -q "ZEROOS: user fault containment policy armed." build/serial.log
             grep -q "ZEROOS: ACPI routing discovery:" build/serial.log
             grep -q "ZEROOS: SMP startup self-test passed." build/serial.log
@@ -419,6 +423,15 @@ jobs:
       - name: Publish boot failure summary
         if: failure()
         run: |
+          # Exact panic lines first: annotation messages are capped near 4KB
+          # and the full serial tails truncate precisely where they matter.
+          for log in build/serial.log build/serial-smp4.log build/serial-nx-off.log build-fault/serial.log; do
+            if test -f "$log" && grep -q "ZEROOS PANIC:" "$log"; then
+              panic_line=$(grep -m1 -o "ZEROOS PANIC:.*" "$log")
+              title=$(basename "$log")
+              echo "::error title=panic in ${title}::${panic_line}"
+            fi
+          done
           if test -s build/serial.log; then
             summary=$(tr '\r\n' '  ' < build/serial.log | cut -c1-6000)
             echo "::error title=ZEROOS serial log::$summary"

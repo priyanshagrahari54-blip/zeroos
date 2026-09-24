@@ -63,14 +63,30 @@ Exit: practical hardware I/O works on defined test hardware.
 ## Phase 5 — Graphics and Desktop
 ### 5.1 Graphics service
 Display abstraction and GPU interface.
+Status: kernel display primitive landed (Multiboot2 framebuffer discovery,
+reservation, UC MMIO mapping, `DISPLAY_INFO` syscall, active/degraded boot
+milestones). GPU acceleration and the pixel-mapping/display-service
+userspace process are the next batch.
 ### 5.2 Compositor
 Windows, surfaces, damage tracking.
+Status: desktop platform core implemented and unit-tested in
+`userspace/desktop/` (retained scene, per-owner damage, occlusion
+subtraction, frame pacing, LRU surface cache, software raster fallback,
+buffer-generation rejection, crash drop path) — see `make desktop-check`.
+Wire-up to a live scanout surface depends on the display-service batch.
 ### 5.3 Shell
 ZERO Bar, launcher, notifications, workspaces.
+Status: shell platform services (lifecycle, workspaces, search, settings,
+notifications, a11y, i18n, watchdog) are implemented as tested userspace
+modules; shell UI processes remain.
 ### 5.4 Settings
 System configuration service.
+Status: schema-driven settings module implemented (defaults, permissions,
+scopes, dependencies, transactions, import/export, v1 migration, stats).
 ### 5.5 Accessibility
 Semantic tree, keyboard navigation, scaling and reduced motion.
+Status: semantic tree, focus traversal, announcements and en+hi localization
+implemented and tested in `userspace/desktop/`.
 Exit: desktop session is usable without kernel debugging tools.
 
 ## Phase 6 — Core Native Apps

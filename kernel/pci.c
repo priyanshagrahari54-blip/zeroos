@@ -79,9 +79,37 @@ void pci_config_write16(const struct pci_device *device, uint8_t offset,
     pci_config_write32(device,offset,current);
 }
 
+/* Display controllers (class 03h) are never sized: their framebuffer BAR
+ * is already live (kernel/fb.c maps and verifies it at boot) and sizing
+ * requires turning memory decoding off. Their BAR bases are recorded
+ * read-only with size 0; pci_map_bar() refuses size-0 BARs. */
+static void pci_record_bars_readonly(struct pci_device *device, uint32_t bar_count) {
+    for (uint32_t i=0; i<bar_count; ++i) {
+        uint32_t original=pci_config_read32(device,(uint8_t)(0x10U+i*4U));
+        struct pci_bar *bar=&device->bars[i];
+        if (original&1U) {
+            bar->is_io=1;
+            bar->base=original&~0x3U;
+        } else {
+            bar->base=original&~0xfULL;
+            bar->prefetchable=(uint8_t)((original>>3)&1U);
+            if (((original>>1)&3U)==2U && i+1U<bar_count) {
+                bar->base|=(uint64_t)pci_config_read32(device,(uint8_t)(0x14U+i*4U))<<32;
+                bar->is_64=1;
+                ++i;
+            }
+        }
+        bar->present=0;            /* not sized: unusable for pci_map_bar */
+    }
+}
+
 static void pci_size_bars(struct pci_device *device) {
     uint32_t bar_count=(device->header_type&0x7fU)==0 ? 6U :
                        ((device->header_type&0x7fU)==1 ? 2U : 0U);
+    if (device->class_code==0x03U) {
+        pci_record_bars_readonly(device,bar_count);
+        return;
+    }
     uint16_t command=pci_config_read16(device,0x04);
     /* Disable decoding while BARs temporarily hold all-ones. */
     pci_config_write16(device,0x04,(uint16_t)(command&~0x0003U));

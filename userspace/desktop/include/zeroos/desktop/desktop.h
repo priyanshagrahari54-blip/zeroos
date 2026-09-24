@@ -1,0 +1,29 @@
+#ifndef ZEROOS_DESKTOP_DESKTOP_H
+#define ZEROOS_DESKTOP_DESKTOP_H
+
+/* Umbrella header for the ZEROOS desktop platform core.
+ *
+ * Architecture (Stage 5, Part A):
+ *   kernel primitives (display/MMIO, timer vsync, input IRQs)
+ *     -> display service (owns scanout; boundary pending on-target FB map)
+ *     -> GPU abstraction (software raster now; accel interface later)
+ *     -> compositor (this core: scene/damage/pacing/present)
+ *     -> window system (this core: focus/stacking/workspaces/routing)
+ *     -> shell + application UI (consumes this core over its listeners)
+ *
+ * The core is desktop policy only. It contains no kernel code, no polling
+ * loops and no unbounded allocation. See docs/GRAPHICS_DESKTOP.md. */
+
+#include <zeroos/desktop/common.h>
+#include <zeroos/desktop/lifecycle.h>
+#include <zeroos/desktop/governor.h>
+#include <zeroos/desktop/window.h>
+#include <zeroos/desktop/compositor.h>
+#include <zeroos/desktop/search.h>
+#include <zeroos/desktop/settings.h>
+#include <zeroos/desktop/notify.h>
+#include <zeroos/desktop/a11y.h>
+#include <zeroos/desktop/i18n.h>
+#include <zeroos/desktop/watchdog.h>
+
+#endif

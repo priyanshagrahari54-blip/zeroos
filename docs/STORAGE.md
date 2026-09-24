@@ -474,3 +474,35 @@ images, two consecutive boots:
   outstanding block I/O intermittently crashed QEMU. The driver's bounded
   drain before CC.EN=0 avoids that window. The crash is a host emulator
   defect, not guest-visible behavior.
+
+### Intermittent SMP failures under host oversubscription (open, pre-existing)
+
+These were measured after the Stage 3/Stage 5 merge, on a 2-core host
+running a 4-vCPU q35 TCG guest with AHCI + NVMe. The configuration is
+deliberately oversubscribed. Across about 150 consecutive boots, roughly
+4–5% failed before completion. Every failure was fail-stop (PANIC or a
+failed gate), never a silent success:
+
+| Signature | Phase |
+|---|---|
+| `malformed interrupt frame` | Stage 1 scheduler validator |
+| `task owned by multiple CPUs` | Stage 1 scheduler validator |
+| `scheduler stress certification timed out` | Stage 1, before storage starts |
+| `userspace init setup failed (stage=elf-load, error=22)` | Stage 2: the static init image failed validation. Happens before storage starts |
+| `storage fs test FAILED: mount after abort` | Stage 3 self-test |
+
+Attribution:
+- The scheduler timeout also reproduces on the pre-merge Stage 3 commit.
+- The ELF and scheduler signatures occur before any storage code runs.
+- The untouched `main` base cannot be compared, because it does not get
+  past `userspace init process published` under Limine. Stage 3 fixed the
+  IPC/child-wait IF-restore, AP idle-stack size and cross-CPU handoff
+  validation bugs that cause that hang.
+
+These are treated as residual Stage 1 SMP races and are **not fixed**.
+The mount-after-abort case is suspected to be a race between the 500-tick
+periodic commit and the fault injection. It is also not yet fixed.
+`userspace_start_init` now reports the failing stage, error, entry check and
+free-page count so that CI triage can classify failures. Boots at `-smp 1/2`
+and single runs at `-smp 4` pass. A single green CI run is therefore not
+proof of absence.

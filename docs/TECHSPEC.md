@@ -81,6 +81,15 @@ Design principles:
 Initial syscall groups:
 process, thread, memory, file, directory, time, IPC, synchronization, device, network.
 
+Stage 5 additions: `DISPLAY_INFO` (ID 51) — display geometry read-only query;
+ABI feature bit 8 (`ZEROOS_ABI_FEATURE_DISPLAY`). (Before the Stage 3/Stage 5
+merge the unreleased Stage 5 branch used ID 25 / bit 7, which collided with
+the Stage 3 file ABI; it was renumbered before reaching main. IDs 25–50 and
+bit 7 belong to the file ABI, see VFS.md §7.) Any new syscall ID must be
+mirrored in `kernel/syscall.h`, `userspace/include/zeroos/syscall.h` and pass
+`userspace/tests/abi_consistency.py` (enum, feature-bit uniqueness/drift and
+shared-struct drift gates).
+
 ## 8. Filesystem/VFS
 VFS objects:
 superblock, mount, inode/node, directory entry, file object, descriptor.
@@ -135,6 +144,25 @@ Display capabilities:
 resolution, refresh rate, color depth, acceleration, multi-monitor.
 Compositor uses retained scene state and damage tracking.
 Fallback path supports software composition.
+
+Stage 5 implemented contracts:
+- Kernel `fb_init` parses the Multiboot2 framebuffer tag (type 8), accepts
+  only page-aligned RGB linear framebuffers with 16/24/32 bpp and
+  pitch >= width*bpp/8, size <= 256 MiB; maps them at
+  `VMM_MMIO_BASE + 0x20000000` (UC + NX, supervisor-only) and verifies by
+  non-destructive readback. GRUB is configured with `gfxpayload=1024x768x32`
+  plus an optional Multiboot2 header framebuffer tag (type 5).
+- `ZEROOS_SYS_DISPLAY_INFO` (ID 51) returns `struct zeroos_display_info`
+  {physical_address, byte_size, width, height, pitch, bpp, format, flags};
+  `ZEROOS_DISPLAY_FLAG_PRESENT` distinguishes a live scanout from a
+  degraded serial-only boot. No pixel channel exists yet — scanout writes
+  arrive with the display-service batch (explicit open item, not implied).
+- Userspace desktop platform core in `userspace/desktop/` follows the
+  signed 0/-ZD_E* error convention, fixed capacities (64 windows, 4
+  monitors, 8 workspaces, 1024 search documents, 64 notifications, 256
+  a11y nodes, 128 settings keys, 16 watchdog services), listener-callback
+  events, and must compile with `-ffreestanding -fno-builtin` under
+  `-Wall -Wextra -Werror` (enforced by `make desktop-check`).
 
 ## 13. Audio
 Audio graph:
@@ -278,3 +306,13 @@ Production desktop targets include:
 ### Testing
 
 Each production subsystem must have an explicit validation matrix covering normal, boundary, failure, stress, resource and recovery behavior. Unsupported hardware must be reported rather than silently treated as supported.
+
+## Stage 4 hardware inventory API
+`kernel/pci.h` defines the bounded `pci_device` table (`pci_init`,
+`pci_device_at`). Enumeration uses legacy mechanism #1 on segment 0. It
+reads identity/class, walks capabilities with a bound, and sizes BARs with
+decoding disabled (display controllers are recorded but never sized). Table
+overflow is explicit. Resource activation (decoding, bus mastering, MMIO
+mapping, MSI/MSI-X) happens only for devices a driver claims; see
+HARDWARE.md and STORAGE.md §3. PCIe ECAM and extended capabilities are
+outside scope. Portable `net_core`, `input_core`, `usb_core`, `audio_core`, and `display_core` helpers provide bounded parsing/queues and input-level validity checks. They are not wired to hardware, sockets, synchronization, or device engines. `net_core` validates IPv4 header length/checksum and evaluates an ordered default-deny table; `usb_core` only validates descriptor framing/minimum sizes; audio is a bounded sample ring; display validates bounded framebuffer mode dimensions; input defines a bounded device registry/event queue. `make hardware-core-test` covers helper-level allow/deny, malformed input, queue backpressure, descriptor truncation, audio underrun/overrun, and display bounds. `net_l2` bounds Ethernet/VLAN and ARP frames; `net_ipv6` validates only the IPv6 base header (no extension-header processing); `net_conntrack` stores bounded flow observations with expiration/eviction; `net_route` provides a bounded IPv4 longest-prefix/metric lookup table; `net_transport` validates UDP framing and offers a limited TCP state/timeout helper (not RFC-complete TCP, retransmission/congestion/window management, or sockets); `dhcp_core` bounds BOOTP/DHCP option parsing but has no client state machine; `dns_core` validates bounded DNS message framing/name compression but does not resolve or cache names. `dma` defines an owner-scoped callback contract and refuses owner destruction while mappings remain, but supplies no IOMMU/cache-coherency backend. `driver_core` provides an explicit lifecycle transition and reverse-order exactly-once release bookkeeping. These helpers are not wired to a bus, hardware resources, a network interface, sockets, or a synchronized kernel registry. They are foundations—not operational drivers or complete subsystem implementations. See `HARDWARE.md` for the support matrix.

@@ -2096,6 +2096,31 @@ int userspace_system_init(void) {
     return 0;
 }
 
+static void userspace_write_decimal(uint64_t value) {
+    char digits[21];
+    uint32_t count=0;
+    do {
+        digits[count++]=(char)('0'+value%10U);
+        value/=10U;
+    } while (value && count<sizeof(digits)-1U);
+    char text[22];
+    for (uint32_t i=0; i<count; ++i)
+        text[i]=digits[count-1U-i];
+    text[count]=0;
+    serial_write_public(text);
+}
+
+/* Diagnostic only: identifies which init-load precondition failed. */
+static void userspace_report_elf_failure(int result, uint64_t entry) {
+    serial_write_public("ZEROOS: userspace init setup failed (stage=elf-load, error=");
+    userspace_write_decimal((uint64_t)(result<0 ? -result : result));
+    serial_write_public(", entry_ok=");
+    userspace_write_decimal(entry==ZEROOS_USER_CODE_BASE+INIT_ELF_ENTRY_OFFSET);
+    serial_write_public(", free_pages=");
+    userspace_write_decimal(memory_free_pages());
+    serial_write_public(").\n");
+}
+
 int userspace_start_init(void) {
     void *stack_page=0;
     process_id_t pid=0;
@@ -2155,25 +2180,32 @@ int userspace_start_init(void) {
     }
     serial_write_public("ZEROOS: userspace resource exhaustion/recovery passed.\n");
 
-    if (elf_load_image(init_process,init_elf_image,image_size,
-                       &load_result)!=0 ||
-        load_result.entry!=ZEROOS_USER_CODE_BASE+INIT_ELF_ENTRY_OFFSET)
+    int elf_result=elf_load_image(init_process,init_elf_image,image_size,
+                                  &load_result);
+    if (elf_result!=0 ||
+        load_result.entry!=ZEROOS_USER_CODE_BASE+INIT_ELF_ENTRY_OFFSET) {
+        userspace_report_elf_failure(elf_result,load_result.entry);
         goto fail;
+    }
     image_loaded=1;
 
     stack_page=page_alloc_zero();
     if (!stack_page ||
         process_address_space_map_page(init_process,ZEROOS_USER_STACK_PAGE,
                                        (uint64_t)stack_page,
-                                       VMM_USER|VMM_WRITABLE|VMM_NO_EXECUTE)!=0)
+                                       VMM_USER|VMM_WRITABLE|VMM_NO_EXECUTE)!=0) {
+        serial_write_public("ZEROOS: userspace init setup failed (stage=stack-map).\n");
         goto fail;
+    }
     page_free(stack_page);
     stack_page=0;
     stack_mapped=1;
 
     if (thread_create_user(init_process,load_result.entry,
-                           ZEROOS_USER_STACK_TOP,&tid)!=0)
+                           ZEROOS_USER_STACK_TOP,&tid)!=0) {
+        serial_write_public("ZEROOS: userspace init setup failed (stage=thread-create).\n");
         goto fail;
+    }
     init_thread=thread_lookup(tid);
     if (!init_thread) {
         serial_write_public("ZEROOS PANIC: published user thread lookup failed.\n");
@@ -2181,8 +2213,10 @@ int userspace_start_init(void) {
     }
 
     init_started=1;
-    if (userspace_start_service(1)!=0)
+    if (userspace_start_service(1)!=0) {
+        serial_write_public("ZEROOS: userspace init setup failed (stage=service-start).\n");
         return -1;
+    }
     serial_write_public("ZEROOS: userspace init process published.\n");
     return 0;
 

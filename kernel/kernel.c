@@ -17,6 +17,7 @@
 #include "ipc.h"
 #include "shmem.h"
 #include "storage/storage.h"
+#include "fb.h"
 
 #define COM1 0x3F8
 #define VMM_SELF_TEST_VA 0x00007f0000000000ULL
@@ -1115,6 +1116,11 @@ void kernel_main(uint64_t multiboot_info, uint64_t multiboot_magic) {
     serial_write_public("ZEROOS: virtual memory manager initialized.\n");
     vmm_self_test();
     vmm_space_self_test();
+
+    /* Stage 5 display primitive: discover/reserve/verify the firmware
+     * framebuffer. Active or degraded, the boot continues — userspace
+     * consumes geometry via DISPLAY_INFO and owns all desktop policy. */
+    (void)fb_init(multiboot_info);
 
     if (apic_init(multiboot_info)!=0)
         kernel_panic("interrupt-controller capability probe failed");

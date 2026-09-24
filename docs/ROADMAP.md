@@ -15,6 +15,10 @@ The detailed product plan remains in ZEROOS_MASTER_ROADMAP.md.
 8. Driver model: device ownership, IRQ registration, DMA-safe interfaces, input, display, storage.
 9. Networking: packet buffers, NIC abstraction, Ethernet/ARP/IP/UDP/TCP foundations, sockets.
 10. Graphics/UI: framebuffer, compositor, windows, input routing, terminal, settings, file manager.
+    Status: framebuffer display primitive (kernel) + desktop platform core
+    (compositor/window/search/settings/notify/a11y/i18n/watchdog modules)
+    landed in Stage 5 batch 1; input routing drivers, shell processes and
+    app UI remain.
 11. System services: package/update/recovery/diagnostics/observability/power management.
 12. Study Center and app framework.
 13. Forge AI bridge: sandboxed local kernel/user API and external-service boundary.

@@ -75,14 +75,39 @@ for name in FILE_MACROS:
         raise SystemExit(f"macro drift for {name}")
 
 
+# ABI feature bits must stay in lockstep and must be distinct.
+def feature_bits(text: str, source: str) -> dict[str, str]:
+    bits = dict(
+        re.findall(
+            r"^#define\s+(ZEROOS_ABI_FEATURE_[A-Z0-9_]+)\s+\(1ULL << (\d+)\)",
+            text,
+            re.MULTILINE,
+        )
+    )
+    if not bits:
+        raise SystemExit(f"missing ABI feature bits in {source}")
+    if len(set(bits.values())) != len(bits):
+        raise SystemExit(f"duplicate ABI feature bit in {source}: {bits}")
+    return bits
+
+
+if feature_bits(PUBLIC, "public") != feature_bits(KERNEL, "kernel"):
+    raise SystemExit("ABI feature bit drift between public and kernel headers")
+
+
+# Shared structures must match byte-for-byte between headers.
 def struct_body(text: str, name: str) -> str:
-    match = re.search(rf"struct\s+{name}\s*\{{(?P<body>.*?)\}};", text, re.DOTALL)
-    if not match:
+    block = re.search(
+        rf"struct\s+{re.escape(name)}\s*\{{(?P<body>.*?)\}}\s*;",
+        text,
+        re.DOTALL,
+    )
+    if not block:
         raise SystemExit(f"missing struct {name}")
-    return " ".join(match.group("body").split())
+    return " ".join(block.group("body").split())
 
 
-for name in ("zeroos_stat", "zeroos_statfs", "zeroos_dirent"):
+for name in ("zeroos_stat", "zeroos_statfs", "zeroos_dirent", "zeroos_display_info"):
     if struct_body(PUBLIC, name) != struct_body(KERNEL, name):
         raise SystemExit(f"struct layout drift for {name}")
 
