@@ -731,8 +731,19 @@ static void wait_probe_waiter(void *argument) {
 }
 
 static void wait_probe_waker(void *argument) {
+    uint64_t deadline;
     (void)argument;
-    scheduler_yield();
+
+    /* More than two CPUs can run the waiter and waker truly concurrently;
+     * yielding once is not a publication barrier. Wait for the waiter to
+     * complete its queue insertion before attempting the wake. */
+    deadline=timer_ticks()+100;
+    while (wait_queue_count(&wait_probe_queue)==0 &&
+           (long long)(deadline-timer_ticks())>0)
+        scheduler_yield();
+    if (wait_queue_count(&wait_probe_queue)==0)
+        kernel_panic("wait queue waiter publication timed out");
+
     atomic_u64_store(&wait_probe_state,1);
     if (wait_queue_wake_one(&wait_probe_queue)!=1)
         kernel_panic("wait queue wake failed");
