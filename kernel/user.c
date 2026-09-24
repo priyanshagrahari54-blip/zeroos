@@ -798,11 +798,13 @@ fail:
 
 static int userspace_resource_self_test(struct process *process) {
     struct zeroos_ipc_pair pairs[ZEROOS_IPC_MAX_ENDPOINTS/2U];
+    zeroos_shmem_handle_t shmem_handles[ZEROOS_SHMEM_MAX_OBJECTS];
     process_id_t first_pid=0;
     process_id_t second_pid=0;
     struct process *first=0;
     struct process *second=0;
     uint32_t pair_count=0;
+    uint32_t shmem_count=0;
     int result=-1;
 
     if (!process || process_set_limits(process,4,1,16)!=0)
@@ -834,7 +836,29 @@ static int userspace_resource_self_test(struct process *process) {
         if (ipc_create(process,&extra_local,&extra_peer)!=-ZEROOS_ENOMEM)
             goto cleanup_ipc;
     }
+    while (shmem_count<ZEROOS_SHMEM_MAX_OBJECTS) {
+        if (shmem_create(process,VMM_PAGE_SIZE,0,
+                         &shmem_handles[shmem_count])!=0)
+            goto cleanup_shmem;
+        ++shmem_count;
+    }
+    {
+        zeroos_shmem_handle_t extra=0;
+        if (shmem_create(process,VMM_PAGE_SIZE,0,&extra)!=-ZEROOS_ENOMEM) {
+            if (extra)
+                (void)shmem_close(process,extra);
+            goto cleanup_shmem;
+        }
+    }
     result=0;
+
+cleanup_shmem:
+    while (shmem_count) {
+        --shmem_count;
+        (void)shmem_close(process,shmem_handles[shmem_count]);
+    }
+    if (result==0 && shmem_debug_validate()!=0)
+        result=-1;
 
 cleanup_ipc:
     while (pair_count) {
