@@ -39,8 +39,6 @@
 #include "search.h"
 #include "settings.h"
 #include "docs.h"
-<<<<<<< HEAD
-=======
 #include "security.h"
 #include "recovery.h"
 #include "wincompat.h"
@@ -52,7 +50,6 @@
 #include "cloud.h"
 #include "automation.h"
 #include "study.h"
->>>>>>> 1d1da7b (Stage 5B: security, recovery, wincompat, android, browser, ai, media, gaming, cloud, automation, study)
 
 #define COM1 0x3F8
 #define VMM_SELF_TEST_VA 0x00007f0000000000ULL
