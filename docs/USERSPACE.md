@@ -109,6 +109,7 @@ The initial v1 calls are:
 | 24 | `SHM_CLOSE` | close a shared-memory capability; active mappings keep their pages alive |
 | 25–50 | file/VFS calls | Stage 3, additive, gated by `ZEROOS_ABI_FEATURE_FILES` (bit 7). Semantics, structures and migration notes are in [VFS.md](VFS.md) §7; wrappers are in `userspace/include/zeroos/storage.h` |
 | 51 | `DISPLAY_INFO` | Stage 5, gated by `ZEROOS_ABI_FEATURE_DISPLAY` (bit 8): copy the read-only `struct zeroos_display_info` geometry record (see TECHSPEC.md) |
+| 52 | `DISPLAY_PRESENT` | Stage 5, gated by `ZEROOS_ABI_FEATURE_PRESENT` (bit 9): pixel-mapping scanout submit (see TECHSPEC.md) |
 
 The public freestanding wrapper surface is
 `userspace/include/zeroos/syscall.h`. It contains the fixed-width ABI

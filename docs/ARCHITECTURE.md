@@ -190,6 +190,15 @@ Implemented (this stage):
   (ID 51, ABI feature bit 8) returning geometry + PRESENT/degraded flags.
   Missing/unusable framebuffers degrade to the serial console milestone and
   never fail the boot. The kernel owns no desktop policy.
+- Pixel-mapping syscall (`DISPLAY_PRESENT`, ID 52, feature bit 9): Ring-3
+  submits damage rectangles in the native scanout format; validation is the
+  host-tested `display_present_request_valid` contract (bounds, overflow,
+  format/bpp agreement, stride floor and cap), writes go through
+  `fb_write_pixels` row chunks with the whole source range pre-validated,
+  and the boot probe verifies Ring-3 writes with a kernel readback
+  (`display present contract verified`). Degraded boots fail ENOENT by
+  contract; concurrent submitters stay memory-safe via the fb lock, with a
+  single display-service writer as desktop policy.
 - Desktop platform core (`userspace/desktop/`): fixed-capacity, zero-heap,
   freestanding-clean modules for lifecycle, resource governor, window
   system, compositor (retained scene, damage, occlusion, pacing, cache,
@@ -198,7 +207,7 @@ Implemented (this stage):
   gated by `make desktop-check` (3200+ assertions, hosted + freestanding).
 
 Not yet implemented (contracts defined, explicit in PHASES.md):
-- Pixel mapping syscall + userspace display service writing scanout,
+- Userspace display service writing scanout,
   GPU driver beyond scanout, input driver stack, shell UI processes.
 
 ## 15. Networking

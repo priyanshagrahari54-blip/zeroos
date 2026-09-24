@@ -190,8 +190,8 @@ These calls are additive to syscall ABI v1 and advertised by
 | 49 | `DUP` | fd → new fd |
 | 50 | `CHOWN` | path, uid, gid → 0 (root only) |
 
-- The file calls end at `CHOWN` = 50; `DISPLAY_INFO` (Stage 5) is 51 and
-  `ZEROOS_SYS_MAX` is 52. Descriptors are per process and are not
+- The file calls end at `CHOWN` = 50. `DISPLAY_INFO` (Stage 5) is 51,
+  `DISPLAY_PRESENT` is 52, and `ZEROOS_SYS_MAX` is 53. Descriptors are per process and are not
   inherited by `SPAWN`.
 - Limits: `ZEROOS_FILE_MAX_TRANSFER` = 1 MiB per call (larger requests
   return a short count), `ZEROOS_MAX_FDS` = 32, `ZEROOS_MMAP_MAX_PAGES` =
@@ -211,8 +211,8 @@ These calls are additive to syscall ABI v1 and advertised by
 - **Detection:** before using any call in 25–50, a program must check
   `ZEROOS_ABI_FEATURE_FILES` in `ABI_INFO.features`. Kernels without the
   bit return ENOSYS for those numbers.
-- `SYS_MAX` moved from 25 to 52 (file calls 25–50, `DISPLAY_INFO` 51 with
-  feature bit 8). Code that used `ZEROOS_SYS_MAX` as an
+- `SYS_MAX` moved from 25 to 53 (file calls 25–50; `DISPLAY_INFO` 51 and
+  `DISPLAY_PRESENT` 52, feature bits 8 and 9). Code that used `ZEROOS_SYS_MAX` as an
   array bound must be rebuilt against the new header.
 - Future changes to these structures will add sized, versioned
   successors (new syscall numbers), never change existing layouts.

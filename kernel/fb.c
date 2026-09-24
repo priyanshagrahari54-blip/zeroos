@@ -1,6 +1,7 @@
 #include "fb.h"
 #include "memory.h"
 #include "vmm.h"
+#include "sync.h"
 
 extern void serial_write_public(const char *text);
 
@@ -50,6 +51,7 @@ struct mb2_info_tag_framebuffer {
 
 static struct zeroos_display_info display_state;
 static uint64_t fb_kernel_virtual;
+static struct spinlock present_lock;
 
 static void fb_write_u64(uint64_t value) {
     char buffer[21];
@@ -184,6 +186,7 @@ int fb_init(uint64_t multiboot_info) {
 
     display_state.flags=0;
     fb_kernel_virtual=0;
+    spinlock_init(&present_lock);
 
     if (!multiboot_info) {
         degrade("no boot info");
@@ -243,4 +246,161 @@ int fb_init(uint64_t multiboot_info) {
 
 const struct zeroos_display_info *fb_display_info(void) {
     return &display_state;
+}
+
+/* ---- Pixel-mapping primitives (DISPLAY_PRESENT scanout path) ---- */
+
+int fb_present_active(void) {
+    return (display_state.flags & ZEROOS_DISPLAY_FLAG_PRESENT) &&
+           fb_kernel_virtual!=0;
+}
+
+static uint32_t fb_bytes_per_pixel(void) {
+    return (display_state.bpp+7U)/8U;
+}
+
+int fb_write_pixels(uint32_t x, uint32_t y, uint32_t count,
+                    const uint8_t *source) {
+    uint32_t bytes_pp;
+    uint64_t offset;
+    volatile uint8_t *destination;
+    uint64_t length;
+    uint64_t flags;
+
+    if (!source || !count || !fb_present_active())
+        return -1;
+    if (x>=display_state.width || y>=display_state.height ||
+        count>display_state.width-x)
+        return -1;
+    bytes_pp=fb_bytes_per_pixel();
+    offset=(uint64_t)y*display_state.pitch+(uint64_t)x*bytes_pp;
+    if (offset+(uint64_t)count*bytes_pp>display_state.byte_size)
+        return -1;
+    destination=(volatile uint8_t *)(fb_kernel_virtual+offset);
+    length=(uint64_t)count*bytes_pp;
+
+    flags=spin_lock_irqsave(&present_lock);
+    for (uint64_t i=0; i<length; ++i)
+        destination[i]=source[i];
+    spin_unlock_irqrestore(&present_lock,flags);
+    return 0;
+}
+
+/* Native scanout byte order -> XRGB8888 for verification and feedback. */
+static uint32_t fb_native_to_xrgb(const uint8_t *source) {
+    uint32_t pixel;
+    if (display_state.bpp==32U) {
+        pixel=(uint32_t)source[0] | ((uint32_t)source[1]<<8) |
+              ((uint32_t)source[2]<<16) | ((uint32_t)source[3]<<24);
+        return 0xFF000000U | (pixel & 0x00FFFFFFU);
+    }
+    if (display_state.bpp==24U) {
+        return 0xFF000000U | ((uint32_t)source[2]<<16) |
+               ((uint32_t)source[1]<<8) | (uint32_t)source[0];
+    }
+    /* RGB565, little-endian. */
+    pixel=(uint32_t)source[0] | ((uint32_t)source[1]<<8);
+    {
+        uint32_t r5=(pixel>>11)&0x1FU;
+        uint32_t g6=(pixel>>5)&0x3FU;
+        uint32_t b5=pixel&0x1FU;
+        uint32_t r=(r5<<3)|(r5>>2);
+        uint32_t g=(g6<<2)|(g6>>4);
+        uint32_t b=(b5<<3)|(b5>>2);
+        return 0xFF000000U | (r<<16) | (g<<8) | b;
+    }
+}
+
+/* XRGB8888 -> native scanout byte order. */
+static void fb_xrgb_to_native(uint32_t xrgb, uint8_t *destination) {
+    uint32_t r=(xrgb>>16)&0xFFU;
+    uint32_t g=(xrgb>>8)&0xFFU;
+    uint32_t b=xrgb&0xFFU;
+    if (display_state.bpp==32U) {
+        destination[0]=(uint8_t)b;
+        destination[1]=(uint8_t)g;
+        destination[2]=(uint8_t)r;
+        destination[3]=0xFFU;
+        return;
+    }
+    if (display_state.bpp==24U) {
+        destination[0]=(uint8_t)b;
+        destination[1]=(uint8_t)g;
+        destination[2]=(uint8_t)r;
+        return;
+    }
+    {
+        uint16_t packed=(uint16_t)(((r>>3)<<11) | ((g>>2)<<5) | (b>>3));
+        destination[0]=(uint8_t)(packed & 0xFFU);
+        destination[1]=(uint8_t)(packed>>8);
+    }
+}
+
+int fb_read_pixel(uint32_t x, uint32_t y, uint32_t *xrgb_out) {
+    uint32_t bytes_pp;
+    uint64_t offset;
+    const volatile uint8_t *source;
+    uint8_t native[4];
+    uint64_t flags;
+
+    if (!xrgb_out || !fb_present_active())
+        return -1;
+    if (x>=display_state.width || y>=display_state.height)
+        return -1;
+    bytes_pp=fb_bytes_per_pixel();
+    if (bytes_pp>4U)
+        return -1;
+    offset=(uint64_t)y*display_state.pitch+(uint64_t)x*bytes_pp;
+    if (offset+bytes_pp>display_state.byte_size)
+        return -1;
+    source=(const volatile uint8_t *)(fb_kernel_virtual+offset);
+
+    flags=spin_lock_irqsave(&present_lock);
+    for (uint32_t i=0; i<bytes_pp; ++i)
+        native[i]=source[i];
+    spin_unlock_irqrestore(&present_lock,flags);
+    *xrgb_out=fb_native_to_xrgb(native);
+    return 0;
+}
+
+/* Deterministic probe pattern: opaque, non-uniform across both axes so a
+ * swapped row/column or stale buffer cannot pass verification. */
+uint32_t fb_probe_pixel(uint32_t x, uint32_t y) {
+    return 0xFF000000U | ((x*1973U + y*9277U + 0x5A3C17U) & 0x00FFFFFFU);
+}
+
+int fb_fill_probe_native(uint8_t *destination, uint64_t capacity) {
+    uint32_t bytes_pp;
+    uint64_t stride;
+
+    if (!destination || !fb_present_active())
+        return -1;
+    bytes_pp=fb_bytes_per_pixel();
+    if (!bytes_pp || bytes_pp>4U)
+        return -1;
+    stride=(uint64_t)FB_PRESENT_PROBE_W*bytes_pp;
+    if (capacity<stride*FB_PRESENT_PROBE_H)
+        return -1;
+    for (uint32_t row=0; row<FB_PRESENT_PROBE_H; ++row) {
+        for (uint32_t column=0; column<FB_PRESENT_PROBE_W; ++column) {
+            fb_xrgb_to_native(fb_probe_pixel(column,row),
+                              destination+row*stride+column*bytes_pp);
+        }
+    }
+    return 0;
+}
+
+int fb_probe_verify(void) {
+    if (!fb_present_active())
+        return -1;
+    for (uint32_t row=0; row<FB_PRESENT_PROBE_H; ++row) {
+        for (uint32_t column=0; column<FB_PRESENT_PROBE_W; ++column) {
+            uint32_t pixel=0;
+            if (fb_read_pixel(column,row,&pixel)!=0)
+                return -1;
+            if (pixel!=fb_probe_pixel(column,row))
+                return -1;
+        }
+    }
+    return 0;
 }

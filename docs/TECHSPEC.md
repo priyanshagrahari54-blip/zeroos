@@ -82,11 +82,13 @@ Initial syscall groups:
 process, thread, memory, file, directory, time, IPC, synchronization, device, network.
 
 Stage 5 additions: `DISPLAY_INFO` (ID 51) — display geometry read-only query;
-ABI feature bit 8 (`ZEROOS_ABI_FEATURE_DISPLAY`). (Before the Stage 3/Stage 5
-merge the unreleased Stage 5 branch used ID 25 / bit 7, which collided with
-the Stage 3 file ABI; it was renumbered before reaching main. IDs 25–50 and
-bit 7 belong to the file ABI, see VFS.md §7.) Any new syscall ID must be
-mirrored in `kernel/syscall.h`, `userspace/include/zeroos/syscall.h` and pass
+`DISPLAY_PRESENT` (ID 52) — pixel-mapping scanout submit; ABI feature bits 8
+(`ZEROOS_ABI_FEATURE_DISPLAY`) and 9 (`ZEROOS_ABI_FEATURE_PRESENT`). (Before
+the Stage 3/Stage 5 merge the unreleased Stage 5 branch used IDs 25/26 and
+bits 7/8, which collided with the Stage 3 file ABI; they were renumbered
+before reaching main. IDs 25–50 and bit 7 belong to the file ABI, see VFS.md
+§7.) Any new syscall ID must be mirrored in `kernel/syscall.h`,
+`userspace/include/zeroos/syscall.h` and pass
 `userspace/tests/abi_consistency.py` (enum, feature-bit uniqueness/drift and
 shared-struct drift gates).
 
@@ -155,8 +157,21 @@ Stage 5 implemented contracts:
 - `ZEROOS_SYS_DISPLAY_INFO` (ID 51) returns `struct zeroos_display_info`
   {physical_address, byte_size, width, height, pitch, bpp, format, flags};
   `ZEROOS_DISPLAY_FLAG_PRESENT` distinguishes a live scanout from a
-  degraded serial-only boot. No pixel channel exists yet — scanout writes
-  arrive with the display-service batch (explicit open item, not implied).
+  degraded serial-only boot.
+- `ZEROOS_SYS_DISPLAY_PRESENT` (ID 52, feature bit 9) is the pixel-mapping
+  channel: arguments are (x, y, width, height, stride_bytes, pixels_ptr) in
+  the scanout's native format. Contract: a degraded boot fails ENOENT for
+  every call (device absence dominates because there is no geometry to
+  validate); otherwise bounds/format/stride rules come from
+  `display_present_request_valid` in `display_core` (host-tested) and
+  return EINVAL, an out-of-range or null pixel pointer returns EFAULT, and
+  success streams row chunks through the bounds-checked `fb_write_pixels`
+  primitive under an internal lock. The full source range is validated
+  before any byte is copied. The boot certification presents a 4x4 probe
+  pattern from Ring-3 through the real syscall and verifies it through the
+  real read path (`ZEROOS: display present contract verified.`). Scanout
+  writes are serialized; the display service is the single writer by
+  desktop policy, while the kernel guarantees memory safety for any caller.
 - Userspace desktop platform core in `userspace/desktop/` follows the
   signed 0/-ZD_E* error convention, fixed capacities (64 windows, 4
   monitors, 8 workspaces, 1024 search documents, 64 notifications, 256

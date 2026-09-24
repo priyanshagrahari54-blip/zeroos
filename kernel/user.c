@@ -11,6 +11,7 @@
 #include "syscall.h"
 #include "ipc.h"
 #include "shmem.h"
+#include "fb.h"
 
 extern void serial_write_public(const char *text);
 extern void zeroos_user_enter(uint64_t entry, uint64_t stack);
@@ -68,6 +69,11 @@ static const char init_message[]=
 #define INIT_ELF_ARG0_OFFSET 0x3640ULL
 #define INIT_ELF_ARG1_OFFSET 0x3660ULL
 #define INIT_ELF_ENV0_OFFSET 0x3680ULL
+/* Stage 5A present-probe payload: native-format 4x4 pattern plus the
+ * DISPLAY_INFO record the probe reads back; both live in the init data
+ * segment below the status word. */
+#define INIT_ELF_PRESENT_OFFSET 0x3800ULL
+#define INIT_ELF_DISPLAY_INFO_OFFSET 0x3840ULL
 #define INIT_ELF_DATA_FILE_END (INIT_ELF_STATUS_OFFSET+sizeof(uint64_t))
 #define INIT_ELF_DATA_MEMORY_SIZE ((INIT_ELF_DATA_FILE_END-INIT_ELF_DATA_OFFSET+\
                                     VMM_PAGE_SIZE-1ULL)&~(VMM_PAGE_SIZE-1ULL))
@@ -251,7 +257,7 @@ static uint64_t build_child_elf(void) {
  * later service binaries will use. */
 static uint64_t build_init_code(uint8_t *code) {
     uint64_t offset=0;
-    uint64_t failure_jumps[20];
+    uint64_t failure_jumps[32];
     uint32_t failure_jump_count=0;
     uint64_t failure_label;
 
@@ -274,6 +280,146 @@ static uint64_t build_init_code(uint8_t *code) {
     code[offset++]=0x0f; code[offset++]=0x88;
     put_u32(&code[offset],0); offset+=4;
 
+    /*
+     * Stage 5A pixel-mapping probes. The live/degraded branch is decided
+     * when the image is built: on a live scanout the positive present must
+     * return 0 and the negative probes must fail with their exact errors
+     * (EINVAL for out-of-bounds/undersized-stride, EFAULT for unmapped or
+     * null pixel pointers); on a degraded serial-only boot every present
+     * must fail ENOENT. DISPLAY_INFO itself always succeeds.
+     */
+    {
+        const struct zeroos_display_info *display=fb_display_info();
+        int display_live=(display->flags & ZEROOS_DISPLAY_FLAG_PRESENT) &&
+                         display->width>=FB_PRESENT_PROBE_W &&
+                         display->height>=FB_PRESENT_PROBE_H;
+        uint32_t bytes_pp=display_live ? (display->bpp+7U)/8U : 4U;
+        uint32_t present_stride=FB_PRESENT_PROBE_W*bytes_pp;
+        uint64_t present_pixels=ZEROOS_USER_DATA_BASE+
+            (INIT_ELF_PRESENT_OFFSET-INIT_ELF_DATA_OFFSET);
+        uint64_t display_info_ptr=ZEROOS_USER_DATA_BASE+
+            (INIT_ELF_DISPLAY_INFO_OFFSET-INIT_ELF_DATA_OFFSET);
+
+        code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_DISPLAY_INFO); offset+=4;
+        code[offset++]=0x48; code[offset++]=0xbf;
+        put_u64(&code[offset],display_info_ptr); offset+=8;
+        code[offset++]=0xbe;
+        put_u32(&code[offset],(uint32_t)sizeof(*display)); offset+=4;
+        code[offset++]=0xcd; code[offset++]=0x80;
+        code[offset++]=0x48; code[offset++]=0x85; code[offset++]=0xc0;
+        failure_jumps[failure_jump_count++]=offset;
+        code[offset++]=0x0f; code[offset++]=0x85;
+        put_u32(&code[offset],0); offset+=4;
+
+        /* DISPLAY_PRESENT (0,0,4,4,stride,pixels): 0 when live, -ENOENT
+         * when degraded. */
+        code[offset++]=0xb8;
+        put_u32(&code[offset],ZEROOS_SYS_DISPLAY_PRESENT); offset+=4;
+        code[offset++]=0x31; code[offset++]=0xff;
+        code[offset++]=0x31; code[offset++]=0xf6;
+        code[offset++]=0xba;
+        put_u32(&code[offset],FB_PRESENT_PROBE_W); offset+=4;
+        code[offset++]=0x41; code[offset++]=0xba;
+        put_u32(&code[offset],FB_PRESENT_PROBE_H); offset+=4;
+        code[offset++]=0x41; code[offset++]=0xb8;
+        put_u32(&code[offset],present_stride); offset+=4;
+        code[offset++]=0x49; code[offset++]=0xb9;
+        put_u64(&code[offset],present_pixels); offset+=8;
+        code[offset++]=0xcd; code[offset++]=0x80;
+        if (display_live) {
+            code[offset++]=0x48; code[offset++]=0x85; code[offset++]=0xc0;
+        } else {
+            /* cmp rax,-2 : degraded boots must fail ENOENT exactly. */
+            code[offset++]=0x48; code[offset++]=0x83;
+            code[offset++]=0xf8; code[offset++]=0xfe;
+        }
+        failure_jumps[failure_jump_count++]=offset;
+        code[offset++]=0x0f; code[offset++]=0x85;
+        put_u32(&code[offset],0); offset+=4;
+
+        if (display_live) {
+            /* Out-of-bounds origin: x+width exceeds the scanout. */
+            code[offset++]=0xb8;
+            put_u32(&code[offset],ZEROOS_SYS_DISPLAY_PRESENT); offset+=4;
+            code[offset++]=0xbf;
+            put_u32(&code[offset],display->width+64U); offset+=4;
+            code[offset++]=0x31; code[offset++]=0xf6;
+            code[offset++]=0xba;
+            put_u32(&code[offset],FB_PRESENT_PROBE_W); offset+=4;
+            code[offset++]=0x41; code[offset++]=0xba;
+            put_u32(&code[offset],FB_PRESENT_PROBE_H); offset+=4;
+            code[offset++]=0x41; code[offset++]=0xb8;
+            put_u32(&code[offset],present_stride); offset+=4;
+            code[offset++]=0x49; code[offset++]=0xb9;
+            put_u64(&code[offset],present_pixels); offset+=8;
+            code[offset++]=0xcd; code[offset++]=0x80;
+            /* cmp rax,-22 (EINVAL); jne fail. */
+            code[offset++]=0x48; code[offset++]=0x83;
+            code[offset++]=0xf8; code[offset++]=0xea;
+            failure_jumps[failure_jump_count++]=offset;
+            code[offset++]=0x0f; code[offset++]=0x85;
+            put_u32(&code[offset],0); offset+=4;
+
+            /* Undersized source stride. */
+            code[offset++]=0xb8;
+            put_u32(&code[offset],ZEROOS_SYS_DISPLAY_PRESENT); offset+=4;
+            code[offset++]=0x31; code[offset++]=0xff;
+            code[offset++]=0x31; code[offset++]=0xf6;
+            code[offset++]=0xba;
+            put_u32(&code[offset],FB_PRESENT_PROBE_W); offset+=4;
+            code[offset++]=0x41; code[offset++]=0xba;
+            put_u32(&code[offset],FB_PRESENT_PROBE_H); offset+=4;
+            code[offset++]=0x41; code[offset++]=0xb8;
+            put_u32(&code[offset],present_stride-bytes_pp); offset+=4;
+            code[offset++]=0x49; code[offset++]=0xb9;
+            put_u64(&code[offset],present_pixels); offset+=8;
+            code[offset++]=0xcd; code[offset++]=0x80;
+            code[offset++]=0x48; code[offset++]=0x83;
+            code[offset++]=0xf8; code[offset++]=0xea;
+            failure_jumps[failure_jump_count++]=offset;
+            code[offset++]=0x0f; code[offset++]=0x85;
+            put_u32(&code[offset],0); offset+=4;
+
+            /* Unmapped then null pixel pointer: both EFAULT (-14). */
+            code[offset++]=0xb8;
+            put_u32(&code[offset],ZEROOS_SYS_DISPLAY_PRESENT); offset+=4;
+            code[offset++]=0x31; code[offset++]=0xff;
+            code[offset++]=0x31; code[offset++]=0xf6;
+            code[offset++]=0xba;
+            put_u32(&code[offset],FB_PRESENT_PROBE_W); offset+=4;
+            code[offset++]=0x41; code[offset++]=0xba;
+            put_u32(&code[offset],FB_PRESENT_PROBE_H); offset+=4;
+            code[offset++]=0x41; code[offset++]=0xb8;
+            put_u32(&code[offset],present_stride); offset+=4;
+            code[offset++]=0x49; code[offset++]=0xb9;
+            put_u64(&code[offset],1); offset+=8;
+            code[offset++]=0xcd; code[offset++]=0x80;
+            code[offset++]=0x48; code[offset++]=0x83;
+            code[offset++]=0xf8; code[offset++]=0xf2;
+            failure_jumps[failure_jump_count++]=offset;
+            code[offset++]=0x0f; code[offset++]=0x85;
+            put_u32(&code[offset],0); offset+=4;
+
+            code[offset++]=0xb8;
+            put_u32(&code[offset],ZEROOS_SYS_DISPLAY_PRESENT); offset+=4;
+            code[offset++]=0x31; code[offset++]=0xff;
+            code[offset++]=0x31; code[offset++]=0xf6;
+            code[offset++]=0xba;
+            put_u32(&code[offset],FB_PRESENT_PROBE_W); offset+=4;
+            code[offset++]=0x41; code[offset++]=0xba;
+            put_u32(&code[offset],FB_PRESENT_PROBE_H); offset+=4;
+            code[offset++]=0x41; code[offset++]=0xb8;
+            put_u32(&code[offset],present_stride); offset+=4;
+            code[offset++]=0x4d; code[offset++]=0x31; code[offset++]=0xc9;
+            code[offset++]=0xcd; code[offset++]=0x80;
+            code[offset++]=0x48; code[offset++]=0x83;
+            code[offset++]=0xf8; code[offset++]=0xf2;
+            failure_jumps[failure_jump_count++]=offset;
+            code[offset++]=0x0f; code[offset++]=0x85;
+            put_u32(&code[offset],0); offset+=4;
+        }
+    }
+
     /* Negative ABI probes run from Ring 3 and must fail closed without
      * creating a capability, child, or address-space side effect. */
     code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_IPC_CREATE); offset+=4;
@@ -290,7 +436,7 @@ static uint64_t build_init_code(uint8_t *code) {
     code[offset++]=0x48; code[offset++]=0xbe;
     put_u64(&code[offset],0x100ULL); offset+=8;
     code[offset++]=0x48; code[offset++]=0x31; code[offset++]=0xd2;
-    code[offset++]=0x49; code[offset++]=0x31; code[offset++]=0xd2;
+    code[offset++]=0x4d; code[offset++]=0x31; code[offset++]=0xd2;
     code[offset++]=0xcd; code[offset++]=0x80;
     code[offset++]=0x48; code[offset++]=0x85; code[offset++]=0xc0;
     failure_jumps[failure_jump_count++]=offset;
@@ -345,7 +491,7 @@ static uint64_t build_init_code(uint8_t *code) {
     put_u64(&code[offset],ZEROOS_USER_DATA_BASE+
             (INIT_ELF_EVENT_OFFSET-INIT_ELF_DATA_OFFSET)); offset+=8;
     code[offset++]=0x48; code[offset++]=0x8b; code[offset++]=0x3f;
-    code[offset++]=0x49; code[offset++]=0x31; code[offset++]=0xd2;
+    code[offset++]=0x4d; code[offset++]=0x31; code[offset++]=0xd2;
     code[offset++]=0xcd; code[offset++]=0x80;
     code[offset++]=0x48; code[offset++]=0x83; code[offset++]=0xf8; code[offset++]=1;
     failure_jumps[failure_jump_count++]=offset;
@@ -409,7 +555,7 @@ static uint64_t build_init_code(uint8_t *code) {
     put_u32(&code[offset],(uint32_t)(sizeof(init_message)-1U)); offset+=4;
     code[offset++]=0x41; code[offset++]=0xba;
     put_u32(&code[offset],ZEROOS_IPC_FLAG_NONBLOCK); offset+=4;
-    code[offset++]=0x49; code[offset++]=0x31; code[offset++]=0xc9;
+    code[offset++]=0x4d; code[offset++]=0x31; code[offset++]=0xc9;
     code[offset++]=0xcd; code[offset++]=0x80;
     code[offset++]=0x48; code[offset++]=0x3d;
     put_u32(&code[offset],(uint32_t)(sizeof(init_message)-1U)); offset+=4;
@@ -431,7 +577,7 @@ static uint64_t build_init_code(uint8_t *code) {
     code[offset++]=0x49; code[offset++]=0xb8;
     put_u64(&code[offset],ZEROOS_USER_DATA_BASE+
             (INIT_ELF_PIPE_LENGTH_OFFSET-INIT_ELF_DATA_OFFSET)); offset+=8;
-    code[offset++]=0x49; code[offset++]=0x31; code[offset++]=0xc9;
+    code[offset++]=0x4d; code[offset++]=0x31; code[offset++]=0xc9;
     code[offset++]=0xcd; code[offset++]=0x80;
     code[offset++]=0x48; code[offset++]=0x3d;
     put_u32(&code[offset],(uint32_t)(sizeof(init_message)-1U)); offset+=4;
@@ -599,12 +745,22 @@ static uint64_t build_init_elf(void) {
     data_segment->memory_size=INIT_ELF_DATA_MEMORY_SIZE;
     data_segment->alignment=VMM_PAGE_SIZE;
 
-    if (build_init_code(init_elf_image+INIT_ELF_ENTRY_OFFSET)>VMM_PAGE_SIZE) {
+    /* The code segment maps VMM_PAGE_SIZE bytes from image offset 0, and
+     * the entry point starts at INIT_ELF_ENTRY_OFFSET, so the emitted code
+     * must fit in the remainder of that page — not merely "one page". */
+    if (build_init_code(init_elf_image+INIT_ELF_ENTRY_OFFSET)>
+        VMM_PAGE_SIZE-INIT_ELF_ENTRY_OFFSET) {
         serial_write_public("ZEROOS PANIC: init syscall probe image exceeds one code page.\n");
         return 0;
     }
     for (uint64_t i=0; i<sizeof(init_message)-1U; ++i)
         init_elf_image[INIT_ELF_DATA_OFFSET+i]=(uint8_t)init_message[i];
+    /* Preload the present-probe payload in the scanout's native format so
+     * the Ring-3 positive probe pushes real bytes through the syscall. */
+    if (fb_present_active())
+        (void)fb_fill_probe_native(
+            &init_elf_image[INIT_ELF_PRESENT_OFFSET],
+            INIT_ELF_DISPLAY_INFO_OFFSET-INIT_ELF_PRESENT_OFFSET);
     for (uint64_t i=0; i<child_image_size; ++i)
         init_elf_image[INIT_ELF_CHILD_FILE_OFFSET+i]=init_child_elf_image[i];
     put_u64(&init_elf_image[INIT_ELF_ARGV_OFFSET],
