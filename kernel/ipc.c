@@ -251,14 +251,23 @@ int ipc_grant_rights(struct process *owner, zeroos_ipc_handle_t source,
         return -ZEROOS_ENOENT;
 
     flags=spin_lock_irqsave(&ipc_lock);
-    struct ipc_capability *source_cap=capability_lookup_locked(owner,source);
-    if (!source_cap || !(source_cap->rights&ZEROOS_IPC_RIGHT_GRANT))
-        result=-ZEROOS_EBADF;
-    else if ((rights&source_cap->rights)!=rights)
-        result=-ZEROOS_EPERM;
-    else
-        result=capability_alloc_locked(target,source_cap->endpoint,
-                                       rights,target_out);
+    /* The lookup is repeated under the IPC lock and the generation-tagged PID
+     * is checked again. A target slot may have gone zombie and been reused
+     * between process_lookup() and capability publication; never attach a
+     * grant to that replacement process. */
+    if (!target || target->pid!=target_pid || !process_can_use(target))
+        result=-ZEROOS_ENOENT;
+    else {
+        struct ipc_capability *source_cap=
+            capability_lookup_locked(owner,source);
+        if (!source_cap || !(source_cap->rights&ZEROOS_IPC_RIGHT_GRANT))
+            result=-ZEROOS_EBADF;
+        else if ((rights&source_cap->rights)!=rights)
+            result=-ZEROOS_EPERM;
+        else
+            result=capability_alloc_locked(target,source_cap->endpoint,
+                                           rights,target_out);
+    }
     spin_unlock_irqrestore(&ipc_lock,flags);
     return result;
 }

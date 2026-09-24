@@ -453,8 +453,11 @@ static int userspace_ipc_self_test(struct process *process) {
     if (ipc_send(process,local,send_buffer,16,
                  ZEROOS_IPC_FLAG_NONBLOCK)!=-ZEROOS_EAGAIN ||
         ipc_send_timeout(process,local,send_buffer,16,0,0)!=-ZEROOS_ETIMEDOUT ||
+        ipc_send(process,local,send_buffer,1ULL<<9,0)!=-ZEROOS_EOVERFLOW ||
         ipc_send(process,local,send_buffer,16,1ULL<<7)!=-ZEROOS_EINVAL ||
         ipc_send(process,local,send_buffer,0,0)!=-ZEROOS_EINVAL ||
+        ipc_grant_rights(process,local,process->pid,0,0)!=-ZEROOS_EINVAL ||
+        ipc_grant_rights(process,local,process->pid,1U<<4,0)!=-ZEROOS_EINVAL ||
         ipc_send(process,local+0x100ULL,send_buffer,16,
                  ZEROOS_IPC_FLAG_NONBLOCK)!=-ZEROOS_EBADF ||
         ipc_receive(process,peer,receive_buffer,1,
