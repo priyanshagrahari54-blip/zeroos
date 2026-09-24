@@ -216,7 +216,9 @@ than an accidental jump into unvalidated bytes.
 
 Each load is transactional. Pages are zero-filled, mapped with segment-derived
 permissions, populated only from validated file ranges, and rolled back through
-the process-owned VMM accounting on any allocation or mapping failure. The
+the process-owned VMM accounting on any allocation or mapping failure. Unload
+preflights every expected physical page and uses accounting-checked range
+unmaps, preventing a stale mapping from leaving a half-unloaded executable. The
 loader workspace is serialized and bounded so the 4 KiB kernel task stack is
 not used as an unbounded program-header scratch area. The bootstrap init image
 is now built as a real two-segment ELF (RX code/data header and RW NX data),

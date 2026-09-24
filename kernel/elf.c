@@ -17,6 +17,7 @@ struct elf_loader_workspace {
     uint8_t initialized;
     struct elf_load_segment segments[ZEROOS_ELF_MAX_PROGRAM_HEADERS];
     uint8_t mapped[ZEROOS_ELF_MAX_TOTAL_PAGES/8U];
+    uint64_t physical_pages[ZEROOS_ELF_MAX_TOTAL_PAGES];
 };
 
 static struct elf_loader_workspace elf_workspace;
@@ -378,14 +379,36 @@ int elf_unload_image(struct process *process, const void *image,
         spin_unlock_irqrestore(&elf_workspace.lock,lock_flags);
         return -ZEROOS_EINVAL;
     }
-    for (uint32_t i=0; i<segment_count; ++i)
+    /* Preflight every expected physical page before changing the address
+     * space. Each range unmap then rechecks the same physical ownership under
+     * the process accounting lock, so a stale or partially replaced mapping
+     * cannot silently turn loader teardown into a half-unloaded image. */
+    uint64_t physical_index=0;
+    for (uint32_t i=0; i<segment_count; ++i) {
         for (uint64_t address=segments[i].page_start;
              address<segments[i].page_end;
-             address+=VMM_PAGE_SIZE)
-            if (process_address_space_unmap_page(process,address)!=0) {
+             address+=VMM_PAGE_SIZE) {
+            uint64_t physical=vmm_space_translate(&process->address_space,
+                                                  address);
+            if (!physical || physical_index>=ZEROOS_ELF_MAX_TOTAL_PAGES) {
                 spin_unlock_irqrestore(&elf_workspace.lock,lock_flags);
                 return -ZEROOS_EBUSY;
             }
+            elf_workspace.physical_pages[physical_index++]=physical;
+        }
+    }
+    physical_index=0;
+    for (uint32_t i=0; i<segment_count; ++i) {
+        uint64_t page_count=(segments[i].page_end-
+                             segments[i].page_start)/VMM_PAGE_SIZE;
+        if (process_address_space_unmap_range(
+                process,segments[i].page_start,
+                &elf_workspace.physical_pages[physical_index],page_count)!=0) {
+            spin_unlock_irqrestore(&elf_workspace.lock,lock_flags);
+            return -ZEROOS_EBUSY;
+        }
+        physical_index+=page_count;
+    }
     spin_unlock_irqrestore(&elf_workspace.lock,lock_flags);
     return 0;
 }
