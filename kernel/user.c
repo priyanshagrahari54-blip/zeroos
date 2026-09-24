@@ -35,6 +35,10 @@ static struct atomic_u64 event_probe_state;
 static struct process *event_probe_process;
 static zeroos_ipc_handle_t event_probe_signal;
 static zeroos_ipc_handle_t event_probe_wait;
+static struct atomic_u64 ipc_close_probe_state;
+static struct process *ipc_close_probe_process;
+static zeroos_ipc_handle_t ipc_close_probe_signal;
+static zeroos_ipc_handle_t ipc_close_probe_wait;
 
 static const char init_message[]=
     "ZEROOS: userspace init syscall path passed.\n";
@@ -906,6 +910,116 @@ fail:
     return result;
 }
 
+static void ipc_close_probe_entry(void *argument) {
+    struct process *process=(struct process *)argument;
+    uint8_t buffer[64];
+    uint64_t length=0;
+    int result=ipc_receive_timeout(process,ipc_close_probe_wait,
+                                   buffer,sizeof(buffer),0,&length,
+                                   ZEROOS_IPC_TIMEOUT_FOREVER);
+    atomic_u64_store(&ipc_close_probe_state,
+                     result==-ZEROOS_EPIPE ? 2 : 3);
+}
+
+static int userspace_ipc_close_wakeup_self_test(void) {
+    process_id_t pid=0;
+    thread_id_t tid=0;
+    struct thread *thread=0;
+    uint64_t status=~0ULL;
+    uint8_t thread_created=0;
+    uint8_t blocked_seen=0;
+    int result=-1;
+
+    ipc_close_probe_process=0;
+    ipc_close_probe_signal=0;
+    ipc_close_probe_wait=0;
+    atomic_u64_init(&ipc_close_probe_state,0);
+    if (process_create(0,&pid)!=0)
+        return -1;
+    ipc_close_probe_process=process_lookup(pid);
+    if (!ipc_close_probe_process ||
+        process_set_limits(ipc_close_probe_process,1,1,4)!=0 ||
+        ipc_create(ipc_close_probe_process,&ipc_close_probe_signal,
+                   &ipc_close_probe_wait)!=0 ||
+        thread_create_kernel(ipc_close_probe_process,ipc_close_probe_entry,
+                             ipc_close_probe_process,&tid)!=0)
+        goto fail;
+    thread_created=1;
+    thread=thread_lookup(tid);
+    if (!thread)
+        goto fail;
+
+    for (uint64_t i=0; i<100000ULL; ++i) {
+        uint64_t state=atomic_u64_load(&ipc_close_probe_state);
+        struct task *task=thread->scheduler_task_id ?
+                          task_lookup(thread->scheduler_task_id) : 0;
+        if (state==0 && task && task->state==TASK_BLOCKED) {
+            blocked_seen=1;
+            break;
+        }
+        if (state>=2)
+            break;
+        scheduler_yield();
+    }
+    if (!blocked_seen || atomic_u64_load(&ipc_close_probe_state)!=0 ||
+        ipc_close(ipc_close_probe_process,ipc_close_probe_signal)!=0)
+        goto release_waiter;
+    ipc_close_probe_signal=0;
+    for (uint64_t i=0; i<100000ULL; ++i) {
+        if (atomic_u64_load(&ipc_close_probe_state)>=2)
+            break;
+        scheduler_yield();
+    }
+    if (atomic_u64_load(&ipc_close_probe_state)!=2 ||
+        thread->state!=THREAD_ZOMBIE ||
+        thread_reap(thread,&status)!=0 || status!=0 ||
+        ipc_close_probe_process->state!=PROCESS_ZOMBIE ||
+        vmm_activate_kernel()!=0 ||
+        process_reap(ipc_close_probe_process,&status)!=0 || status!=0 ||
+        process_lookup(pid)!=0 || ipc_debug_validate()!=0) {
+        thread=0;
+        goto fail;
+    }
+    thread=0;
+    thread_created=0;
+    ipc_close_probe_process=0;
+    ipc_close_probe_signal=0;
+    ipc_close_probe_wait=0;
+    return 0;
+
+release_waiter:
+    /* Closing the sender is the wakeup under test; if setup failed, close it
+     * here as well so a receiver cannot survive temporary-process teardown. */
+    if (ipc_close_probe_process && ipc_close_probe_signal) {
+        (void)ipc_close(ipc_close_probe_process,ipc_close_probe_signal);
+        ipc_close_probe_signal=0;
+    }
+    for (uint64_t i=0; i<100000ULL &&
+         atomic_u64_load(&ipc_close_probe_state)<2; ++i)
+        scheduler_yield();
+fail:
+    if (thread_created && thread && thread->state==THREAD_ZOMBIE) {
+        (void)thread_reap(thread,&status);
+        thread=0;
+    }
+    if (ipc_close_probe_process &&
+        ipc_close_probe_process->state==PROCESS_ZOMBIE) {
+        (void)vmm_activate_kernel();
+        (void)process_reap(ipc_close_probe_process,&status);
+    } else if (ipc_close_probe_process &&
+               ipc_close_probe_process->state==PROCESS_NEW) {
+        if (ipc_close_probe_signal)
+            (void)ipc_close(ipc_close_probe_process,ipc_close_probe_signal);
+        if (ipc_close_probe_wait)
+            (void)ipc_close(ipc_close_probe_process,ipc_close_probe_wait);
+        (void)process_abort_new(ipc_close_probe_process);
+    }
+    ipc_close_probe_process=0;
+    ipc_close_probe_signal=0;
+    ipc_close_probe_wait=0;
+    return result;
+}
+
 static int userspace_resource_self_test(struct process *process) {
     struct zeroos_ipc_pair pairs[ZEROOS_IPC_MAX_ENDPOINTS/2U];
     zeroos_shmem_handle_t shmem_handles[ZEROOS_SHMEM_MAX_OBJECTS];
@@ -1252,6 +1366,11 @@ int userspace_start_init(void) {
         goto fail;
     }
     serial_write_public("ZEROOS: blocking event wait/wake path passed.\n");
+    if (userspace_ipc_close_wakeup_self_test()!=0) {
+        serial_write_public("ZEROOS PANIC: blocking IPC close-wakeup self-test failed.\n");
+        goto fail;
+    }
+    serial_write_public("ZEROOS: blocking IPC close-wakeup path passed.\n");
     if (userspace_shmem_self_test(init_process)!=0) {
         serial_write_public("ZEROOS PANIC: shared-memory lifecycle self-test failed.\n");
         goto fail;
