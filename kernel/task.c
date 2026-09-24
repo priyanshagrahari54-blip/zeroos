@@ -1374,65 +1374,6 @@ int task_block_irqsave(uint64_t flags) {
     return task_block_locked(flags);
 }
 
-int task_block_until_irqsave(uint64_t flags, uint64_t deadline) {
-    struct task *previous=current_task;
-    struct task *next;
-
-    if (!previous || previous==&tasks[0] || task_is_idle(previous) ||
-        previous->preempt_count!=0) {
-        task_irq_restore(flags);
-        return -1;
-    }
-
-    spin_lock(&task_lock);
-
-    /* A peer/event may have won the race between waiter publication and this
-     * deadline arm. In that case do not enter the sleep queue. */
-    if (previous->state==TASK_RUNNABLE) {
-        runqueue_remove_locked(previous);
-        previous->state=TASK_RUNNING;
-        previous->scheduler_transition=0;
-        spin_unlock(&task_lock);
-        task_irq_restore(flags);
-        return 0;
-    }
-
-    if (previous->state!=TASK_BLOCKED) {
-        previous->scheduler_transition=0;
-        spin_unlock(&task_lock);
-        task_irq_restore(flags);
-        return -1;
-    }
-
-    if ((long long)(deadline-timer_ticks())<=0) {
-        previous->state=TASK_RUNNING;
-        previous->scheduler_transition=0;
-        spin_unlock(&task_lock);
-        task_irq_restore(flags);
-        return 1;
-    }
-
-    previous->wake_tick=deadline;
-    previous->sleep_armed=1;
-    previous->need_resched=0;
-    sleep_queue_insert_locked(previous);
-    next=find_next_runnable();
-    if (!next) {
-        previous->state=TASK_RUNNING;
-        previous->scheduler_transition=0;
-        sleep_queue_remove_locked(previous);
-        spin_unlock(&task_lock);
-        task_irq_restore(flags);
-        return -1;
-    }
-
-    previous->scheduler_transition=0;
-    dispatch_locked(previous,next,
-                    "ZEROOS PANIC: timed wait invariant failed.\\n");
-    task_irq_restore(flags);
-    return 0;
-}
-
 int task_wake(struct task *task) {
     uint64_t flags;
     if (!task || task==&tasks[0] || task_is_idle(task) ||
