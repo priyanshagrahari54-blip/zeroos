@@ -11,7 +11,7 @@ CFLAGS += $(EXTRA_CFLAGS)
 ASFLAGS := -m64 -ffreestanding -fno-pic -fno-pie -nostdlib
 LDFLAGS := -m elf_x86_64 -T kernel/linker.ld -nostdlib
 
-.PHONY: all clean elf iso run userspace-abi-check userspace-runtime-check userspace-abi-consistency
+.PHONY: all clean elf iso run userspace-abi-check userspace-runtime-check userspace-abi-consistency desktop-check
 
 all: iso
 
@@ -26,6 +26,24 @@ userspace-runtime-check: | $(BUILD)
 
 userspace-abi-consistency:
 	python3 userspace/tests/abi_consistency.py
+
+# Stage 5 desktop/platform core: hosted unit + integration suite. Sources
+# must also compile freestanding (no libc) for the on-target build.
+DESKTOP_DIR := userspace/desktop
+DESKTOP_SRC := $(wildcard $(DESKTOP_DIR)/src/*.c)
+DESKTOP_TEST_SRC := $(wildcard $(DESKTOP_DIR)/tests/*.c)
+DESKTOP_CFLAGS := -std=c11 -Wall -Wextra -Werror -O2 \
+	-Iuserspace/include -I$(DESKTOP_DIR)/include
+
+desktop-check: | $(BUILD)
+	@set -e; for src in $(DESKTOP_SRC); do \
+		$(CC) $(DESKTOP_CFLAGS) -c $$src -o $(BUILD)/$$(basename $$src .c).o; \
+		$(CC) $(DESKTOP_CFLAGS) -ffreestanding -fno-builtin -m64 -c $$src \
+			-o $(BUILD)/fs_$$(basename $$src .c).o; \
+	done
+	$(CC) $(DESKTOP_CFLAGS) -o $(BUILD)/desktop-tests $(DESKTOP_SRC) $(DESKTOP_TEST_SRC)
+	$(BUILD)/desktop-tests
+	@echo "desktop-check: PASS"
 
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -53,6 +71,7 @@ $(BUILD)/interrupts.o: kernel/interrupts.c kernel/interrupts.h kernel/types.h ke
 
 $(BUILD)/syscall.o: kernel/syscall.c kernel/syscall.h kernel/interrupts.h kernel/process.h kernel/thread.h kernel/task.h kernel/timer.h kernel/vmm.h kernel/ipc.h kernel/shmem.h kernel/exec.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
 
 $(BUILD)/ipc.o: kernel/ipc.c kernel/ipc.h kernel/process.h kernel/sync.h kernel/wait.h kernel/task.h kernel/timer.h kernel/syscall.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
