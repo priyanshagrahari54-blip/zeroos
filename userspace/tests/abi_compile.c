@@ -8,8 +8,11 @@ static int abi_compile_probe(void) {
     uint64_t length=0;
     char buffer[8]={0};
     struct zeroos_runtime runtime={0};
+    struct zeroos_display_info display={0};
 
     (void)zeroos_abi_info(&info);
+    (void)zeroos_display_info(&display);
+    (void)display.flags;
     (void)zeroos_runtime_init(&runtime);
     (void)zeroos_getpid();
     (void)zeroos_gettid();

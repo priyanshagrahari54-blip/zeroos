@@ -473,3 +473,12 @@ uint64_t memory_free_pages(void) {
 uint64_t memory_max_physical(void) {
     return ZEROOS_MAX_PHYS_MEM;
 }
+
+void memory_reserve_physical(uint64_t start, uint64_t length) {
+    /* Boot-context helper: reserve_range already clamps to the managed
+     * window and no-ops for addresses at/above ZEROOS_MAX_PHYS_MEM, which
+     * is exactly the typical high PCI framebuffer location. */
+    if (length==0 || start>~0ULL-(length-1ULL))
+        return;
+    reserve_range(start,start+length);
+}
