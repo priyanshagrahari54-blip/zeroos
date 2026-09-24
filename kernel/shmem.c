@@ -263,6 +263,7 @@ int shmem_map(struct process *owner, zeroos_shmem_handle_t handle,
               uint64_t *mapped_out) {
     uint64_t pages[ZEROOS_SHMEM_MAX_PAGES];
     uint32_t page_count;
+    uint32_t mapped_pages=0;
     struct shmem_object *object;
     struct shmem_mapping *mapping=0;
     uint64_t irq_flags;
@@ -324,19 +325,17 @@ int shmem_map(struct process *owner, zeroos_shmem_handle_t handle,
                                            virtual_address+i*VMM_PAGE_SIZE,
                                            pages[i],map_flags)!=0)
             goto rollback;
+        ++mapped_pages;
     }
     *mapped_out=virtual_address;
     result=0;
     goto operation_done;
 
 rollback:
-    while (page_count) {
-        --page_count;
-        if (vmm_space_translate(&owner->address_space,
-                                virtual_address+page_count*VMM_PAGE_SIZE)==
-            pages[page_count])
-            (void)process_address_space_unmap_page(
-                owner,virtual_address+page_count*VMM_PAGE_SIZE);
+    while (mapped_pages) {
+        --mapped_pages;
+        (void)process_address_space_unmap_page(
+            owner,virtual_address+mapped_pages*VMM_PAGE_SIZE);
     }
 
 operation_done:
