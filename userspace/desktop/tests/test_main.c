@@ -16,6 +16,7 @@ void zd_test_notify_suite(void);
 void zd_test_a11y_suite(void);
 void zd_test_i18n_suite(void);
 void zd_test_watchdog_suite(void);
+void zd_test_input_suite(void);
 void zd_test_integration_suite(void);
 
 int main(void) {
@@ -30,6 +31,7 @@ int main(void) {
     zd_test_a11y_suite();
     zd_test_i18n_suite();
     zd_test_watchdog_suite();
+    zd_test_input_suite();
     zd_test_integration_suite();
     printf("checks=%d failures=%d\n", zd_test_checks, zd_test_failures);
     if (zd_test_failures) {

@@ -16,10 +16,11 @@ The detailed product plan remains in ZEROOS_MASTER_ROADMAP.md.
 9. Networking: packet buffers, NIC abstraction, Ethernet/ARP/IP/UDP/TCP foundations, sockets.
 10. Graphics/UI: framebuffer, compositor, windows, input routing, terminal, settings, file manager.
     Status: framebuffer display primitive (kernel) + `DISPLAY_PRESENT`
-    pixel-mapping syscall + desktop platform core
-    (compositor/window/search/settings/notify/a11y/i18n/watchdog modules)
-    landed in Stage 5 batch 1–2; display service, input routing drivers,
-    shell processes and app UI remain.
+    pixel-mapping syscall + PS/2 keyboard input stack (IRQ1, decoder,
+    INPUT_POLL/WAIT) + desktop platform core
+    (compositor/window/input-router/search/settings/notify/a11y/i18n/
+    watchdog modules) landed in Stage 5 batch 1–2; display service,
+    pointer/mouse input, shell processes and app UI remain.
 11. System services: package/update/recovery/diagnostics/observability/power management.
 12. Study Center and app framework.
 13. Forge AI bridge: sandboxed local kernel/user API and external-service boundary.

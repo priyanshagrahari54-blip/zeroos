@@ -66,6 +66,8 @@ enum zeroos_syscall_id {
     ZEROOS_SYS_CHOWN = 50,
     ZEROOS_SYS_DISPLAY_INFO = 51,
     ZEROOS_SYS_DISPLAY_PRESENT = 52,
+    ZEROOS_SYS_INPUT_POLL = 53,
+    ZEROOS_SYS_INPUT_WAIT = 54,
     ZEROOS_SYS_MAX
 };
 
@@ -146,6 +148,7 @@ enum zeroos_error {
 #define ZEROOS_ABI_FEATURE_SHMEM   (1ULL << 6)
 #define ZEROOS_ABI_FEATURE_DISPLAY (1ULL << 8)
 #define ZEROOS_ABI_FEATURE_PRESENT (1ULL << 9)
+#define ZEROOS_ABI_FEATURE_INPUT (1ULL << 10)
 
 /* Display geometry (ABI): must match kernel/fb.h and kernel/syscall.h. */
 #define ZEROOS_DISPLAY_FORMAT_INDEXED     0U
@@ -193,6 +196,69 @@ struct zeroos_display_info {
 #define ZEROOS_S_IFMT 0xf000U
 #define ZEROOS_S_IFREG 0x8000U
 #define ZEROOS_S_IFDIR 0x4000U
+
+/* Input event kinds; values mirror kernel/input_core.h enum input_kind
+ * (gated by abi_consistency.py). */
+enum zeroos_input_kind {
+    ZEROOS_INPUT_KIND_KEY = 1,
+    ZEROOS_INPUT_KIND_POINTER = 2,
+    ZEROOS_INPUT_KIND_TOUCH = 3,
+    ZEROOS_INPUT_KIND_DEVICE_GONE = 4
+};
+
+/* Key codes: printable keys carry their ASCII value; non-printable keys
+ * live above 0xFF. Values are gate-checked between headers. */
+enum zeroos_keycode {
+    ZEROOS_KEY_NONE = 0,
+    ZEROOS_KEY_ESCAPE = 256,
+    ZEROOS_KEY_ENTER = 257,
+    ZEROOS_KEY_BACKSPACE = 258,
+    ZEROOS_KEY_TAB = 259,
+    ZEROOS_KEY_UP = 272,
+    ZEROOS_KEY_DOWN = 273,
+    ZEROOS_KEY_LEFT = 274,
+    ZEROOS_KEY_RIGHT = 275,
+    ZEROOS_KEY_HOME = 276,
+    ZEROOS_KEY_END = 277,
+    ZEROOS_KEY_PAGE_UP = 278,
+    ZEROOS_KEY_PAGE_DOWN = 279,
+    ZEROOS_KEY_INSERT = 280,
+    ZEROOS_KEY_DELETE = 281,
+    ZEROOS_KEY_F1 = 288,
+    ZEROOS_KEY_F2 = 289,
+    ZEROOS_KEY_F3 = 290,
+    ZEROOS_KEY_F4 = 291,
+    ZEROOS_KEY_F5 = 292,
+    ZEROOS_KEY_F6 = 293,
+    ZEROOS_KEY_F7 = 294,
+    ZEROOS_KEY_F8 = 295,
+    ZEROOS_KEY_F9 = 296,
+    ZEROOS_KEY_F10 = 297,
+    ZEROOS_KEY_F11 = 298,
+    ZEROOS_KEY_F12 = 299,
+    ZEROOS_KEY_SHIFT_L = 304,
+    ZEROOS_KEY_SHIFT_R = 305,
+    ZEROOS_KEY_CTRL_L = 306,
+    ZEROOS_KEY_CTRL_R = 307,
+    ZEROOS_KEY_ALT_L = 308,
+    ZEROOS_KEY_ALT_R = 309,
+    ZEROOS_KEY_SUPER_L = 310,
+    ZEROOS_KEY_SUPER_R = 311,
+    ZEROOS_KEY_CAPS_LOCK = 312
+};
+
+#define ZEROOS_INPUT_FLAG_DOWN   (1U << 0)
+#define ZEROOS_INPUT_FLAG_REPEAT (1U << 1)
+
+/* Input event (ABI copy of kernel input_core.h struct input_event;
+ * abi_consistency.py gates the struct bodies against each other). */
+struct zeroos_input_event {
+    uint64_t timestamp;
+    uint32_t device_id;
+    int32_t x, y, value;
+    uint16_t code;
+    uint8_t kind, flags;
+};
 
 typedef uint64_t zeroos_handle_t;
 typedef zeroos_handle_t zeroos_ipc_handle_t;
@@ -435,6 +501,21 @@ static inline int64_t zeroos_display_present(uint32_t x, uint32_t y,
     return zeroos_syscall_result(zeroos_syscall6(
         ZEROOS_SYS_DISPLAY_PRESENT,(uint64_t)x,(uint64_t)y,(uint64_t)width,
         (uint64_t)height,(uint64_t)stride,(uint64_t)(uintptr_t)pixels));
+}
+
+/* Input: nonblocking drain (0 with event, -EAGAIN when empty) and
+ * blocking wait. timeout is in scheduler ticks; 0 waits forever.
+ * flags accepts ZEROOS_WAIT_FLAG_NONBLOCK only. */
+static inline int64_t zeroos_input_poll(struct zeroos_input_event *event) {
+    return zeroos_syscall_result(zeroos_syscall6(
+        ZEROOS_SYS_INPUT_POLL,(uint64_t)(uintptr_t)event,0,0,0,0,0));
+}
+static inline int64_t zeroos_input_wait(struct zeroos_input_event *event,
+                                        uint64_t flags,
+                                        uint64_t timeout_ticks) {
+    return zeroos_syscall_result(zeroos_syscall6(
+        ZEROOS_SYS_INPUT_WAIT,(uint64_t)(uintptr_t)event,flags,
+        timeout_ticks,0,0,0));
 }
 
 #endif

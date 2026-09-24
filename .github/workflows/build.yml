@@ -67,6 +67,8 @@ jobs:
             grep -Eq 'ZEROOS: (LAPIC/IOAPIC timer routing activated|legacy PIC timer routing retained)\.' build/serial.log
           grep -Eq 'ZEROOS: display primitive (ready|degraded \(serial-only\))\.' build/serial.log
           grep -q "ZEROOS: display present contract verified." build/serial.log
+          grep -Eq 'ZEROOS: (PS/2 keyboard input stack ready|input stack degraded \([^)]*\))\.' build/serial.log
+          grep -q "ZEROOS: input blocking wait/wake path passed." build/serial.log
             grep -q "ZEROOS: user fault containment policy armed." build/serial.log
             grep -q "ZEROOS: ACPI routing discovery:" build/serial.log
             grep -q "ZEROOS: SMP startup self-test passed." build/serial.log

@@ -75,7 +75,10 @@ Status: desktop platform core implemented and unit-tested in
 `userspace/desktop/` (retained scene, per-owner damage, occlusion
 subtraction, frame pacing, LRU surface cache, software raster fallback,
 buffer-generation rejection, crash drop path) — see `make desktop-check`.
-Wire-up to a live scanout surface depends on the display-service batch.
+Event-level input routing (pointer focus, click-to-focus/raise, implicit
+grab, overlay priority) is implemented and tested in
+`userspace/desktop/src/input.c`. Wire-up to a live scanout surface depends
+on the display-service batch.
 ### 5.3 Shell
 ZERO Bar, launcher, notifications, workspaces.
 Status: shell platform services (lifecycle, workspaces, search, settings,

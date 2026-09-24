@@ -10,6 +10,12 @@ static inline void outb(uint16_t port, uint8_t value) {
     __asm__ volatile ("outb %0, %1" : : "a"(value), "Nd"(port));
 }
 
+static inline uint8_t inb(uint16_t port) {
+    uint8_t value;
+    __asm__ volatile ("inb %1, %0" : "=a"(value) : "Nd"(port));
+    return value;
+}
+
 static inline void io_wait(void) {
     __asm__ volatile ("outb %%al, $0x80" : : "a"(0));
 }
@@ -24,6 +30,20 @@ void pic_send_eoi(uint8_t irq) {
         outb(PIC2_COMMAND, PIC_EOI);
     }
     outb(PIC1_COMMAND, PIC_EOI);
+}
+
+void pic_unmask_irq(uint8_t irq) {
+    uint16_t port;
+    uint8_t bit;
+    uint8_t mask;
+
+    if (irq >= 16 || irq == 2)
+        return;
+    port = irq < 8 ? PIC1_DATA : PIC2_DATA;
+    bit = irq < 8 ? irq : (uint8_t)(irq - 8U);
+    mask = inb(port);
+    mask = (uint8_t)(mask & (uint8_t)~(1U << bit));
+    outb(port, mask);
 }
 
 void pic_init(void) {

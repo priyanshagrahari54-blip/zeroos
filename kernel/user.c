@@ -74,6 +74,9 @@ static const char init_message[]=
  * segment below the status word. */
 #define INIT_ELF_PRESENT_OFFSET 0x3800ULL
 #define INIT_ELF_DISPLAY_INFO_OFFSET 0x3840ULL
+/* Input probe event record (struct zeroos_input_event) lands after the
+ * display-info record in the same data page. */
+#define INIT_ELF_INPUT_EVENT_OFFSET 0x3870ULL
 #define INIT_ELF_DATA_FILE_END (INIT_ELF_STATUS_OFFSET+sizeof(uint64_t))
 #define INIT_ELF_DATA_MEMORY_SIZE ((INIT_ELF_DATA_FILE_END-INIT_ELF_DATA_OFFSET+\
                                     VMM_PAGE_SIZE-1ULL)&~(VMM_PAGE_SIZE-1ULL))
@@ -418,6 +421,81 @@ static uint64_t build_init_code(uint8_t *code) {
             code[offset++]=0x0f; code[offset++]=0x85;
             put_u32(&code[offset],0); offset+=4;
         }
+    }
+
+    /*
+     * Stage 5A input probes. The queue is certified empty before Ring-3
+     * starts (kernel probe consumed, one-shot drain), so POLL and the
+     * nonblocking wait must observe -EAGAIN; the timed wait must observe
+     * -ETIMEDOUT. All three also accept 0-with-event so a keystroke on
+     * real hardware during boot never fails certification — both outcomes
+     * are valid contract results. Argument faults must be exact.
+     */
+    {
+        uint64_t input_event_ptr=ZEROOS_USER_DATA_BASE+
+            (INIT_ELF_INPUT_EVENT_OFFSET-INIT_ELF_DATA_OFFSET);
+
+        /* INPUT_POLL: expect -EAGAIN (-11) or 0. */
+        code[offset++]=0xb8;
+        put_u32(&code[offset],ZEROOS_SYS_INPUT_POLL); offset+=4;
+        code[offset++]=0x48; code[offset++]=0xbf;
+        put_u64(&code[offset],input_event_ptr); offset+=8;
+        code[offset++]=0xcd; code[offset++]=0x80;
+        /* cmp rax,-11; je accept; test rax,rax; jnz fail. */
+        code[offset++]=0x48; code[offset++]=0x83;
+        code[offset++]=0xf8; code[offset++]=0xf5;
+        code[offset++]=0x74; code[offset++]=0x09;
+        code[offset++]=0x48; code[offset++]=0x85;
+        code[offset++]=0xc0;
+        failure_jumps[failure_jump_count++]=offset;
+        code[offset++]=0x0f; code[offset++]=0x85;
+        put_u32(&code[offset],0); offset+=4;
+
+        /* INPUT_POLL with an unmapped pointer: exact -EFAULT (-14). */
+        code[offset++]=0xb8;
+        put_u32(&code[offset],ZEROOS_SYS_INPUT_POLL); offset+=4;
+        code[offset++]=0xbf; put_u32(&code[offset],1); offset+=4;
+        code[offset++]=0xcd; code[offset++]=0x80;
+        code[offset++]=0x48; code[offset++]=0x83;
+        code[offset++]=0xf8; code[offset++]=0xf2;
+        failure_jumps[failure_jump_count++]=offset;
+        code[offset++]=0x0f; code[offset++]=0x85;
+        put_u32(&code[offset],0); offset+=4;
+
+        /* INPUT_WAIT nonblocking, empty: -EAGAIN or 0. */
+        code[offset++]=0xb8;
+        put_u32(&code[offset],ZEROOS_SYS_INPUT_WAIT); offset+=4;
+        code[offset++]=0x48; code[offset++]=0xbf;
+        put_u64(&code[offset],input_event_ptr); offset+=8;
+        code[offset++]=0xbe;
+        put_u32(&code[offset],ZEROOS_WAIT_FLAG_NONBLOCK); offset+=4;
+        code[offset++]=0x31; code[offset++]=0xd2;
+        code[offset++]=0xcd; code[offset++]=0x80;
+        code[offset++]=0x48; code[offset++]=0x83;
+        code[offset++]=0xf8; code[offset++]=0xf5;
+        code[offset++]=0x74; code[offset++]=0x09;
+        code[offset++]=0x48; code[offset++]=0x85;
+        code[offset++]=0xc0;
+        failure_jumps[failure_jump_count++]=offset;
+        code[offset++]=0x0f; code[offset++]=0x85;
+        put_u32(&code[offset],0); offset+=4;
+
+        /* INPUT_WAIT timed (5 ticks): -ETIMEDOUT (-110) or 0. */
+        code[offset++]=0xb8;
+        put_u32(&code[offset],ZEROOS_SYS_INPUT_WAIT); offset+=4;
+        code[offset++]=0x48; code[offset++]=0xbf;
+        put_u64(&code[offset],input_event_ptr); offset+=8;
+        code[offset++]=0x31; code[offset++]=0xf6;
+        code[offset++]=0xba; put_u32(&code[offset],5); offset+=4;
+        code[offset++]=0xcd; code[offset++]=0x80;
+        code[offset++]=0x48; code[offset++]=0x83;
+        code[offset++]=0xf8; code[offset++]=0x92;
+        code[offset++]=0x74; code[offset++]=0x09;
+        code[offset++]=0x48; code[offset++]=0x85;
+        code[offset++]=0xc0;
+        failure_jumps[failure_jump_count++]=offset;
+        code[offset++]=0x0f; code[offset++]=0x85;
+        put_u32(&code[offset],0); offset+=4;
     }
 
     /* Negative ABI probes run from Ring 3 and must fail closed without

@@ -18,6 +18,7 @@
 #include <zeroos/desktop/lifecycle.h>
 #include <zeroos/desktop/governor.h>
 #include <zeroos/desktop/window.h>
+#include <zeroos/desktop/input.h>
 #include <zeroos/desktop/compositor.h>
 #include <zeroos/desktop/search.h>
 #include <zeroos/desktop/settings.h>

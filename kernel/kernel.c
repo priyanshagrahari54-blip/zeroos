@@ -18,6 +18,7 @@
 #include "shmem.h"
 #include "storage/storage.h"
 #include "fb.h"
+#include "input.h"
 
 #define COM1 0x3F8
 #define VMM_SELF_TEST_VA 0x00007f0000000000ULL
@@ -288,6 +289,7 @@ static struct atomic_u64 task_probe_counter;
 static struct wait_queue wait_probe_queue;
 static struct atomic_u64 wait_probe_state;
 static struct atomic_u64 sleep_probe_state;
+static struct atomic_u64 input_probe_state;
 
 /* Advanced scheduler certification state. */
 static struct atomic_u64 preempt_probe_a;
@@ -775,11 +777,48 @@ static void scheduler_probe_sleeper(void *argument) {
     serial_write_public("ZEROOS: timed sleep wakeup self-test passed.\n");
 }
 
+/* Input certification: a waiter blocks on the real input_wait path while
+ * the waker injects through the real push/wake path. */
+static void input_probe_waiter(void *argument) {
+    struct zeroos_input_event event;
+    (void)argument;
+    if (input_wait(&event,0,0)!=0)
+        kernel_panic("input blocking wait failed");
+    if (event.kind!=ZEROOS_INPUT_KIND_KEY || event.code!='A' ||
+        !(event.flags&ZEROOS_INPUT_FLAG_DOWN) || event.value!=1)
+        kernel_panic("input wait event mismatch");
+    atomic_u64_store(&input_probe_state,2);
+}
+
+static void input_probe_waker(void *argument) {
+    uint64_t deadline;
+    (void)argument;
+
+    deadline=timer_ticks()+100;
+    while (input_waiter_count()==0 && (long long)(deadline-timer_ticks())>0)
+        scheduler_yield();
+    if (input_waiter_count()==0)
+        kernel_panic("input waiter publication timed out");
+
+    atomic_u64_store(&input_probe_state,1);
+    if (input_inject(1,'A',1)!=0)
+        kernel_panic("input probe injection failed");
+
+    deadline=timer_ticks()+100;
+    while (atomic_u64_load(&input_probe_state)!=2 &&
+           (long long)(deadline-timer_ticks())>0)
+        scheduler_yield();
+    if (atomic_u64_load(&input_probe_state)!=2)
+        kernel_panic("input wait/wake completion timed out");
+}
+
 static void scheduler_probe_monitor(void *argument) {
     (void)argument;
     uint64_t last_report=0;
     int context_reported=0;
     int wait_reported=0;
+    int input_reported=0;
+    int input_drained=0;
     int sleep_reported=0;
     int preempt_reported=0;
     int lifecycle_reported=0;
@@ -816,6 +855,11 @@ static void scheduler_probe_monitor(void *argument) {
         if (!wait_reported && atomic_u64_load(&wait_probe_state)==2) {
             wait_reported=1;
             serial_write_public("ZEROOS: wait queue integration verified.\n");
+        }
+
+        if (!input_reported && atomic_u64_load(&input_probe_state)==2) {
+            input_reported=1;
+            serial_write_public("ZEROOS: input blocking wait/wake path passed.\n");
         }
 
         if (!sleep_reported && atomic_u64_load(&sleep_probe_state)==2) {
@@ -917,8 +961,17 @@ static void scheduler_probe_monitor(void *argument) {
          * by the BSP monitor through the ordinary process/thread lifetime
          * path rather than by a test-only shortcut. */
         if (hotplug_reported) {
-            if (userspace_start_init()!=0 || userspace_service_step()!=0)
-                kernel_panic("userspace init lifecycle failed");
+            /* Ring-3 input probes require the certified-empty queue: wait
+             * for the kernel input probe, then drain once so a boot-time
+             * keystroke cannot fail the deterministic empty-queue asserts. */
+            if (atomic_u64_load(&input_probe_state)==2) {
+                if (!input_drained) {
+                    (void)input_drain();
+                    input_drained=1;
+                }
+                if (userspace_start_init()!=0 || userspace_service_step()!=0)
+                    kernel_panic("userspace init lifecycle failed");
+            }
             if (!userspace_reported && userspace_debug_validate()==1) {
                 userspace_reported=1;
                 serial_write_public("ZEROOS: Ring-3 transition, syscall ABI, and init recovery passed.\n");
@@ -951,6 +1004,7 @@ static void scheduler_probe_monitor(void *argument) {
              (smp_online_count()>1 && !per_cpu_reported) ||
              atomic_u64_load(&sleep_probe_state)!=2 ||
              atomic_u64_load(&wait_probe_state)!=2 ||
+             atomic_u64_load(&input_probe_state)!=2 ||
              atomic_u64_load(&process_thread_probe_phase)!=3)) {
             atomic_u64_fetch_add(&scheduler_stress_failures,1);
             kernel_panic("scheduler stress certification timed out");
@@ -965,10 +1019,12 @@ static void scheduler_self_test(void) {
     uint64_t worker_id, monitor_id, waiter_id, waker_id, sleeper_id;
     uint64_t preempt_a_id, preempt_b_id, lifecycle_id;
     uint64_t fairness_a_id, fairness_b_id;
+    uint64_t input_waiter_id, input_waker_id;
 
     atomic_u64_init(&task_probe_counter,0);
     atomic_u64_init(&wait_probe_state,0);
     atomic_u64_init(&sleep_probe_state,0);
+    atomic_u64_init(&input_probe_state,0);
     atomic_u64_init(&preempt_probe_a,0);
     atomic_u64_init(&preempt_probe_b,0);
     atomic_u64_init(&preempt_probe_done,0);
@@ -1027,6 +1083,10 @@ static void scheduler_self_test(void) {
         kernel_panic("fairness peer-A creation failed");
     if (task_create(scheduler_probe_fairness_b,0,&fairness_b_id)!=0)
         kernel_panic("fairness peer-B creation failed");
+    if (task_create(input_probe_waiter,0,&input_waiter_id)!=0)
+        kernel_panic("input waiter task creation failed");
+    if (task_create(input_probe_waker,0,&input_waker_id)!=0)
+        kernel_panic("input waker task creation failed");
 
     serial_write_public("ZEROOS: kernel tasks created: ");
     serial_write_u64(task_count());
@@ -1168,6 +1228,10 @@ void kernel_main(uint64_t multiboot_info, uint64_t multiboot_magic) {
     serial_write_u64(timer_wallclock_unix_seconds());
     serial_write_public(".\n");
     serial_write_public("ZEROOS: IRQ ownership layer initialized.\n");
+
+    /* Input stack: PS/2 controller, IRQ1 route and event queue. Degrades
+     * to a serial-reported state without failing the boot (fb contract). */
+    (void)input_init();
 
     if (smp_init()!=0)
         kernel_panic("SMP startup boundary failed its internal contract");

@@ -12,6 +12,7 @@
 #include "storage/fsyscall.h"
 #include "fb.h"
 #include "display_core.h"
+#include "input.h"
 
 extern void serial_write_public(const char *text);
 
@@ -195,7 +196,8 @@ void syscall_dispatch(struct interrupt_frame *frame) {
                       ZEROOS_ABI_FEATURE_SHMEM |
                       ZEROOS_ABI_FEATURE_FILES |
                       ZEROOS_ABI_FEATURE_DISPLAY |
-                      ZEROOS_ABI_FEATURE_PRESENT,
+                      ZEROOS_ABI_FEATURE_PRESENT |
+                      ZEROOS_ABI_FEATURE_INPUT,
             .max_transfer=ZEROOS_SYSCALL_MAX_TRANSFER
         };
         if (frame->rdi==0 || frame->rsi<sizeof(info) ||
@@ -619,6 +621,38 @@ void syscall_dispatch(struct interrupt_frame *frame) {
             frame->rax=0;
         break;
     }
+    case ZEROOS_SYS_INPUT_POLL: {
+        struct zeroos_input_event event;
+        int result;
+        if (frame->rdi==0 ||
+            !process_address_space_is_user_range(process,frame->rdi,
+                                                 sizeof(event),1)) {
+            frame->rax=syscall_error(ZEROOS_EFAULT);
+            break;
+        }
+        result=input_poll(&event);
+        if (result==0 && copy_to_user(frame->rdi,&event,sizeof(event))!=0)
+            frame->rax=syscall_error(ZEROOS_EFAULT);
+        else
+            frame->rax=syscall_result(result);
+        break;
+    }
+    case ZEROOS_SYS_INPUT_WAIT: {
+        struct zeroos_input_event event;
+        int result;
+        if (frame->rdi==0 ||
+            !process_address_space_is_user_range(process,frame->rdi,
+                                                 sizeof(event),1)) {
+            frame->rax=syscall_error(ZEROOS_EFAULT);
+            break;
+        }
+        result=input_wait(&event,frame->rsi,frame->rdx);
+        if (result==0 && copy_to_user(frame->rdi,&event,sizeof(event))!=0)
+            frame->rax=syscall_error(ZEROOS_EFAULT);
+        else
+            frame->rax=syscall_result(result);
+        break;
+    }
     default:
         if (frame->rax>=ZEROOS_SYS_OPEN && frame->rax<=ZEROOS_SYS_CHOWN) {
             fsyscall_dispatch(frame,process);
@@ -645,7 +679,9 @@ int syscall_debug_validate(void) {
         ZEROOS_SYS_SHM_CLOSE+1U!=ZEROOS_SYS_OPEN ||
         ZEROOS_SYS_CHOWN+1U!=ZEROOS_SYS_DISPLAY_INFO ||
         ZEROOS_SYS_DISPLAY_INFO+1U!=ZEROOS_SYS_DISPLAY_PRESENT ||
-        ZEROOS_SYS_DISPLAY_PRESENT+1U!=ZEROOS_SYS_MAX)
+        ZEROOS_SYS_DISPLAY_PRESENT+1U!=ZEROOS_SYS_INPUT_POLL ||
+        ZEROOS_SYS_INPUT_POLL+1U!=ZEROOS_SYS_INPUT_WAIT ||
+        ZEROOS_SYS_INPUT_WAIT+1U!=ZEROOS_SYS_MAX)
         return -1;
     return 0;
 }

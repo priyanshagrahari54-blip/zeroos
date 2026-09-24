@@ -32,6 +32,9 @@ struct apic_info {
 int apic_init(uint64_t multiboot_info);
 /* Activate the validated LAPIC/IOAPIC topology for the PIT timer. */
 int apic_activate_timer(void);
+/* Route legacy IRQ (0..15) to vector 32+irq and unmask it on the IOAPIC
+ * path; -1 when that path cannot serve it (PIC fallback). */
+int apic_route_legacy_irq(uint8_t irq);
 const struct apic_info *apic_info(void);
 int apic_available(void);
 enum irq_controller_kind apic_controller(void);

@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[2]
 PUBLIC = (ROOT / "userspace/include/zeroos/syscall.h").read_text()
 KERNEL = (ROOT / "kernel/syscall.h").read_text()
 IPC = (ROOT / "kernel/ipc.h").read_text()
+INPUT_CORE = (ROOT / "kernel/input_core.h").read_text()
 
 
 def enum_values(text: str, name: str) -> dict[str, int]:
@@ -53,6 +54,8 @@ for name in (
     "ZEROOS_SYSCALL_VECTOR",
     "ZEROOS_SYSCALL_ABI_VERSION",
     "ZEROOS_SYSCALL_MAX_TRANSFER",
+    "ZEROOS_INPUT_FLAG_DOWN",
+    "ZEROOS_INPUT_FLAG_REPEAT",
 ):
     if macro(PUBLIC, name) != macro(KERNEL, name):
         raise SystemExit(f"macro drift for {name}")
@@ -76,6 +79,47 @@ for name in FILE_MACROS:
 
 
 # ABI feature bits must stay in lockstep and must be distinct.
+
+# Keycode and input-kind enums must match across headers.
+public_keys = enum_values(PUBLIC, "zeroos_keycode")
+kernel_keys = enum_values(KERNEL, "zeroos_keycode")
+if public_keys != kernel_keys:
+    raise SystemExit("keycode enum drift between public and kernel headers")
+
+public_kinds = enum_values(PUBLIC, "zeroos_input_kind")
+kernel_kinds = enum_values(KERNEL, "zeroos_input_kind")
+if public_kinds != kernel_kinds:
+    raise SystemExit("input-kind enum drift between public and kernel headers")
+
+# enum input_kind in input_core.h uses kernel-local names; its VALUES are
+# the ABI contract behind struct zeroos_input_event.kind.
+def raw_enum_values(text: str, name: str) -> list[int]:
+    block = re.search(
+        rf"enum\s+{re.escape(name)}\s*\{{(?P<body>.*?)\}}\s*;",
+        text,
+        re.DOTALL,
+    )
+    if not block:
+        raise SystemExit(f"missing enum {name}")
+    values: list[int] = []
+    next_value = 0
+    for raw in block.group("body").split(","):
+        item = raw.strip()
+        if not item:
+            continue
+        match = re.fullmatch(r"([A-Z0-9_]+)(?:\s*=\s*(\d+))?", item)
+        if not match:
+            raise SystemExit(f"unparseable {name} item: {item!r}")
+        if match.group(2) is not None:
+            next_value = int(match.group(2))
+        values.append(next_value)
+        next_value += 1
+    return values
+
+
+if list(public_kinds.values()) != raw_enum_values(INPUT_CORE, "input_kind"):
+    raise SystemExit("zeroos_input_kind values drift vs kernel/input_core.h")
+
 def feature_bits(text: str, source: str) -> dict[str, str]:
     bits = dict(
         re.findall(
@@ -94,8 +138,8 @@ def feature_bits(text: str, source: str) -> dict[str, str]:
 if feature_bits(PUBLIC, "public") != feature_bits(KERNEL, "kernel"):
     raise SystemExit("ABI feature bit drift between public and kernel headers")
 
-
-# Shared structures must match byte-for-byte between headers.
+# Shared structures must match byte-for-byte between headers. Comma
+# spacing is normalized so formatting differences cannot hide drift.
 def struct_body(text: str, name: str) -> str:
     block = re.search(
         rf"struct\s+{re.escape(name)}\s*\{{(?P<body>.*?)\}}\s*;",
@@ -104,11 +148,20 @@ def struct_body(text: str, name: str) -> str:
     )
     if not block:
         raise SystemExit(f"missing struct {name}")
-    return " ".join(block.group("body").split())
+    body = " ".join(block.group("body").split())
+    return re.sub(r",\s*", ",", body)
 
 
 for name in ("zeroos_stat", "zeroos_statfs", "zeroos_dirent", "zeroos_display_info"):
     if struct_body(PUBLIC, name) != struct_body(KERNEL, name):
         raise SystemExit(f"struct layout drift for {name}")
+
+# Input event must match across the public ABI, the kernel syscall header
+# and the kernel input queue implementation.
+public_input_event = struct_body(PUBLIC, "zeroos_input_event")
+if struct_body(KERNEL, "zeroos_input_event") != public_input_event:
+    raise SystemExit("struct zeroos_input_event drift vs kernel/syscall.h")
+if struct_body(INPUT_CORE, "input_event") != public_input_event:
+    raise SystemExit("struct zeroos_input_event drift vs kernel/input_core.h")
 
 print("ZEROOS public/kernel ABI consistency passed.")
