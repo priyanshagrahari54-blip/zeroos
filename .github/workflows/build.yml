@@ -93,6 +93,10 @@ jobs:
             grep -q "ZEROOS: ELF loader, W^X mapping, and capability IPC gates initialized." build/serial.log
             grep -q "ZEROOS: userspace init process published." build/serial.log
             grep -q "ZEROOS: capability IPC queue/backpressure self-test passed." build/serial.log
+            grep -q "ZEROOS: service manager launched isolated IPC service attempt 1." build/serial.log
+            grep -q "ZEROOS: service manager restarted failed service after IPC delivery." build/serial.log
+            grep -q "ZEROOS: service manager launched isolated IPC service attempt 2." build/serial.log
+            grep -q "ZEROOS: isolated service IPC/restart recovery passed." build/serial.log
             grep -q "ZEROOS: userspace init syscall path passed." build/serial.log
             grep -q "ZEROOS: init userspace process reaped cleanly." build/serial.log
             grep -q "ZEROOS: Ring-3 transition, syscall ABI, and init recovery passed." build/serial.log
@@ -130,6 +134,8 @@ jobs:
           grep -q "ZEROOS: scheduler fairness and latency stress passed." build/serial-smp4.log
           grep -q "ZEROOS: per-CPU scheduler ownership verified." build/serial-smp4.log
           grep -q "ZEROOS: CPU hot-offline queue evacuation and parking passed." build/serial-smp4.log
+          grep -q "ZEROOS: service manager restarted failed service after IPC delivery." build/serial-smp4.log
+          grep -q "ZEROOS: isolated service IPC/restart recovery passed." build/serial-smp4.log
           grep -q "ZEROOS: userspace init syscall path passed." build/serial-smp4.log
           grep -q "ZEROOS: Ring-3 transition, syscall ABI, and init recovery passed." build/serial-smp4.log
           if grep -q "ZEROOS PANIC:" build/serial-smp4.log; then
