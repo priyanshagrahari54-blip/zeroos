@@ -810,8 +810,12 @@ static int runqueue_evacuate_locked(uint32_t offline_cpu) {
     }
 }
 
-static struct task *runqueue_pick_locked(uint32_t cpu) {
-    struct task_runqueue *queue=&runqueues[cpu];
+/* Select from queue_cpu for execution on execution_cpu. The distinction is
+ * required for work stealing: a task queued on CPU 0 may only be stolen by a
+ * CPU on which its affinity also permits execution. */
+static struct task *runqueue_pick_locked(uint32_t queue_cpu,
+                                          uint32_t execution_cpu) {
+    struct task_runqueue *queue=&runqueues[queue_cpu];
     struct task *selected=0;
     uint8_t selected_priority=0;
 
@@ -819,7 +823,7 @@ static struct task *runqueue_pick_locked(uint32_t cpu) {
     for (struct task *candidate=queue->head; candidate;
          candidate=candidate->run_next) {
         if (candidate->state!=TASK_RUNNABLE ||
-            !task_can_run_on_cpu(candidate,cpu))
+            !task_can_run_on_cpu(candidate,execution_cpu))
             continue;
         uint8_t priority=effective_priority(candidate);
         if (!selected || priority>selected_priority) {
@@ -835,7 +839,7 @@ static struct task *runqueue_pick_locked(uint32_t cpu) {
  * task from another queue while task_lock serializes the ownership transfer. */
 static struct task *find_next_runnable(void) {
     uint32_t cpu=task_cpu_index();
-    struct task *selected=runqueue_pick_locked(cpu);
+    struct task *selected=runqueue_pick_locked(cpu,cpu);
 
     if (!selected) {
         for (uint32_t other=0; other<ZEROOS_MAX_CPUS; ++other) {
@@ -843,7 +847,7 @@ static struct task *find_next_runnable(void) {
                 !__atomic_load_n(&cpu_local_for_id(other)->online,
                                  __ATOMIC_ACQUIRE))
                 continue;
-            selected=runqueue_pick_locked(other);
+            selected=runqueue_pick_locked(other,cpu);
             if (selected)
                 break;
         }
