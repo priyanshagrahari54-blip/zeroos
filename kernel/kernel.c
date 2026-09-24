@@ -16,6 +16,29 @@
 #include "user.h"
 #include "ipc.h"
 #include "shmem.h"
+#include "block.h"
+#include "gpt.h"
+#include "vfs.h"
+#include "page_cache.h"
+#include "pci.h"
+#include "dma.h"
+#include "display.h"
+#include "net.h"
+#include "usb.h"
+#include "input.h"
+#include "audio.h"
+#include "power.h"
+#include "ahci.h"
+#include "nvme.h"
+#include "fs.h"
+#include "graphics.h"
+#include "compositor.h"
+#include "window.h"
+#include "desktop.h"
+#include "shell.h"
+#include "search.h"
+#include "settings.h"
+#include "docs.h"
 
 #define COM1 0x3F8
 #define VMM_SELF_TEST_VA 0x00007f0000000000ULL
@@ -991,6 +1014,19 @@ static void scheduler_self_test(void) {
         shmem_system_init()!=0 || shmem_debug_validate()!=0)
         kernel_panic("IPC/shared-memory capability core initialization failed");
     serial_write_public("ZEROOS: bounded capability IPC core initialized.\n");
+    if (block_system_init()!=0 || vfs_system_init()!=0 ||
+        page_cache_system_init()!=0 || pci_system_init()!=0 || dma_system_init()!=0 ||
+        display_system_init()!=0 || net_system_init()!=0 || usb_system_init()!=0 ||
+        input_system_init()!=0 || audio_system_init()!=0 || power_system_init()!=0 ||
+        ahci_system_init()!=0 || nvme_system_init()!=0 || fs_system_init()!=0 ||
+        graphics_system_init()!=0 || compositor_system_init()!=0 ||
+        window_system_init()!=0 || desktop_system_init()!=0 ||
+        shell_system_init()!=0 || search_system_init()!=0 ||
+        settings_system_init()!=0 || docs_system_init()!=0)
+        kernel_panic("Stage 3/4/5 subsystem initialization failed");
+    serial_write_public("ZEROOS: Stage 3 block/GPT/VFS/page-cache/PCI/DMA/AHCI/NVMe initialized.\n");
+    serial_write_public("ZEROOS: Stage 4 USB/input/display/audio/net/power initialized.\n");
+    serial_write_public("ZEROOS: Stage 5 graphics/compositor/window/desktop/shell/search/settings/docs initialized.\n");
     if (userspace_system_init()!=0)
         kernel_panic("userspace core initialization failed");
     serial_write_public("ZEROOS: Ring-3 GDT and versioned syscall ABI initialized.\n");

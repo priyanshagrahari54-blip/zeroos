@@ -117,8 +117,77 @@ $(BUILD)/process.o: kernel/process.c kernel/process.h kernel/thread.h kernel/vmm
 $(BUILD)/scheduler.o: kernel/scheduler.c kernel/scheduler.h kernel/task.h kernel/timer.h kernel/sync.h kernel/cpu.h kernel/apic.h kernel/smp.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
-$(KERNEL): $(BUILD)/boot.o $(BUILD)/isr.o $(BUILD)/context.o $(BUILD)/ap_trampoline.o $(BUILD)/user_entry.o $(BUILD)/kernel.o $(BUILD)/cpu.o $(BUILD)/apic.o $(BUILD)/smp.o $(BUILD)/acpi.o $(BUILD)/interrupts.o $(BUILD)/syscall.o $(BUILD)/ipc.o $(BUILD)/shmem.o $(BUILD)/elf.o $(BUILD)/exec.o $(BUILD)/user.o $(BUILD)/pic.o $(BUILD)/timer.o $(BUILD)/sync.o $(BUILD)/memory.o $(BUILD)/gdt.o $(BUILD)/vmm.o $(BUILD)/tlb.o $(BUILD)/task.o $(BUILD)/wait.o $(BUILD)/scheduler.o $(BUILD)/thread.o $(BUILD)/process.o kernel/linker.ld
-	$(LD) $(LDFLAGS) -o $@ $(BUILD)/boot.o $(BUILD)/isr.o $(BUILD)/context.o $(BUILD)/ap_trampoline.o $(BUILD)/user_entry.o $(BUILD)/kernel.o $(BUILD)/cpu.o $(BUILD)/apic.o $(BUILD)/smp.o $(BUILD)/acpi.o $(BUILD)/interrupts.o $(BUILD)/syscall.o $(BUILD)/ipc.o $(BUILD)/shmem.o $(BUILD)/elf.o $(BUILD)/exec.o $(BUILD)/user.o $(BUILD)/pic.o $(BUILD)/timer.o $(BUILD)/sync.o $(BUILD)/memory.o $(BUILD)/gdt.o $(BUILD)/vmm.o $(BUILD)/tlb.o $(BUILD)/task.o $(BUILD)/wait.o $(BUILD)/scheduler.o $(BUILD)/thread.o $(BUILD)/process.o
+$(BUILD)/block.o: kernel/block.c kernel/block.h kernel/types.h kernel/sync.h kernel/wait.h kernel/timer.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(BUILD)/gpt.o: kernel/gpt.c kernel/gpt.h kernel/types.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(BUILD)/vfs.o: kernel/vfs.c kernel/vfs.h kernel/types.h kernel/sync.h kernel/wait.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(BUILD)/page_cache.o: kernel/page_cache.c kernel/page_cache.h kernel/types.h kernel/sync.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(BUILD)/pci.o: kernel/pci.c kernel/pci.h kernel/types.h kernel/sync.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(BUILD)/dma.o: kernel/dma.c kernel/dma.h kernel/types.h kernel/sync.h kernel/memory.h kernel/vmm.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(BUILD)/display.o: kernel/display.c kernel/display.h kernel/types.h kernel/sync.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(BUILD)/net.o: kernel/net.c kernel/net.h kernel/types.h kernel/sync.h kernel/wait.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(BUILD)/usb.o: kernel/usb.c kernel/usb.h kernel/types.h kernel/sync.h kernel/wait.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(BUILD)/input.o: kernel/input.c kernel/input.h kernel/types.h kernel/sync.h kernel/wait.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(BUILD)/audio.o: kernel/audio.c kernel/audio.h kernel/types.h kernel/sync.h kernel/wait.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(BUILD)/power.o: kernel/power.c kernel/power.h kernel/types.h kernel/sync.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(BUILD)/ahci.o: kernel/ahci.c kernel/ahci.h kernel/types.h kernel/sync.h kernel/block.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(BUILD)/nvme.o: kernel/nvme.c kernel/nvme.h kernel/types.h kernel/sync.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(BUILD)/fs.o: kernel/fs.c kernel/fs.h kernel/types.h kernel/sync.h kernel/wait.h kernel/vfs.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(BUILD)/graphics.o: kernel/graphics.c kernel/graphics.h kernel/types.h kernel/sync.h kernel/wait.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(BUILD)/compositor.o: kernel/compositor.c kernel/compositor.h kernel/types.h kernel/sync.h kernel/wait.h kernel/display.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(BUILD)/window.o: kernel/window.c kernel/window.h kernel/types.h kernel/sync.h kernel/wait.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(BUILD)/desktop.o: kernel/desktop.c kernel/desktop.h kernel/types.h kernel/sync.h kernel/wait.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(BUILD)/shell.o: kernel/shell.c kernel/shell.h kernel/types.h kernel/sync.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(BUILD)/search.o: kernel/search.c kernel/search.h kernel/types.h kernel/sync.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(BUILD)/settings.o: kernel/settings.c kernel/settings.h kernel/types.h kernel/sync.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(BUILD)/docs.o: kernel/docs.c kernel/docs.h kernel/types.h kernel/sync.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(KERNEL): $(BUILD)/boot.o $(BUILD)/isr.o $(BUILD)/context.o $(BUILD)/ap_trampoline.o $(BUILD)/user_entry.o $(BUILD)/kernel.o $(BUILD)/cpu.o $(BUILD)/apic.o $(BUILD)/smp.o $(BUILD)/acpi.o $(BUILD)/interrupts.o $(BUILD)/syscall.o $(BUILD)/ipc.o $(BUILD)/shmem.o $(BUILD)/elf.o $(BUILD)/exec.o $(BUILD)/user.o $(BUILD)/pic.o $(BUILD)/timer.o $(BUILD)/sync.o $(BUILD)/memory.o $(BUILD)/gdt.o $(BUILD)/vmm.o $(BUILD)/tlb.o $(BUILD)/task.o $(BUILD)/wait.o $(BUILD)/scheduler.o $(BUILD)/thread.o $(BUILD)/process.o $(BUILD)/block.o $(BUILD)/gpt.o $(BUILD)/vfs.o $(BUILD)/page_cache.o $(BUILD)/pci.o $(BUILD)/dma.o $(BUILD)/display.o $(BUILD)/net.o $(BUILD)/usb.o $(BUILD)/input.o $(BUILD)/audio.o $(BUILD)/power.o $(BUILD)/ahci.o $(BUILD)/nvme.o $(BUILD)/fs.o $(BUILD)/graphics.o $(BUILD)/compositor.o $(BUILD)/window.o $(BUILD)/desktop.o $(BUILD)/shell.o $(BUILD)/search.o $(BUILD)/settings.o $(BUILD)/docs.o kernel/linker.ld
+	$(LD) $(LDFLAGS) -o $@ $(BUILD)/boot.o $(BUILD)/isr.o $(BUILD)/context.o $(BUILD)/ap_trampoline.o $(BUILD)/user_entry.o $(BUILD)/kernel.o $(BUILD)/cpu.o $(BUILD)/apic.o $(BUILD)/smp.o $(BUILD)/acpi.o $(BUILD)/interrupts.o $(BUILD)/syscall.o $(BUILD)/ipc.o $(BUILD)/shmem.o $(BUILD)/elf.o $(BUILD)/exec.o $(BUILD)/user.o $(BUILD)/pic.o $(BUILD)/timer.o $(BUILD)/sync.o $(BUILD)/memory.o $(BUILD)/gdt.o $(BUILD)/vmm.o $(BUILD)/tlb.o $(BUILD)/task.o $(BUILD)/wait.o $(BUILD)/scheduler.o $(BUILD)/thread.o $(BUILD)/process.o $(BUILD)/block.o $(BUILD)/gpt.o $(BUILD)/vfs.o $(BUILD)/page_cache.o $(BUILD)/pci.o $(BUILD)/dma.o $(BUILD)/display.o $(BUILD)/net.o $(BUILD)/usb.o $(BUILD)/input.o $(BUILD)/audio.o $(BUILD)/power.o $(BUILD)/ahci.o $(BUILD)/nvme.o $(BUILD)/fs.o $(BUILD)/graphics.o $(BUILD)/compositor.o $(BUILD)/window.o $(BUILD)/desktop.o $(BUILD)/shell.o $(BUILD)/search.o $(BUILD)/settings.o $(BUILD)/docs.o
 
 iso: $(KERNEL)
 	rm -rf $(BUILD)/iso
