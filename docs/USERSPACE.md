@@ -286,11 +286,13 @@ After init and the IPC service recovery path, a separate Ring-3 service-manager
 process is published. It owns an explicit child limit, launches a worker,
 waits for its unhealthy exit status, patches only manager-owned image data for a
 fresh restart, launches a new child generation, and requires a healthy exit
-before publishing the dependency/restart certificate. The manager then exits
-cleanly and is reaped by the kernel supervisor. This adds a real userspace
-parent/child dependency and restart lifecycle to the bootstrap monitor's
-capability-service test; it does not yet claim a general dynamic service
-registry or long-running daemon protocol.
+before publishing the dependency/restart certificate. It then remains alive as
+a Ring-3 daemon blocked on a supervisor-owned shutdown event. The supervisor
+signals that event only after observing the persistent wait, then reaps the
+manager and closes its controller capabilities. This adds a real userspace
+parent/child dependency, restart lifecycle, persistent lifetime, and explicit
+shutdown path to the bootstrap monitor's capability-service test; it does not
+yet claim a general dynamic service registry.
 
 ## Remaining Stage 2 work
 
@@ -298,11 +300,11 @@ This is not the Stage 2 exit claim. The remaining production gates are:
 
 - ELF process construction with argv/env/auxv, executable identity and a
   defined relocation/dynamic-loader policy;
-- a persistent userspace init/service-manager daemon and general service
-  registry rather than the bounded bootstrap manager process, including
+- a general service registry beyond the bounded manager image, including
   dependency graphs, health checks, crash diagnostics, shutdown policy and
   multi-service resource accounting;
-- capability credentials/rights policy and a public userspace runtime library;
+- capability credentials/identity policy and a complete userspace runtime
+  library beyond the current freestanding syscall/IPC/spawn/wait layer;
 - socket foundations built on the bounded/backpressure and cancellation
   contracts (the byte-stream pipe, coalescing-event, and page-granular
   shared-memory ABI is only the first foundation);

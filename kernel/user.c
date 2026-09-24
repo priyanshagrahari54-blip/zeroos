@@ -23,7 +23,11 @@ static struct process *service_controller;
 static zeroos_ipc_handle_t service_controller_handle;
 static struct process *manager_process;
 static struct thread *manager_thread;
+static struct process *manager_controller;
+static zeroos_ipc_handle_t manager_shutdown_signal;
+static zeroos_ipc_handle_t manager_shutdown_wait;
 static uint8_t manager_started;
+static uint8_t manager_shutdown_sent;
 static uint8_t manager_reaped;
 static zeroos_ipc_handle_t service_controller_peer;
 static uint64_t service_attempt;
@@ -106,6 +110,7 @@ static const char service_request_two[]=
 #define MANAGER_WORKER_STATUS_OFFSET 0x80ULL
 #define MANAGER_STATUS_OFFSET 0x180ULL
 #define MANAGER_SUCCESS_OFFSET 0x200ULL
+#define MANAGER_SHUTDOWN_HANDLE_OFFSET 0x300ULL
 #define MANAGER_DATA_FILE_END 0x4000ULL
 #define MANAGER_ELF_DATA_MEMORY_SIZE \
     ((MANAGER_DATA_FILE_END-MANAGER_ELF_DATA_OFFSET+VMM_PAGE_SIZE-1ULL)&~(VMM_PAGE_SIZE-1ULL))
@@ -786,6 +791,24 @@ static uint64_t build_manager_code(uint8_t *code, uint64_t child_size) {
     code[offset++]=0xba;
     put_u32(&code[offset],(uint32_t)(sizeof(manager_success_message)-1U)); offset+=4;
     code[offset++]=0xcd; code[offset++]=0x80;
+
+    /* A successful dependency/restart certificate does not terminate the
+     * manager. It becomes a persistent daemon and waits on a supervisor-owned
+     * shutdown event; the supervisor decides when the service graph may be
+     * torn down. */
+    code[offset++]=0x48; code[offset++]=0xa1;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE+
+            (MANAGER_SHUTDOWN_HANDLE_OFFSET-MANAGER_ELF_DATA_OFFSET)); offset+=8;
+    code[offset++]=0x48; code[offset++]=0x89; code[offset++]=0xc7;
+    code[offset++]=0x45; code[offset++]=0x31; code[offset++]=0xd2;
+    code[offset++]=0x49; code[offset++]=0xb9;
+    put_u64(&code[offset],ZEROOS_IPC_TIMEOUT_FOREVER); offset+=8;
+    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_EVENT_WAIT); offset+=4;
+    code[offset++]=0xcd; code[offset++]=0x80;
+    code[offset++]=0x48; code[offset++]=0x83; code[offset++]=0xf8; code[offset++]=1;
+    failure_jumps[failure_jump_count++]=offset;
+    code[offset++]=0x0f; code[offset++]=0x85; put_u32(&code[offset],0); offset+=4;
+
     code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_EXIT); offset+=4;
     code[offset++]=0xbf; put_u32(&code[offset],0); offset+=4;
     code[offset++]=0xcd; code[offset++]=0x80;
@@ -802,7 +825,7 @@ static uint64_t build_manager_code(uint8_t *code, uint64_t child_size) {
     return offset;
 }
 
-static uint64_t build_manager_elf(void) {
+static uint64_t build_manager_elf(zeroos_ipc_handle_t shutdown_wait) {
     struct zeroos_elf64_ehdr *header=
         (struct zeroos_elf64_ehdr *)(uint64_t)manager_elf_image;
     struct zeroos_elf64_phdr *code_segment=
@@ -849,6 +872,9 @@ static uint64_t build_manager_elf(void) {
     for (uint64_t i=0; i<sizeof(manager_success_message)-1U; ++i)
         manager_elf_image[MANAGER_ELF_DATA_OFFSET+MANAGER_SUCCESS_OFFSET+i]=
             (uint8_t)manager_success_message[i];
+    put_u64(&manager_elf_image[MANAGER_ELF_DATA_OFFSET+
+                               MANAGER_SHUTDOWN_HANDLE_OFFSET-
+                               MANAGER_ELF_DATA_OFFSET],shutdown_wait);
     for (uint64_t i=0; i<child_size; ++i)
         manager_elf_image[MANAGER_WORKER_FILE_OFFSET+i]=
             manager_worker_elf_image[i];
@@ -1753,24 +1779,39 @@ static void userspace_release_page(struct process *process,
 }
 
 static int userspace_start_manager(void) {
-    uint64_t image_size=build_manager_elf();
+    uint64_t image_size=0;
     uint64_t pid=0;
+    uint64_t controller_pid=0;
     thread_id_t tid=0;
     struct process *process=0;
+    struct process *controller=0;
     struct thread *thread=0;
     struct zeroos_elf_load_result load_result={0};
     void *stack_page=0;
+    zeroos_ipc_handle_t signal_handle=0;
+    zeroos_ipc_handle_t wait_handle=0;
+    zeroos_ipc_handle_t manager_wait=0;
     uint8_t image_loaded=0;
     uint8_t stack_mapped=0;
 
-    if (!image_size || manager_started)
-        return manager_started ? 0 : -1;
-    if (process_create(0,&pid)!=0)
+    if (manager_started)
+        return 0;
+    if (process_create(0,&controller_pid)!=0)
         return -1;
-    process=process_lookup(pid);
-    if (!process || process_set_limits(process,1,2,8)!=0)
+    controller=process_lookup(controller_pid);
+    if (!controller || process_set_limits(controller,1,1,4)!=0 ||
+        ipc_create_event(controller,&signal_handle,&wait_handle)!=0)
         goto fail;
-    if (elf_load_image(process,manager_elf_image,image_size,&load_result)!=0 ||
+    if (process_create(0,&pid)!=0)
+        goto fail;
+    process=process_lookup(pid);
+    if (!process || process_set_limits(process,1,2,8)!=0 ||
+        ipc_grant_rights(controller,wait_handle,process->pid,
+                         ZEROOS_IPC_RIGHT_RECV,&manager_wait)!=0)
+        goto fail;
+    image_size=build_manager_elf(manager_wait);
+    if (!image_size ||
+        elf_load_image(process,manager_elf_image,image_size,&load_result)!=0 ||
         load_result.entry!=ZEROOS_USER_CODE_BASE+MANAGER_ELF_ENTRY_OFFSET)
         goto fail;
     image_loaded=1;
@@ -1791,9 +1832,14 @@ static int userspace_start_manager(void) {
         goto fail;
     manager_process=process;
     manager_thread=thread;
+    manager_controller=controller;
+    manager_shutdown_signal=signal_handle;
+    manager_shutdown_wait=wait_handle;
     manager_started=1;
+    manager_shutdown_sent=0;
     manager_reaped=0;
     serial_write_public("ZEROOS: userspace service manager process published.\n");
+    serial_write_public("ZEROOS: persistent userspace service manager published.\n");
     return 0;
 
 fail:
@@ -1805,6 +1851,14 @@ fail:
         (void)elf_unload_image(process,manager_elf_image,image_size);
     if (process && process->state==PROCESS_NEW)
         (void)process_abort_new(process);
+    if (controller) {
+        if (signal_handle)
+            (void)ipc_close(controller,signal_handle);
+        if (wait_handle)
+            (void)ipc_close(controller,wait_handle);
+        if (controller->state==PROCESS_NEW)
+            (void)process_abort_new(controller);
+    }
     return -1;
 }
 
@@ -2024,7 +2078,11 @@ int userspace_system_init(void) {
     service_controller_peer=0;
     manager_process=0;
     manager_thread=0;
+    manager_controller=0;
+    manager_shutdown_signal=0;
+    manager_shutdown_wait=0;
     manager_started=0;
+    manager_shutdown_sent=0;
     manager_reaped=0;
     service_attempt=0;
     service_expected_length=0;
@@ -2186,6 +2244,21 @@ int userspace_service_step(void) {
         return 0;
     if (!manager_started)
         return userspace_start_manager();
+    if (!manager_shutdown_sent) {
+        struct task *manager_task=manager_thread &&
+                                  manager_thread->scheduler_task_id ?
+                                  task_lookup(manager_thread->scheduler_task_id) : 0;
+        if (!manager_thread || manager_thread->state==THREAD_ZOMBIE)
+            return -1;
+        if (!manager_task || manager_task->state!=TASK_BLOCKED)
+            return 0;
+        if (!manager_controller ||
+            ipc_event_signal(manager_controller,manager_shutdown_signal,0)!=1)
+            return -1;
+        manager_shutdown_sent=1;
+        serial_write_public("ZEROOS: persistent service manager shutdown event delivered.\n");
+        return 0;
+    }
     if (!manager_thread || manager_thread->state!=THREAD_ZOMBIE)
         return 0;
     if (thread_reap(manager_thread,&status)!=0 ||
@@ -2193,8 +2266,19 @@ int userspace_service_step(void) {
         vmm_activate_kernel()!=0 || process_reap(manager_process,&status)!=0 ||
         status!=0)
         return -1;
+    if (!manager_controller || manager_controller->state!=PROCESS_NEW ||
+        ipc_close(manager_controller,manager_shutdown_signal)!=0 ||
+        ipc_close(manager_controller,manager_shutdown_wait)!=0 ||
+        process_abort_new(manager_controller)!=0 || ipc_debug_validate()!=0)
+        return -1;
     manager_reaped=1;
+    manager_process=0;
+    manager_thread=0;
+    manager_controller=0;
+    manager_shutdown_signal=0;
+    manager_shutdown_wait=0;
     serial_write_public("ZEROOS: userspace service manager reaped cleanly.\n");
+    serial_write_public("ZEROOS: persistent userspace service manager reaped cleanly.\n");
     return 0;
 }
 
@@ -2204,7 +2288,15 @@ int userspace_debug_validate(void) {
     if (init_reaped && (!init_process || !init_thread || service_started ||
                         !service_recovered))
         return -1;
-    if (manager_started && !manager_reaped)
+    if (manager_started && !manager_reaped) {
+        if (!manager_process || !manager_thread || !manager_controller ||
+            !manager_shutdown_signal || !manager_shutdown_wait)
+            return -1;
         return 0;
+    }
+    if (manager_reaped && (manager_process || manager_thread ||
+                           manager_controller || manager_shutdown_signal ||
+                           manager_shutdown_wait))
+        return -1;
     return init_reaped && service_recovered && manager_reaped ? 1 : 0;
 }
