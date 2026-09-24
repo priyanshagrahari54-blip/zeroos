@@ -388,6 +388,18 @@ static void process_thread_probe_monitor_step(void) {
             process_child_count(process_probe_parent)!=1)
             process_thread_probe_fail("parent/child relationship validation failed");
 
+        {
+            struct process *pinned_child=0;
+            if (process_acquire_live(process_probe_child_pid,
+                                     &pinned_child)!=0 ||
+                pinned_child!=process_probe_child ||
+                process_abort_new(process_probe_child)==0 ||
+                process_release_live(pinned_child)!=0 ||
+                process_probe_child->state!=PROCESS_NEW)
+                process_thread_probe_fail("process lifetime pin validation failed");
+            serial_write_public("ZEROOS: process lifetime pin self-test passed.\n");
+        }
+
         if (thread_create_kernel(process_probe_child,
                                   process_thread_probe_child_entry,0,
                                   &thread_probe_child_tid)!=0)
