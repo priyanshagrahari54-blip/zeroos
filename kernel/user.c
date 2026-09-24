@@ -745,6 +745,7 @@ static int userspace_ipc_self_test(struct process *process) {
     if (ipc_send(process,local,send_buffer,16,
                  ZEROOS_IPC_FLAG_NONBLOCK)!=-ZEROOS_EAGAIN ||
         ipc_send_timeout(process,local,send_buffer,16,0,0)!=-ZEROOS_ETIMEDOUT ||
+        ipc_send_timeout(process,local,send_buffer,16,0,2)!=-ZEROOS_ETIMEDOUT ||
         ipc_send(process,local,send_buffer,1ULL<<9,0)!=-ZEROOS_EINVAL ||
         ipc_send(process,local,send_buffer,16,1ULL<<7)!=-ZEROOS_EINVAL ||
         ipc_send(process,local,send_buffer,0,0)!=-ZEROOS_EINVAL ||
@@ -763,6 +764,8 @@ static int userspace_ipc_self_test(struct process *process) {
                        ZEROOS_IPC_FLAG_NONBLOCK,&length)==16) {}
     if (ipc_receive_timeout(process,peer,receive_buffer,sizeof(receive_buffer),
                             0,&length,0)!=-ZEROOS_ETIMEDOUT ||
+        ipc_receive_timeout(process,peer,receive_buffer,sizeof(receive_buffer),
+                            0,&length,2)!=-ZEROOS_ETIMEDOUT ||
         ipc_close(process,local)!=0 ||
         ipc_receive(process,peer,receive_buffer,sizeof(receive_buffer),
                     ZEROOS_IPC_FLAG_NONBLOCK,&length)!=-ZEROOS_EPIPE ||
@@ -788,6 +791,7 @@ static int userspace_ipc_self_test(struct process *process) {
                                    ZEROOS_IPC_FLAG_NONBLOCK,0)!=-ZEROOS_EAGAIN ||
             ipc_event_wait_timeout(process,wait_handle,1ULL<<2,0)!=-ZEROOS_EINVAL ||
             ipc_event_wait_timeout(process,wait_handle,0,0)!=-ZEROOS_ETIMEDOUT ||
+            ipc_event_wait_timeout(process,wait_handle,0,2)!=-ZEROOS_ETIMEDOUT ||
             ipc_close(process,signal_handle)!=0 ||
             ipc_event_wait_timeout(process,wait_handle,
                                    ZEROOS_IPC_FLAG_NONBLOCK,0)!=-ZEROOS_EPIPE ||
