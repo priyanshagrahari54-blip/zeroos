@@ -523,9 +523,23 @@ void syscall_dispatch(struct interrupt_frame *frame) {
                 result=-ZEROOS_ETIMEDOUT;
                 break;
             }
-            if (task_sleep_ticks(1)!=0) {
-                result=-ZEROOS_EINTR;
-                break;
+            {
+                uint64_t wait_flags=0;
+                int wait_result=process_child_wait_prepare(process,frame->rdi,
+                                                           &wait_flags);
+                if (wait_result<0) {
+                    result=wait_result;
+                    break;
+                }
+                if (wait_result>0)
+                    continue;
+                result=wait_queue_commit_until(wait_flags,deadline);
+                (void)wait_queue_remove_current(&process->child_waiters);
+                if (result<0) {
+                    result=-ZEROOS_EINTR;
+                    break;
+                }
+                continue;
             }
         }
         if (result!=0)
