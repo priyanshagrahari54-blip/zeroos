@@ -1,4 +1,5 @@
 #include "types.h"
+#include "pci.h"
 #include "cpu.h"
 #include "apic.h"
 #include "memory.h"
@@ -1065,6 +1066,12 @@ void kernel_main(uint64_t multiboot_info, uint64_t multiboot_magic) {
     if (!boot_stack_guard_ok())
         for (;;) __asm__ volatile ("cli; hlt");
     serial_init();
+    static struct pci_inventory pci;
+    int pci_result=pci_enumerate(&pci);
+    serial_write_public("ZEROOS: PCI segment-0 enumeration ");
+    serial_write_public(pci_result==0 ? "complete devices=" : "bounded/truncated devices=");
+    serial_write_u64(pci.count);
+    serial_write_public(" unsupported drivers remain unbound\n");
     serial_write_public("\nZEROOS kernel starting...\n");
     serial_write_public("ZEROOS: entered x86-64 long mode.\n");
     serial_write_public("ZEROOS: serial console initialized.\n");

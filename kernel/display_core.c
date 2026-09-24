@@ -1,0 +1,3 @@
+#include "display_core.h"
+int display_mode_valid(const struct display_mode *m,uint64_t limit){if(!m||!m->width||!m->height||!m->refresh_millihz||m->width>16384||m->height>16384)return 0;uint32_t bpp=m->pixel_format==1?4U:(m->pixel_format==2?2U:0U);if(!bpp)return 0;uint64_t pixels=(uint64_t)m->width*m->height;if(pixels>limit/bpp)return 0;return 1;}
+int display_caps_add(struct display_caps *c,const struct display_mode *m,uint64_t limit){if(!c||!display_mode_valid(m,limit)||c->count>=DISPLAY_MAX_MODES)return -1;for(uint32_t i=0;i<c->count;i++)if(c->modes[i].width==m->width&&c->modes[i].height==m->height&&c->modes[i].refresh_millihz==m->refresh_millihz&&c->modes[i].pixel_format==m->pixel_format)return -1;c->modes[c->count++]=*m;return 0;}

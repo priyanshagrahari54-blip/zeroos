@@ -1,39 +1,46 @@
 # ZEROOS Hardware Architecture
 
-## Current target
+## Supported-device matrix (Stage 4 baseline)
 
-ZEROOS currently targets x86-64 machines and QEMU's x86-64 virtual hardware.
+| Area | Detected / implemented | Operational support | Unsupported / explicitly unclaimed |
+|---|---|---|---|
+| x86-64 CPU, RAM, serial, PIT/PIC | Yes | Boot, memory management, diagnostics, timer | Other architectures |
+| ACPI RSDP/root/MADT | Validated discovery | Interrupt topology discovery and existing APIC path | AML, ACPI power/thermal/battery, suspend/resume |
+| PCI segment 0 | Mechanism #1 bus/function scan, IDs/classes, BAR address/type snapshots, bounded conventional capability list | Observation only; devices remain unbound | ECAM/MCFG, additional segments, BAR sizing/assignment, resource mapping, MSI/MSI-X activation, hotplug, driver matching |
+| DMA/IOMMU | No IOMMU backend | Owner-scoped DMA map/unmap API contract with bounded mapping tokens and teardown refusal while mappings remain | Hardware translation/cache-coherency implementation, bounce buffers, isolation/domain setup, device reset integration |
+| USB/input/display/audio/network/storage | No device driver | Descriptor framing validator; fixed-capacity input queue/registry; bounded audio ring; display mode validator; Ethernet/VLAN and ARP framing parsers; IPv4/IPv6 base-header validation; default-deny IPv4 policy and bounded flow tracking/routes; UDP framing, limited TCP connection-state helper/timeouts, DHCP option and DNS message validators; lifecycle/resource cleanup state machine | HCD/device enumeration, HID decoding, IRQ-backed input, DMA/audio engine, display scanout/GPU, NIC, IPv6/TCP/UDP sockets, DNS/DHCP, neighbor/ARP, routing integration, storage |
 
-## Boot-critical hardware
+## PCI observation contract
 
-- Firmware/BIOS/UEFI-compatible boot path through the project's GRUB/Multiboot2 flow.
-- CPU operating in x86-64 long mode.
-- Programmable interrupt controller using the current 8259 PIC layer.
-- PIT channel 0 at the current 100 Hz scheduler/timer frequency.
-- Serial COM1 diagnostics.
-- Conventional page-granular physical memory exposed through the Multiboot2 memory map.
+`pci_enumerate()` scans the 256 buses and 32 slots of legacy PCI configuration
+mechanism #1, respecting multifunction headers. It records vendor/device and
+class identity, snapshots currently assigned BAR addresses/types without
+writing configuration space, and follows conventional capability pointers
+with cycle and bounds checks. The inventory is fixed-size; overflow is
+reported as truncated. This is not PCIe ECAM support and does not enumerate
+nonzero PCI segments. It does not enable bus mastering, allocate resources,
+map device MMIO, or activate interrupts. A listed device is discovered, not
+supported. No driver is bound and no hardware behavior is simulated.
 
-## Current implementation boundary
+Future resource ownership must validate address arithmetic, alignment, range
+and overlap against the physical-memory/resource map before mapping or use.
+BAR sizing requires an exclusive quiesced-device transaction and is not
+performed during generic discovery. MSI/MSI-X and DMA stay disabled until
+interrupt ownership and IOMMU/DMA lifetime contracts exist.
 
-Implemented hardware-facing layers include boot handoff validation, physical
-page discovery/allocation with reserved-page protection, x86-64 page-table
-management with W^X/range validation, CPUID/MSR capability discovery, IDT/ISR
-entry, 8259 IRQ routing, Local APIC capability probing, PIT delivery,
-invariant-TSC/CMOS clock abstractions and serial diagnostics.
+## Driver lifecycle and safety boundary
 
-ACPI RSDP/root-table/MADT discovery is implemented with checksum, length,
-physical-window and entry-boundary validation. The validated controller path
-maps LAPIC/IOAPIC MMIO and owns one PIT timer redirection, with an explicit PIC
-rollback when validation or activation fails. A bounded AP/SMP startup path
-uses the validated MADT/LAPIC data, a retained low-memory trampoline and
-per-CPU initialization. AP acknowledgement is generation-tagged, retried at
-most once, and failed CPUs are removed from TLB participation before explicit
-BSP-only recovery. Multi-vCPU scheduling and supported-hardware certification
-are not yet claims. Full non-timer IOAPIC routing, PCI/PCIe enumeration,
-DMA/IOMMU, storage controllers, USB, GPU/display drivers, audio and ACPI power
-management remain unsupported. Those boundaries are explicit; no unsupported
-device is silently treated as active.
+Future drivers must implement DISCOVER → MATCH → PROBE → RESOURCE ACQUIRE →
+DMA/IRQ SETUP → INITIALIZE → REGISTER → SERVE → ERROR RECOVERY → SUSPEND →
+RESUME → REMOVE → CLEANUP. Each acquired resource has one owner and one
+release path. Unsupported hardware is reported unbound; no universal hardware
+support is claimed. Device-specific execution belongs behind stable interfaces,
+not in desktop policy.
 
-## Engineering rule
+## Existing boot target
 
-Hardware-specific code stays behind narrow interfaces so later APIC, PCI, ACPI, storage, USB, graphics, and SMP work does not require rewriting portable scheduler or kernel policy.
+The current target is x86-64 under GRUB/Multiboot2, with serial COM1, physical
+page discovery/allocation, x86-64 virtual memory, IDT/ISR entry, 8259 PIC,
+PIT, ACPI RSDP/root/MADT validation, and the bounded APIC/SMP functionality
+documented in `ACPI.md`. QEMU and physical-device certification are distinct;
+no real-hardware certification is implied by compilation.

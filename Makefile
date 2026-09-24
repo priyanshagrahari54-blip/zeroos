@@ -1,6 +1,8 @@
 BUILD := build
 KERNEL := $(BUILD)/zeroos.elf
 ISO := $(BUILD)/zeroos.iso
+HARDWARE_CORE_NAMES := net_core net_route net_transport net_conntrack net_l2 net_ipv6 dns_core dhcp_core input_core usb_core audio_core display_core driver_core dma
+HARDWARE_CORE_OBJS := $(addprefix $(BUILD)/hardware-,$(addsuffix .o,$(HARDWARE_CORE_NAMES)))
 
 CC := gcc
 LD := ld
@@ -11,7 +13,7 @@ CFLAGS += $(EXTRA_CFLAGS)
 ASFLAGS := -m64 -ffreestanding -fno-pic -fno-pie -nostdlib
 LDFLAGS := -m elf_x86_64 -T kernel/linker.ld -nostdlib
 
-.PHONY: all clean elf iso run userspace-abi-check userspace-runtime-check userspace-abi-consistency
+.PHONY: all clean elf iso run userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test
 
 all: iso
 
@@ -45,7 +47,7 @@ $(BUILD)/ap_trampoline.o: boot/ap_trampoline.S | $(BUILD)
 $(BUILD)/user_entry.o: kernel/user_entry.S | $(BUILD)
 	$(AS) $(ASFLAGS) -c $< -o $@
 
-$(BUILD)/kernel.o: kernel/kernel.c kernel/types.h kernel/cpu.h kernel/apic.h kernel/acpi.h kernel/memory.h kernel/timer.h kernel/vmm.h kernel/gdt.h kernel/sync.h kernel/tlb.h kernel/task.h kernel/thread.h kernel/process.h kernel/scheduler.h kernel/smp.h kernel/wait.h kernel/user.h kernel/ipc.h kernel/shmem.h | $(BUILD)
+$(BUILD)/kernel.o: kernel/kernel.c kernel/types.h kernel/pci.h kernel/cpu.h kernel/apic.h kernel/acpi.h kernel/memory.h kernel/timer.h kernel/vmm.h kernel/gdt.h kernel/sync.h kernel/tlb.h kernel/task.h kernel/thread.h kernel/process.h kernel/scheduler.h kernel/smp.h kernel/wait.h kernel/user.h kernel/ipc.h kernel/shmem.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
 $(BUILD)/interrupts.o: kernel/interrupts.c kernel/interrupts.h kernel/types.h kernel/cpu.h kernel/apic.h kernel/pic.h kernel/timer.h kernel/gdt.h kernel/task.h kernel/thread.h kernel/tlb.h kernel/scheduler.h kernel/syscall.h | $(BUILD)
@@ -93,6 +95,42 @@ $(BUILD)/smp.o: kernel/smp.c kernel/smp.h kernel/acpi.h kernel/apic.h kernel/cpu
 $(BUILD)/acpi.o: kernel/acpi.c kernel/acpi.h kernel/types.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
+$(BUILD)/pci.o: kernel/pci.c kernel/pci.h kernel/types.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(BUILD)/hardware-%.o: kernel/%.c | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+hardware-core-test: | $(BUILD)
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/net_core_test.c kernel/net_core.c -o $(BUILD)/net-core-test
+	$(BUILD)/net-core-test
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/input_core_test.c kernel/input_core.c -o $(BUILD)/input-core-test
+	$(BUILD)/input-core-test
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/usb_core_test.c kernel/usb_core.c -o $(BUILD)/usb-core-test
+	$(BUILD)/usb-core-test
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/audio_core_test.c kernel/audio_core.c -o $(BUILD)/audio-core-test
+	$(BUILD)/audio-core-test
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/display_core_test.c kernel/display_core.c -o $(BUILD)/display-core-test
+	$(BUILD)/display-core-test
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/driver_core_test.c kernel/driver_core.c -o $(BUILD)/driver-core-test
+	$(BUILD)/driver-core-test
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/net_route_test.c kernel/net_route.c -o $(BUILD)/net-route-test
+	$(BUILD)/net-route-test
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/net_transport_test.c kernel/net_transport.c -o $(BUILD)/net-transport-test
+	$(BUILD)/net-transport-test
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/dhcp_core_test.c kernel/dhcp_core.c -o $(BUILD)/dhcp-core-test
+	$(BUILD)/dhcp-core-test
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/dma_test.c kernel/dma.c -o $(BUILD)/dma-test
+	$(BUILD)/dma-test
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/dns_core_test.c kernel/dns_core.c -o $(BUILD)/dns-core-test
+	$(BUILD)/dns-core-test
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/net_l2_test.c kernel/net_l2.c -o $(BUILD)/net-l2-test
+	$(BUILD)/net-l2-test
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/net_ipv6_test.c kernel/net_ipv6.c -o $(BUILD)/net-ipv6-test
+	$(BUILD)/net-ipv6-test
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/net_conntrack_test.c kernel/net_conntrack.c -o $(BUILD)/net-conntrack-test
+	$(BUILD)/net-conntrack-test
+
 $(BUILD)/gdt.o: kernel/gdt.c kernel/gdt.h kernel/memory.h kernel/cpu.h kernel/types.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
@@ -117,8 +155,8 @@ $(BUILD)/process.o: kernel/process.c kernel/process.h kernel/thread.h kernel/vmm
 $(BUILD)/scheduler.o: kernel/scheduler.c kernel/scheduler.h kernel/task.h kernel/timer.h kernel/sync.h kernel/cpu.h kernel/apic.h kernel/smp.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
-$(KERNEL): $(BUILD)/boot.o $(BUILD)/isr.o $(BUILD)/context.o $(BUILD)/ap_trampoline.o $(BUILD)/user_entry.o $(BUILD)/kernel.o $(BUILD)/cpu.o $(BUILD)/apic.o $(BUILD)/smp.o $(BUILD)/acpi.o $(BUILD)/interrupts.o $(BUILD)/syscall.o $(BUILD)/ipc.o $(BUILD)/shmem.o $(BUILD)/elf.o $(BUILD)/exec.o $(BUILD)/user.o $(BUILD)/pic.o $(BUILD)/timer.o $(BUILD)/sync.o $(BUILD)/memory.o $(BUILD)/gdt.o $(BUILD)/vmm.o $(BUILD)/tlb.o $(BUILD)/task.o $(BUILD)/wait.o $(BUILD)/scheduler.o $(BUILD)/thread.o $(BUILD)/process.o kernel/linker.ld
-	$(LD) $(LDFLAGS) -o $@ $(BUILD)/boot.o $(BUILD)/isr.o $(BUILD)/context.o $(BUILD)/ap_trampoline.o $(BUILD)/user_entry.o $(BUILD)/kernel.o $(BUILD)/cpu.o $(BUILD)/apic.o $(BUILD)/smp.o $(BUILD)/acpi.o $(BUILD)/interrupts.o $(BUILD)/syscall.o $(BUILD)/ipc.o $(BUILD)/shmem.o $(BUILD)/elf.o $(BUILD)/exec.o $(BUILD)/user.o $(BUILD)/pic.o $(BUILD)/timer.o $(BUILD)/sync.o $(BUILD)/memory.o $(BUILD)/gdt.o $(BUILD)/vmm.o $(BUILD)/tlb.o $(BUILD)/task.o $(BUILD)/wait.o $(BUILD)/scheduler.o $(BUILD)/thread.o $(BUILD)/process.o
+$(KERNEL): $(BUILD)/boot.o $(BUILD)/isr.o $(BUILD)/context.o $(BUILD)/ap_trampoline.o $(BUILD)/user_entry.o $(BUILD)/kernel.o $(BUILD)/pci.o $(BUILD)/cpu.o $(BUILD)/apic.o $(BUILD)/smp.o $(BUILD)/acpi.o $(BUILD)/interrupts.o $(BUILD)/syscall.o $(BUILD)/ipc.o $(BUILD)/shmem.o $(BUILD)/elf.o $(BUILD)/exec.o $(BUILD)/user.o $(BUILD)/pic.o $(BUILD)/timer.o $(BUILD)/sync.o $(BUILD)/memory.o $(BUILD)/gdt.o $(BUILD)/vmm.o $(BUILD)/tlb.o $(BUILD)/task.o $(BUILD)/wait.o $(BUILD)/scheduler.o $(BUILD)/thread.o $(BUILD)/process.o $(HARDWARE_CORE_OBJS) kernel/linker.ld
+	$(LD) $(LDFLAGS) -o $@ $(BUILD)/boot.o $(BUILD)/isr.o $(BUILD)/context.o $(BUILD)/ap_trampoline.o $(BUILD)/user_entry.o $(BUILD)/kernel.o $(BUILD)/pci.o $(BUILD)/cpu.o $(BUILD)/apic.o $(BUILD)/smp.o $(BUILD)/acpi.o $(BUILD)/interrupts.o $(BUILD)/syscall.o $(BUILD)/ipc.o $(BUILD)/shmem.o $(BUILD)/elf.o $(BUILD)/exec.o $(BUILD)/user.o $(BUILD)/pic.o $(BUILD)/timer.o $(BUILD)/sync.o $(BUILD)/memory.o $(BUILD)/gdt.o $(BUILD)/vmm.o $(BUILD)/tlb.o $(BUILD)/task.o $(BUILD)/wait.o $(BUILD)/scheduler.o $(BUILD)/thread.o $(BUILD)/process.o $(HARDWARE_CORE_OBJS)
 
 iso: $(KERNEL)
 	rm -rf $(BUILD)/iso
