@@ -113,6 +113,8 @@ jobs:
             grep -q "ZEROOS: service manager launched isolated IPC service attempt 2." build/serial.log
             grep -q "ZEROOS: isolated service IPC/restart recovery passed." build/serial.log
             grep -q "ZEROOS: userspace service manager dependency/restart lifecycle passed." build/serial.log
+            grep -q "ZEROOS: userspace service manager process published." build/serial.log
+            grep -q "ZEROOS: userspace service manager reaped cleanly." build/serial.log
             grep -q "ZEROOS: userspace init syscall path passed." build/serial.log
             grep -q "ZEROOS: userspace negative syscall/fault/malformed-ELF probes passed." build/serial.log
             grep -q "ZEROOS: init userspace process reaped cleanly." build/serial.log
@@ -155,6 +157,8 @@ jobs:
           grep -q "ZEROOS: service worker grant denial passed." build/serial-smp4.log
           grep -q "ZEROOS: isolated service IPC/restart recovery passed." build/serial-smp4.log
           grep -q "ZEROOS: userspace service manager dependency/restart lifecycle passed." build/serial-smp4.log
+          grep -q "ZEROOS: userspace service manager process published." build/serial-smp4.log
+          grep -q "ZEROOS: userspace service manager reaped cleanly." build/serial-smp4.log
           grep -q "ZEROOS: userspace init syscall path passed." build/serial-smp4.log
           grep -q "ZEROOS: userspace resource exhaustion/recovery passed." build/serial-smp4.log
           grep -q "ZEROOS: event and pipe IPC foundations self-test passed." build/serial-smp4.log
@@ -196,6 +200,8 @@ jobs:
           grep -q "ZEROOS: CPU hot-offline queue evacuation and parking passed." build/serial-nx-off.log
           grep -q "ZEROOS: service worker grant denial passed." build/serial-nx-off.log
           grep -q "ZEROOS: userspace service manager dependency/restart lifecycle passed." build/serial-nx-off.log
+          grep -q "ZEROOS: userspace service manager process published." build/serial-nx-off.log
+          grep -q "ZEROOS: userspace service manager reaped cleanly." build/serial-nx-off.log
           grep -q "ZEROOS: userspace init syscall path passed." build/serial-nx-off.log
           grep -q "ZEROOS: userspace resource exhaustion/recovery passed." build/serial-nx-off.log
           grep -q "ZEROOS: event and pipe IPC foundations self-test passed." build/serial-nx-off.log
@@ -231,6 +237,8 @@ jobs:
           grep -q "ZEROOS: scheduler certification passed." build-fault/serial.log
           grep -q "ZEROOS: service worker grant denial passed." build-fault/serial.log
           grep -q "ZEROOS: userspace service manager dependency/restart lifecycle passed." build-fault/serial.log
+          grep -q "ZEROOS: userspace service manager process published." build-fault/serial.log
+          grep -q "ZEROOS: userspace service manager reaped cleanly." build-fault/serial.log
           grep -q "ZEROOS: userspace init syscall path passed." build-fault/serial.log
           grep -q "ZEROOS: userspace resource exhaustion/recovery passed." build-fault/serial.log
           grep -q "ZEROOS: event and pipe IPC foundations self-test passed." build-fault/serial.log
