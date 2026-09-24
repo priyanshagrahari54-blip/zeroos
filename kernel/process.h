@@ -91,6 +91,13 @@ int process_address_space_map_page(struct process *process,
                                    uint64_t flags);
 int process_address_space_unmap_page(struct process *process,
                                      uint64_t virtual_address);
+/* Atomically preflight and unmap a set of expected physical pages while the
+ * process accounting lock is held. Used by shared-memory rollback/teardown so
+ * a concurrent address-space mutation cannot leave a half-unmapped record. */
+int process_address_space_unmap_range(struct process *process,
+                                      uint64_t virtual_address,
+                                      const uint64_t *physical_pages,
+                                      uint64_t page_count);
 uint64_t process_address_space_mapped_pages(const struct process *process);
 int process_address_space_is_user_range(const struct process *process,
                                         uint64_t virtual_address,

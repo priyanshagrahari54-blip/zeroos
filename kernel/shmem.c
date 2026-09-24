@@ -332,11 +332,9 @@ int shmem_map(struct process *owner, zeroos_shmem_handle_t handle,
     goto operation_done;
 
 rollback:
-    while (mapped_pages) {
-        --mapped_pages;
-        (void)process_address_space_unmap_page(
-            owner,virtual_address+mapped_pages*VMM_PAGE_SIZE);
-    }
+    if (mapped_pages)
+        (void)process_address_space_unmap_range(owner,virtual_address,
+                                                pages,mapped_pages);
 
 operation_done:
     irq_flags=spin_lock_irqsave(&shmem_lock);
@@ -402,20 +400,10 @@ int shmem_unmap(struct process *owner, zeroos_shmem_handle_t handle,
     }
     spin_unlock_irqrestore(&shmem_lock,irq_flags);
 
-    for (uint32_t i=0; i<page_count; ++i)
-        if (vmm_space_translate(&owner->address_space,
-                                virtual_address+i*VMM_PAGE_SIZE)!=pages[i]) {
-            result=-ZEROOS_EINVAL;
-            goto unmap_done;
-        }
-    for (uint32_t i=0; i<page_count; ++i)
-        if (process_address_space_unmap_page(
-                owner,virtual_address+i*VMM_PAGE_SIZE)!=0) {
-            result=-ZEROOS_EBUSY;
-            break;
-        }
+    if (process_address_space_unmap_range(owner,virtual_address,pages,
+                                          page_count)!=0)
+        result=-ZEROOS_EBUSY;
 
-unmap_done:
     irq_flags=spin_lock_irqsave(&shmem_lock);
     if (result==0 && mapping && mapping->used && mapping->object==object) {
         mapping->used=0;

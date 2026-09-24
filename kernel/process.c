@@ -633,6 +633,44 @@ int process_address_space_unmap_page(struct process *process,
     return 0;
 }
 
+int process_address_space_unmap_range(struct process *process,
+                                      uint64_t virtual_address,
+                                      const uint64_t *physical_pages,
+                                      uint64_t page_count) {
+    uint64_t irq_flags;
+    if (!process || !physical_pages || !page_count ||
+        page_count>process->max_address_space_pages ||
+        page_count>~0ULL/VMM_PAGE_SIZE ||
+        virtual_address&(VMM_PAGE_SIZE-1ULL) ||
+        virtual_address>~0ULL-page_count*VMM_PAGE_SIZE)
+        return -1;
+    irq_flags=spin_lock_irqsave(&process_lock);
+    if (process_lookup_locked(process->pid)!=process ||
+        process->state==PROCESS_UNUSED || process->state==PROCESS_ZOMBIE ||
+        process->resident_pages<page_count ||
+        process->resident_pages!=
+            vmm_space_mapped_pages(&process->address_space)) {
+        spin_unlock_irqrestore(&process_lock,irq_flags);
+        return -1;
+    }
+    for (uint64_t i=0; i<page_count; ++i)
+        if (vmm_space_translate(&process->address_space,
+                                virtual_address+i*VMM_PAGE_SIZE)!=
+                physical_pages[i]) {
+            spin_unlock_irqrestore(&process_lock,irq_flags);
+            return -1;
+        }
+    for (uint64_t i=0; i<page_count; ++i)
+        if (vmm_space_unmap_page(&process->address_space,
+                                 virtual_address+i*VMM_PAGE_SIZE)!=0) {
+            spin_unlock_irqrestore(&process_lock,irq_flags);
+            return -1;
+        }
+    process->resident_pages-=page_count;
+    spin_unlock_irqrestore(&process_lock,irq_flags);
+    return 0;
+}
+
 uint64_t process_address_space_mapped_pages(const struct process *process) {
     if (!process) return 0;
     uint64_t irq_flags=spin_lock_irqsave(&process_lock);
