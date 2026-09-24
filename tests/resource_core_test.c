@@ -1,0 +1,3 @@
+#include <assert.h>
+#include "../kernel/resource_core.h"
+int main(void){struct hw_resource_map m={0};assert(hw_resource_reserve(&m,0x1000,0x1000,HW_RESOURCE_MMIO,1)==0);assert(hw_resource_contains(&m,0x1800,0x100,HW_RESOURCE_MMIO));assert(!hw_resource_contains(&m,0x1f00,0x200,HW_RESOURCE_MMIO));assert(hw_resource_claim(&m,0x1800,0x100,HW_RESOURCE_MMIO,2)==-2);assert(hw_resource_claim(&m,0x3000,0x1000,HW_RESOURCE_MMIO,2)==0);assert(hw_resource_claim(&m,0x3800,0x100,HW_RESOURCE_MMIO,3)==-2);assert(hw_resource_release(&m,0x3000,0x1000,HW_RESOURCE_MMIO,2)==0);assert(hw_resource_release(&m,0x1000,0x1000,HW_RESOURCE_MMIO,1)==-1);assert(hw_resource_claim(&m,~0ULL,2,HW_RESOURCE_IOPORT,9)==-1);return 0;}

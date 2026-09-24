@@ -6,7 +6,7 @@
 |---|---|---|---|
 | x86-64 CPU, RAM, serial, PIT/PIC | Yes | Boot, memory management, diagnostics, timer | Other architectures |
 | ACPI RSDP/root/MADT | Validated discovery | Interrupt topology discovery and existing APIC path | AML, ACPI power/thermal/battery, suspend/resume |
-| PCI segment 0 | Mechanism #1 bus/function scan, IDs/classes, BAR address/type snapshots, bounded conventional capability list | Observation only; devices remain unbound | ECAM/MCFG, additional segments, BAR sizing/assignment, resource mapping, MSI/MSI-X activation, hotplug, driver matching |
+| PCI segment 0 | Mechanism #1 scan, identity/class, BAR snapshots, bounded conventional capabilities and MSI/MSI-X metadata; typed resource interval registry | Observation only; devices remain unbound | ECAM/MCFG, BAR sizing/assignment, MMIO mapping, MSI/MSI-X activation, hotplug, automatic matching |
 | DMA/IOMMU | No IOMMU backend | Owner-scoped DMA map/unmap API contract with bounded mapping tokens and teardown refusal while mappings remain | Hardware translation/cache-coherency implementation, bounce buffers, isolation/domain setup, device reset integration |
 | USB/input/display/audio/network/storage | No device driver | Descriptor framing validator; fixed-capacity input queue/registry; bounded audio ring; display mode validator; Ethernet/VLAN and ARP framing parsers; IPv4/IPv6 base-header validation; default-deny IPv4 policy and bounded flow tracking/routes; UDP framing, limited TCP connection-state helper/timeouts, DHCP option and DNS message validators; lifecycle/resource cleanup state machine | HCD/device enumeration, HID decoding, IRQ-backed input, DMA/audio engine, display scanout/GPU, NIC, IPv6/TCP/UDP sockets, DNS/DHCP, neighbor/ARP, routing integration, storage |
 
