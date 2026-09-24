@@ -153,7 +153,10 @@ does not free queue capacity. The public kernel helpers expose both infinite
 and timed forms so service code and fault tests use the same semantics. The
 boot gate also blocks a real receiver, closes its peer endpoint, requires the
 receiver to wake with `-ZEROOS_EPIPE`, and then reaps the temporary process;
-peer-close cancellation is therefore covered independently of event signaling.
+peer-close cancellation is therefore covered independently of event signaling. A
+second gate fills a bounded queue, blocks a real sender, drains one record,
+and requires the sender to complete; this covers the opposite backpressure
+wake direction rather than relying only on service receive wakeups.
 
 `PIPE_CREATE`, `PIPE_WRITE`, and `PIPE_READ` are the first bounded pipe ABI:
 they intentionally expose record semantics (one write is one message, capped at
