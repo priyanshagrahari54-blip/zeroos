@@ -165,6 +165,25 @@ GPU/display discovery -> kernel/driver interface -> graphics service -> composit
 Hardware acceleration is preferred when available.
 Software fallback is mandatory for basic operation where practical.
 
+### Stage 5 status (display primitive + desktop platform core)
+Implemented (this stage):
+- Kernel display primitive (`kernel/fb.c`): Multiboot2 framebuffer discovery
+  (info tag 8), physical reservation of overlapping RAM, supervisor MMIO
+  mapping with readback verification, and the `DISPLAY_INFO` syscall
+  (ID 25, ABI feature bit 7) returning geometry + PRESENT/degraded flags.
+  Missing/unusable framebuffers degrade to the serial console milestone and
+  never fail the boot. The kernel owns no desktop policy.
+- Desktop platform core (`userspace/desktop/`): fixed-capacity, zero-heap,
+  freestanding-clean modules for lifecycle, resource governor, window
+  system, compositor (retained scene, damage, occlusion, pacing, cache,
+  software fallback), Universal Search, schema-driven settings,
+  notifications, accessibility, i18n (en+hi), and service watchdog —
+  gated by `make desktop-check` (3200+ assertions, hosted + freestanding).
+
+Not yet implemented (contracts defined, explicit in PHASES.md):
+- Pixel mapping syscall + userspace display service writing scanout,
+  GPU driver beyond scanout, input driver stack, shell UI processes.
+
 ## 15. Networking
 Network stack is independent of desktop UI.
 Network manager handles links/configuration.
