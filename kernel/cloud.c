@@ -1,0 +1,7 @@
+#include "cloud.h"
+static struct spinlock cloud_lock;
+static struct zeroos_cloud_service services[ZEROOS_CLOUD_MAX_SERVICES];
+int cloud_system_init(void){spinlock_init(&cloud_lock);for(uint32_t i=0;i<ZEROOS_CLOUD_MAX_SERVICES;++i){services[i].used=0;services[i].gen=0;spinlock_init(&services[i].lock);}return 0;}
+int cloud_service_register(const char *name,uint8_t offline,uint64_t owner,uint64_t *id_out){if(!name||!id_out||owner==0)return -1;uint64_t f=spin_lock_irqsave(&cloud_lock);for(uint32_t i=0;i<ZEROOS_CLOUD_MAX_SERVICES;++i){if(services[i].used)continue;if(services[i].gen==0xffffffffU)continue;services[i].gen++;if(services[i].gen==0)continue;services[i].used=1;services[i].state=ZEROOS_CLOUD_DORMANT;services[i].offline_capable=offline;services[i].owner_task_id=owner;uint32_t n=0;while(n<31&&name[n]){services[i].name[n]=name[n];n++;}services[i].name[n]=0;services[i].id=((uint64_t)services[i].gen<<16)|(i+1);*id_out=services[i].id;spin_unlock_irqrestore(&cloud_lock,f);return 0;}spin_unlock_irqrestore(&cloud_lock,f);return -1;}
+int cloud_service_set_state(uint64_t id,enum zeroos_cloud_state st){uint64_t f=spin_lock_irqsave(&cloud_lock);uint32_t slot=(uint32_t)(id&0xffffULL);uint32_t gen=(uint32_t)(id>>16);if(slot&&slot<=ZEROOS_CLOUD_MAX_SERVICES&&gen){struct zeroos_cloud_service *s=&services[slot-1];if(s->used&&s->gen==gen){uint64_t sf=spin_lock_irqsave(&s->lock);s->state=st;spin_unlock_irqrestore(&s->lock,sf);}}spin_unlock_irqrestore(&cloud_lock,f);return 0;}
+int cloud_debug_validate(void){return 0;}

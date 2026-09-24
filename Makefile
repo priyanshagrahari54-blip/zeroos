@@ -186,8 +186,41 @@ $(BUILD)/settings.o: kernel/settings.c kernel/settings.h kernel/types.h kernel/s
 $(BUILD)/docs.o: kernel/docs.c kernel/docs.h kernel/types.h kernel/sync.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
-$(KERNEL): $(BUILD)/boot.o $(BUILD)/isr.o $(BUILD)/context.o $(BUILD)/ap_trampoline.o $(BUILD)/user_entry.o $(BUILD)/kernel.o $(BUILD)/cpu.o $(BUILD)/apic.o $(BUILD)/smp.o $(BUILD)/acpi.o $(BUILD)/interrupts.o $(BUILD)/syscall.o $(BUILD)/ipc.o $(BUILD)/shmem.o $(BUILD)/elf.o $(BUILD)/exec.o $(BUILD)/user.o $(BUILD)/pic.o $(BUILD)/timer.o $(BUILD)/sync.o $(BUILD)/memory.o $(BUILD)/gdt.o $(BUILD)/vmm.o $(BUILD)/tlb.o $(BUILD)/task.o $(BUILD)/wait.o $(BUILD)/scheduler.o $(BUILD)/thread.o $(BUILD)/process.o $(BUILD)/block.o $(BUILD)/gpt.o $(BUILD)/vfs.o $(BUILD)/page_cache.o $(BUILD)/pci.o $(BUILD)/dma.o $(BUILD)/display.o $(BUILD)/net.o $(BUILD)/usb.o $(BUILD)/input.o $(BUILD)/audio.o $(BUILD)/power.o $(BUILD)/ahci.o $(BUILD)/nvme.o $(BUILD)/fs.o $(BUILD)/graphics.o $(BUILD)/compositor.o $(BUILD)/window.o $(BUILD)/desktop.o $(BUILD)/shell.o $(BUILD)/search.o $(BUILD)/settings.o $(BUILD)/docs.o kernel/linker.ld
-	$(LD) $(LDFLAGS) -o $@ $(BUILD)/boot.o $(BUILD)/isr.o $(BUILD)/context.o $(BUILD)/ap_trampoline.o $(BUILD)/user_entry.o $(BUILD)/kernel.o $(BUILD)/cpu.o $(BUILD)/apic.o $(BUILD)/smp.o $(BUILD)/acpi.o $(BUILD)/interrupts.o $(BUILD)/syscall.o $(BUILD)/ipc.o $(BUILD)/shmem.o $(BUILD)/elf.o $(BUILD)/exec.o $(BUILD)/user.o $(BUILD)/pic.o $(BUILD)/timer.o $(BUILD)/sync.o $(BUILD)/memory.o $(BUILD)/gdt.o $(BUILD)/vmm.o $(BUILD)/tlb.o $(BUILD)/task.o $(BUILD)/wait.o $(BUILD)/scheduler.o $(BUILD)/thread.o $(BUILD)/process.o $(BUILD)/block.o $(BUILD)/gpt.o $(BUILD)/vfs.o $(BUILD)/page_cache.o $(BUILD)/pci.o $(BUILD)/dma.o $(BUILD)/display.o $(BUILD)/net.o $(BUILD)/usb.o $(BUILD)/input.o $(BUILD)/audio.o $(BUILD)/power.o $(BUILD)/ahci.o $(BUILD)/nvme.o $(BUILD)/fs.o $(BUILD)/graphics.o $(BUILD)/compositor.o $(BUILD)/window.o $(BUILD)/desktop.o $(BUILD)/shell.o $(BUILD)/search.o $(BUILD)/settings.o $(BUILD)/docs.o
+$(BUILD)/security.o: kernel/security.c kernel/security.h kernel/types.h kernel/sync.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(BUILD)/recovery.o: kernel/recovery.c kernel/recovery.h kernel/types.h kernel/sync.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(BUILD)/wincompat.o: kernel/wincompat.c kernel/wincompat.h kernel/types.h kernel/sync.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(BUILD)/android.o: kernel/android.c kernel/android.h kernel/types.h kernel/sync.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(BUILD)/browser.o: kernel/browser.c kernel/browser.h kernel/types.h kernel/sync.h kernel/wait.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(BUILD)/ai.o: kernel/ai.c kernel/ai.h kernel/types.h kernel/sync.h kernel/wait.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(BUILD)/media.o: kernel/media.c kernel/media.h kernel/types.h kernel/sync.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(BUILD)/gaming.o: kernel/gaming.c kernel/gaming.h kernel/types.h kernel/sync.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(BUILD)/cloud.o: kernel/cloud.c kernel/cloud.h kernel/types.h kernel/sync.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(BUILD)/automation.o: kernel/automation.c kernel/automation.h kernel/types.h kernel/sync.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(BUILD)/study.o: kernel/study.c kernel/study.h kernel/types.h kernel/sync.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+
+$(KERNEL): $(BUILD)/boot.o $(BUILD)/isr.o $(BUILD)/context.o $(BUILD)/ap_trampoline.o $(BUILD)/user_entry.o $(BUILD)/kernel.o $(BUILD)/cpu.o $(BUILD)/apic.o $(BUILD)/smp.o $(BUILD)/acpi.o $(BUILD)/interrupts.o $(BUILD)/syscall.o $(BUILD)/ipc.o $(BUILD)/shmem.o $(BUILD)/elf.o $(BUILD)/exec.o $(BUILD)/user.o $(BUILD)/pic.o $(BUILD)/timer.o $(BUILD)/sync.o $(BUILD)/memory.o $(BUILD)/gdt.o $(BUILD)/vmm.o $(BUILD)/tlb.o $(BUILD)/task.o $(BUILD)/wait.o $(BUILD)/scheduler.o $(BUILD)/thread.o $(BUILD)/process.o $(BUILD)/block.o $(BUILD)/gpt.o $(BUILD)/vfs.o $(BUILD)/page_cache.o $(BUILD)/pci.o $(BUILD)/dma.o $(BUILD)/display.o $(BUILD)/net.o $(BUILD)/usb.o $(BUILD)/input.o $(BUILD)/audio.o $(BUILD)/power.o $(BUILD)/ahci.o $(BUILD)/nvme.o $(BUILD)/fs.o $(BUILD)/graphics.o $(BUILD)/compositor.o $(BUILD)/window.o $(BUILD)/desktop.o $(BUILD)/shell.o $(BUILD)/search.o $(BUILD)/settings.o $(BUILD)/docs.o $(BUILD)/security.o $(BUILD)/recovery.o $(BUILD)/wincompat.o $(BUILD)/android.o $(BUILD)/browser.o $(BUILD)/ai.o $(BUILD)/media.o $(BUILD)/gaming.o $(BUILD)/cloud.o $(BUILD)/automation.o $(BUILD)/study.o kernel/linker.ld
+	$(LD) $(LDFLAGS) -o $@ $(BUILD)/boot.o $(BUILD)/isr.o $(BUILD)/context.o $(BUILD)/ap_trampoline.o $(BUILD)/user_entry.o $(BUILD)/kernel.o $(BUILD)/cpu.o $(BUILD)/apic.o $(BUILD)/smp.o $(BUILD)/acpi.o $(BUILD)/interrupts.o $(BUILD)/syscall.o $(BUILD)/ipc.o $(BUILD)/shmem.o $(BUILD)/elf.o $(BUILD)/exec.o $(BUILD)/user.o $(BUILD)/pic.o $(BUILD)/timer.o $(BUILD)/sync.o $(BUILD)/memory.o $(BUILD)/gdt.o $(BUILD)/vmm.o $(BUILD)/tlb.o $(BUILD)/task.o $(BUILD)/wait.o $(BUILD)/scheduler.o $(BUILD)/thread.o $(BUILD)/process.o $(BUILD)/block.o $(BUILD)/gpt.o $(BUILD)/vfs.o $(BUILD)/page_cache.o $(BUILD)/pci.o $(BUILD)/dma.o $(BUILD)/display.o $(BUILD)/net.o $(BUILD)/usb.o $(BUILD)/input.o $(BUILD)/audio.o $(BUILD)/power.o $(BUILD)/ahci.o $(BUILD)/nvme.o $(BUILD)/fs.o $(BUILD)/graphics.o $(BUILD)/compositor.o $(BUILD)/window.o $(BUILD)/desktop.o $(BUILD)/shell.o $(BUILD)/search.o $(BUILD)/settings.o $(BUILD)/docs.o $(BUILD)/security.o $(BUILD)/recovery.o $(BUILD)/wincompat.o $(BUILD)/android.o $(BUILD)/browser.o $(BUILD)/ai.o $(BUILD)/media.o $(BUILD)/gaming.o $(BUILD)/cloud.o $(BUILD)/automation.o $(BUILD)/study.o
 
 iso: $(KERNEL)
 	rm -rf $(BUILD)/iso

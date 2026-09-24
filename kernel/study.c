@@ -1,0 +1,7 @@
+#include "study.h"
+static struct spinlock study_lock;
+static struct zeroos_study_session sessions[ZEROOS_STUDY_MAX_SESSIONS];
+int study_system_init(void){spinlock_init(&study_lock);for(uint32_t i=0;i<ZEROOS_STUDY_MAX_SESSIONS;++i){sessions[i].used=0;sessions[i].gen=0;spinlock_init(&sessions[i].lock);}return 0;}
+int study_session_create(const char *subject,uint64_t dur,uint64_t owner,uint64_t *id_out){if(!subject||!id_out||owner==0)return -1;uint64_t f=spin_lock_irqsave(&study_lock);for(uint32_t i=0;i<ZEROOS_STUDY_MAX_SESSIONS;++i){if(sessions[i].used)continue;if(sessions[i].gen==0xffffffffU)continue;sessions[i].gen++;if(sessions[i].gen==0)continue;sessions[i].used=1;sessions[i].state=ZEROOS_STUDY_DORMANT;sessions[i].duration_ms=dur;sessions[i].owner_task_id=owner;sessions[i].focus_mode=0;uint32_t n=0;while(n<63&&subject[n]){sessions[i].subject[n]=subject[n];n++;}sessions[i].subject[n]=0;sessions[i].id=((uint64_t)sessions[i].gen<<16)|(i+1);*id_out=sessions[i].id;spin_unlock_irqrestore(&study_lock,f);return 0;}spin_unlock_irqrestore(&study_lock,f);return -1;}
+int study_session_set_focus(uint64_t id,uint8_t focus){uint64_t f=spin_lock_irqsave(&study_lock);uint32_t slot=(uint32_t)(id&0xffffULL);uint32_t gen=(uint32_t)(id>>16);if(slot&&slot<=ZEROOS_STUDY_MAX_SESSIONS&&gen){struct zeroos_study_session *s=&sessions[slot-1];if(s->used&&s->gen==gen){uint64_t sf=spin_lock_irqsave(&s->lock);s->focus_mode=focus;spin_unlock_irqrestore(&s->lock,sf);}}spin_unlock_irqrestore(&study_lock,f);return 0;}
+int study_debug_validate(void){return 0;}

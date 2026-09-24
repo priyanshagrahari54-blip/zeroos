@@ -39,6 +39,20 @@
 #include "search.h"
 #include "settings.h"
 #include "docs.h"
+<<<<<<< HEAD
+=======
+#include "security.h"
+#include "recovery.h"
+#include "wincompat.h"
+#include "android.h"
+#include "browser.h"
+#include "ai.h"
+#include "media.h"
+#include "gaming.h"
+#include "cloud.h"
+#include "automation.h"
+#include "study.h"
+>>>>>>> 1d1da7b (Stage 5B: security, recovery, wincompat, android, browser, ai, media, gaming, cloud, automation, study)
 
 #define COM1 0x3F8
 #define VMM_SELF_TEST_VA 0x00007f0000000000ULL
@@ -1022,11 +1036,18 @@ static void scheduler_self_test(void) {
         graphics_system_init()!=0 || compositor_system_init()!=0 ||
         window_system_init()!=0 || desktop_system_init()!=0 ||
         shell_system_init()!=0 || search_system_init()!=0 ||
-        settings_system_init()!=0 || docs_system_init()!=0)
+        settings_system_init()!=0 || docs_system_init()!=0 ||
+        security_system_init()!=0 || recovery_system_init()!=0 ||
+        wincompat_system_init()!=0 || android_system_init()!=0 ||
+        browser_system_init()!=0 || ai_system_init()!=0 ||
+        media_system_init()!=0 || gaming_system_init()!=0 ||
+        cloud_system_init()!=0 || automation_system_init()!=0 ||
+        study_system_init()!=0)
         kernel_panic("Stage 3/4/5 subsystem initialization failed");
     serial_write_public("ZEROOS: Stage 3 block/GPT/VFS/page-cache/PCI/DMA/AHCI/NVMe initialized.\n");
     serial_write_public("ZEROOS: Stage 4 USB/input/display/audio/net/power initialized.\n");
     serial_write_public("ZEROOS: Stage 5 graphics/compositor/window/desktop/shell/search/settings/docs initialized.\n");
+    serial_write_public("ZEROOS: Stage 5B security/recovery/wincompat/android/browser/ai/media/gaming/cloud/automation/study initialized.\n");
     if (userspace_system_init()!=0)
         kernel_panic("userspace core initialization failed");
     serial_write_public("ZEROOS: Ring-3 GDT and versioned syscall ABI initialized.\n");
