@@ -339,6 +339,15 @@ jobs:
       - name: Publish boot failure summary
         if: failure()
         run: |
+          # Exact panic lines first: annotation messages are capped near 4KB
+          # and the full serial tails truncate precisely where they matter.
+          for log in build/serial.log build/serial-smp4.log build/serial-nx-off.log build-fault/serial.log; do
+            if test -f "$log" && grep -q "ZEROOS PANIC:" "$log"; then
+              panic_line=$(grep -m1 -o "ZEROOS PANIC:.*" "$log")
+              title=$(basename "$log")
+              echo "::error title=panic in ${title}::${panic_line}"
+            fi
+          done
           if test -s build/serial.log; then
             summary=$(tr '\r\n' '  ' < build/serial.log | cut -c1-6000)
             echo "::error title=ZEROOS serial log::$summary"
