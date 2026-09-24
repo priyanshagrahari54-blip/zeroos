@@ -60,6 +60,54 @@ int wait_queue_commit(uint64_t flags) {
     return task_block_irqsave(flags);
 }
 
+int wait_queue_commit_until(uint64_t flags, uint64_t deadline) {
+    return task_block_until_irqsave(flags,deadline);
+}
+
+int wait_queue_remove_current(struct wait_queue *queue) {
+    struct task *task;
+    uint64_t flags;
+
+    if (!queue)
+        return -1;
+    task=task_current();
+    if (!task)
+        return -1;
+
+    flags=spin_lock_irqsave(&queue->lock);
+    if (task->wait_queue!=queue) {
+        spin_unlock_irqrestore(&queue->lock,flags);
+        return 0;
+    }
+
+    {
+        struct task **cursor=&queue->head;
+        while (*cursor && *cursor!=task)
+            cursor=&(*cursor)->wait_next;
+        if (*cursor!=task) {
+            task->wait_queue=0;
+            task->wait_next=0;
+            spin_unlock_irqrestore(&queue->lock,flags);
+            return -1;
+        }
+        *cursor=task->wait_next;
+        if (queue->tail==task)
+            queue->tail=0;
+        if (!queue->head)
+            queue->tail=0;
+        else if (!queue->tail) {
+            struct task *tail=queue->head;
+            while (tail->wait_next)
+                tail=tail->wait_next;
+            queue->tail=tail;
+        }
+        task->wait_next=0;
+        task->wait_queue=0;
+    }
+    spin_unlock_irqrestore(&queue->lock,flags);
+    return 0;
+}
+
 int wait_queue_block(struct wait_queue *queue) {
     uint64_t flags;
     if (wait_queue_prepare(queue,&flags)!=0)
