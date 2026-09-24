@@ -232,11 +232,19 @@ out:
 
 int ipc_grant(struct process *owner, zeroos_ipc_handle_t source,
               uint64_t target_pid, zeroos_ipc_handle_t *target_out) {
+    uint8_t rights=ZEROOS_IPC_ALL_RIGHTS;
+    return ipc_grant_rights(owner,source,target_pid,rights,target_out);
+}
+
+int ipc_grant_rights(struct process *owner, zeroos_ipc_handle_t source,
+                     uint64_t target_pid, uint8_t rights,
+                     zeroos_ipc_handle_t *target_out) {
     struct process *target;
     uint64_t flags;
     int result;
 
-    if (!process_can_use(owner) || !target_out || target_pid==0)
+    if (!process_can_use(owner) || !target_out || target_pid==0 ||
+        rights==0 || (rights&~ZEROOS_IPC_ALL_RIGHTS)!=0)
         return -ZEROOS_EINVAL;
     target=process_lookup(target_pid);
     if (!process_can_use(target))
@@ -246,9 +254,11 @@ int ipc_grant(struct process *owner, zeroos_ipc_handle_t source,
     struct ipc_capability *source_cap=capability_lookup_locked(owner,source);
     if (!source_cap || !(source_cap->rights&ZEROOS_IPC_RIGHT_GRANT))
         result=-ZEROOS_EBADF;
+    else if ((rights&source_cap->rights)!=rights)
+        result=-ZEROOS_EPERM;
     else
         result=capability_alloc_locked(target,source_cap->endpoint,
-                                       source_cap->rights,target_out);
+                                       rights,target_out);
     spin_unlock_irqrestore(&ipc_lock,flags);
     return result;
 }
@@ -489,7 +499,8 @@ int ipc_debug_validate(void) {
             continue;
         if (!process_exists(capability->owner) ||
             !capability->endpoint || !capability->endpoint->used ||
-            capability->rights==0) {
+            capability->rights==0 ||
+            (capability->rights&~ZEROOS_IPC_ALL_RIGHTS)!=0) {
             spin_unlock_irqrestore(&ipc_lock,flags);
             return -1;
         }

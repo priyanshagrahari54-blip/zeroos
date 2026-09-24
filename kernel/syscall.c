@@ -225,7 +225,10 @@ void syscall_dispatch(struct interrupt_frame *frame) {
             frame->rax=syscall_error(ZEROOS_EFAULT);
             break;
         }
-        result=ipc_grant(process,frame->rdi,frame->rsi,&target_handle);
+        result=ipc_grant_rights(
+            process,frame->rdi,frame->rsi,
+            frame->r10 ? (uint8_t)frame->r10 : ZEROOS_IPC_ALL_RIGHTS,
+            &target_handle);
         if (result==0 && copy_to_user(frame->rdx,&target_handle,
                                       sizeof(target_handle))!=0)
             result=-ZEROOS_EFAULT;

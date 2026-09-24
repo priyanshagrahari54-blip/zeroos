@@ -422,7 +422,9 @@ static int userspace_start_service(uint64_t attempt) {
      * below exercises the same cross-process capability path as production
      * services rather than a same-owner shortcut. */
     if (ipc_create(controller,&controller_handle,&controller_peer)!=0 ||
-        ipc_grant(controller,controller_peer,worker->pid,&worker_handle)!=0)
+        ipc_grant_rights(controller,controller_peer,worker->pid,
+                         ZEROOS_IPC_RIGHT_SEND|ZEROOS_IPC_RIGHT_CLOSE,
+                         &worker_handle)!=0)
         goto fail;
     image_size=build_service_elf(worker_handle,message,message_length,
                                  attempt==1 ? 7U : 0U);
@@ -459,6 +461,8 @@ static int userspace_start_service(uint64_t attempt) {
     service_attempt=attempt;
     service_expected_length=message_length;
     service_started=1;
+    if (attempt==1)
+        serial_write_public("ZEROOS: service capability least-privilege grant passed.\n");
     if (attempt==1)
         serial_write_public("ZEROOS: service manager launched isolated IPC service attempt 1.\n");
     else

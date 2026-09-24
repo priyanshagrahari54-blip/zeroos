@@ -36,6 +36,9 @@ int ipc_create(struct process *owner, zeroos_ipc_handle_t *local_out,
               zeroos_ipc_handle_t *peer_out);
 int ipc_grant(struct process *owner, zeroos_ipc_handle_t source,
               uint64_t target_pid, zeroos_ipc_handle_t *target_out);
+int ipc_grant_rights(struct process *owner, zeroos_ipc_handle_t source,
+                     uint64_t target_pid, uint8_t rights,
+                     zeroos_ipc_handle_t *target_out);
 int ipc_close(struct process *owner, zeroos_ipc_handle_t handle);
 int ipc_send(struct process *owner, zeroos_ipc_handle_t handle,
              const void *data, uint64_t length, uint64_t flags);

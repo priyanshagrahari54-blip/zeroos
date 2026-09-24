@@ -89,7 +89,7 @@ The initial v1 calls are:
 | 4 | `GETTID` | return the owning generation-tagged TID |
 | 5 | `YIELD` | request interrupt-return rescheduling; no cooperative switch on an ISR stack |
 | 6 | `IPC_CREATE` | create a bounded channel pair and return generation-checked handles |
-| 7 | `IPC_GRANT` | copy a capability to a generation-checked live process |
+| 7 | `IPC_GRANT` | copy a selected subset of capability rights to a generation-checked live process (`R10`, zero means all source rights) |
 | 8 | `IPC_CLOSE` | revoke the caller's capability |
 | 9 | `IPC_SEND` | bounded message copy into the peer queue |
 | 10 | `IPC_RECEIVE` | receive or peek one bounded message |
