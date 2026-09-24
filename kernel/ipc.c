@@ -19,6 +19,8 @@ struct ipc_endpoint {
     uint16_t head;
     uint16_t tail;
     uint8_t used;
+    uint8_t kind;
+    uint8_t event_pending;
     uint16_t reserved;
     struct ipc_endpoint *peer;
     struct wait_queue send_waiters;
@@ -93,8 +95,16 @@ static void endpoint_destroy_locked(struct ipc_endpoint *endpoint) {
     endpoint->count=0;
     endpoint->head=0;
     endpoint->tail=0;
-    if (peer && peer->used && peer->peer==endpoint)
+    endpoint->kind=ZEROOS_IPC_KIND_MESSAGE;
+    endpoint->event_pending=0;
+    if (peer && peer->used && peer->peer==endpoint) {
+        /* A peer close changes the condition observed by waiters on the
+         * surviving endpoint. Wake both classes so they revalidate the link
+         * and return EPIPE instead of sleeping behind a dead capability. */
+        (void)wait_queue_wake_all(&peer->send_waiters);
+        (void)wait_queue_wake_all(&peer->receive_waiters);
         peer->peer=0;
+    }
 }
 
 static void capability_drop_locked(struct ipc_capability *capability) {
@@ -157,6 +167,8 @@ int ipc_system_init(void) {
         endpoints[i].head=0;
         endpoints[i].tail=0;
         endpoints[i].used=0;
+        endpoints[i].kind=ZEROOS_IPC_KIND_MESSAGE;
+        endpoints[i].event_pending=0;
         endpoints[i].peer=0;
         endpoints[i].reserved=0;
         wait_queue_init(&endpoints[i].send_waiters);
@@ -172,14 +184,17 @@ int ipc_system_init(void) {
     return 0;
 }
 
-int ipc_create(struct process *owner, zeroos_ipc_handle_t *local_out,
-              zeroos_ipc_handle_t *peer_out) {
+static int ipc_create_kind(struct process *owner,
+                           zeroos_ipc_handle_t *local_out,
+                           zeroos_ipc_handle_t *peer_out,
+                           uint8_t kind) {
     struct ipc_endpoint *local=0;
     struct ipc_endpoint *peer=0;
     uint64_t flags;
     int result=-ZEROOS_ENOMEM;
 
-    if (!process_can_use(owner) || !local_out || !peer_out)
+    if (!process_can_use(owner) || !local_out || !peer_out ||
+        (kind!=ZEROOS_IPC_KIND_MESSAGE && kind!=ZEROOS_IPC_KIND_EVENT))
         return -ZEROOS_EINVAL;
     flags=spin_lock_irqsave(&ipc_lock);
     for (uint32_t i=0; i<ZEROOS_IPC_MAX_ENDPOINTS; ++i) {
@@ -199,6 +214,9 @@ int ipc_create(struct process *owner, zeroos_ipc_handle_t *local_out,
     ++peer->generation;
     local->used=1;
     peer->used=1;
+    local->kind=kind;
+    peer->kind=kind;
+    local->event_pending=peer->event_pending=0;
     local->count=peer->count=0;
     local->head=peer->head=0;
     local->tail=peer->tail=0;
@@ -228,6 +246,16 @@ int ipc_create(struct process *owner, zeroos_ipc_handle_t *local_out,
 out:
     spin_unlock_irqrestore(&ipc_lock,flags);
     return result;
+}
+
+int ipc_create(struct process *owner, zeroos_ipc_handle_t *local_out,
+              zeroos_ipc_handle_t *peer_out) {
+    return ipc_create_kind(owner,local_out,peer_out,ZEROOS_IPC_KIND_MESSAGE);
+}
+
+int ipc_create_event(struct process *owner, zeroos_ipc_handle_t *signal_out,
+                     zeroos_ipc_handle_t *wait_out) {
+    return ipc_create_kind(owner,signal_out,wait_out,ZEROOS_IPC_KIND_EVENT);
 }
 
 int ipc_grant(struct process *owner, zeroos_ipc_handle_t source,
@@ -319,6 +347,10 @@ int ipc_send_timeout(struct process *owner, zeroos_ipc_handle_t handle,
             spin_unlock_irqrestore(&ipc_lock,irq_flags);
             return -ZEROOS_EBADF;
         }
+        if (capability->endpoint->kind!=ZEROOS_IPC_KIND_MESSAGE) {
+            spin_unlock_irqrestore(&ipc_lock,irq_flags);
+            return -ZEROOS_EINVAL;
+        }
         peer=capability->endpoint->peer;
         if (!peer || !peer->used) {
             spin_unlock_irqrestore(&ipc_lock,irq_flags);
@@ -401,6 +433,10 @@ int ipc_receive_timeout(struct process *owner, zeroos_ipc_handle_t handle,
             return -ZEROOS_EBADF;
         }
         endpoint=capability->endpoint;
+        if (endpoint->kind!=ZEROOS_IPC_KIND_MESSAGE) {
+            spin_unlock_irqrestore(&ipc_lock,irq_flags);
+            return -ZEROOS_EINVAL;
+        }
         if (endpoint->count==0) {
             uint64_t block_flags;
             if (!endpoint->peer) {
@@ -451,6 +487,105 @@ int ipc_receive_timeout(struct process *owner, zeroos_ipc_handle_t handle,
     }
 }
 
+
+int ipc_event_signal(struct process *owner, zeroos_ipc_handle_t handle,
+                     uint64_t flags) {
+    uint64_t irq_flags;
+    struct ipc_capability *capability;
+    struct ipc_endpoint *peer;
+
+    if (!process_can_use(owner) || (flags&~ZEROOS_IPC_FLAG_NONBLOCK)!=0)
+        return -ZEROOS_EINVAL;
+    irq_flags=spin_lock_irqsave(&ipc_lock);
+    capability=capability_lookup_locked(owner,handle);
+    if (!capability || !(capability->rights&ZEROOS_IPC_RIGHT_SEND) ||
+        capability->endpoint->kind!=ZEROOS_IPC_KIND_EVENT) {
+        spin_unlock_irqrestore(&ipc_lock,irq_flags);
+        return -ZEROOS_EBADF;
+    }
+    peer=capability->endpoint->peer;
+    if (!peer || !peer->used || peer->kind!=ZEROOS_IPC_KIND_EVENT) {
+        spin_unlock_irqrestore(&ipc_lock,irq_flags);
+        return -ZEROOS_EPIPE;
+    }
+    /* Event notifications are coalesced: one pending bit represents any
+     * number of signals until the waiter consumes it. This avoids an
+     * unbounded event queue while preserving a wakeup for every empty->ready
+     * transition. */
+    if (peer->event_pending) {
+        spin_unlock_irqrestore(&ipc_lock,irq_flags);
+        return 0;
+    }
+    peer->event_pending=1;
+    (void)wait_queue_wake_one(&peer->receive_waiters);
+    spin_unlock_irqrestore(&ipc_lock,irq_flags);
+    return 1;
+}
+
+int ipc_event_wait_timeout(struct process *owner, zeroos_ipc_handle_t handle,
+                           uint64_t flags, uint64_t timeout_ticks) {
+    uint64_t deadline=0;
+
+    if (!process_can_use(owner) || (flags&~ZEROOS_IPC_VALID_FLAGS)!=0)
+        return -ZEROOS_EINVAL;
+    if (timeout_ticks!=ZEROOS_IPC_TIMEOUT_FOREVER) {
+        deadline=timer_ticks()+timeout_ticks;
+        if (deadline<timer_ticks())
+            deadline=~0ULL;
+    }
+
+    for (;;) {
+        uint64_t irq_flags;
+        struct ipc_capability *capability;
+        struct ipc_endpoint *endpoint;
+
+        irq_flags=spin_lock_irqsave(&ipc_lock);
+        capability=capability_lookup_locked(owner,handle);
+        if (!capability || !(capability->rights&ZEROOS_IPC_RIGHT_RECV) ||
+            capability->endpoint->kind!=ZEROOS_IPC_KIND_EVENT) {
+            spin_unlock_irqrestore(&ipc_lock,irq_flags);
+            return -ZEROOS_EBADF;
+        }
+        endpoint=capability->endpoint;
+        if (endpoint->event_pending) {
+            if (!(flags&ZEROOS_IPC_FLAG_PEEK))
+                endpoint->event_pending=0;
+            spin_unlock_irqrestore(&ipc_lock,irq_flags);
+            return 1;
+        }
+        if (!endpoint->peer) {
+            spin_unlock_irqrestore(&ipc_lock,irq_flags);
+            return -ZEROOS_EPIPE;
+        }
+        if (flags&ZEROOS_IPC_FLAG_NONBLOCK) {
+            spin_unlock_irqrestore(&ipc_lock,irq_flags);
+            return -ZEROOS_EAGAIN;
+        }
+        if (timeout_ticks!=ZEROOS_IPC_TIMEOUT_FOREVER) {
+            int sleep_result;
+            if ((long long)(deadline-timer_ticks())<=0) {
+                spin_unlock_irqrestore(&ipc_lock,irq_flags);
+                return -ZEROOS_ETIMEDOUT;
+            }
+            spin_unlock_irqrestore(&ipc_lock,irq_flags);
+            sleep_result=task_sleep_ticks(1);
+            if (sleep_result!=0)
+                return -ZEROOS_EINTR;
+            continue;
+        }
+        {
+            uint64_t block_flags;
+            if (wait_queue_prepare(&endpoint->receive_waiters,&block_flags)!=0) {
+                spin_unlock_irqrestore(&ipc_lock,irq_flags);
+                return -ZEROOS_EBUSY;
+            }
+            spin_unlock(&ipc_lock);
+            if (wait_queue_commit(block_flags)!=0)
+                return -ZEROOS_EINTR;
+        }
+    }
+}
+
 int ipc_process_revoke(struct process *owner) {
     uint64_t flags;
     uint64_t revoked=0;
@@ -474,18 +609,35 @@ int ipc_debug_validate(void) {
         uint32_t refs=0;
         if (!endpoint->used) {
             if (endpoint->count || endpoint->head || endpoint->tail ||
-                endpoint->peer || endpoint->reserved) {
+                endpoint->peer || endpoint->reserved ||
+                endpoint->kind!=ZEROOS_IPC_KIND_MESSAGE ||
+                endpoint->event_pending) {
                 spin_unlock_irqrestore(&ipc_lock,flags);
                 return -1;
             }
             continue;
+        }
+        if (endpoint->kind!=ZEROOS_IPC_KIND_MESSAGE &&
+            endpoint->kind!=ZEROOS_IPC_KIND_EVENT) {
+            spin_unlock_irqrestore(&ipc_lock,flags);
+            return -1;
+        }
+        if (endpoint->kind==ZEROOS_IPC_KIND_MESSAGE && endpoint->event_pending) {
+            spin_unlock_irqrestore(&ipc_lock,flags);
+            return -1;
+        }
+        if (endpoint->kind==ZEROOS_IPC_KIND_EVENT && endpoint->count!=0) {
+            spin_unlock_irqrestore(&ipc_lock,flags);
+            return -1;
         }
         if (endpoint->count>ZEROOS_IPC_QUEUE_DEPTH ||
             endpoint->head>=ZEROOS_IPC_QUEUE_DEPTH ||
             endpoint->tail>=ZEROOS_IPC_QUEUE_DEPTH ||
             wait_queue_count(&endpoint->send_waiters)>ZEROOS_MAX_TASKS ||
             wait_queue_count(&endpoint->receive_waiters)>ZEROOS_MAX_TASKS ||
-            (endpoint->peer && !endpoint->peer->used)) {
+            (endpoint->peer && (!endpoint->peer->used ||
+                                 endpoint->peer->peer!=endpoint ||
+                                 endpoint->peer->kind!=endpoint->kind))) {
             spin_unlock_irqrestore(&ipc_lock,flags);
             return -1;
         }

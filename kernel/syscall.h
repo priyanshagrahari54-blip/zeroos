@@ -21,6 +21,13 @@ enum zeroos_syscall_id {
     ZEROOS_SYS_IPC_RECEIVE = 10,
     ZEROOS_SYS_SPAWN = 11,
     ZEROOS_SYS_WAIT = 12,
+    ZEROOS_SYS_PIPE_CREATE = 13,
+    ZEROOS_SYS_PIPE_WRITE = 14,
+    ZEROOS_SYS_PIPE_READ = 15,
+    ZEROOS_SYS_EVENT_CREATE = 16,
+    ZEROOS_SYS_EVENT_SIGNAL = 17,
+    ZEROOS_SYS_EVENT_WAIT = 18,
+    ZEROOS_SYS_EVENT_CLOSE = 19,
     ZEROOS_SYS_MAX
 };
 
@@ -50,6 +57,8 @@ enum zeroos_syscall_error {
 #define ZEROOS_ABI_FEATURE_MEMORY   (1ULL << 1)
 #define ZEROOS_ABI_FEATURE_IPC      (1ULL << 2)
 #define ZEROOS_ABI_FEATURE_INIT     (1ULL << 3)
+#define ZEROOS_ABI_FEATURE_PIPE     (1ULL << 4)
+#define ZEROOS_ABI_FEATURE_EVENT    (1ULL << 5)
 
 struct zeroos_syscall_abi_info {
     uint32_t version;

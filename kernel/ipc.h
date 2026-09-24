@@ -14,6 +14,8 @@ struct process;
 #define ZEROOS_IPC_FLAG_PEEK     (1ULL << 1)
 #define ZEROOS_IPC_VALID_FLAGS  (ZEROOS_IPC_FLAG_NONBLOCK | ZEROOS_IPC_FLAG_PEEK)
 #define ZEROOS_IPC_TIMEOUT_FOREVER (~0ULL)
+#define ZEROOS_IPC_KIND_MESSAGE 0U
+#define ZEROOS_IPC_KIND_EVENT   1U
 
 #define ZEROOS_IPC_RIGHT_SEND  (1U << 0)
 #define ZEROOS_IPC_RIGHT_RECV  (1U << 1)
@@ -34,6 +36,12 @@ struct zeroos_ipc_pair {
 int ipc_system_init(void);
 int ipc_create(struct process *owner, zeroos_ipc_handle_t *local_out,
               zeroos_ipc_handle_t *peer_out);
+int ipc_create_event(struct process *owner, zeroos_ipc_handle_t *signal_out,
+                     zeroos_ipc_handle_t *wait_out);
+int ipc_event_signal(struct process *owner, zeroos_ipc_handle_t handle,
+                     uint64_t flags);
+int ipc_event_wait_timeout(struct process *owner, zeroos_ipc_handle_t handle,
+                           uint64_t flags, uint64_t timeout_ticks);
 int ipc_grant(struct process *owner, zeroos_ipc_handle_t source,
               uint64_t target_pid, zeroos_ipc_handle_t *target_out);
 int ipc_grant_rights(struct process *owner, zeroos_ipc_handle_t source,

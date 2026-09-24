@@ -128,6 +128,34 @@ static int syscall_reap_child(struct process *parent,
     return 0;
 }
 
+
+static void syscall_create_channel(struct interrupt_frame *frame,
+                                   struct process *process,
+                                   uint8_t event) {
+    struct zeroos_ipc_pair pair={0};
+    int result;
+
+    if (frame->rdi==0 || frame->rsi<sizeof(pair) ||
+        !process_address_space_is_user_range(process,frame->rdi,
+                                             sizeof(pair),1)) {
+        frame->rax=syscall_error(ZEROOS_EFAULT);
+        return;
+    }
+    result=event ? ipc_create_event(process,&pair.local,&pair.peer) :
+                   ipc_create(process,&pair.local,&pair.peer);
+    if (result!=0) {
+        frame->rax=syscall_result(result);
+        return;
+    }
+    if (copy_to_user(frame->rdi,&pair,sizeof(pair))!=0) {
+        (void)ipc_close(process,pair.local);
+        (void)ipc_close(process,pair.peer);
+        frame->rax=syscall_error(ZEROOS_EFAULT);
+        return;
+    }
+    frame->rax=0;
+}
+
 void syscall_dispatch(struct interrupt_frame *frame) {
     struct thread *thread;
     struct process *process;
@@ -153,7 +181,9 @@ void syscall_dispatch(struct interrupt_frame *frame) {
             .features=ZEROOS_ABI_FEATURE_PROCESS |
                       ZEROOS_ABI_FEATURE_MEMORY |
                       ZEROOS_ABI_FEATURE_IPC |
-                      ZEROOS_ABI_FEATURE_INIT,
+                      ZEROOS_ABI_FEATURE_INIT |
+                      ZEROOS_ABI_FEATURE_PIPE |
+                      ZEROOS_ABI_FEATURE_EVENT,
             .max_transfer=ZEROOS_SYSCALL_MAX_TRANSFER
         };
         if (frame->rdi==0 || frame->rsi<sizeof(info) ||
@@ -193,29 +223,17 @@ void syscall_dispatch(struct interrupt_frame *frame) {
             task_current()->need_resched=1;
         frame->rax=0;
         break;
-    case ZEROOS_SYS_IPC_CREATE: {
-        struct zeroos_ipc_pair pair={0};
-        int result;
-        if (frame->rdi==0 || frame->rsi<sizeof(pair) ||
-            !process_address_space_is_user_range(process,frame->rdi,
-                                                 sizeof(pair),1)) {
-            frame->rax=syscall_error(ZEROOS_EFAULT);
-            break;
-        }
-        result=ipc_create(process,&pair.local,&pair.peer);
-        if (result!=0) {
-            frame->rax=syscall_result(result);
-            break;
-        }
-        if (copy_to_user(frame->rdi,&pair,sizeof(pair))!=0) {
-            (void)ipc_close(process,pair.local);
-            (void)ipc_close(process,pair.peer);
-            frame->rax=syscall_error(ZEROOS_EFAULT);
-        } else {
-            frame->rax=0;
-        }
+    case ZEROOS_SYS_IPC_CREATE:
+        syscall_create_channel(frame,process,0);
         break;
-    }
+    case ZEROOS_SYS_PIPE_CREATE:
+        /* Pipes use the same bounded record/backpressure contract as IPC
+         * queues, but have a dedicated ABI name for future byte-stream mode. */
+        syscall_create_channel(frame,process,0);
+        break;
+    case ZEROOS_SYS_EVENT_CREATE:
+        syscall_create_channel(frame,process,1);
+        break;
     case ZEROOS_SYS_IPC_GRANT: {
         zeroos_ipc_handle_t target_handle=0;
         struct process *target=0;
@@ -250,7 +268,8 @@ void syscall_dispatch(struct interrupt_frame *frame) {
     case ZEROOS_SYS_IPC_CLOSE:
         frame->rax=syscall_result(ipc_close(process,frame->rdi));
         break;
-    case ZEROOS_SYS_IPC_SEND: {
+    case ZEROOS_SYS_IPC_SEND:
+    case ZEROOS_SYS_PIPE_WRITE: {
         uint64_t length=frame->rdx;
         uint8_t message[ZEROOS_IPC_MAX_MESSAGE];
         if (length==0) {
@@ -270,7 +289,8 @@ void syscall_dispatch(struct interrupt_frame *frame) {
             frame->r9 ? frame->r9 : ZEROOS_IPC_TIMEOUT_FOREVER));
         break;
     }
-    case ZEROOS_SYS_IPC_RECEIVE: {
+    case ZEROOS_SYS_IPC_RECEIVE:
+    case ZEROOS_SYS_PIPE_READ: {
         uint8_t message[ZEROOS_IPC_MAX_MESSAGE];
         uint64_t length=0;
         int result;
@@ -304,6 +324,18 @@ void syscall_dispatch(struct interrupt_frame *frame) {
         frame->rax=syscall_result(result);
         break;
     }
+    case ZEROOS_SYS_EVENT_SIGNAL:
+        frame->rax=syscall_result(ipc_event_signal(
+            process,frame->rdi,frame->r10));
+        break;
+    case ZEROOS_SYS_EVENT_WAIT:
+        frame->rax=syscall_result(ipc_event_wait_timeout(
+            process,frame->rdi,frame->r10,
+            frame->r9 ? frame->r9 : ZEROOS_IPC_TIMEOUT_FOREVER));
+        break;
+    case ZEROOS_SYS_EVENT_CLOSE:
+        frame->rax=syscall_result(ipc_close(process,frame->rdi));
+        break;
     case ZEROOS_SYS_SPAWN: {
         struct zeroos_exec_spawn_result spawn={0};
         int result=exec_spawn(process,frame->rdi,frame->rsi,frame->rdx,
@@ -376,7 +408,7 @@ int syscall_debug_validate(void) {
     if (ZEROOS_SYSCALL_VECTOR<32 || ZEROOS_SYSCALL_VECTOR>=256 ||
         ZEROOS_SYSCALL_ABI_VERSION==0 || sizeof(info)!=24U ||
         ZEROOS_SYSCALL_MAX_TRANSFER==0 ||
-        ZEROOS_SYS_WAIT+1U!=ZEROOS_SYS_MAX)
+        ZEROOS_SYS_EVENT_CLOSE+1U!=ZEROOS_SYS_MAX)
         return -1;
     return 0;
 }

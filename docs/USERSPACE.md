@@ -95,6 +95,13 @@ The initial v1 calls are:
 | 10 | `IPC_RECEIVE` | receive or peek one bounded message |
 | 11 | `SPAWN` | copy a bounded static ELF plus argv/envp into a child process |
 | 12 | `WAIT` | wait for and reap an owned child, returning its generation-tagged PID |
+| 13 | `PIPE_CREATE` | create a bounded record-pipe pair (same capability lifetime rules as IPC) |
+| 14 | `PIPE_WRITE` | send one bounded record with the IPC backpressure/timeout contract |
+| 15 | `PIPE_READ` | receive one bounded record with the IPC peek/timeout contract |
+| 16 | `EVENT_CREATE` | create a signal endpoint and its wait endpoint |
+| 17 | `EVENT_SIGNAL` | coalescing, nonblocking notification signal |
+| 18 | `EVENT_WAIT` | consume or peek one notification, with nonblocking/timeout behavior |
+| 19 | `EVENT_CLOSE` | close an event capability |
 
 `SPAWN` accepts bounded vectors (16 arguments and 16 environment strings, each
 at most 128 bytes) and constructs an initial stack containing `argc`, argv,
@@ -124,6 +131,23 @@ compatibility); expiry returns `-ZEROOS_ETIMEDOUT`, and a failed scheduler
 block returns `-ZEROOS_EINTR`. `PEEK` does not wake blocked senders because it
 does not free queue capacity. The public kernel helpers expose both infinite
 and timed forms so service code and fault tests use the same semantics.
+
+`PIPE_CREATE`, `PIPE_WRITE`, and `PIPE_READ` are the first bounded pipe ABI:
+they intentionally expose record semantics (one write is one message, capped at
+`ZEROOS_IPC_MAX_MESSAGE`) rather than claiming an unimplemented byte-stream
+contract. Pipe writes and reads use the same generation-tagged handles,
+backpressure, `PEEK`, `NONBLOCK`, timeout, peer-close, and rollback behavior as
+message IPC. This makes the current contract useful for service framing while
+leaving byte-stream conversion explicit future work.
+
+`EVENT_CREATE` returns a signal handle and a wait handle. `EVENT_SIGNAL` sets a
+single pending bit on the peer and wakes one waiter; repeated signals while the
+bit is set coalesce and return zero. `EVENT_WAIT` returns one when it consumes a
+pending notification, returns one without consuming it with `PEEK`, returns
+`-ZEROOS_EAGAIN` for an empty nonblocking wait, `-ZEROOS_ETIMEDOUT` on a timed
+empty wait, and `-ZEROOS_EPIPE` after the peer closes. Event endpoints carry no
+message queue, so their lifecycle and wait-queue cancellation are validated by
+the same endpoint reference accounting as IPC.
 
 The kernel never trusts a user pointer, user length, file descriptor, or
 syscall ID. Unsupported IDs return `-ZEROOS_ENOSYS`; invalid pointers return
@@ -213,10 +237,13 @@ This is not the Stage 2 exit claim. The remaining production gates are:
   bootstrap supervisor, including dependency ordering, health checks, crash
   diagnostics, shutdown policy and multi-service resource accounting;
 - capability credentials/rights policy and a public userspace runtime library;
-- pipes, shared-memory lifecycle, events and socket foundations built on the
-  bounded/backpressure and cancellation contracts;
+- byte-stream pipe semantics, shared-memory lifecycle, and socket foundations
+  built on the bounded/backpressure and cancellation contracts (the current
+  record-pipe and coalescing-event ABI is only the first foundation);
+- stronger concurrent capability-lifetime proofs and multi-process/multi-CPU
+  stress coverage for grant, close, exit, and reaping races;
 - negative, fault-injection, timeout, cancellation, resource-exhaustion and
-  multi-CPU stress coverage for the live syscall paths.
+  recovery assertions for every newly exposed syscall path.
 
 The implementation must pass the Stage 2 exit gate only when multiple isolated
 services can execute, communicate, fail, restart and cleanly terminate under

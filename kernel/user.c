@@ -35,6 +35,9 @@ static const char init_message[]=
 #define INIT_ELF_ENTRY_OFFSET 0x100ULL
 #define INIT_ELF_CHILD_FILE_OFFSET 0x2000ULL
 #define INIT_ELF_STATUS_OFFSET 0x4000ULL
+#define INIT_ELF_EVENT_OFFSET 0x3000ULL
+#define INIT_ELF_PIPE_BUFFER_OFFSET 0x3200ULL
+#define INIT_ELF_PIPE_LENGTH_OFFSET 0x3300ULL
 #define INIT_ELF_DATA_FILE_END (INIT_ELF_STATUS_OFFSET+sizeof(uint64_t))
 #define INIT_ELF_DATA_MEMORY_SIZE ((INIT_ELF_DATA_FILE_END-INIT_ELF_DATA_OFFSET+\
                                     VMM_PAGE_SIZE-1ULL)&~(VMM_PAGE_SIZE-1ULL))
@@ -149,7 +152,7 @@ static uint64_t build_child_elf(void) {
  * later service binaries will use. */
 static uint64_t build_init_code(uint8_t *code) {
     uint64_t offset=0;
-    uint64_t failure_jumps[5];
+    uint64_t failure_jumps[15];
     uint32_t failure_jump_count=0;
     uint64_t failure_label;
 
@@ -211,6 +214,141 @@ static uint64_t build_init_code(uint8_t *code) {
     code[offset++]=0x48; code[offset++]=0x85; code[offset++]=0xc0;
     failure_jumps[failure_jump_count++]=offset;
     code[offset++]=0x0f; code[offset++]=0x89;
+    put_u32(&code[offset],0); offset+=4;
+
+    /* Exercise the dedicated event and bounded record-pipe syscall names
+     * before the child-spawn path. Both are built on the same capability and
+     * wait/wakeup invariants, but their ABI contracts are independently gated. */
+    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_EVENT_CREATE); offset+=4;
+    code[offset++]=0x48; code[offset++]=0xbf;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE+
+            (INIT_ELF_EVENT_OFFSET-INIT_ELF_DATA_OFFSET)); offset+=8;
+    code[offset++]=0xbe; put_u32(&code[offset],16); offset+=4;
+    code[offset++]=0xcd; code[offset++]=0x80;
+    code[offset++]=0x48; code[offset++]=0x85; code[offset++]=0xc0;
+    failure_jumps[failure_jump_count++]=offset;
+    code[offset++]=0x0f; code[offset++]=0x88;
+    put_u32(&code[offset],0); offset+=4;
+
+    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_EVENT_SIGNAL); offset+=4;
+    code[offset++]=0x48; code[offset++]=0xbf;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE+
+            (INIT_ELF_EVENT_OFFSET-INIT_ELF_DATA_OFFSET)); offset+=8;
+    code[offset++]=0x48; code[offset++]=0x8b; code[offset++]=0x3f;
+    code[offset++]=0x49; code[offset++]=0x31; code[offset++]=0xd2;
+    code[offset++]=0xcd; code[offset++]=0x80;
+    code[offset++]=0x48; code[offset++]=0x83; code[offset++]=0xf8; code[offset++]=1;
+    failure_jumps[failure_jump_count++]=offset;
+    code[offset++]=0x0f; code[offset++]=0x85;
+    put_u32(&code[offset],0); offset+=4;
+
+    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_EVENT_WAIT); offset+=4;
+    code[offset++]=0x48; code[offset++]=0xbf;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE+
+            (INIT_ELF_EVENT_OFFSET-INIT_ELF_DATA_OFFSET+8ULL)); offset+=8;
+    code[offset++]=0x48; code[offset++]=0x8b; code[offset++]=0x3f;
+    code[offset++]=0x41; code[offset++]=0xba;
+    put_u32(&code[offset],ZEROOS_IPC_FLAG_NONBLOCK); offset+=4;
+    code[offset++]=0xcd; code[offset++]=0x80;
+    code[offset++]=0x48; code[offset++]=0x83; code[offset++]=0xf8; code[offset++]=1;
+    failure_jumps[failure_jump_count++]=offset;
+    code[offset++]=0x0f; code[offset++]=0x85;
+    put_u32(&code[offset],0); offset+=4;
+
+    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_EVENT_CLOSE); offset+=4;
+    code[offset++]=0x48; code[offset++]=0xbf;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE+
+            (INIT_ELF_EVENT_OFFSET-INIT_ELF_DATA_OFFSET)); offset+=8;
+    code[offset++]=0x48; code[offset++]=0x8b; code[offset++]=0x3f;
+    code[offset++]=0xcd; code[offset++]=0x80;
+    code[offset++]=0x48; code[offset++]=0x85; code[offset++]=0xc0;
+    failure_jumps[failure_jump_count++]=offset;
+    code[offset++]=0x0f; code[offset++]=0x88;
+    put_u32(&code[offset],0); offset+=4;
+
+    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_EVENT_CLOSE); offset+=4;
+    code[offset++]=0x48; code[offset++]=0xbf;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE+
+            (INIT_ELF_EVENT_OFFSET-INIT_ELF_DATA_OFFSET+8ULL)); offset+=8;
+    code[offset++]=0x48; code[offset++]=0x8b; code[offset++]=0x3f;
+    code[offset++]=0xcd; code[offset++]=0x80;
+    code[offset++]=0x48; code[offset++]=0x85; code[offset++]=0xc0;
+    failure_jumps[failure_jump_count++]=offset;
+    code[offset++]=0x0f; code[offset++]=0x88;
+    put_u32(&code[offset],0); offset+=4;
+
+    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_PIPE_CREATE); offset+=4;
+    code[offset++]=0x48; code[offset++]=0xbf;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE+
+            (INIT_ELF_EVENT_OFFSET-INIT_ELF_DATA_OFFSET+16ULL)); offset+=8;
+    code[offset++]=0xbe; put_u32(&code[offset],16); offset+=4;
+    code[offset++]=0xcd; code[offset++]=0x80;
+    code[offset++]=0x48; code[offset++]=0x85; code[offset++]=0xc0;
+    failure_jumps[failure_jump_count++]=offset;
+    code[offset++]=0x0f; code[offset++]=0x88;
+    put_u32(&code[offset],0); offset+=4;
+
+    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_PIPE_WRITE); offset+=4;
+    code[offset++]=0x48; code[offset++]=0xbf;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE+
+            (INIT_ELF_EVENT_OFFSET-INIT_ELF_DATA_OFFSET+16ULL)); offset+=8;
+    code[offset++]=0x48; code[offset++]=0x8b; code[offset++]=0x3f;
+    code[offset++]=0x48; code[offset++]=0xbe;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE); offset+=8;
+    code[offset++]=0xba;
+    put_u32(&code[offset],(uint32_t)(sizeof(init_message)-1U)); offset+=4;
+    code[offset++]=0x41; code[offset++]=0xba;
+    put_u32(&code[offset],ZEROOS_IPC_FLAG_NONBLOCK); offset+=4;
+    code[offset++]=0x49; code[offset++]=0x31; code[offset++]=0xc9;
+    code[offset++]=0xcd; code[offset++]=0x80;
+    code[offset++]=0x48; code[offset++]=0x3d;
+    put_u32(&code[offset],(uint32_t)(sizeof(init_message)-1U)); offset+=4;
+    failure_jumps[failure_jump_count++]=offset;
+    code[offset++]=0x0f; code[offset++]=0x85;
+    put_u32(&code[offset],0); offset+=4;
+
+    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_PIPE_READ); offset+=4;
+    code[offset++]=0x48; code[offset++]=0xbf;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE+
+            (INIT_ELF_EVENT_OFFSET-INIT_ELF_DATA_OFFSET+24ULL)); offset+=8;
+    code[offset++]=0x48; code[offset++]=0x8b; code[offset++]=0x3f;
+    code[offset++]=0x48; code[offset++]=0xbe;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE+
+            (INIT_ELF_PIPE_BUFFER_OFFSET-INIT_ELF_DATA_OFFSET)); offset+=8;
+    code[offset++]=0xba; put_u32(&code[offset],ZEROOS_IPC_MAX_MESSAGE); offset+=4;
+    code[offset++]=0x41; code[offset++]=0xba;
+    put_u32(&code[offset],ZEROOS_IPC_FLAG_NONBLOCK); offset+=4;
+    code[offset++]=0x49; code[offset++]=0xb8;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE+
+            (INIT_ELF_PIPE_LENGTH_OFFSET-INIT_ELF_DATA_OFFSET)); offset+=8;
+    code[offset++]=0x49; code[offset++]=0x31; code[offset++]=0xc9;
+    code[offset++]=0xcd; code[offset++]=0x80;
+    code[offset++]=0x48; code[offset++]=0x3d;
+    put_u32(&code[offset],(uint32_t)(sizeof(init_message)-1U)); offset+=4;
+    failure_jumps[failure_jump_count++]=offset;
+    code[offset++]=0x0f; code[offset++]=0x85;
+    put_u32(&code[offset],0); offset+=4;
+
+    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_IPC_CLOSE); offset+=4;
+    code[offset++]=0x48; code[offset++]=0xbf;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE+
+            (INIT_ELF_EVENT_OFFSET-INIT_ELF_DATA_OFFSET+16ULL)); offset+=8;
+    code[offset++]=0x48; code[offset++]=0x8b; code[offset++]=0x3f;
+    code[offset++]=0xcd; code[offset++]=0x80;
+    code[offset++]=0x48; code[offset++]=0x85; code[offset++]=0xc0;
+    failure_jumps[failure_jump_count++]=offset;
+    code[offset++]=0x0f; code[offset++]=0x88;
+    put_u32(&code[offset],0); offset+=4;
+
+    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_IPC_CLOSE); offset+=4;
+    code[offset++]=0x48; code[offset++]=0xbf;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE+
+            (INIT_ELF_EVENT_OFFSET-INIT_ELF_DATA_OFFSET+24ULL)); offset+=8;
+    code[offset++]=0x48; code[offset++]=0x8b; code[offset++]=0x3f;
+    code[offset++]=0xcd; code[offset++]=0x80;
+    code[offset++]=0x48; code[offset++]=0x85; code[offset++]=0xc0;
+    failure_jumps[failure_jump_count++]=offset;
+    code[offset++]=0x0f; code[offset++]=0x88;
     put_u32(&code[offset],0); offset+=4;
 
     code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_SPAWN); offset+=4;
@@ -476,6 +614,35 @@ static int userspace_ipc_self_test(struct process *process) {
                     ZEROOS_IPC_FLAG_NONBLOCK,&length)!=-ZEROOS_EPIPE ||
         ipc_close(process,peer)!=0 || ipc_debug_validate()!=0)
         return -1;
+
+    {
+        zeroos_ipc_handle_t signal_handle=0;
+        zeroos_ipc_handle_t wait_handle=0;
+        if (ipc_create_event(process,&signal_handle,&wait_handle)!=0 ||
+            ipc_send(process,signal_handle,send_buffer,1,
+                     ZEROOS_IPC_FLAG_NONBLOCK)!=-ZEROOS_EINVAL ||
+            ipc_receive(process,wait_handle,receive_buffer,sizeof(receive_buffer),
+                        ZEROOS_IPC_FLAG_NONBLOCK,&length)!=-ZEROOS_EINVAL ||
+            ipc_event_signal(process,signal_handle,0)!=1 ||
+            ipc_event_signal(process,signal_handle,0)!=0 ||
+            ipc_event_signal(process,signal_handle,1ULL<<1)!=-ZEROOS_EINVAL ||
+            ipc_event_wait_timeout(process,wait_handle,
+                                   ZEROOS_IPC_FLAG_PEEK,0)!=1 ||
+            ipc_event_wait_timeout(process,wait_handle,
+                                   ZEROOS_IPC_FLAG_NONBLOCK,0)!=1 ||
+            ipc_event_wait_timeout(process,wait_handle,
+                                   ZEROOS_IPC_FLAG_NONBLOCK,0)!=-ZEROOS_EAGAIN ||
+            ipc_event_wait_timeout(process,wait_handle,1ULL<<2,0)!=-ZEROOS_EINVAL ||
+            ipc_event_wait_timeout(process,wait_handle,0,0)!=-ZEROOS_ETIMEDOUT ||
+            ipc_close(process,signal_handle)!=0 ||
+            ipc_event_wait_timeout(process,wait_handle,
+                                   ZEROOS_IPC_FLAG_NONBLOCK,0)!=-ZEROOS_EPIPE ||
+            ipc_close(process,wait_handle)!=0 || ipc_debug_validate()!=0) {
+            (void)ipc_close(process,signal_handle);
+            (void)ipc_close(process,wait_handle);
+            return -1;
+        }
+    }
     return 0;
 
 fail:
@@ -791,6 +958,7 @@ int userspace_start_init(void) {
     }
     serial_write_public("ZEROOS: capability IPC queue/backpressure self-test passed.\n");
     serial_write_public("ZEROOS: capability IPC negative/timeout semantics passed.\n");
+    serial_write_public("ZEROOS: event and pipe IPC foundations self-test passed.\n");
     if (userspace_resource_self_test(init_process)!=0) {
         serial_write_public("ZEROOS PANIC: userspace resource exhaustion self-test failed.\n");
         goto fail;
