@@ -11,11 +11,14 @@ CFLAGS += $(EXTRA_CFLAGS)
 ASFLAGS := -m64 -ffreestanding -fno-pic -fno-pie -nostdlib
 LDFLAGS := -m elf_x86_64 -T kernel/linker.ld -nostdlib
 
-.PHONY: all clean elf iso run
+.PHONY: all clean elf iso run userspace-abi-check
 
 all: iso
 
 elf: $(KERNEL)
+
+userspace-abi-check:
+	$(CC) -std=c11 -Wall -Wextra -Werror -m64 -Iuserspace/include -fsyntax-only userspace/tests/abi_compile.c
 
 $(BUILD):
 	mkdir -p $(BUILD)

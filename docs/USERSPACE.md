@@ -108,6 +108,14 @@ The initial v1 calls are:
 | 23 | `SHM_UNMAP` | unmap one whole-object mapping and release its page references |
 | 24 | `SHM_CLOSE` | close a shared-memory capability; active mappings keep their pages alive |
 
+The public freestanding wrapper surface is
+`userspace/include/zeroos/syscall.h`. It contains the fixed-width ABI
+constants, capability/feature declarations, and inline `int 0x80` wrappers for
+every v1 call, including pipe, event, and shared-memory operations. The
+`userspace-abi-check` Make target compiles a representative consumer with
+warnings-as-errors; it does not link or run in the kernel and therefore cannot
+hide ABI drift behind kernel-private headers.
+
 `SPAWN` accepts bounded vectors (16 arguments and 16 environment strings, each
 at most 128 bytes) and constructs an initial stack containing `argc`, argv,
 envp, and a bounded auxiliary vector (`AT_ENTRY`, `AT_PHNUM`, `AT_PHENT`,
