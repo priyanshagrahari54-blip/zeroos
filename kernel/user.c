@@ -1061,6 +1061,52 @@ fail:
     return -1;
 }
 
+static int userspace_ipc_generation_stress(struct process *process) {
+    uint8_t byte='G';
+    zeroos_ipc_handle_t local=0;
+    zeroos_ipc_handle_t peer=0;
+    zeroos_ipc_handle_t stale=0;
+    zeroos_ipc_handle_t target_handle=0;
+    process_id_t target_pid=0;
+    struct process *target=0;
+
+    for (uint64_t round=0; round<32ULL; ++round) {
+        local=peer=stale=target_handle=0;
+        target=0;
+        if (ipc_create(process,&local,&peer)!=0)
+            goto fail;
+        stale=local;
+        if (ipc_close(process,local)!=0 || ipc_close(process,peer)!=0 ||
+            ipc_send(process,stale,&byte,1,ZEROOS_IPC_FLAG_NONBLOCK)!=
+                -ZEROOS_EBADF || ipc_debug_validate()!=0)
+            goto fail;
+        local=peer=0;
+
+        if (process_create(0,&target_pid)!=0)
+            goto fail;
+        target=process_lookup(target_pid);
+        if (!target || ipc_create(process,&local,&peer)!=0 ||
+            ipc_grant_rights(process,peer,target_pid,
+                             ZEROOS_IPC_RIGHT_RECV|ZEROOS_IPC_RIGHT_CLOSE,
+                             &target_handle)!=0 ||
+            ipc_close(process,peer)!=0 || ipc_close(process,local)!=0 ||
+            process_abort_new(target)!=0 || ipc_debug_validate()!=0)
+            goto fail;
+        target=0;
+        local=peer=target_handle=0;
+    }
+    return 0;
+
+fail:
+    if (local)
+        (void)ipc_close(process,local);
+    if (peer)
+        (void)ipc_close(process,peer);
+    if (target && target->state==PROCESS_NEW)
+        (void)process_abort_new(target);
+    return -1;
+}
+
 static int userspace_shmem_self_test(struct process *process) {
     zeroos_shmem_handle_t handle=0;
     zeroos_shmem_handle_t target_handle=0;
@@ -1869,6 +1915,11 @@ int userspace_start_init(void) {
     }
     serial_write_public("ZEROOS: capability IPC queue/backpressure self-test passed.\n");
     serial_write_public("ZEROOS: capability IPC negative/timeout semantics passed.\n");
+    if (userspace_ipc_generation_stress(init_process)!=0) {
+        serial_write_public("ZEROOS PANIC: IPC capability generation stress failed.\n");
+        goto fail;
+    }
+    serial_write_public("ZEROOS: IPC capability generation/revocation stress passed.\n");
     serial_write_public("ZEROOS: event and pipe IPC foundations self-test passed.\n");
     if (userspace_event_blocking_self_test()!=0) {
         serial_write_public("ZEROOS PANIC: blocking event wait/wake self-test failed.\n");

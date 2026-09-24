@@ -137,7 +137,10 @@ The kernel checks owner, generation, rights and endpoint lifetime on every
 operation. Cross-process grants acquire a generation-checked process lifetime
 pin before publishing the target capability; reaping and the final thread-exit
 transition wait for that pin, so a reused process slot cannot receive a stale
-grant. Queues have a fixed depth and message size, so exhaustion returns
+grant. The boot gate repeats close, stale-handle rejection, cross-process
+reduced-rights grant, and unpublished-target revocation across 32 generations;
+this is a bounded resource/lifetime stress check, not just a single happy-path
+assertion. Queues have a fixed depth and message size, so exhaustion returns
 `-ZEROOS_EAGAIN` for `NONBLOCK` rather than allocating unbounded kernel memory.
 A closed peer returns `-ZEROOS_EPIPE`.
 
