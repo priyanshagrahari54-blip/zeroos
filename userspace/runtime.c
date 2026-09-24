@@ -67,7 +67,7 @@ int64_t zeroos_runtime_ipc_receive(const struct zeroos_runtime *runtime,
     if (!data || !length || !capacity)
         return -ZEROOS_EINVAL;
     if (capacity>ZEROOS_IPC_MAX_MESSAGE)
-        capacity=ZEROOS_IPC_MAX_MESSAGE;
+        return -ZEROOS_EOVERFLOW;
     return zeroos_ipc_receive(handle,data,capacity,flags,length,timeout);
 }
 
@@ -77,8 +77,11 @@ int64_t zeroos_runtime_spawn(const struct zeroos_runtime *runtime,
                              const uint64_t *envp, uint64_t envc) {
     if (!runtime_ready(runtime))
         return -ZEROOS_EPERM;
-    if (!image || !image_size || (argc && !argv) || (envc && !envp))
-        return -ZEROOS_EINVAL;
+    if (!image || !image_size || image_size>ZEROOS_EXEC_MAX_IMAGE ||
+        argc>ZEROOS_EXEC_MAX_ARGUMENTS || envc>ZEROOS_EXEC_MAX_ARGUMENTS ||
+        (argc && !argv) || (envc && !envp))
+        return image_size>ZEROOS_EXEC_MAX_IMAGE ? -ZEROOS_E2BIG :
+               -ZEROOS_EINVAL;
     return zeroos_spawn(image,image_size,argv,argc,envp,envc);
 }
 
