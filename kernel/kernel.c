@@ -782,11 +782,17 @@ static void scheduler_probe_sleeper(void *argument) {
 static void input_probe_waiter(void *argument) {
     struct zeroos_input_event event;
     (void)argument;
-    if (input_wait(&event,0,0)!=0)
-        kernel_panic("input blocking wait failed");
-    if (event.kind!=ZEROOS_INPUT_KIND_KEY || event.code!='A' ||
-        !(event.flags&ZEROOS_INPUT_FLAG_DOWN) || event.value!=1)
-        kernel_panic("input wait event mismatch");
+    /* A real PS/2 mouse can publish pointer events while the keyboard wait
+     * probe runs. The queue is intentionally device-agnostic, so consume and
+     * ignore unrelated events until the injected keyboard event arrives. */
+    for (;;) {
+        if (input_wait(&event,0,0)!=0)
+            kernel_panic("input blocking wait failed");
+        if (event.device_id==1 && event.kind==ZEROOS_INPUT_KIND_KEY &&
+            event.code=='A' && (event.flags&ZEROOS_INPUT_FLAG_DOWN) &&
+            event.value==1)
+            break;
+    }
     atomic_u64_store(&input_probe_state,2);
 }
 
