@@ -169,15 +169,19 @@ teardown compose without kernel corruption.
 
 The bootstrap monitor now supervises a real isolated service image in addition
 to init. It creates a controller process with an endpoint pair, grants only
-the worker-side capability to a separately loaded Ring-3 service, and validates
-the message after the worker exits. Attempt one deliberately exits with a
-failure status after delivering its bounded IPC message. The monitor reaps the
-thread and address space, revokes the worker capability, closes the controller
-endpoints, and launches attempt two with a fresh generation-checked channel.
-Attempt two must deliver the message and exit successfully before init is
-considered recovered. This exercises cross-process capability transfer,
-backpressure/endpoint lifetime, failure detection, restart, address-space
-teardown, and no-stale-capability cleanup in the normal scheduler path.
+the worker-side send/receive/close rights to a separately loaded Ring-3
+service, and validates the reply after the worker exits. The service first
+blocks in `IPC_RECEIVE`; the monitor observes the scheduler blocked state and
+sends the request, which exercises the atomic wait-queue publication and wake
+path. Attempt one deliberately exits with a failure status after delivering
+its bounded IPC reply. The monitor reaps the thread and address space, revokes
+the worker capability, closes the controller endpoints, and launches attempt
+two with a fresh generation-checked channel. Attempt two must deliver the
+reply and exit successfully before init is considered recovered. This
+exercises cross-process capability transfer, least-privilege rights,
+backpressure/endpoint lifetime, blocking wakeup, failure detection, restart,
+address-space teardown, and no-stale-capability cleanup in the normal
+scheduler path.
 
 The service image is a static ET_EXEC with the same RX code and RW/NX data
 policy as init. The worker's IPC handle and restart-specific status are patched

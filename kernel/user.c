@@ -149,7 +149,8 @@ static uint64_t build_child_elf(void) {
  * later service binaries will use. */
 static uint64_t build_init_code(uint8_t *code) {
     uint64_t offset=0;
-    uint64_t failure_jump;
+    uint64_t failure_jumps[4];
+    uint32_t failure_jump_count=0;
     uint64_t failure_label;
 
     code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_WRITE); offset+=4;
@@ -159,6 +160,43 @@ static uint64_t build_init_code(uint8_t *code) {
     code[offset++]=0xba;
     put_u32(&code[offset],(uint32_t)(sizeof(init_message)-1U)); offset+=4;
     code[offset++]=0xcd; code[offset++]=0x80;
+
+    /* Negative ABI probes run from Ring 3 and must fail closed without
+     * creating a capability, child, or address-space side effect. */
+    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_IPC_CREATE); offset+=4;
+    code[offset++]=0x48; code[offset++]=0x31; code[offset++]=0xff;
+    code[offset++]=0xbe; put_u32(&code[offset],16); offset+=4;
+    code[offset++]=0xcd; code[offset++]=0x80;
+    code[offset++]=0x48; code[offset++]=0x85; code[offset++]=0xc0;
+    failure_jumps[failure_jump_count++]=offset;
+    code[offset++]=0x0f; code[offset++]=0x89;
+    put_u32(&code[offset],0); offset+=4;
+
+    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_WAIT); offset+=4;
+    code[offset++]=0x48; code[offset++]=0x31; code[offset++]=0xff;
+    code[offset++]=0x48; code[offset++]=0xbe;
+    put_u64(&code[offset],0x100ULL); offset+=8;
+    code[offset++]=0x48; code[offset++]=0x31; code[offset++]=0xd2;
+    code[offset++]=0x49; code[offset++]=0x31; code[offset++]=0xd2;
+    code[offset++]=0xcd; code[offset++]=0x80;
+    code[offset++]=0x48; code[offset++]=0x85; code[offset++]=0xc0;
+    failure_jumps[failure_jump_count++]=offset;
+    code[offset++]=0x0f; code[offset++]=0x89;
+    put_u32(&code[offset],0); offset+=4;
+
+    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_SPAWN); offset+=4;
+    code[offset++]=0x48; code[offset++]=0xbf;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE+0x8000ULL); offset+=8;
+    code[offset++]=0xbe; put_u32(&code[offset],0x100); offset+=4;
+    code[offset++]=0x48; code[offset++]=0x31; code[offset++]=0xd2;
+    code[offset++]=0x41; code[offset++]=0xba; put_u32(&code[offset],0); offset+=4;
+    code[offset++]=0x4d; code[offset++]=0x31; code[offset++]=0xc0;
+    code[offset++]=0x4d; code[offset++]=0x31; code[offset++]=0xc9;
+    code[offset++]=0xcd; code[offset++]=0x80;
+    code[offset++]=0x48; code[offset++]=0x85; code[offset++]=0xc0;
+    failure_jumps[failure_jump_count++]=offset;
+    code[offset++]=0x0f; code[offset++]=0x89;
+    put_u32(&code[offset],0); offset+=4;
 
     code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_SPAWN); offset+=4;
     code[offset++]=0x48; code[offset++]=0xbf;
@@ -182,8 +220,9 @@ static uint64_t build_init_code(uint8_t *code) {
     code[offset++]=0x4d; code[offset++]=0x31; code[offset++]=0xd2;
     code[offset++]=0xcd; code[offset++]=0x80;
     code[offset++]=0x48; code[offset++]=0x85; code[offset++]=0xc0;
-    failure_jump=offset;
-    code[offset++]=0x78; code[offset++]=0;
+    failure_jumps[failure_jump_count++]=offset;
+    code[offset++]=0x0f; code[offset++]=0x88;
+    put_u32(&code[offset],0); offset+=4;
 
     code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_EXIT); offset+=4;
     code[offset++]=0xbf; put_u32(&code[offset],0); offset+=4;
@@ -191,7 +230,9 @@ static uint64_t build_init_code(uint8_t *code) {
     code[offset++]=0xf4;
 
     failure_label=offset;
-    code[failure_jump+1]=(uint8_t)(failure_label-(failure_jump+2ULL));
+    for (uint32_t i=0; i<failure_jump_count; ++i)
+        put_u32(&code[failure_jumps[i]+2],
+                (uint32_t)(failure_label-(failure_jumps[i]+6ULL)));
     code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_EXIT); offset+=4;
     code[offset++]=0xbf; put_u32(&code[offset],9); offset+=4;
     code[offset++]=0xcd; code[offset++]=0x80;
@@ -724,6 +765,7 @@ int userspace_service_step(void) {
     if (status!=0)
         return -1;
     init_reaped=1;
+    serial_write_public("ZEROOS: userspace negative syscall/fault probes passed.\n");
     serial_write_public("ZEROOS: init userspace process reaped cleanly.\n");
     return 0;
 }
