@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <zeroos/compat/compat.h>
+#include <zeroos/compat/pe.h>
 
 static int checks, failures;
 static const char *current = "";
@@ -173,12 +174,82 @@ static void test_dlls(void) {
     CHECK(zcompat_dll_load(&c, "ok.dll", 0) == ZCOMPAT_BADARG);
 }
 
+
+static void test_pe(void) {
+    static uint8_t img[512];
+    struct zpe_info info;
+    int rc;
+
+    /* minimal valid x86-64 PE32+ skeleton */
+#define MK_BASE() do {                                                      \
+        memset(img, 0, sizeof(img));                                        \
+        img[0]='M'; img[1]='Z';                                             \
+        img[0x3c]=0x80;                                                     \
+        img[0x80]='P'; img[0x81]='E';                                       \
+        img[0x84]=0x64; img[0x85]=0x86;                                     \
+        img[0x86]=1;                                                        \
+        img[0x94]=0xf0; img[0x95]=0;                                        \
+        img[0x98]=0x0b; img[0x99]=0x02;                                     \
+        img[0xA8]=0x10;                                                     \
+        img[0xD0]=0x00; img[0xD1]=0x10;                                     \
+        img[0xD4]=0x00; img[0xD5]=0x01;                                     \
+    } while (0)
+
+    MK_BASE();
+    rc = zpe_validate(img, sizeof(img), &info);
+    CHECK(rc == ZPE_OK);
+    CHECK(info.image_size == 0x1000);
+    CHECK(info.section_count == 1);
+    CHECK(info.entry_rva == 0x10);
+    CHECK(info.file_size == sizeof(img));
+    CHECK(zpe_result_str(ZPE_OK) != NULL);
+    CHECK(zpe_result_str(ZPE_BAD_MAGIC) != NULL);
+    CHECK(zpe_result_str(-99) != NULL);
+
+    CHECK(zpe_validate(NULL, 512, &info) == ZPE_BADARG);
+    CHECK(zpe_validate(img, 10, &info) == ZPE_TRUNCATED);
+
+    MK_BASE(); img[1]='X';
+    CHECK(zpe_validate(img, 512, &info) == ZPE_BAD_MAGIC);
+
+    MK_BASE(); img[0x3c]=0x00; img[0x3d]=0x10; /* e_lfanew > file */
+    CHECK(zpe_validate(img, 512, &info) == ZPE_BAD_LAYOUT);
+    MK_BASE(); img[0x3c]=0x10;                 /* e_lfanew < 64 */
+    CHECK(zpe_validate(img, 512, &info) == ZPE_BAD_LAYOUT);
+
+    MK_BASE(); img[0x81]='X';                   /* PE signature */
+    CHECK(zpe_validate(img, 512, &info) == ZPE_BAD_MAGIC);
+
+    MK_BASE(); img[0x84]=0x4c; img[0x85]=0x01;  /* i386 machine */
+    CHECK(zpe_validate(img, 512, &info) == ZPE_UNSUPPORTED_MACHINE);
+
+    MK_BASE(); img[0x98]=0x0b; img[0x99]=0x01;  /* PE32 not PE32+ */
+    CHECK(zpe_validate(img, 512, &info) == ZPE_UNSUPPORTED_FORMAT);
+
+    MK_BASE(); img[0x86]=40;                    /* section table overrun */
+    CHECK(zpe_validate(img, 512, &info) == ZPE_TRUNCATED);
+
+    MK_BASE(); img[0x86]=0;                     /* zero sections */
+    CHECK(zpe_validate(img, 512, &info) == ZPE_BAD_LAYOUT);
+
+    MK_BASE(); img[0xA8]=0x00; img[0xA9]=0x20;  /* entry > image size */
+    CHECK(zpe_validate(img, 512, &info) == ZPE_BAD_LAYOUT);
+
+    MK_BASE(); img[0xD4]=0x00; img[0xD5]=0x10;  /* headers > file */
+    CHECK(zpe_validate(img, 512, &info) == ZPE_BAD_LAYOUT);
+
+    MK_BASE(); img[0x94]=0xff; img[0x95]=0xff;  /* opt hdr beyond file */
+    CHECK(zpe_validate(img, 512, &info) == ZPE_TRUNCATED);
+#undef MK_BASE
+}
+
 int main(void) {
     RUN(test_lifecycle);
     RUN(test_capacity);
     RUN(test_paths);
     RUN(test_registry);
     RUN(test_dlls);
+    RUN(test_pe);
     printf("checks=%d failures=%d\n", checks, failures);
     return failures ? 1 : 0;
 }
