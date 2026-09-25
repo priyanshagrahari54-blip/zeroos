@@ -148,12 +148,14 @@ Exit: background work is demonstrably controlled.
 ### 9.1 Windows
 Start with a narrow Win32 API slice, expand through test suites.
 Status: compatibility core (lifecycle, paths, registry, DLL
-bookkeeping) implemented and host-tested via `make compat-check`; the
-Win32 slice starts on top of it.
+bookkeeping) and the PE image validator implemented and host-tested
+via `make compat-check`; the Win32 API slice starts on top of it.
 ### 9.2 Android
 Integrate isolated Android runtime using the selected AOSP baseline.
-Claims policy: document the AOSP baseline (release, security bulletin
-month, ABIs) first; only tested-matrix combinations may be claimed.
+Baseline documented: AOSP 14 (API 34), arm64-v8a primary ABI; runtime
+isolated in its own userspace compartment.  Claims policy: only
+tested-matrix combinations may be claimed — tested matrix is currently
+empty, so no Android support is claimed.
 ### 9.3 Packaging
 Make compatibility runtimes independently updateable.
 Exit: defined application compatibility matrix, not vague “supports Windows/Android”.

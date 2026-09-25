@@ -24,8 +24,8 @@ does not exist yet, the row says so — no claim is made without it.
 
 | Suite | Command | Assertions | Failures |
 |---|---|---|---|
-| Desktop modules (display, compositor, window, input, a11y, i18n, search, settings, notify, lifecycle, watchdog, governor, automation, browser, AI, bar, launcher, capability, metrics, integration) | `make desktop-check` | 4557 | 0 |
-| Windows compatibility core | `make compat-check` | 86 | 0 |
+| Desktop modules (display, compositor, window, input, a11y, i18n, search, settings, notify, lifecycle, watchdog, governor, automation, browser, AI, bar, launcher, capability, metrics, update, url, integration) | `make desktop-check` | 4661 | 0 |
+| Windows compatibility core (lifecycle/paths/registry/DLL + PE validator) | `make compat-check` | 107 | 0 |
 | Hardware/driver cores (incl. crypto RFC vectors) | `make hardware-core-test` | per-suite PASS | 0 |
 | Public userspace ABI | `make userspace-abi-check`, `python3 userspace/tests/abi_consistency.py` | PASS | 0 |
 | Userspace runtime contract | `make userspace-runtime-check` | PASS | 0 |
@@ -52,10 +52,10 @@ run is machine-verified evidence, not a log skim.
 |---|---|---|---|
 | A | Graphics service split + window system | display/compositor/window/input suites, session CI milestones | Supported (userspace services; GPU beyond scanout not yet) |
 | A | Shell (ZERO Bar, launcher, search, notify, settings, overview) | bar/launcher/search/notify/settings suites | Core supported; chrome rendering pending |
-| B | Security/recovery/updates | crypto suite, watchdog/lifecycle suites, capability gate suite (wired into launcher/bar), automation permission model | Partial: crypto+watchdog+capability gate supported; firewall/vault/snapshots/transactional updates pending |
-| C | Windows compatibility | `make compat-check` | Core supported (lifecycle/paths/registry/DLL); PE loader + Win32 slice pending |
-| D | Android runtime | Baseline + tested-matrix policy in `ARCHITECTURE.md` §18 | Contract only — **no runtime claim** |
-| E | Browser tabs lifecycle | browser suite (16-tab ladder, crash recovery) | Core supported; engine/UI pending |
+| B | Security/recovery/updates | crypto suite, watchdog/lifecycle suites, capability gate suite (wired into launcher/bar), transactional update state machine (rollback/verify/health), automation permission model | Partial: crypto+watchdog+capability gate+transactional updates supported; firewall/vault/snapshots pending |
+| C | Windows compatibility | `make compat-check` (incl. PE validator) | Core supported (lifecycle/paths/registry/DLL/image validation); API translation slice pending |
+| D | Android runtime | Baseline documented (AOSP 14/API 34/arm64-v8a) + tested-matrix policy in `ARCHITECTURE.md` §18; tested matrix empty | Contract + baseline documented — **no runtime, no claim** |
+| E | Browser tabs lifecycle | browser suite (16-tab ladder, crash recovery) + strict URL parser (scheme/host/port/escape negatives) | Core supported; engine/UI pending |
 | F | AI platform (separate from Forge AI) | AI broker suite, ARCHITECTURE §17 | Broker supported; adapters pending |
 | G | Study Center | Scope contract in `PHASES.md` Phase 6 | Not implemented — contract only |
 | H | Media | Lawful-source/no-DRM policy in `PHASES.md` Phase 6 | Not implemented — policy binding |
