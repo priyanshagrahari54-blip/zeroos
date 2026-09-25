@@ -20,8 +20,16 @@ The detailed product plan remains in ZEROOS_MASTER_ROADMAP.md.
     (IRQ1/IRQ12, scancode + mouse-packet decoders, INPUT_POLL/WAIT) +
     desktop platform core (compositor/window/input-router/search/
     settings/notify/a11y/i18n/watchdog modules) landed in Stage 5
-    batch 1–3; display service, shell processes and app UI remain.
+    batch 1–3; the embedded session process (`userspace/session/`) now
+    wires display service + compositor + input router to the live
+    syscalls with boot certification; shell UI chrome (ZERO Bar,
+    launcher, overview) and app UI remain.
 11. System services: package/update/recovery/diagnostics/observability/power management.
+    Status: RFC 8439 ChaCha20-Poly1305 primitives (block, cipher, MAC,
+    key generation, AEAD) landed in `kernel/crypto.c`, linked into the
+    kernel and verified against the published RFC vectors plus
+    tamper/wrong-key negatives (`make hardware-core-test`); vault,
+    update signing and their integration follow.
 12. Study Center and app framework.
 13. Forge AI bridge: sandboxed local kernel/user API and external-service boundary.
 14. SMP/per-CPU scheduling, high-resolution timers, advanced memory management.

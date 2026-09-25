@@ -84,7 +84,19 @@ Wire-up to a live scanout surface depends on the display-service batch.
 ZERO Bar, launcher, notifications, workspaces.
 Status: shell platform services (lifecycle, workspaces, search, settings,
 notifications, a11y, i18n, watchdog) are implemented as tested userspace
-modules; shell UI processes remain.
+modules. The display service (`userspace/desktop/src/display.c`) owns the
+DISPLAY_INFO/DISPLAY_PRESENT submission path — degraded/paced/empty/
+suspended gating, damage merge, rect-local present contract, explicit
+re-attach recovery — and is host-tested. The embedded session process
+(`userspace/session/session.c`, launched by `kernel/session.c`) binds it
+to the real syscalls, runs the compositor window path over a staging
+framebuffer and pumps input through the router, with boot milestones
+grepped in CI (live and degraded variants); shell UI chrome built on
+this session remains. The automation framework
+(`userspace/desktop/src/automation.c`) provides bounded, auditable
+event/action rules — explicit permission grants, cooldown rate limits,
+fire caps, injected actions, drainable audit ring — host-tested;
+producers/consumers wire in with the shell chrome.
 ### 5.4 Settings
 System configuration service.
 Status: schema-driven settings module implemented (defaults, permissions,
@@ -101,6 +113,10 @@ Each app must have resource lifecycle policy and crash isolation.
 
 ## Phase 7 — Security, Update and Recovery
 Firewall, permissions, encryption integration, antivirus scanning, privacy center, secure vault, update manager, snapshots and rollback.
+Status: kernel crypto primitives (RFC 8439 ChaCha20-Poly1305: block,
+cipher, Poly1305, key generation, AEAD — vector-tested plus tamper
+negatives) landed as `kernel/crypto.c` and are linked into the kernel;
+firewall/permissions/vault/privacy/audit and the integrations remain.
 Exit: system can recover from controlled update and application failures.
 
 ## Phase 8 — Performance/Power

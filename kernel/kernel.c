@@ -17,6 +17,7 @@
 #include "ipc.h"
 #include "shmem.h"
 #include "storage/storage.h"
+#include "session.h"
 #include "fb.h"
 #include "input.h"
 
@@ -989,6 +990,9 @@ static void scheduler_probe_monitor(void *argument) {
                 serial_write_public("ZEROOS: display present contract verified.\n");
                 /* Stage 3: storage bring-up runs in its own task. */
                 storage_start();
+                /* Stage 5: the session/shell process certifies the
+                 * display service, compositor and input paths. */
+                session_start();
             }
         }
 

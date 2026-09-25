@@ -1,7 +1,7 @@
 BUILD := build
 KERNEL := $(BUILD)/zeroos.elf
 ISO := $(BUILD)/zeroos.iso
-HARDWARE_CORE_NAMES := net_core net_route net_transport net_conntrack net_l2 net_ipv6 dns_core dhcp_core input_core usb_core audio_core display_core driver_core dma resource_core scancode_core mouse_core
+HARDWARE_CORE_NAMES := net_core net_route net_transport net_conntrack net_l2 net_ipv6 dns_core dhcp_core input_core usb_core audio_core display_core driver_core dma resource_core scancode_core mouse_core crypto
 HARDWARE_CORE_OBJS := $(addprefix $(BUILD)/hardware-,$(addsuffix .o,$(HARDWARE_CORE_NAMES)))
 
 CC := gcc
@@ -65,7 +65,7 @@ $(BUILD)/ap_trampoline.o: boot/ap_trampoline.S | $(BUILD)
 $(BUILD)/user_entry.o: kernel/user_entry.S | $(BUILD)
 	$(AS) $(ASFLAGS) -c $< -o $@
 
-$(BUILD)/kernel.o: kernel/kernel.c kernel/storage/storage.h kernel/types.h kernel/cpu.h kernel/apic.h kernel/acpi.h kernel/memory.h kernel/timer.h kernel/vmm.h kernel/gdt.h kernel/sync.h kernel/tlb.h kernel/task.h kernel/thread.h kernel/process.h kernel/scheduler.h kernel/smp.h kernel/wait.h kernel/user.h kernel/ipc.h kernel/shmem.h kernel/fb.h kernel/input.h | $(BUILD)
+$(BUILD)/kernel.o: kernel/kernel.c kernel/storage/storage.h kernel/types.h kernel/cpu.h kernel/apic.h kernel/acpi.h kernel/memory.h kernel/timer.h kernel/vmm.h kernel/gdt.h kernel/sync.h kernel/tlb.h kernel/task.h kernel/thread.h kernel/process.h kernel/scheduler.h kernel/smp.h kernel/wait.h kernel/user.h kernel/ipc.h kernel/shmem.h kernel/fb.h kernel/input.h kernel/session.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
 $(BUILD)/interrupts.o: kernel/interrupts.c kernel/interrupts.h kernel/sync.h kernel/types.h kernel/cpu.h kernel/apic.h kernel/pic.h kernel/timer.h kernel/gdt.h kernel/task.h kernel/thread.h kernel/tlb.h kernel/scheduler.h kernel/syscall.h | $(BUILD)
@@ -157,6 +157,8 @@ hardware-core-test: | $(BUILD)
 	$(BUILD)/scancode-core-test
 	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/mouse_core_test.c kernel/mouse_core.c -o $(BUILD)/mouse-core-test
 	$(BUILD)/mouse-core-test
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/crypto_test.c kernel/crypto.c -o $(BUILD)/crypto-core-test
+	$(BUILD)/crypto-core-test
 
 $(BUILD)/gdt.o: kernel/gdt.c kernel/gdt.h kernel/memory.h kernel/cpu.h kernel/types.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
@@ -188,7 +190,8 @@ STORAGE_SRCS := $(wildcard kernel/storage/*.c)
 STORAGE_OBJS := $(patsubst kernel/storage/%.c,$(BUILD)/storage/%.o,$(STORAGE_SRCS))
 INFRA_OBJS := $(BUILD)/ksync.o $(BUILD)/crc.o $(BUILD)/kstring.o $(BUILD)/pci.o
 PROBE_OBJ := $(BUILD)/storage_probe_image.o
-EXTRA_OBJS := $(STORAGE_OBJS) $(INFRA_OBJS) $(PROBE_OBJ)
+SESSION_OBJ := $(BUILD)/session_probe_image.o
+EXTRA_OBJS := $(STORAGE_OBJS) $(INFRA_OBJS) $(PROBE_OBJ) $(SESSION_OBJ)
 
 $(BUILD)/storage:
 	mkdir -p $(BUILD)/storage
@@ -200,6 +203,34 @@ $(BUILD)/ksync.o $(BUILD)/crc.o $(BUILD)/kstring.o $(BUILD)/pci.o: $(BUILD)/%.o:
 	$(CC) $(CFLAGS) -MMD -MP -Ikernel -c $< -o $@
 
 -include $(STORAGE_OBJS:.o=.d) $(INFRA_OBJS:.o=.d)
+
+# Stage 5 Ring-3 session/shell process: desktop display/compositor/input
+# modules linked freestanding and embedded into the kernel image.
+SESSION_CFLAGS := -std=c11 -m64 -ffreestanding -fno-builtin -fno-stack-protector \
+	-fno-pic -fno-pie -nostdlib -mno-red-zone -mgeneral-regs-only -mcmodel=large \
+	-Wall -Wextra -Werror -O2 -Iuserspace/include -Iuserspace/desktop/include
+SESSION_DESKTOP_SRCS := userspace/desktop/src/common.c \
+	userspace/desktop/src/window.c userspace/desktop/src/compositor.c \
+	userspace/desktop/src/input.c userspace/desktop/src/display.c
+SESSION_DESKTOP_OBJS := $(patsubst userspace/desktop/src/%.c,$(BUILD)/session_desktop_%.o,$(SESSION_DESKTOP_SRCS))
+SESSION_DEPS := userspace/session/session.c userspace/session/session_start.S \
+	userspace/session/session.ld userspace/include/zeroos/syscall.h \
+	$(wildcard userspace/desktop/include/zeroos/desktop/*.h) \
+	$(SESSION_DESKTOP_SRCS)
+$(BUILD)/session_probe.elf: $(SESSION_DEPS) | $(BUILD)
+	$(CC) $(SESSION_CFLAGS) -c userspace/session/session_start.S -o $(BUILD)/session_start.o
+	$(CC) $(SESSION_CFLAGS) -c userspace/session/session.c -o $(BUILD)/session_probe_user.o
+	@set -e; for src in $(SESSION_DESKTOP_SRCS); do \
+		$(CC) $(SESSION_CFLAGS) -c $$src -o $(BUILD)/session_desktop_$$(basename $$src .c).o; \
+	done
+	$(LD) -m elf_x86_64 -T userspace/session/session.ld -nostdlib -o $@ \
+		$(BUILD)/session_start.o $(BUILD)/session_probe_user.o $(SESSION_DESKTOP_OBJS)
+
+$(BUILD)/session_probe_image.o: kernel/session_probe_image.S $(BUILD)/session_probe.elf | $(BUILD)
+	$(AS) $(ASFLAGS) -DPROBE_PATH='"$(BUILD)/session_probe.elf"' -c $< -o $@
+
+$(BUILD)/session_launch.o: kernel/session.c kernel/session.h kernel/types.h kernel/kstring.h kernel/memory.h kernel/vmm.h kernel/timer.h kernel/task.h kernel/process.h kernel/thread.h kernel/elf.h kernel/user.h kernel/syscall.h | $(BUILD)
+	$(CC) $(CFLAGS) -Ikernel -c kernel/session.c -o $@
 
 # Freestanding Ring-3 storage probe (C), embedded into the kernel image.
 PROBE_CFLAGS := -std=c11 -m64 -ffreestanding -fno-builtin -fno-stack-protector \
@@ -214,8 +245,8 @@ $(BUILD)/storage_probe.elf: userspace/storage/probe.c userspace/storage/probe_st
 $(BUILD)/storage_probe_image.o: kernel/storage_probe_image.S $(BUILD)/storage_probe.elf | $(BUILD)
 	$(AS) $(ASFLAGS) -DPROBE_PATH='"$(BUILD)/storage_probe.elf"' -c $< -o $@
 
-$(KERNEL): $(BUILD)/boot.o $(BUILD)/isr.o $(BUILD)/context.o $(BUILD)/ap_trampoline.o $(BUILD)/user_entry.o $(BUILD)/kernel.o $(BUILD)/cpu.o $(BUILD)/apic.o $(BUILD)/smp.o $(BUILD)/acpi.o $(BUILD)/interrupts.o $(BUILD)/syscall.o $(BUILD)/ipc.o $(BUILD)/shmem.o $(BUILD)/fb.o $(BUILD)/input.o $(BUILD)/elf.o $(BUILD)/exec.o $(BUILD)/user.o $(BUILD)/pic.o $(BUILD)/timer.o $(BUILD)/sync.o $(BUILD)/memory.o $(BUILD)/gdt.o $(BUILD)/vmm.o $(BUILD)/tlb.o $(BUILD)/task.o $(BUILD)/wait.o $(BUILD)/scheduler.o $(BUILD)/thread.o $(BUILD)/process.o $(EXTRA_OBJS) $(HARDWARE_CORE_OBJS) kernel/linker.ld
-	$(LD) $(LDFLAGS) -o $@ $(BUILD)/boot.o $(BUILD)/isr.o $(BUILD)/context.o $(BUILD)/ap_trampoline.o $(BUILD)/user_entry.o $(BUILD)/kernel.o $(BUILD)/cpu.o $(BUILD)/apic.o $(BUILD)/smp.o $(BUILD)/acpi.o $(BUILD)/interrupts.o $(BUILD)/syscall.o $(BUILD)/ipc.o $(BUILD)/shmem.o $(BUILD)/fb.o $(BUILD)/input.o $(BUILD)/elf.o $(BUILD)/exec.o $(BUILD)/user.o $(BUILD)/pic.o $(BUILD)/timer.o $(BUILD)/sync.o $(BUILD)/memory.o $(BUILD)/gdt.o $(BUILD)/vmm.o $(BUILD)/tlb.o $(BUILD)/task.o $(BUILD)/wait.o $(BUILD)/scheduler.o $(BUILD)/thread.o $(BUILD)/process.o $(EXTRA_OBJS) $(HARDWARE_CORE_OBJS)
+$(KERNEL): $(BUILD)/boot.o $(BUILD)/isr.o $(BUILD)/context.o $(BUILD)/ap_trampoline.o $(BUILD)/user_entry.o $(BUILD)/kernel.o $(BUILD)/cpu.o $(BUILD)/apic.o $(BUILD)/smp.o $(BUILD)/acpi.o $(BUILD)/interrupts.o $(BUILD)/syscall.o $(BUILD)/ipc.o $(BUILD)/shmem.o $(BUILD)/fb.o $(BUILD)/input.o $(BUILD)/elf.o $(BUILD)/exec.o $(BUILD)/user.o $(BUILD)/pic.o $(BUILD)/timer.o $(BUILD)/sync.o $(BUILD)/memory.o $(BUILD)/gdt.o $(BUILD)/vmm.o $(BUILD)/tlb.o $(BUILD)/task.o $(BUILD)/wait.o $(BUILD)/scheduler.o $(BUILD)/thread.o $(BUILD)/process.o $(BUILD)/session_launch.o $(EXTRA_OBJS) $(HARDWARE_CORE_OBJS) kernel/linker.ld
+	$(LD) $(LDFLAGS) -o $@ $(BUILD)/session_launch.o $(BUILD)/boot.o $(BUILD)/isr.o $(BUILD)/context.o $(BUILD)/ap_trampoline.o $(BUILD)/user_entry.o $(BUILD)/kernel.o $(BUILD)/cpu.o $(BUILD)/apic.o $(BUILD)/smp.o $(BUILD)/acpi.o $(BUILD)/interrupts.o $(BUILD)/syscall.o $(BUILD)/ipc.o $(BUILD)/shmem.o $(BUILD)/fb.o $(BUILD)/input.o $(BUILD)/elf.o $(BUILD)/exec.o $(BUILD)/user.o $(BUILD)/pic.o $(BUILD)/timer.o $(BUILD)/sync.o $(BUILD)/memory.o $(BUILD)/gdt.o $(BUILD)/vmm.o $(BUILD)/tlb.o $(BUILD)/task.o $(BUILD)/wait.o $(BUILD)/scheduler.o $(BUILD)/thread.o $(BUILD)/process.o $(EXTRA_OBJS) $(HARDWARE_CORE_OBJS)
 
 iso: $(KERNEL)
 	rm -rf $(BUILD)/iso

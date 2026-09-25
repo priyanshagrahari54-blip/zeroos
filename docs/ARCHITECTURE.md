@@ -211,17 +211,40 @@ Implemented (this stage):
   routing (pointer focus, click-to-focus/raise, implicit grab, overlay
   priority, clamped relative motion) lives in `userspace/desktop/` and is
   host-tested.
+- Cryptographic primitives (`kernel/crypto.c`, linked into the kernel):
+  ChaCha20 block/cipher, Poly1305 and AEAD_CHACHA20_POLY1305 exactly as
+  specified in RFC 8439, with a streaming Poly1305 context for MAC data
+  built from several buffers. Host-verified against the RFC's published
+  vectors (block 2.3.2, cipher 2.4.2, MAC 2.5.2, key generation 2.6.2,
+  AEAD 2.8.2) plus wrong-key/tampered-tag/tampered-ciphertext/tampered-AAD
+  negatives that must fail with authenticated-output zeroing. Policy —
+  key storage, nonce generation, who may encrypt what — deliberately
+  stays with future callers (vault, updates, privacy centre).
+- Automation framework (`userspace/desktop/src/automation.c`): bounded
+  event/rule engine (32 rules, 64-entry audit ring) with explicit
+  permission grants, per-rule cooldowns, lifetime fire caps, injected
+  action ops (notify/settings/callback/log) and drainable audit records
+  (rule, event, result, tick) for the privacy center — host-tested.
+- Session/shell process (`userspace/session/session.c`, embedded and
+  launched by `kernel/session.c`): the first Ring-3 shell process binds
+  the display service to the real DISPLAY_INFO/DISPLAY_PRESENT syscalls,
+  rasterizes a compositor frame into a staging framebuffer and submits
+  the damaged region, pumps INPUT_POLL/INPUT_WAIT through the desktop
+  input router, and certifies each contract with serial milestones
+  (live and degraded display paths both accepted; reaped cleanly).
 - Desktop platform core (`userspace/desktop/`): fixed-capacity, zero-heap,
-  freestanding-clean modules for lifecycle, resource governor, window
+  freestanding-clean modules for lifecycle, resource governor, display
+  service (scanout submit gating), window
   system, compositor (retained scene, damage, occlusion, pacing, cache,
   software fallback), Universal Search, schema-driven settings,
   notifications, accessibility, i18n (en+hi), and service watchdog —
-  gated by `make desktop-check` (3200+ assertions, hosted + freestanding).
+  gated by `make desktop-check` (3500+ assertions, hosted + freestanding).
 
 Not yet implemented (contracts defined, explicit in PHASES.md):
-- Userspace display service writing scanout,
-  GPU driver beyond scanout, mouse wheel/extended aux protocols, USB HID
-  devices, shell UI processes.
+- Shell UI chrome (ZERO Bar, launcher, overview surfaces) on top of the
+  session process and its consumers for the automation rules, GPU
+  driver beyond scanout, mouse wheel/extended aux protocols, USB HID
+  devices.
 
 ## 15. Networking
 Network stack is independent of desktop UI.
@@ -254,7 +277,7 @@ Android application -> Android framework/runtime -> graphics/audio/input/network
 Runtime is separately managed and loaded on demand.
 
 ## 19. Security Architecture
-Boot trust, kernel privilege separation, userspace isolation, permissions, process capabilities, encrypted storage, firewall, application sandboxing, update verification and recovery.
+Boot trust, kernel privilege separation, userspace isolation, permissions, process capabilities, encrypted storage (symmetric foundation: RFC 8439 ChaCha20-Poly1305 primitives in `kernel/crypto.c`), firewall, application sandboxing, update verification and recovery.
 
 Security services must remain available under ordinary load and become more conservative under suspicious activity.
 

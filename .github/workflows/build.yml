@@ -144,6 +144,13 @@ jobs:
             grep -q "ZEROOS: storage userspace probe passed." build/serial.log
             grep -q "ZEROOS: storage userspace probe reaped; descriptors and mappings released" build/serial.log
             grep -q "ZEROOS: storage Stage 3 certification complete." build/serial.log
+            grep -Eq 'ZEROOS: session display service attached \((live|degraded)\)\.' build/serial.log
+            grep -q "ZEROOS: session compositor frame path passed." build/serial.log
+            grep -Eq 'ZEROOS: session (scanout present contract|scanout degraded path) passed\.' build/serial.log
+            grep -q "ZEROOS: session input pump passed." build/serial.log
+            grep -q "ZEROOS: session input routing passed." build/serial.log
+            grep -q "ZEROOS: session shell process complete." build/serial.log
+            grep -q "ZEROOS: session shell process reaped cleanly." build/serial.log
             if grep -q "storage.*FAILED" build/serial.log; then
               grep "FAILED" build/serial.log
               exit 1
@@ -200,6 +207,13 @@ jobs:
           grep -q "ZEROOS: blocking IPC send-wakeup path passed." build/serial-smp4.log
           grep -q "ZEROOS: isolated service process setup complete." build/serial-smp4.log
           grep -q "ZEROOS: storage Stage 3 certification complete." build/serial-smp4.log
+          grep -Eq 'ZEROOS: session display service attached \((live|degraded)\)\.' build/serial-smp4.log
+          grep -q "ZEROOS: session compositor frame path passed." build/serial-smp4.log
+          grep -Eq 'ZEROOS: session (scanout present contract|scanout degraded path) passed\.' build/serial-smp4.log
+          grep -q "ZEROOS: session input pump passed." build/serial-smp4.log
+          grep -q "ZEROOS: session input routing passed." build/serial-smp4.log
+          grep -q "ZEROOS: session shell process complete." build/serial-smp4.log
+          grep -q "ZEROOS: session shell process reaped cleanly." build/serial-smp4.log
           grep -q "ZEROOS: shared-memory map/grant/lifecycle self-test passed." build/serial-smp4.log
           grep -q "ZEROOS: userspace negative syscall/fault/malformed-ELF probes passed." build/serial-smp4.log
           grep -q "ZEROOS: Ring-3 transition, syscall ABI, and init recovery passed." build/serial-smp4.log
