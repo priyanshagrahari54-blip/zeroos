@@ -18,13 +18,13 @@ does not exist yet, the row says so — no claim is made without it.
 | RECOVERY | Browser crash recovery, service watchdog, display attach/detach, init recovery in guest, rollback contracts | desktop suites + CI boot milestones | Green (host), guest init recovery in CI |
 | QEMU | Boot certification block in CI: panic detection, session milestones, storage certification | `build.yml` on every push/PR | Green on `599b262`, `ccfa30d`, `f18c857` (PR context) |
 | REAL-HARDWARE | Physical run of the certified ISO on bare metal | Not available in this environment | **Not run — no claim** |
-| PERFORMANCE | Frame pacing/vsync accounting (display tests), governor tier/pressure/effects (governor tests), metrics recorder with interval histogram + percentiles wired into `zd_display_service_present` (host-tested; linked into the session image) | desktop suite + session link | Green (host); on-device percentiles pending |
+| PERFORMANCE | Frame pacing/vsync accounting (display tests), governor tier/pressure/effects (governor tests), metrics recorder with interval histogram + percentiles wired into `zd_display_service_present`, FPS monitor frame-time percentiles and budget breaches | desktop suite + session link | Green (host); on-device percentiles pending |
 
 ## 2. Measured test counts (host, this branch)
 
 | Suite | Command | Assertions | Failures |
 |---|---|---|---|
-| Desktop modules (display, compositor, window, input, a11y, i18n, search, settings, notify, lifecycle, watchdog, governor, automation, browser, AI, bar, launcher, capability, metrics, update, url, integration) | `make desktop-check` | 4661 | 0 |
+| Desktop modules (display, compositor, window, input, a11y, i18n, search, settings, notify, lifecycle, watchdog, governor, automation, browser, AI, bar, launcher, capability, metrics, update, url, study, fps, integration) | `make desktop-check` | 5071 | 0 |
 | Windows compatibility core (lifecycle/paths/registry/DLL + PE validator) | `make compat-check` | 107 | 0 |
 | Hardware/driver cores (incl. crypto RFC vectors) | `make hardware-core-test` | per-suite PASS | 0 |
 | Public userspace ABI | `make userspace-abi-check`, `python3 userspace/tests/abi_consistency.py` | PASS | 0 |
@@ -57,9 +57,9 @@ run is machine-verified evidence, not a log skim.
 | D | Android runtime | Baseline documented (AOSP 14/API 34/arm64-v8a) + tested-matrix policy in `ARCHITECTURE.md` §18; tested matrix empty | Contract + baseline documented — **no runtime, no claim** |
 | E | Browser tabs lifecycle | browser suite (16-tab ladder, crash recovery) + strict URL parser (scheme/host/port/escape negatives) | Core supported; engine/UI pending |
 | F | AI platform (separate from Forge AI) | AI broker suite, ARCHITECTURE §17 | Broker supported; adapters pending |
-| G | Study Center | Scope contract in `PHASES.md` Phase 6 | Not implemented — contract only |
+| G | Study Center | Flashcard scheduler + focus-session suites (PHASES Phase 6) | Flashcard/focus core supported; PDF/OCR/formulas/dictionary pending |
 | H | Media | Lawful-source/no-DRM policy in `PHASES.md` Phase 6 | Not implemented — policy binding |
-| I | Gaming | Evidence-required contracts in `PHASES.md` Phase 11 | Not implemented — contract only |
+| I | Gaming | FPS monitor + performance-profile suites (budgets, percentiles, breaches) in `PHASES.md` Phase 11 | FPS/profiles supported; overlay/controllers/low-latency device support pending |
 | J | Cloud/device | Offline-first + explicit-permission contracts in `PHASES.md` Phase 11 | Not implemented — contract only |
 | K | Automation | automation suite (32 rules, audit ring, permission-first) | Supported |
 | L | Performance/resource governance | governor suite (tiers/pressure/effects) + metrics recorder (counters, interval histogram, p50/p99 reads) wired into the display present path | Core supported; on-device percentiles pending |

@@ -113,10 +113,11 @@ Each app must have resource lifecycle policy and crash isolation.
 Status/contracts: browser lifecycle core (Phase 8.5), ZERO Bar core
 (applets, toggles, badges, focus) and launcher core (registry, query
 ranking, launch dedup) are implemented and host-tested; engine,
-rendering chrome and app surface remain.  Study Center (PDF, notes,
-OCR, formulas, flashcards, dictionary, focus mode, sessions, assistant)
-is scoped as an app suite on the shell contracts — not yet
-implemented.  Media policy is binding: lawful sources only, no DRM
+rendering chrome and app surface remain.  Study Center: the
+flashcard/spaced-repetition scheduler (bounded 0/1/3/7/21/60-day
+ladder, lapse tracking) and focus-session core are implemented and
+host-tested; PDF, OCR, formulas, dictionary and assistant attach on
+these contracts later.  Media policy is binding: lawful sources only, no DRM
 bypass, and no proprietary codec/container claims without tests.
 
 ## Phase 7 — Security, Update and Recovery
@@ -177,6 +178,11 @@ permissions.  Gaming platform: performance profiles, FPS monitoring and
 overlay, controller support, low-latency modes and a cooperative
 resource policy sharing the governor — none of these may claim support
 without measured evidence.
+Status: FPS monitor (clock-injected sliding window, frame-time
+percentiles, budget-breach counting) and the three performance
+profiles (8/16/33 ms budgets published for the governor) are
+implemented and host-tested; overlay, controller support and
+device-level low-latency remain — no support claimed for them.
 
 ## Phase 12 — Release Engineering
 Hardware certification matrix, release channels, LTS branch, security advisories, rollback tests, upgrade tests and long-term maintenance.
