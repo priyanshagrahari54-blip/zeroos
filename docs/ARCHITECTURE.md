@@ -277,6 +277,29 @@ Implemented (this stage):
   average reads; the display service records presented/refused/failed
   outcomes and inter-present intervals through the optional hook, and
   the module is part of the freestanding session link — host-tested.
+- Transactional update core (`userspace/desktop/src/update.c`):
+  section 20 pipeline (download → verify → stage → preflight →
+  activate → health check → commit) as an explicit state machine with
+  injected side-effect hooks, rollback on health/activation failure,
+  verify failure that never activates, cancel only before activation,
+  and rejected-transition accounting — host-tested.
+- Strict URL parser (`userspace/desktop/src/url.c`): http/https/about
+  only; javascript:, data:, file: and userinfo never navigate;
+  control characters, label rules, port ranges and percent-escapes
+  (including control-byte decodes like %00/%0A) rejected with named
+  reasons — host-tested.
+- PE image validator (`userspace/compat/src/pe.c`): first loader
+  stage — MZ/PE signature, x86-64 machine, PE32+ format, section
+  table and entry/header bounds against truncation with explicit
+  diagnostics (section 18) — host-tested.
+- Study Center core (`userspace/desktop/src/study.c`): deck/card
+  registry with a bounded spaced-repetition ladder (0/1/3/7/21/60
+  days), lapse and ease accounting, due-card selection and
+  focus-session timing — host-tested; heavier surfaces attach later.
+- FPS monitor (`userspace/desktop/src/fps.c`): clock-injected
+  sliding-window FPS, frame-time percentiles, budget-breach counting
+  and the 8/16/33 ms performance profiles — host-tested; overlay and
+  controller support remain in the not-yet list.
 
 Not yet implemented (contracts defined, explicit in PHASES.md):
 - Shell UI chrome (ZERO Bar, launcher, overview surfaces) on top of the
@@ -334,11 +357,16 @@ emulation.
 Android:
 Android application -> Android framework/runtime -> graphics/audio/input/network adapters -> ZEROOS services.
 Runtime is separately managed and loaded on demand.
-Claims policy: the AOSP baseline (release, security bulletin month,
-supported ABIs) must be documented in this file before any Android
-runtime claim, and public compatibility statements may list only
-devices/versions exercised by the tested matrix — never untested
-combinations.
+Documented baseline (chosen now, before any claim): AOSP 14
+(Android 14, API level 34), primary ABI arm64-v8a, security
+bulletin level tracked at integration time; the runtime executes in
+an isolated userspace compartment with its own lifecycle and no
+privileged ZEROOS IPC by default.
+Claims policy: public compatibility statements may list only
+devices/versions exercised by the tested matrix.  Current tested
+matrix: **empty — no Android application or device is claimed
+supported** until CI/real-hardware rows in `VALIDATION.md` record
+them.
 
 ## 19. Security Architecture
 Boot trust, kernel privilege separation, userspace isolation, permissions, process capabilities, encrypted storage (symmetric foundation: RFC 8439 ChaCha20-Poly1305 primitives in `kernel/crypto.c`), firewall, application sandboxing, update verification and recovery.
