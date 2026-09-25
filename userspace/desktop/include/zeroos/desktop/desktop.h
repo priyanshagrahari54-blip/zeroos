@@ -24,6 +24,8 @@
 #include <zeroos/desktop/automation.h>
 #include <zeroos/desktop/browser.h>
 #include <zeroos/desktop/ai.h>
+#include <zeroos/desktop/bar.h>
+#include <zeroos/desktop/launcher.h>
 #include <zeroos/desktop/search.h>
 #include <zeroos/desktop/settings.h>
 #include <zeroos/desktop/notify.h>

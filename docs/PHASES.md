@@ -110,8 +110,10 @@ Exit: desktop session is usable without kernel debugging tools.
 ## Phase 6 — Core Native Apps
 File manager, terminal, browser foundation, settings, package manager, text editor/notes, PDF reader, media player, screenshot/recorder and hardware center.
 Each app must have resource lifecycle policy and crash isolation.
-Status/contracts: browser lifecycle core (Phase 8.5) is implemented and
-host-tested; engine and app surface remain.  Study Center (PDF, notes,
+Status/contracts: browser lifecycle core (Phase 8.5), ZERO Bar core
+(applets, toggles, badges, focus) and launcher core (registry, query
+ranking, launch dedup) are implemented and host-tested; engine,
+rendering chrome and app surface remain.  Study Center (PDF, notes,
 OCR, formulas, flashcards, dictionary, focus mode, sessions, assistant)
 is scoped as an app suite on the shell contracts — not yet
 implemented.  Media policy is binding: lawful sources only, no DRM

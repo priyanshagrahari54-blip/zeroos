@@ -255,6 +255,15 @@ Implemented (this stage):
   host-tested.
 - Windows compatibility core (`userspace/compat/`): Part C contracts
   are in section 18; host-tested via `make compat-check`.
+- ZERO Bar core (`userspace/desktop/src/bar.c`): applet layout with a
+  flexible title area, pointer/keyboard activation with action routing,
+  quick toggles with explicit provider denial accounting, notification
+  badges, DPI-scaled physical width — host-tested.  Shell chrome
+  rendering remains in the not-yet list.
+- Launcher core (`userspace/desktop/src/launcher.c`): bounded app
+  registry, case-insensitive query with prefix-over-substring ranking
+  and recency ties, launch dedup (EBUSY), hook-driven failure states,
+  empty-state recents — host-tested.
 
 Not yet implemented (contracts defined, explicit in PHASES.md):
 - Shell UI chrome (ZERO Bar, launcher, overview surfaces) on top of the
