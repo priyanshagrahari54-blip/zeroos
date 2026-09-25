@@ -8,7 +8,7 @@
 #define NET_PROTO_ICMP 1
 #define NET_PROTO_TCP 6
 #define NET_PROTO_UDP 17
-struct net_ipv4_view { uint32_t source, destination; uint16_t total_length; uint8_t protocol, header_length; };
+struct net_ipv4_view { uint32_t source, destination; uint16_t total_length, fragment_offset; uint8_t protocol, header_length, is_fragment, more_fragments; };
 struct net_firewall_rule { uint32_t source, source_mask, destination, destination_mask; uint8_t protocol, action; };
 struct net_firewall { struct net_firewall_rule rules[NET_MAX_FIREWALL_RULES]; uint32_t count, accepted, denied, malformed; };
 /* Strict parser: packet includes the IPv4 header; fragments are identified but not reassembled. */

@@ -11,8 +11,14 @@ int net_ipv4_parse(const uint8_t *p,uint32_t n,struct net_ipv4_view *o) {
     for(uint32_t i=0;i<h;i+=2) sum+=(uint32_t)be16(p+i);
     while(sum>>16) sum=(sum&0xffffU)+(sum>>16);
     if((uint16_t)sum!=0xffffU) return -1;
+    uint16_t fragment=be16(p+6);
+    if (fragment&0x8000U) return -1; /* Reserved IPv4 flag. */
     o->header_length=(uint8_t)h; o->total_length=total; o->protocol=p[9];
-    o->source=be32(p+12); o->destination=be32(p+16); return 0;
+    o->source=be32(p+12); o->destination=be32(p+16);
+    o->fragment_offset=(uint16_t)(fragment&0x1fffU);
+    o->more_fragments=(uint8_t)((fragment&0x2000U)!=0);
+    o->is_fragment=(uint8_t)(o->fragment_offset!=0||o->more_fragments);
+    return 0;
 }
 void net_firewall_init(struct net_firewall *f) { if(!f)return; uint8_t *p=(uint8_t *)f; for(uint32_t i=0;i<sizeof(*f);i++)p[i]=0; }
 int net_firewall_add(struct net_firewall *f,const struct net_firewall_rule *r) {
