@@ -1408,6 +1408,14 @@ int task_wake(struct task *task) {
         sleep_queue_remove_locked(task);
     task->state=TASK_RUNNABLE;
     task->need_resched=1;
+    /* During the two-phase wait-queue block protocol, the task is still the
+     * current context on its owner CPU after publishing BLOCKED. A wake in
+     * that window must not make it stealable by another CPU: the owner will
+     * observe RUNNABLE under task_lock and cancel the pending block. */
+    if (task->scheduler_transition && task_current_owner(task)) {
+        spin_unlock_irqrestore(&task_lock,flags);
+        return 0;
+    }
     {
         int owner=task_choose_cpu_locked(task);
         if (owner<0) {
