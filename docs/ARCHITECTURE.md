@@ -244,11 +244,24 @@ Implemented (this stage):
   notifications, accessibility, i18n (en+hi), and service watchdog —
   gated by `make desktop-check` (3500+ assertions, hosted + freestanding).
 
+- Browser tab lifecycle (`userspace/desktop/src/browser.c`): the
+  ACTIVE -> IDLE -> FROZEN -> DISCARDED ladder (Phase 8.5) driven by an
+  injected monotonic clock, metadata-survives-discard reloads, crash
+  states with explicit recovery (no auto-restart, double-crash and
+  early-focus rejected), bounded at 16 tabs with capacity errors —
+  host-tested.  Rendering engine and tab UI remain.
+- AI broker (`userspace/desktop/src/ai.c`): Part F contracts are in
+  section 17; permissions, downgrade, dormancy and wipe semantics are
+  host-tested.
+- Windows compatibility core (`userspace/compat/`): Part C contracts
+  are in section 18; host-tested via `make compat-check`.
+
 Not yet implemented (contracts defined, explicit in PHASES.md):
 - Shell UI chrome (ZERO Bar, launcher, overview surfaces) on top of the
-  session process and its consumers for the automation rules, GPU
-  driver beyond scanout, mouse wheel/extended aux protocols, USB HID
-  devices.
+  session process and its consumers for the automation rules, browser
+  rendering engine and tab UI, GPU driver beyond scanout, mouse
+  wheel/extended aux protocols, USB HID devices, cloud/device services
+  (offline-first behavior, explicit per-device permissions).
 
 ## 15. Networking
 Network stack is independent of desktop UI.
@@ -271,14 +284,39 @@ AI service has:
 request broker -> permission check -> model/backend selector -> context provider -> inference -> action executor.
 Model execution may use CPU/GPU/NPU when available.
 No model remains actively generating or polling when no request exists.
+Status: the local broker (`userspace/desktop/src/ai.c`) implements
+request -> permission check -> backend select -> run with explicit
+grants (context bits, remote egress, persistence), automatic
+remote-to-local downgrade when the egress grant is absent, a bounded
+queue with drop counters, injected backend hooks (a missing hook counts
+a failure, never a fake success), payload wipe on drain and
+dormant-until-submit residency — host-tested in `make desktop-check`.
+Model adapters, context providers and action executors attach on top of
+these contracts later.  This ZEROOS platform is deliberately separate
+from Forge AI.
 
 ## 18. Compatibility Architecture
 Windows:
 Application -> Win32/Win64 API layer -> compatibility runtime -> POSIX-like/native ZEROOS services -> kernel ABI.
+Status: the compatibility core (`userspace/compat/`, `make
+compat-check`) is implemented and host-tested: explicit process
+lifecycle where INSTALLED != RUNNING (start/stop/crash with full
+residency release when stopped — dormant when unused), drive-letter and
+registry-hive translation with named rejections for UNC paths, NTFS
+alternate streams and unknown hives, REG_SZ/DWORD/BINARY validation,
+and DLL refcount bookkeeping with case-insensitive singleton loading.
+The PE loader and API translation layers build on these contracts;
+unsupported constructs fail with explicit diagnostics, never silent
+emulation.
 
 Android:
 Android application -> Android framework/runtime -> graphics/audio/input/network adapters -> ZEROOS services.
 Runtime is separately managed and loaded on demand.
+Claims policy: the AOSP baseline (release, security bulletin month,
+supported ABIs) must be documented in this file before any Android
+runtime claim, and public compatibility statements may list only
+devices/versions exercised by the tested matrix — never untested
+combinations.
 
 ## 19. Security Architecture
 Boot trust, kernel privilege separation, userspace isolation, permissions, process capabilities, encrypted storage (symmetric foundation: RFC 8439 ChaCha20-Poly1305 primitives in `kernel/crypto.c`), firewall, application sandboxing, update verification and recovery.

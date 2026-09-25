@@ -110,6 +110,12 @@ Exit: desktop session is usable without kernel debugging tools.
 ## Phase 6 — Core Native Apps
 File manager, terminal, browser foundation, settings, package manager, text editor/notes, PDF reader, media player, screenshot/recorder and hardware center.
 Each app must have resource lifecycle policy and crash isolation.
+Status/contracts: browser lifecycle core (Phase 8.5) is implemented and
+host-tested; engine and app surface remain.  Study Center (PDF, notes,
+OCR, formulas, flashcards, dictionary, focus mode, sessions, assistant)
+is scoped as an app suite on the shell contracts — not yet
+implemented.  Media policy is binding: lawful sources only, no DRM
+bypass, and no proprietary codec/container claims without tests.
 
 ## Phase 7 — Security, Update and Recovery
 Firewall, permissions, encryption integration, antivirus scanning, privacy center, secure vault, update manager, snapshots and rollback.
@@ -130,13 +136,22 @@ Power profiles and suspend.
 HDD/SSD/NVMe policies.
 ### 8.5 Browser lifecycle
 Active/idle/frozen/discarded tabs.
+Status: implemented and host-tested in
+`userspace/desktop/src/browser.c` (clock-injected ladder, discard keeps
+metadata and drops the document, crash/reload rules, bounded tabs);
+wiring into a real engine remains behind these contracts.
 Exit: background work is demonstrably controlled.
 
 ## Phase 9 — Compatibility
 ### 9.1 Windows
 Start with a narrow Win32 API slice, expand through test suites.
+Status: compatibility core (lifecycle, paths, registry, DLL
+bookkeeping) implemented and host-tested via `make compat-check`; the
+Win32 slice starts on top of it.
 ### 9.2 Android
 Integrate isolated Android runtime using the selected AOSP baseline.
+Claims policy: document the AOSP baseline (release, security bulletin
+month, ABIs) first; only tested-matrix combinations may be claimed.
 ### 9.3 Packaging
 Make compatibility runtimes independently updateable.
 Exit: defined application compatibility matrix, not vague “supports Windows/Android”.
@@ -144,9 +159,20 @@ Exit: defined application compatibility matrix, not vague “supports Windows/An
 ## Phase 10 — AI and Automation
 AI broker, local/remote model adapters, system search, diagnostics, coding assistant, study assistant, automation engine and performance explanations.
 AI is optional and event-driven.
+Status: automation engine landed in 5.3a; the AI broker (permission
+grants, backend selection with remote downgrade, bounded queue, wipe-on-
+drain, dormant-until-submit) is implemented and host-tested in
+`userspace/desktop/src/ai.c`.  Adapters, assistants and explanations
+remain.  The ZEROOS AI platform is separate from Forge AI.
 
 ## Phase 11 — Ecosystem
 Cloud sync, device link, offline maps, smart-home integrations, P2P transfer, themes/widgets, localization expansion, developer SDK and package repository.
+Contracts: cloud/device features are offline-first (every surface works
+without network) and gate each device/account behind explicit
+permissions.  Gaming platform: performance profiles, FPS monitoring and
+overlay, controller support, low-latency modes and a cooperative
+resource policy sharing the governor — none of these may claim support
+without measured evidence.
 
 ## Phase 12 — Release Engineering
 Hardware certification matrix, release channels, LTS branch, security advisories, rollback tests, upgrade tests and long-term maintenance.
