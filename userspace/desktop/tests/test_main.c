@@ -24,6 +24,8 @@ void zd_test_bar_suite(void);
 void zd_test_launcher_suite(void);
 void zd_test_capability_suite(void);
 void zd_test_metrics_suite(void);
+void zd_test_update_suite(void);
+void zd_test_url_suite(void);
 void zd_test_ai_suite(void);
 void zd_test_integration_suite(void);
 
@@ -47,6 +49,8 @@ int main(void) {
     zd_test_launcher_suite();
     zd_test_capability_suite();
     zd_test_metrics_suite();
+    zd_test_update_suite();
+    zd_test_url_suite();
     zd_test_ai_suite();
     zd_test_integration_suite();
     printf("checks=%d failures=%d\n", zd_test_checks, zd_test_failures);
