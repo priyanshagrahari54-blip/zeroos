@@ -32,6 +32,9 @@
 #include <zeroos/desktop/url.h>
 #include <zeroos/desktop/study.h>
 #include <zeroos/desktop/fps.h>
+#include <zeroos/desktop/snapshot.h>
+#include <zeroos/desktop/vault.h>
+#include <zeroos/desktop/nav.h>
 #include <zeroos/desktop/search.h>
 #include <zeroos/desktop/settings.h>
 #include <zeroos/desktop/notify.h>

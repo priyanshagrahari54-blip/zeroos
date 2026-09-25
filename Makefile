@@ -35,7 +35,7 @@ DESKTOP_DIR := userspace/desktop
 DESKTOP_SRC := $(wildcard $(DESKTOP_DIR)/src/*.c)
 DESKTOP_TEST_SRC := $(wildcard $(DESKTOP_DIR)/tests/*.c)
 DESKTOP_CFLAGS := -std=c11 -Wall -Wextra -Werror -O2 \
-	-Iuserspace/include -I$(DESKTOP_DIR)/include
+	-Iuserspace/include -I$(DESKTOP_DIR)/include -Ikernel
 
 desktop-check: | $(BUILD)
 	@set -e; for src in $(DESKTOP_SRC); do \
@@ -43,7 +43,7 @@ desktop-check: | $(BUILD)
 		$(CC) $(DESKTOP_CFLAGS) -ffreestanding -fno-builtin -m64 -c $$src \
 			-o $(BUILD)/fs_desktop_$$(basename $$src .c).o; \
 	done
-	$(CC) $(DESKTOP_CFLAGS) -o $(BUILD)/desktop-tests $(DESKTOP_SRC) $(DESKTOP_TEST_SRC)
+	$(CC) $(DESKTOP_CFLAGS) -o $(BUILD)/desktop-tests $(DESKTOP_SRC) $(DESKTOP_TEST_SRC) kernel/crypto.c
 	$(BUILD)/desktop-tests
 	@echo "desktop-check: PASS"
 
