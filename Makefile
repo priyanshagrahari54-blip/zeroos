@@ -13,7 +13,7 @@ CFLAGS += $(EXTRA_CFLAGS)
 ASFLAGS := -m64 -ffreestanding -fno-pic -fno-pie -nostdlib
 LDFLAGS := -m elf_x86_64 -T kernel/linker.ld -nostdlib
 
-.PHONY: all clean elf iso run userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check
+.PHONY: all clean elf iso run userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check
 
 all: iso
 
@@ -46,6 +46,21 @@ desktop-check: | $(BUILD)
 	$(CC) $(DESKTOP_CFLAGS) -o $(BUILD)/desktop-tests $(DESKTOP_SRC) $(DESKTOP_TEST_SRC)
 	$(BUILD)/desktop-tests
 	@echo "desktop-check: PASS"
+
+COMPAT_DIR := userspace/compat
+COMPAT_SRC := $(wildcard $(COMPAT_DIR)/src/*.c)
+COMPAT_TEST_SRC := $(wildcard $(COMPAT_DIR)/tests/*.c)
+COMPAT_CFLAGS := -std=c11 -Wall -Wextra -Werror -O2 -I$(COMPAT_DIR)/include
+
+compat-check: | $(BUILD)
+	@set -e; for src in $(COMPAT_SRC); do \
+		$(CC) $(COMPAT_CFLAGS) -c $$src -o $(BUILD)/compat-$$(basename $$src .c).o; \
+		$(CC) $(COMPAT_CFLAGS) -ffreestanding -fno-builtin -m64 -c $$src \
+			-o $(BUILD)/fs_compat_$$(basename $$src .c).o; \
+	done
+	$(CC) $(COMPAT_CFLAGS) -o $(BUILD)/compat-tests $(COMPAT_SRC) $(COMPAT_TEST_SRC)
+	$(BUILD)/compat-tests
+	@echo "compat-check: PASS"
 
 $(BUILD):
 	mkdir -p $(BUILD)
