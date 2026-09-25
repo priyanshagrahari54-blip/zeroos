@@ -1,5 +1,6 @@
 /* ZERO Bar core.  See bar.h for the contract. */
 #include <zeroos/desktop/bar.h>
+#include <zeroos/desktop/capability.h>
 
 static int b_bad_int(void) { return -22; }
 
@@ -26,6 +27,7 @@ int zd_bar_init(struct zd_bar *b, uint32_t logical_width, uint32_t dpi_scale) {
         b->applets[i].x = 0;
         b->applets[i].w = 0;
     }
+    b->caps = 0;
     b->width_logical = logical_width;
     b->dpi_scale = dpi_scale;
     b->ops.toggle = 0;
@@ -54,6 +56,11 @@ void zd_bar_set_ops(struct zd_bar *b, const struct zd_bar_ops *ops) {
         b->ops.toggle = 0;
         b->ops.ctx = 0;
     }
+}
+
+void zd_bar_set_caps(struct zd_bar *b, struct zd_caps *caps) {
+    if (b)
+        b->caps = caps;
 }
 
 int zd_bar_layout(struct zd_bar *b) {
@@ -165,6 +172,12 @@ int zd_bar_toggle_set(struct zd_bar *b, int toggle_id, int on) {
     int r;
     if (!b || toggle_id < 0 || toggle_id >= (int)ZD_BAR_TOGGLE_COUNT)
         return b_bad_int();
+    if (b->caps &&
+        zd_caps_check(b->caps, ZD_SVC_BAR, ZD_CAP_SETTINGS_WRITE) < 0) {
+        b->toggle_denied[toggle_id] = 1;
+        b->stats.denied_toggles++;
+        return -1; /* EPERM: no settings-write capability */
+    }
     on = on ? 1 : 0;
     if (b->ops.toggle) {
         r = b->ops.toggle(b->ops.ctx, toggle_id, on);

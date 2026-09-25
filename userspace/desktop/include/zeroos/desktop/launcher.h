@@ -32,6 +32,7 @@ struct zd_launcher;
 typedef int (*zd_launch_fn)(void *ctx, const char *name);
 
 struct zd_launcher {
+    struct zd_caps *caps;                      /* optional privilege gate */
     struct zd_app apps[ZD_LAUNCHER_MAX_APPS];
     int app_count;
     int recents_counter;                  /* monotonically increasing */
@@ -39,11 +40,13 @@ struct zd_launcher {
     void *launch_ctx;
     struct {
         uint32_t adds, launches, launch_rejected, launch_failures,
-                 queries, empty_queries;
+                 queries, empty_queries, cap_denied;
     } stats;
 };
 
 int zd_launcher_init(struct zd_launcher *l, zd_launch_fn launch, void *ctx);
+/* Optional: gate launches on ZD_SVC_LAUNCHER/ZD_CAP_LAUNCH_APPS. */
+void zd_launcher_set_caps(struct zd_launcher *l, struct zd_caps *caps);
 /* Register; duplicate name -> -17 (EEXIST), full -> -28 (ENOSPC). */
 int zd_launcher_add(struct zd_launcher *l, const char *name,
                     const char *keywords, int visible);

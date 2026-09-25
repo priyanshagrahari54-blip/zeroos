@@ -1,5 +1,6 @@
 /* ZEROOS launcher core.  See launcher.h for the contract. */
 #include <zeroos/desktop/launcher.h>
+#include <zeroos/desktop/capability.h>
 
 static int lc_bad(void) { return -22; }
 
@@ -78,12 +79,14 @@ int zd_launcher_init(struct zd_launcher *l, zd_launch_fn launch, void *ctx) {
     int i;
     if (!l)
         return lc_bad();
+    l->caps = 0;
     l->app_count = 0;
     l->recents_counter = 0;
     l->launch = launch;
     l->launch_ctx = ctx;
     l->stats.adds = l->stats.launches = l->stats.launch_rejected = 0;
     l->stats.launch_failures = l->stats.queries = l->stats.empty_queries = 0;
+    l->stats.cap_denied = 0;
     for (i = 0; i < ZD_LAUNCHER_MAX_APPS; ++i)
         l->apps[i].name[0] = 0;
     return 0;
@@ -108,6 +111,11 @@ int zd_launcher_add(struct zd_launcher *l, const char *name,
     a->in_recents = 0;
     l->stats.adds++;
     return 0;
+}
+
+void zd_launcher_set_caps(struct zd_launcher *l, struct zd_caps *caps) {
+    if (l)
+        l->caps = caps;
 }
 
 struct zd_app *zd_launcher_find(struct zd_launcher *l, const char *name) {
@@ -196,6 +204,11 @@ int zd_launcher_launch(struct zd_launcher *l, const char *name) {
     a = zd_launcher_find(l, name);
     if (!a)
         return -2; /* ENOENT */
+    if (l->caps &&
+        zd_caps_check(l->caps, ZD_SVC_LAUNCHER, ZD_CAP_LAUNCH_APPS) < 0) {
+        l->stats.cap_denied++;
+        return -1; /* EPERM: launcher lacks the spawn capability */
+    }
     if (a->state == ZD_LAUNCH_RUNNING || a->state == ZD_LAUNCH_PENDING) {
         l->stats.launch_rejected++;
         return -16; /* EBUSY */

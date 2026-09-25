@@ -48,6 +48,7 @@ struct zd_bar_ops {
 };
 
 struct zd_bar {
+    struct zd_caps *caps;      /* optional privilege gate */
     uint32_t width_logical;    /* configured logical width (>0) */
     uint32_t dpi_scale;        /* 1 = 100%, 2 = 200% (>0) */
     struct zd_bar_ops ops;
@@ -65,6 +66,8 @@ struct zd_bar {
 
 int zd_bar_init(struct zd_bar *b, uint32_t logical_width, uint32_t dpi_scale);
 void zd_bar_set_ops(struct zd_bar *b, const struct zd_bar_ops *ops);
+/* Optional: gate quick toggles on ZD_SVC_BAR/ZD_CAP_SETTINGS_WRITE. */
+void zd_bar_set_caps(struct zd_bar *b, struct zd_caps *caps);
 /* Fill applet metrics from the logical width: fixed applets first,
  * title absorbs the slack, so the last applet ends exactly at the
  * configured width when there is room.  Returns 0. */

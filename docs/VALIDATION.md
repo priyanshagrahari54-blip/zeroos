@@ -24,7 +24,7 @@ does not exist yet, the row says so — no claim is made without it.
 
 | Suite | Command | Assertions | Failures |
 |---|---|---|---|
-| Desktop modules (display, compositor, window, input, a11y, i18n, search, settings, notify, lifecycle, watchdog, governor, automation, browser, AI, bar, launcher, capability, integration) | `make desktop-check` | 4508 | 0 |
+| Desktop modules (display, compositor, window, input, a11y, i18n, search, settings, notify, lifecycle, watchdog, governor, automation, browser, AI, bar, launcher, capability, integration) | `make desktop-check` | 4517 | 0 |
 | Windows compatibility core | `make compat-check` | 86 | 0 |
 | Hardware/driver cores (incl. crypto RFC vectors) | `make hardware-core-test` | per-suite PASS | 0 |
 | Public userspace ABI | `make userspace-abi-check`, `python3 userspace/tests/abi_consistency.py` | PASS | 0 |
@@ -52,7 +52,7 @@ run is machine-verified evidence, not a log skim.
 |---|---|---|---|
 | A | Graphics service split + window system | display/compositor/window/input suites, session CI milestones | Supported (userspace services; GPU beyond scanout not yet) |
 | A | Shell (ZERO Bar, launcher, search, notify, settings, overview) | bar/launcher/search/notify/settings suites | Core supported; chrome rendering pending |
-| B | Security/recovery/updates | crypto suite, watchdog/lifecycle suites, capability gate suite, automation permission model | Partial: crypto+watchdog+capability gate supported; firewall/vault/snapshots/transactional updates pending |
+| B | Security/recovery/updates | crypto suite, watchdog/lifecycle suites, capability gate suite (wired into launcher/bar), automation permission model | Partial: crypto+watchdog+capability gate supported; firewall/vault/snapshots/transactional updates pending |
 | C | Windows compatibility | `make compat-check` | Core supported (lifecycle/paths/registry/DLL); PE loader + Win32 slice pending |
 | D | Android runtime | Baseline + tested-matrix policy in `ARCHITECTURE.md` §18 | Contract only — **no runtime claim** |
 | E | Browser tabs lifecycle | browser suite (16-tab ladder, crash recovery) | Core supported; engine/UI pending |

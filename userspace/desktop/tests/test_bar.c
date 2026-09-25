@@ -2,6 +2,7 @@
 #include <string.h>
 #include "test_harness.h"
 #include <zeroos/desktop/bar.h>
+#include <zeroos/desktop/capability.h>
 
 static int deny_wifi(void *c, int id, int on) {
     int *n = (int *)c;
@@ -95,6 +96,22 @@ void zd_test_bar_suite(void) {
     ZD_CHECK(zd_bar_toggle_set(&bar, ZD_BAR_TOGGLE_DND, 0) == 0);
     ZD_CHECK(bar.dnd_active == 0);
 
+    /* privilege gate: no CAP_SETTINGS_WRITE -> EPERM before ops */
+    {
+        struct zd_caps caps;
+        zd_caps_init(&caps);
+        zd_caps_activate(&caps, ZD_SVC_BAR, 0); /* up, no grants */
+        zd_bar_set_caps(&bar, &caps);
+        rc = zd_bar_toggle_set(&bar, ZD_BAR_TOGGLE_BLUETOOTH, 1);
+        ZD_CHECK(rc == -1);
+        ZD_CHECK(bar.toggle_on[ZD_BAR_TOGGLE_BLUETOOTH] == 1); /* unchanged */
+        ZD_CHECK(calls == 4); /* provider never reached by the denial */
+        zd_caps_grant(&caps, ZD_SVC_BAR, ZD_CAP_SETTINGS_WRITE);
+        ZD_CHECK(zd_bar_toggle_set(&bar, ZD_BAR_TOGGLE_BLUETOOTH, 0) == 0);
+        ZD_CHECK(calls == 5); /* through provider now */
+        zd_bar_set_caps(&bar, 0);
+    }
+
     /* badge + title */
     zd_bar_set_notif_count(&bar, 5);
     ZD_CHECK(bar.notif_count == 5);
@@ -103,5 +120,5 @@ void zd_test_bar_suite(void) {
     zd_bar_set_title(&bar, 0);
     ZD_CHECK(bar.title[0] == 0);
 
-    ZD_CHECK(bar.stats.toggles == 3); /* bluetooth, dnd on, dnd off */
+    ZD_CHECK(bar.stats.toggles == 4); /* bt on, dnd on/off, bt off */
 }

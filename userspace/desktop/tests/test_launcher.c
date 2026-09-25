@@ -2,6 +2,7 @@
 #include <string.h>
 #include "test_harness.h"
 #include <zeroos/desktop/launcher.h>
+#include <zeroos/desktop/capability.h>
 
 static int fail_next; /* hook: return fail_next if set */
 static int hook_ok(void *c, const char *n) {
@@ -117,6 +118,20 @@ void zd_test_launcher_suite(void) {
         ZD_CHECK(l.app_count >= before);
         rc = zd_launcher_add(&l, "overflow-app", "", 1);
         ZD_CHECK(rc == -28 || rc == 0);
+    }
+
+    /* privilege gate: no CAP_LAUNCH_APPS -> EPERM, counted */
+    {
+        struct zd_caps caps;
+        zd_caps_init(&caps);
+        zd_launcher_set_caps(&l, &caps);
+        ZD_CHECK(zd_launcher_launch(&l, "Files") == -1);
+        ZD_CHECK_EQ(l.stats.cap_denied, 1);
+        ZD_CHECK(zd_caps_activate(&caps, ZD_SVC_LAUNCHER,
+                                  (1ULL << ZD_CAP_LAUNCH_APPS)) == 0);
+        /* Files was RUNNING from earlier -> gate passes, dedup hits */
+        ZD_CHECK(zd_launcher_launch(&l, "Files") == -16);
+        zd_launcher_set_caps(&l, 0);
     }
 
     /* no hook -> ENOSYS */

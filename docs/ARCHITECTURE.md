@@ -269,7 +269,9 @@ Implemented (this stage):
   privileged ops with an audit ring, and crash/stop deactivation that
   drops every grant (no sticky privileges across restarts) —
   host-tested.  Wiring services onto the gate and the rest of Part B
-  (firewall, vault, snapshots, transactional updates) remain.
+  (firewall, vault, snapshots, transactional updates) remain.  The
+  launcher and ZERO Bar are wired to the gate (spawn and
+  settings-write capabilities respectively).
 
 Not yet implemented (contracts defined, explicit in PHASES.md):
 - Shell UI chrome (ZERO Bar, launcher, overview surfaces) on top of the
