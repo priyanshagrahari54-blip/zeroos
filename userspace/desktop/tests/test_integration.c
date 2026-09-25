@@ -386,6 +386,42 @@ static void test_session_keyboard_navigation_sweep(void) {
     ZD_CHECK_EQ(zd_a11y_focus_prev(&a11y), first);
 }
 
+static void test_notification_badge_sync(void) {
+    /* Shell contract: the ZERO Bar badge mirrors the visible
+     * notification count; dismissals propagate on the next sync. */
+    struct zd_notify notify;
+    struct zd_bar bar;
+    struct zd_notify_post post;
+    zd_notification_id ids[8];
+    uint32_t visible;
+
+    zd_notify_init(&notify);
+    ZD_CHECK_OK(zd_bar_init(&bar, 1280, 1));
+
+    memset(&post, 0, sizeof(post));
+    post.app_id = "mail";
+    post.title = "one";
+    post.body = "b";
+    post.priority = ZD_NOTIFY_NORMAL;
+    ZD_CHECK_OK(zd_notify_post(&notify, &post, 1000, &ids[0]));
+    post.title = "two";
+    ZD_CHECK_OK(zd_notify_post(&notify, &post, 2000, &ids[1]));
+
+    visible = zd_notify_visible(&notify, 3000, ids, 8);
+    zd_bar_set_notif_count(&bar, visible);
+    ZD_CHECK_EQ(bar.notif_count, 2U);
+
+    ZD_CHECK_OK(zd_notify_dismiss(&notify, ids[0]));
+    visible = zd_notify_visible(&notify, 4000, ids, 8);
+    zd_bar_set_notif_count(&bar, visible);
+    ZD_CHECK_EQ(bar.notif_count, 1U);
+
+    ZD_CHECK_OK(zd_notify_dismiss(&notify, ids[1]));
+    visible = zd_notify_visible(&notify, 5000, ids, 8);
+    zd_bar_set_notif_count(&bar, visible);
+    ZD_CHECK_EQ(bar.notif_count, 0U);
+}
+
 void zd_test_integration_suite(void) {
     printf(" suite: integrated session\n");
     ZD_RUN(test_session_lifecycle_to_active);
@@ -395,4 +431,5 @@ void zd_test_integration_suite(void) {
     ZD_RUN(test_session_client_crash_recovery);
     ZD_RUN(test_session_pressure_and_suspend);
     ZD_RUN(test_session_keyboard_navigation_sweep);
+    ZD_RUN(test_notification_badge_sync);
 }
