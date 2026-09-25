@@ -15,7 +15,8 @@ This file is the navigation layer for the ZEROOS documentation set.
 8. `AGENTS.md` — instructions for AI/human implementation agents.
 9. `PHASES.md` — phase/stage/substage development plan.
 10. `MEMORY.md` — memory/state/resource lifecycle contract.
-11. Existing subsystem specifications — detailed contracts for boot, scheduler, processes, interrupts, synchronization, virtual memory, GDT/TSS and hardware.
+11. `VALIDATION.md` — Stage 5 evidence ledger and support matrix.
+12. Existing subsystem specifications — detailed contracts for boot, scheduler, processes, interrupts, synchronization, virtual memory, GDT/TSS and hardware.
 
 ## Current implementation priority
 
