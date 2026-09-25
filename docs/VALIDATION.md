@@ -46,14 +46,16 @@ plus QEMU boot certification.
 The session milestone strings are grepped by the workflow, so a green
 run is machine-verified evidence, not a log skim.
 
-Observed streak (ledger note): since `dedb23f` every run has been red
-on both contexts; both-red has a proven non-regression precedent
-(`772a923`, workflow-only change with a byte-identical guest binary
-failed both contexts), and the panics remain within the recorded
-flake families (storage-cert, blocking-IPC).  A genuine guest
-regression from `dedb23f` (task.c wait-transition guard) cannot be
-excluded from CI alone and needs a repeat run on a quiet host before
-any attribution.
+Streak analysis (ledger note): the last green run was `4a4c528`
+(04:36Z); every run from `dedb23f` onward — a single-file, 8-line
+change to `kernel/task.c` — failed on BOTH contexts (0 for 24),
+with panics inside the storage-cert and blocking-IPC families.  An
+earlier both-red streak on a byte-identical binary (`772a923`)
+showed flake can do this, but 0/24 with a clean single-variable
+diff superseded that: `dedb23f` was reverted deliberately to run the
+experiment.  If CI returns to green, the guard must re-land with a
+fix (the swallowed-wake path skipped the runqueue/kick step); if it
+stays red, the revert is itself reverted and the hunt continues.
 
 ## 4. Stage 5 part support matrix
 
