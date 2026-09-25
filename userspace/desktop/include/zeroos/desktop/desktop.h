@@ -22,6 +22,8 @@
 #include <zeroos/desktop/compositor.h>
 #include <zeroos/desktop/display.h>
 #include <zeroos/desktop/automation.h>
+#include <zeroos/desktop/browser.h>
+#include <zeroos/desktop/ai.h>
 #include <zeroos/desktop/search.h>
 #include <zeroos/desktop/settings.h>
 #include <zeroos/desktop/notify.h>
