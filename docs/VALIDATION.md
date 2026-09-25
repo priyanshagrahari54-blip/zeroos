@@ -12,7 +12,7 @@ does not exist yet, the row says so — no claim is made without it.
 | INTEGRATION | Full guest boot: kernel + session + storage/init lifecycles on QEMU | CI workflow `build.yml` (push + pull_request) | Green on recorded commits, section 3 |
 | NEGATIVE | Per-suites error paths: EINVAL/ENOSPC/EPERM/ESTATE/EBUSY branches asserted, denial stats | desktop/compat suites | Green |
 | FAULT | Injected failures: display degraded present, AI hook failure, launch-hook errno, browser CRASHED/RELOAD, automation action failures | desktop/compat suites | Green |
-| STRESS | Capacity loops: tab cap (16), app cap (32), rule cap (32), DLL table exhaustion, input flood probes | desktop/compat suites + guest probes | Green (host), guest probes in CI |
+| STRESS | Capacity loops (tab/app/rule/DLL caps) plus `test_stress`: 41 fill/drain browser rounds, 100 vault put/get/forget cycles with 20 lock churns, 20 000 firewall decisions, 24 snapshot turnovers, 10 000 frame recordings — exact end-state accounting | desktop suite | Green (host), guest probes in CI |
 | SOAK | Long-duration idle residency: AI dormancy (0 resident bytes idle), event-driven automation | contracts asserted by unit suites; continuous runs pending | Partial — contract-level only |
 | SECURITY | Permission gates (AI grants, automation permission-first ordering), crypto AEAD/ChaCha20 vectors, constant-time MAC compare, denied counters | crypto tests + desktop suites | Green |
 | RECOVERY | Browser crash recovery, service watchdog, display attach/detach, init recovery in guest, rollback contracts | desktop suites + CI boot milestones | Green (host), guest init recovery in CI |
@@ -24,7 +24,7 @@ does not exist yet, the row says so — no claim is made without it.
 
 | Suite | Command | Assertions | Failures |
 |---|---|---|---|
-| Desktop modules (display, compositor, window, input, a11y, i18n, search, settings, notify, lifecycle, watchdog, governor, automation, browser, AI, bar, launcher, capability, metrics, update, url, study, fps, snapshot, vault, nav, integration) | `make desktop-check` | 5215 | 0 |
+| Desktop modules (display, compositor, window, input, a11y, i18n, search, settings, notify, lifecycle, watchdog, governor, automation, browser, AI, bar, launcher, capability, metrics, update, url, study, fps, snapshot, vault, nav, firewall, stress, integration) | `make desktop-check` | 37298 | 0 |
 | Windows compatibility core (lifecycle/paths/registry/DLL + PE validator) | `make compat-check` | 107 | 0 |
 | Hardware/driver cores (incl. crypto RFC vectors) | `make hardware-core-test` | per-suite PASS | 0 |
 | Public userspace ABI | `make userspace-abi-check`, `python3 userspace/tests/abi_consistency.py` | PASS | 0 |
@@ -61,7 +61,7 @@ any attribution.
 |---|---|---|---|
 | A | Graphics service split + window system | display/compositor/window/input suites, session CI milestones | Supported (userspace services; GPU beyond scanout not yet) |
 | A | Shell (ZERO Bar, launcher, search, notify, settings, overview) | bar/launcher/search/notify/settings suites | Core supported; chrome rendering pending |
-| B | Security/recovery/updates | crypto suite (also linked into vault), watchdog/lifecycle suites, capability gate (wired into launcher/bar), transactional update machine, AEAD vault (tamper/wrong-key negatives), snapshot manager (prune/restore hooks) | Partial: crypto+watchdog+gate+updates+vault+snapshots supported; firewall pending |
+| B | Security/recovery/updates | crypto suite (linked into vault), watchdog/lifecycle, capability gate (wired into launcher/bar), transactional update machine, AEAD vault (tamper/wrong-key negatives), snapshot manager, firewall decision engine (first-match/default-deny/app+port+IP ranges/established-only) | Partial: crypto+watchdog+gate+updates+vault+snapshots+firewall-policy supported; kernel packet-path binding and sandboxing pending |
 | C | Windows compatibility | `make compat-check` (incl. PE validator) | Core supported (lifecycle/paths/registry/DLL/image validation); API translation slice pending |
 | D | Android runtime | Baseline documented (AOSP 14/API 34/arm64-v8a) + tested-matrix policy in `ARCHITECTURE.md` §18; tested matrix empty | Contract + baseline documented — **no runtime, no claim** |
 | E | Browser tabs lifecycle | browser suite (16-tab ladder, crash recovery), strict URL parser, navigation controller (history/back/forward/blocking) | Core supported; engine/UI pending |

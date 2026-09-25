@@ -312,6 +312,13 @@ Implemented (this stage):
 - Navigation controller (`userspace/desktop/src/nav.c`): strict-URL
   gated go/back/forward with bounded history and blocked-scheme
   accounting — host-tested.
+- Firewall policy engine (`userspace/desktop/src/firewall.c`): up to
+  32 first-match rules (direction/protocol/port+IP ranges/app scope/
+  established-only), default deny, explicit flow validation and
+  allow/deny counters — host-tested; the kernel packet path binds to
+  it later.  Stress suite (`test_stress.c`) drives sustained
+  capacity cycles across browser/vault/firewall/snapshot/fps with
+  exact end-state accounting — host-tested.
 
 Not yet implemented (contracts defined, explicit in PHASES.md):
 - Shell UI chrome (ZERO Bar, launcher, overview surfaces) on top of the

@@ -144,6 +144,10 @@ Status: implemented and host-tested in
 `userspace/desktop/src/browser.c` (clock-injected ladder, discard keeps
 metadata and drops the document, crash/reload rules, bounded tabs);
 wiring into a real engine remains behind these contracts.
+Status: stress/soak suite (`test_stress.c`) runs 41 tab fill/drain
+rounds, 100 vault cycles, 20 000 firewall decisions and 10 000 frame
+recordings with exact end-state counters — host evidence for the
+stress row in `VALIDATION.md`.
 Exit: background work is demonstrably controlled.
 
 ## Phase 9 — Compatibility
