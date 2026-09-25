@@ -232,6 +232,10 @@ Implemented (this stage):
   the damaged region, pumps INPUT_POLL/INPUT_WAIT through the desktop
   input router, and certifies each contract with serial milestones
   (live and degraded display paths both accepted; reaped cleanly).
+  Its launcher maps a 16-page (64 KiB) downward-growing stack
+  (`ZEROOS_USER_STACK_PAGES`) because `session_main` reserves >17 KiB of
+  frame space in one function — a single mapped page faulted below the
+  stack region on the first local store (CI-observed before the fix).
 - Desktop platform core (`userspace/desktop/`): fixed-capacity, zero-heap,
   freestanding-clean modules for lifecycle, resource governor, display
   service (scanout submit gating), window

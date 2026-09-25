@@ -50,15 +50,24 @@ static void session_main(void *argument) {
     process = process_lookup(pid);
     if (!process || process_set_limits(process, 1, 1, 1024) != 0)
         session_fail("process limits");
-    stack = page_alloc_zero();
     if (elf_load_image(process, session_probe_image_start, image_size,
-                       &load) != 0 || !stack ||
-        process_address_space_map_page(process, ZEROOS_USER_STACK_PAGE,
-                                       (uint64_t)stack,
-                                       VMM_USER | VMM_WRITABLE |
-                                           VMM_NO_EXECUTE) != 0)
+                       &load) != 0)
         session_fail("image load");
-    page_free(stack); /* the mapping holds the frame */
+    /* Stack: ZEROOS_USER_STACK_PAGES frames-worth of pages below
+     * ZEROOS_USER_STACK_TOP.  session_main alone reserves >17 KiB of
+     * stack in one frame; a single page faulted below the mapped page
+     * on the first local store (CI: session exit status). */
+    for (uint64_t page = 0; page < ZEROOS_USER_STACK_PAGES; ++page) {
+        stack = page_alloc_zero();
+        if (!stack ||
+            process_address_space_map_page(
+                process,
+                ZEROOS_USER_STACK_PAGE - page * ZEROOS_PAGE_SIZE,
+                (uint64_t)stack,
+                VMM_USER | VMM_WRITABLE | VMM_NO_EXECUTE) != 0)
+            session_fail("image load");
+        page_free(stack); /* the mapping holds the frame */
+    }
     if (thread_create_user(process, load.entry, ZEROOS_USER_STACK_TOP,
                            &tid) != 0)
         session_fail("thread create");
