@@ -43,6 +43,8 @@ struct zd_display_ops {
     void *context;
 };
 
+struct zd_metrics; /* forward */
+
 struct zd_display_stats {
     uint64_t frames_presented;
     uint64_t pixels_submitted;
@@ -68,6 +70,7 @@ struct zd_display_service {
     struct zd_rect pending_damage;       /* merged bounding box */
     uint32_t pending_valid;
     struct zd_display_stats stats;
+    struct zd_metrics *metrics; /* optional part-L recorder */
 };
 
 /* ops must provide all three hooks. failure_limit 0 selects the default
@@ -99,6 +102,9 @@ int zd_display_service_damage(struct zd_display_service *service,
  * other negative     — forwarded present failure (counted, may suspend)
  * now_tick comes from ops.ticks(); pass it through to keep time sources
  * single. */
+void zd_display_service_set_metrics(struct zd_display_service *service,
+                                   struct zd_metrics *metrics);
+
 int zd_display_service_present(struct zd_display_service *service,
                                const void *frame_base,
                                uint32_t stride_bytes, uint64_t now_tick);

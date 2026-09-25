@@ -18,13 +18,13 @@ does not exist yet, the row says so — no claim is made without it.
 | RECOVERY | Browser crash recovery, service watchdog, display attach/detach, init recovery in guest, rollback contracts | desktop suites + CI boot milestones | Green (host), guest init recovery in CI |
 | QEMU | Boot certification block in CI: panic detection, session milestones, storage certification | `build.yml` on every push/PR | Green on `599b262`, `ccfa30d`, `f18c857` (PR context) |
 | REAL-HARDWARE | Physical run of the certified ISO on bare metal | Not available in this environment | **Not run — no claim** |
-| PERFORMANCE | Frame pacing/vsync accounting (display tests), governor tier/pressure/effects (governor tests), measured desktop assertion totals | desktop suite | Green (host); on-device metrics pending |
+| PERFORMANCE | Frame pacing/vsync accounting (display tests), governor tier/pressure/effects (governor tests), metrics recorder with interval histogram + percentiles wired into `zd_display_service_present` (host-tested; linked into the session image) | desktop suite + session link | Green (host); on-device percentiles pending |
 
 ## 2. Measured test counts (host, this branch)
 
 | Suite | Command | Assertions | Failures |
 |---|---|---|---|
-| Desktop modules (display, compositor, window, input, a11y, i18n, search, settings, notify, lifecycle, watchdog, governor, automation, browser, AI, bar, launcher, capability, integration) | `make desktop-check` | 4517 | 0 |
+| Desktop modules (display, compositor, window, input, a11y, i18n, search, settings, notify, lifecycle, watchdog, governor, automation, browser, AI, bar, launcher, capability, metrics, integration) | `make desktop-check` | 4557 | 0 |
 | Windows compatibility core | `make compat-check` | 86 | 0 |
 | Hardware/driver cores (incl. crypto RFC vectors) | `make hardware-core-test` | per-suite PASS | 0 |
 | Public userspace ABI | `make userspace-abi-check`, `python3 userspace/tests/abi_consistency.py` | PASS | 0 |
@@ -62,7 +62,7 @@ run is machine-verified evidence, not a log skim.
 | I | Gaming | Evidence-required contracts in `PHASES.md` Phase 11 | Not implemented — contract only |
 | J | Cloud/device | Offline-first + explicit-permission contracts in `PHASES.md` Phase 11 | Not implemented — contract only |
 | K | Automation | automation suite (32 rules, audit ring, permission-first) | Supported |
-| L | Performance/resource governance | governor suite (tiers/pressure/effects) | Core supported; on-device metrics pending |
+| L | Performance/resource governance | governor suite (tiers/pressure/effects) + metrics recorder (counters, interval histogram, p50/p99 reads) wired into the display present path | Core supported; on-device percentiles pending |
 | M | Validation | This document | Evidence ledger live; real-hardware row open |
 
 ## 5. Rules for extending this ledger

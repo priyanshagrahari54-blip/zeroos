@@ -27,6 +27,7 @@
 #include <zeroos/desktop/bar.h>
 #include <zeroos/desktop/launcher.h>
 #include <zeroos/desktop/capability.h>
+#include <zeroos/desktop/metrics.h>
 #include <zeroos/desktop/search.h>
 #include <zeroos/desktop/settings.h>
 #include <zeroos/desktop/notify.h>

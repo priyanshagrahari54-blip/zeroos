@@ -332,6 +332,46 @@ static void test_failure_suspension_and_recovery(void) {
     ZD_CHECK_EQ(service.state, ZD_DISPLAY_LIVE); /* 1 < limit after reset */
 }
 
+static void test_metrics_integration(void) {
+    struct zd_display_service service;
+    struct fake_display fake;
+    struct zd_display_ops ops;
+    struct zd_metrics met;
+    uint8_t frame[16];
+
+    fill_valid_info(&fake);
+    ops = make_ops(&fake);
+    ops.ticks = counting_ticks;
+    ticks_value = 500;
+    zd_metrics_init(&met);
+    ZD_CHECK_EQ(zd_display_service_init(&service, &ops, 0), 0);
+    zd_display_service_set_metrics(&service, &met);
+    ZD_CHECK_EQ(zd_display_service_attach(&service), 0);
+
+    /* empty present -> refused counter */
+    ZD_CHECK_EQ(zd_display_service_present(&service, frame, 16, 500),
+                -ZD_EAGAIN);
+    ZD_CHECK(zd_metrics_get(&met, ZD_METRIC_FRAMES_REFUSED) == 1);
+
+    /* two presents, 10 ticks apart -> presented=2, interval recorded */
+    ZD_CHECK_EQ(zd_display_service_damage(&service,
+                                          (struct zd_rect){0, 0, 4, 4}), 0);
+    ZD_CHECK_EQ(zd_display_service_present(&service, frame, 16, 500), 0);
+    ZD_CHECK_EQ(zd_display_service_damage(&service,
+                                          (struct zd_rect){0, 0, 4, 4}), 0);
+    ZD_CHECK_EQ(zd_display_service_present(&service, frame, 16, 510), 0);
+    ZD_CHECK(zd_metrics_get(&met, ZD_METRIC_FRAMES_PRESENTED) == 2);
+    ZD_CHECK(zd_metrics_get(&met, ZD_METRIC_PRESENT_FAILURES) == 0);
+    ZD_CHECK_EQ(met.interval_count, 1); /* first frame has no interval */
+    ZD_CHECK(zd_metrics_avg_interval(&met) == 10); /* <=16 bucket */
+
+    /* detach -> recorder untouched further */
+    zd_display_service_set_metrics(&service, 0);
+    ZD_CHECK_EQ(zd_display_service_present(&service, frame, 16, 600),
+                -ZD_EAGAIN); /* no damage pending */
+    ZD_CHECK(zd_metrics_get(&met, ZD_METRIC_FRAMES_REFUSED) == 1);
+}
+
 void zd_test_display_suite(void) {
     zd_test_current = "display";
     test_init_validation();
@@ -340,5 +380,6 @@ void zd_test_display_suite(void) {
     test_present_contract();
     test_pacing();
     test_failure_suspension_and_recovery();
+    test_metrics_integration();
     zd_test_current = "main";
 }

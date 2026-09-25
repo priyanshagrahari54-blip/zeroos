@@ -272,6 +272,11 @@ Implemented (this stage):
   (firewall, vault, snapshots, transactional updates) remain.  The
   launcher and ZERO Bar are wired to the gate (spawn and
   settings-write capabilities respectively).
+- Metrics recorder (`userspace/desktop/src/metrics.c`): named
+  counters plus a present-interval histogram with percentile and
+  average reads; the display service records presented/refused/failed
+  outcomes and inter-present intervals through the optional hook, and
+  the module is part of the freestanding session link — host-tested.
 
 Not yet implemented (contracts defined, explicit in PHASES.md):
 - Shell UI chrome (ZERO Bar, launcher, overview surfaces) on top of the

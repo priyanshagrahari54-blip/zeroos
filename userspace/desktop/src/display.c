@@ -1,4 +1,5 @@
 #include <zeroos/desktop/display.h>
+#include <zeroos/desktop/metrics.h>
 
 #define ZD_DISPLAY_DEFAULT_FAILURE_LIMIT 3U
 
@@ -15,6 +16,7 @@ int zd_display_service_init(struct zd_display_service *service,
     service->state = ZD_DISPLAY_ATTACHING;
     service->width = 0;
     service->height = 0;
+    service->metrics = 0;
     service->min_present_interval_ticks = 0;
     service->last_present_tick = 0;
     service->has_presented = 0;
@@ -148,22 +150,26 @@ int zd_display_service_present(struct zd_display_service *service,
 
     if (service->state == ZD_DISPLAY_DEGRADED) {
         service->stats.presents_refused_degraded++;
+        zd_metrics_add(service->metrics, ZD_METRIC_FRAMES_REFUSED, 1);
         return -ZD_ENOENT;
     }
     if (service->state == ZD_DISPLAY_SUSPENDED) {
         service->stats.presents_refused_suspended++;
+        zd_metrics_add(service->metrics, ZD_METRIC_FRAMES_REFUSED, 1);
         return -ZD_ESTATE;
     }
     if (service->state != ZD_DISPLAY_LIVE)
         return -ZD_ESTATE;
     if (!service->pending_valid) {
         service->stats.presents_refused_empty++;
+        zd_metrics_add(service->metrics, ZD_METRIC_FRAMES_REFUSED, 1);
         return -ZD_EAGAIN;
     }
     if (service->min_present_interval_ticks && service->has_presented) {
         uint64_t elapsed = now_tick - service->last_present_tick;
         if (elapsed < service->min_present_interval_ticks) {
             service->stats.presents_refused_paced++;
+            zd_metrics_add(service->metrics, ZD_METRIC_FRAMES_REFUSED, 1);
             return -ZD_EAGAIN;
         }
     }
@@ -180,6 +186,7 @@ int zd_display_service_present(struct zd_display_service *service,
                                   stride_bytes, rect_ptr);
     if (result != 0) {
         service->stats.present_failures++;
+        zd_metrics_add(service->metrics, ZD_METRIC_PRESENT_FAILURES, 1);
         service->consecutive_failures++;
         if (service->consecutive_failures >= service->failure_limit) {
             service->state = ZD_DISPLAY_SUSPENDED;
@@ -190,6 +197,10 @@ int zd_display_service_present(struct zd_display_service *service,
 
     service->stats.frames_presented++;
     service->stats.pixels_submitted += (uint64_t)w * h;
+    zd_metrics_add(service->metrics, ZD_METRIC_FRAMES_PRESENTED, 1);
+    if (service->has_presented)
+        zd_metrics_record_interval(service->metrics,
+                                   now_tick - service->last_present_tick);
     service->last_present_tick = now_tick;
     service->has_presented = 1;
     service->consecutive_failures = 0;
@@ -197,4 +208,11 @@ int zd_display_service_present(struct zd_display_service *service,
     service->pending_damage.w = 0;
     service->pending_damage.h = 0;
     return 0;
+}
+
+/* Attach a part-L metrics recorder (optional; NULL detaches). */
+void zd_display_service_set_metrics(struct zd_display_service *service,
+                                    struct zd_metrics *metrics) {
+    if (service)
+        service->metrics = metrics;
 }

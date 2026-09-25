@@ -230,7 +230,8 @@ SESSION_CFLAGS := -std=c11 -m64 -ffreestanding -fno-builtin -fno-stack-protector
 	-Wall -Wextra -Werror -O2 -Iuserspace/include -Iuserspace/desktop/include
 SESSION_DESKTOP_SRCS := userspace/desktop/src/common.c \
 	userspace/desktop/src/window.c userspace/desktop/src/compositor.c \
-	userspace/desktop/src/input.c userspace/desktop/src/display.c
+	userspace/desktop/src/input.c userspace/desktop/src/display.c \
+	userspace/desktop/src/metrics.c
 SESSION_DESKTOP_OBJS := $(patsubst userspace/desktop/src/%.c,$(BUILD)/session_desktop_%.o,$(SESSION_DESKTOP_SRCS))
 SESSION_DEPS := userspace/session/session.c userspace/session/session_start.S \
 	userspace/session/session.ld userspace/include/zeroos/syscall.h \
