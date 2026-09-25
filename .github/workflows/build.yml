@@ -3,6 +3,7 @@ name: ZEROOS Build
 on:
   push:
   pull_request:
+  workflow_dispatch: # manual re-run of boot certification (CI recovery)
 
 jobs:
   build:
