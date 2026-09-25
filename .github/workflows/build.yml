@@ -178,7 +178,7 @@ jobs:
           if grep -q "ZEROOS PANIC:" build/serial-smp4.log; then
             echo "ZEROOS four-vCPU boot reported a panic before scheduler gates:"
             grep "ZEROOS PANIC:" build/serial-smp4.log
-            smp4_summary=$(tail -c 12000 build/serial-smp4.log | tr '\r\n' '  ')
+            smp4_summary=$(tail -c 3800 build/serial-smp4.log | tr '\r\n' '  ')
             echo "::error title=four-vCPU serial tail::$smp4_summary"
             exit 1
           fi
@@ -220,7 +220,7 @@ jobs:
           if grep -q "ZEROOS PANIC:" build/serial-smp4.log; then
             echo "ZEROOS four-vCPU boot reported a panic:"
             grep "ZEROOS PANIC:" build/serial-smp4.log
-            smp4_summary=$(tail -c 12000 build/serial-smp4.log | tr '\r\n' '  ')
+            smp4_summary=$(tail -c 3800 build/serial-smp4.log | tr '\r\n' '  ')
             echo "::error title=four-vCPU serial tail::$smp4_summary"
             exit 1
           fi
@@ -347,6 +347,7 @@ jobs:
       - name: Storage persistence certification (q35 AHCI + NVMe, two boots)
         run: |
           set -e
+          trap 'echo "storage persistence gate failed; missing patterns + log ends:"; for p in "storage discovery: sata_disks=1 nvme_namespaces=1." "storage driver test sata0 destructive" "storage driver test nvme0n1 destructive" "vfs: mounted sata0p1" "storage persistence: /data boot counter" "storage persistence check passed" "storage userspace probe wrote" "storage Stage 3 certification complete." "ZEROOS PANIC:|FAILED"; do grep -qE "$p" build/serial-disk1.log 2>/dev/null || echo "MISSING boot1: $p"; grep -qE "$p" build/serial-disk2.log 2>/dev/null || echo "MISSING boot2: $p"; done; for f in build/serial-disk1.log build/serial-disk2.log; do if test -f "$f"; then echo "END of $f"; echo "::error title=$f log end::$(tail -c 1800 "$f" | tr "\r\n" "  ")"; fi; done' ERR
           mkdir -p build/disks
           for d in sata nvme; do
             rm -f build/disks/$d.img
