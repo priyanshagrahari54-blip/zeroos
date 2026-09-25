@@ -138,7 +138,8 @@ Power profiles and suspend.
 ### 8.4 Storage adaptation
 HDD/SSD/NVMe policies.
 ### 8.5 Browser lifecycle
-Active/idle/frozen/discarded tabs.
+Active/idle/frozen/discarded tabs (plus navigation history controller:
+validated URLs only, bounded back/forward).
 Status: implemented and host-tested in
 `userspace/desktop/src/browser.c` (clock-injected ladder, discard keeps
 metadata and drops the document, crash/reload rules, bounded tabs);

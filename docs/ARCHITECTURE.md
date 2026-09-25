@@ -300,6 +300,18 @@ Implemented (this stage):
   sliding-window FPS, frame-time percentiles, budget-breach counting
   and the 8/16/33 ms performance profiles — host-tested; overlay and
   controller support remain in the not-yet list.
+- Snapshot manager (`userspace/desktop/src/snapshot.c`): bounded
+  registry with CREATING→READY/FAILED lifecycle, hook-driven restore
+  and capacity pruning that refuses when the discard hook fails —
+  host-tested.
+- Encrypted vault (`userspace/desktop/src/vault.c`): AEAD
+  (ChaCha20-Poly1305) wrapping of every secret under an injected
+  32-byte master key — no plaintext at rest, explicit auth failure on
+  tamper or wrong key, key wiped on lock — host-tested against the
+  certified crypto module.
+- Navigation controller (`userspace/desktop/src/nav.c`): strict-URL
+  gated go/back/forward with bounded history and blocked-scheme
+  accounting — host-tested.
 
 Not yet implemented (contracts defined, explicit in PHASES.md):
 - Shell UI chrome (ZERO Bar, launcher, overview surfaces) on top of the

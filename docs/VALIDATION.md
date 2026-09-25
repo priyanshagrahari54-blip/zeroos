@@ -24,7 +24,7 @@ does not exist yet, the row says so — no claim is made without it.
 
 | Suite | Command | Assertions | Failures |
 |---|---|---|---|
-| Desktop modules (display, compositor, window, input, a11y, i18n, search, settings, notify, lifecycle, watchdog, governor, automation, browser, AI, bar, launcher, capability, metrics, update, url, study, fps, integration) | `make desktop-check` | 5071 | 0 |
+| Desktop modules (display, compositor, window, input, a11y, i18n, search, settings, notify, lifecycle, watchdog, governor, automation, browser, AI, bar, launcher, capability, metrics, update, url, study, fps, snapshot, vault, nav, integration) | `make desktop-check` | 5207 | 0 |
 | Windows compatibility core (lifecycle/paths/registry/DLL + PE validator) | `make compat-check` | 107 | 0 |
 | Hardware/driver cores (incl. crypto RFC vectors) | `make hardware-core-test` | per-suite PASS | 0 |
 | Public userspace ABI | `make userspace-abi-check`, `python3 userspace/tests/abi_consistency.py` | PASS | 0 |
@@ -46,16 +46,25 @@ plus QEMU boot certification.
 The session milestone strings are grepped by the workflow, so a green
 run is machine-verified evidence, not a log skim.
 
+Observed streak (ledger note): since `dedb23f` every run has been red
+on both contexts; both-red has a proven non-regression precedent
+(`772a923`, workflow-only change with a byte-identical guest binary
+failed both contexts), and the panics remain within the recorded
+flake families (storage-cert, blocking-IPC).  A genuine guest
+regression from `dedb23f` (task.c wait-transition guard) cannot be
+excluded from CI alone and needs a repeat run on a quiet host before
+any attribution.
+
 ## 4. Stage 5 part support matrix
 
 | Part | Capability | Evidence | Support status |
 |---|---|---|---|
 | A | Graphics service split + window system | display/compositor/window/input suites, session CI milestones | Supported (userspace services; GPU beyond scanout not yet) |
 | A | Shell (ZERO Bar, launcher, search, notify, settings, overview) | bar/launcher/search/notify/settings suites | Core supported; chrome rendering pending |
-| B | Security/recovery/updates | crypto suite, watchdog/lifecycle suites, capability gate suite (wired into launcher/bar), transactional update state machine (rollback/verify/health), automation permission model | Partial: crypto+watchdog+capability gate+transactional updates supported; firewall/vault/snapshots pending |
+| B | Security/recovery/updates | crypto suite (also linked into vault), watchdog/lifecycle suites, capability gate (wired into launcher/bar), transactional update machine, AEAD vault (tamper/wrong-key negatives), snapshot manager (prune/restore hooks) | Partial: crypto+watchdog+gate+updates+vault+snapshots supported; firewall pending |
 | C | Windows compatibility | `make compat-check` (incl. PE validator) | Core supported (lifecycle/paths/registry/DLL/image validation); API translation slice pending |
 | D | Android runtime | Baseline documented (AOSP 14/API 34/arm64-v8a) + tested-matrix policy in `ARCHITECTURE.md` §18; tested matrix empty | Contract + baseline documented — **no runtime, no claim** |
-| E | Browser tabs lifecycle | browser suite (16-tab ladder, crash recovery) + strict URL parser (scheme/host/port/escape negatives) | Core supported; engine/UI pending |
+| E | Browser tabs lifecycle | browser suite (16-tab ladder, crash recovery), strict URL parser, navigation controller (history/back/forward/blocking) | Core supported; engine/UI pending |
 | F | AI platform (separate from Forge AI) | AI broker suite, ARCHITECTURE §17 | Broker supported; adapters pending |
 | G | Study Center | Flashcard scheduler + focus-session suites (PHASES Phase 6) | Flashcard/focus core supported; PDF/OCR/formulas/dictionary pending |
 | H | Media | Lawful-source/no-DRM policy in `PHASES.md` Phase 6 | Not implemented — policy binding |
