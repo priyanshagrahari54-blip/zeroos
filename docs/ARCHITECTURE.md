@@ -264,6 +264,12 @@ Implemented (this stage):
   registry, case-insensitive query with prefix-over-substring ranking
   and recency ties, launch dedup (EBUSY), hook-driven failure states,
   empty-state recents — host-tested.
+- Capability gate (`userspace/desktop/src/capability.c`): per-service
+  activation with explicit masks, runtime grant/revoke, check-gated
+  privileged ops with an audit ring, and crash/stop deactivation that
+  drops every grant (no sticky privileges across restarts) —
+  host-tested.  Wiring services onto the gate and the rest of Part B
+  (firewall, vault, snapshots, transactional updates) remain.
 
 Not yet implemented (contracts defined, explicit in PHASES.md):
 - Shell UI chrome (ZERO Bar, launcher, overview surfaces) on top of the
