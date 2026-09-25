@@ -41,21 +41,24 @@ plus QEMU boot certification.
 | `599b262` | PR-context full boot with 7 session milestones (service attached, shell rounds, probe pattern, clean reap) | SUCCESS |
 | `ccfa30d` | PR-context full boot with CI diagnostics | SUCCESS |
 | `f18c857` | PR-context full boot (network/DHCP core) | SUCCESS |
+| `c27ad12`, `ec2d1ce` | Both contexts green immediately after reverting the `dedb23f` task.c guard (experiment in section 3) | SUCCESS |
 | `0ec6d9d`, `772a923`, others | Same-code runs failing with `task owned by multiple CPUs`, `blocking IPC send-wakeup self-test failed`, `userspace init lifecycle failed`, storage-cert panics | FAILED — host-load flake family (identical SHA shows divergent outcomes across contexts) |
 
 The session milestone strings are grepped by the workflow, so a green
 run is machine-verified evidence, not a log skim.
 
-Streak analysis (ledger note): the last green run was `4a4c528`
-(04:36Z); every run from `dedb23f` onward — a single-file, 8-line
-change to `kernel/task.c` — failed on BOTH contexts (0 for 24),
-with panics inside the storage-cert and blocking-IPC families.  An
-earlier both-red streak on a byte-identical binary (`772a923`)
-showed flake can do this, but 0/24 with a clean single-variable
-diff superseded that: `dedb23f` was reverted deliberately to run the
-experiment.  If CI returns to green, the guard must re-land with a
-fix (the swallowed-wake path skipped the runqueue/kick step); if it
-stays red, the revert is itself reverted and the hunt continues.
+Streak analysis (RESOLVED): the last green run before the streak was
+`4a4c528` (04:36Z); every run from `dedb23f` onward — a single-file,
+8-line change to `kernel/task.c` — failed on BOTH contexts (0 for 24)
+with storage-cert/blocking-IPC panic families.  The revert (`4a282bd`,
+landed in `c27ad12`) restored BOTH contexts to green on its first
+run, and `ec2d1ce` push stayed green — a clean single-variable
+experiment proving the guard caused the streak by swallowing wakes
+without the runqueue/kick step.  The guard's intent (no remote steal
+during the wait transition) remains valid; it must re-land with the
+owner-cancel path actually kicking the owner CPU.  Earlier `772a923`
+remains on record as proof that both-red *can* be pure flake — 0/24
+versus an immediate return to green is what separated the two.
 
 ## 4. Stage 5 part support matrix
 
