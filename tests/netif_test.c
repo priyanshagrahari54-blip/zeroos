@@ -1,0 +1,4 @@
+#include <assert.h>
+#include "../kernel/netif.h"
+static int sent;static int tx(void*c,const uint8_t*f,uint16_t n){(void)c;(void)f;sent++;return n?0:-1;}static uint64_t lock(void*c){(void)c;return 0;}static void unlock(void*c,uint64_t s){(void)c;(void)s;}
+int main(void){struct netif n;uint8_t mac[6]={2,0,0,0,0,1},f[60]={0},out[64];f[12]=8;f[13]=0;uint16_t len;assert(netif_init(&n,"qemu0",1,mac,1500,0,tx,lock,unlock)==0);assert(netif_receive(&n,f,60)==-1);assert(netif_set_link(&n,1)==0);assert(netif_receive(&n,f,60)==0);assert(netif_dequeue(&n,out,59,&len)==-2);assert(netif_dequeue(&n,out,sizeof(out),&len)==0&&len==60);for(int i=0;i<NETIF_RX_QUEUE;i++)assert(netif_receive(&n,f,60)==0);assert(netif_receive(&n,f,60)==-2&&n.stats.rx_dropped==1);assert(netif_send(&n,f,60)==0&&sent==1&&n.stats.tx_packets==1);assert(netif_set_link(&n,0)==0&&netif_send(&n,f,60)==-1);f[12]=0;f[13]=1;assert(netif_set_link(&n,1)==0&&netif_receive(&n,f,60)==-1);return 0;}
