@@ -22,16 +22,29 @@ The detailed product plan remains in ZEROOS_MASTER_ROADMAP.md.
     settings/notify/a11y/i18n/watchdog modules) landed in Stage 5
     batch 1–3; the embedded session process (`userspace/session/`) now
     wires display service + compositor + input router to the live
-    syscalls with boot certification; shell UI chrome (ZERO Bar,
-    launcher, overview) and app UI remain.
+    syscalls with boot certification; ZERO Bar and launcher cores
+    (layout/click/focus, registry/query/launch), browser tab
+    lifecycle, navigation controller and notification/search/settings
+    surfaces are host-tested in Stage 5 batches 4–7; shell chrome
+    rendering and app UI remain.
 11. System services: package/update/recovery/diagnostics/observability/power management.
     Status: RFC 8439 ChaCha20-Poly1305 primitives (block, cipher, MAC,
     key generation, AEAD) landed in `kernel/crypto.c`, linked into the
     kernel and verified against the published RFC vectors plus
-    tamper/wrong-key negatives (`make hardware-core-test`); vault,
-    update signing and their integration follow.
+    tamper/wrong-key negatives (`make hardware-core-test`); AEAD vault,
+    transactional update state machine (section-20 pipeline with
+    rollback), snapshot manager, firewall policy engine and sandbox
+    profiles are host-tested in Stage 5 batches 4–7.  Update payload
+    signing, kernel packet-path binding and enforcement hooks follow.
 12. Study Center and app framework.
+    Status: flashcard/spaced-repetition scheduler and focus sessions
+    host-tested (Stage 5); PDF/OCR/formulas/dictionary and the app
+    framework UI follow.
 13. Forge AI bridge: sandboxed local kernel/user API and external-service boundary.
+    Note: the ZEROOS AI platform broker (permission grants, backend
+    selection with remote downgrade, wipe-on-drain, dormant-until-
+    submit) is separate from Forge AI and already host-tested; this
+    bridge item remains the future external boundary only.
 14. SMP/per-CPU scheduling, high-resolution timers, advanced memory management.
 15. Release engineering: reproducible builds, compatibility matrix, recovery media, long-duration stress and performance certification.
 
