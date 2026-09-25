@@ -319,6 +319,11 @@ Implemented (this stage):
   it later.  Stress suite (`test_stress.c`) drives sustained
   capacity cycles across browser/vault/firewall/snapshot/fps with
   exact end-state accounting — host-tested.
+- Sandbox policy core (`userspace/desktop/src/sandbox.c`): named
+  profiles with explicit capability masks (fs/net/spawn/display/
+  audio/device classes), fail-closed checks for unknown profiles and
+  classes, per-profile denial counters and an audit ring —
+  host-tested; seccomp/namespace enforcement binds later.
 
 Not yet implemented (contracts defined, explicit in PHASES.md):
 - Shell UI chrome (ZERO Bar, launcher, overview surfaces) on top of the

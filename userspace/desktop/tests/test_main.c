@@ -31,6 +31,7 @@ void zd_test_snapshot_suite(void);
 void zd_test_vault_suite(void);
 void zd_test_nav_suite(void);
 void zd_test_firewall_suite(void);
+void zd_test_sandbox_suite(void);
 void zd_test_stress_suite(void);
 void zd_test_fps_suite(void);
 void zd_test_ai_suite(void);
@@ -63,6 +64,7 @@ int main(void) {
     zd_test_vault_suite();
     zd_test_nav_suite();
     zd_test_firewall_suite();
+    zd_test_sandbox_suite();
     zd_test_stress_suite();
     zd_test_fps_suite();
     zd_test_ai_suite();
