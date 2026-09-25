@@ -1,6 +1,7 @@
 #include <assert.h>
 #include "../kernel/net_stack.h"
 #include "../kernel/net_l2.h"
+#include "../kernel/net_socket.h"
 
 static uint64_t lock_noop(void *context) { (void)context; return 0; }
 static void unlock_noop(void *context, uint64_t state) {
@@ -132,5 +133,27 @@ int main(void) {
     assert(delivery.count==3);
     assert(net_stack_poll(&stack,&interface,4)==0);
     assert(stack.stats.udp_delivered==3);
+
+    /* End-to-end receive path: validated IPv4/UDP is demultiplexed into an
+     * owner-bound, generation-tagged bounded UDP endpoint. */
+    struct net_udp_socket_table sockets;
+    struct net_udp_receive_info socket_info;
+    uint64_t socket_handle;
+    uint8_t socket_payload[16];
+    net_udp_socket_table_init(&sockets);
+    assert(net_udp_socket_bind(&sockets,42,0xc0000202U,9999,
+                               &socket_handle)==0);
+    net_stack_init(&stack,net_udp_socket_dispatch,&sockets);
+    assert(net_stack_set_ipv4_address(&stack,0xc0000202U)==0);
+    assert(net_firewall_add(&stack.ipv4_firewall,&rule)==0);
+    make_ipv4_udp(frame,0,0);
+    assert(net_stack_input(&stack,&interface,frame,sizeof(frame))==0);
+    assert(net_udp_socket_receive(&sockets,42,socket_handle,socket_payload,
+                                  sizeof(socket_payload),&socket_info)==0);
+    assert(socket_info.source_address==0xc0000201U &&
+           socket_info.source_port==1234 && socket_info.length==3);
+    assert(socket_payload[0]=='n' && socket_payload[2]=='t');
+    assert(net_udp_socket_receive(&sockets,7,socket_handle,socket_payload,
+                                  sizeof(socket_payload),&socket_info)==-1);
     return 0;
 }

@@ -1,7 +1,7 @@
 BUILD := build
 KERNEL := $(BUILD)/zeroos.elf
 ISO := $(BUILD)/zeroos.iso
-HARDWARE_CORE_NAMES := net_core net_route net_transport net_conntrack net_l2 net_ipv6 netif net_stack dns_core dhcp_core input_core usb_core audio_core display_core driver_core dma resource_core scancode_core mouse_core crypto
+HARDWARE_CORE_NAMES := net_core net_route net_transport net_conntrack net_l2 net_ipv6 netif net_stack net_socket dns_core dhcp_core input_core usb_core audio_core display_core driver_core dma resource_core scancode_core mouse_core crypto
 HARDWARE_CORE_OBJS := $(addprefix $(BUILD)/hardware-,$(addsuffix .o,$(HARDWARE_CORE_NAMES)))
 
 CC := gcc
@@ -176,8 +176,10 @@ hardware-core-test: | $(BUILD)
 	$(BUILD)/mouse-core-test
 	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/netif_test.c kernel/netif.c kernel/net_l2.c -o $(BUILD)/netif-test
 	$(BUILD)/netif-test
-	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/net_stack_test.c kernel/net_stack.c kernel/netif.c kernel/net_l2.c kernel/net_core.c kernel/net_ipv6.c kernel/net_transport.c -o $(BUILD)/net-stack-test
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/net_stack_test.c kernel/net_stack.c kernel/netif.c kernel/net_l2.c kernel/net_core.c kernel/net_ipv6.c kernel/net_transport.c kernel/net_socket.c -o $(BUILD)/net-stack-test
 	$(BUILD)/net-stack-test
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/net_socket_test.c kernel/net_socket.c -o $(BUILD)/net-socket-test
+	$(BUILD)/net-socket-test
 	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/crypto_test.c kernel/crypto.c -o $(BUILD)/crypto-core-test
 	$(BUILD)/crypto-core-test
 
