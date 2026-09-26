@@ -334,6 +334,15 @@ Implemented (this stage):
   single-active-transfer policy (cooperative sharing), monotonic
   progress with regression rejection, start-hook failure accounting
   and terminal-state immutability — host-tested.
+- PDF document contract (`userspace/desktop/src/pdf.c`, part G):
+  bounded zero-heap subset parser over caller-owned bytes — header
+  and version check, `/Type /Page` walk with object-number recovery,
+  `/Contents N 0 R` resolution to content streams, Tj/TJ literal
+  extraction with escapes and rollback of non-show operands, 64-page
+  and 1 KiB-per-page caps, and explicit unsupported failures (`-95`
+  for FlateDecode/encryption, `-22` malformed) with status names for
+  UI surfaces.  Hand-authored fixtures cover both pages, filtered,
+  encrypted, truncated, escaped, over-cap and contentless cases.
 - Fault-injection suite (`userspace/desktop/tests/test_fault.c`):
   seeded LCG drives 512 rounds of invalid inputs across settings,
   notify, clipboard, downloads, snapshots, firewall, sandbox,

@@ -24,7 +24,7 @@ does not exist yet, the row says so — no claim is made without it.
 
 | Suite | Command | Assertions | Failures |
 |---|---|---|---|
-| Desktop modules (display, compositor, window, input, a11y, i18n, search, settings, notify, lifecycle, watchdog, governor, automation, browser, AI, bar, launcher, capability, metrics, update, url, study, fps, snapshot, vault, nav, firewall, sandbox, clipboard, downloads, providers, perfcenter, fault, soak, stress, integration) | `make desktop-check` | 116681 | 0 |
+| Desktop modules (display, compositor, window, input, a11y, i18n, search, settings, notify, lifecycle, watchdog, governor, automation, browser, AI, bar, launcher, capability, metrics, update, url, study, fps, snapshot, vault, nav, firewall, sandbox, clipboard, downloads, providers, perfcenter, fault, soak, pdf, stress, integration) | `make desktop-check` | 116721 | 0 |
 | Windows compatibility core (lifecycle/paths/registry/DLL + PE validator) | `make compat-check` | 107 | 0 |
 | Hardware/driver cores (incl. crypto RFC vectors) | `make hardware-core-test` | per-suite PASS | 0 |
 | Public userspace ABI | `make userspace-abi-check`, `python3 userspace/tests/abi_consistency.py` | PASS | 0 |
@@ -42,7 +42,7 @@ plus QEMU boot certification.
 | `ccfa30d` | PR-context full boot with CI diagnostics | SUCCESS |
 | `f18c857` | PR-context full boot (network/DHCP core) | SUCCESS |
 | `c27ad12`, `ec2d1ce` | Both contexts green immediately after reverting the `dedb23f` task.c guard (experiment in section 3) | SUCCESS |
-| `0ec6d9d`, `772a923`, others | Same-code runs failing with `task owned by multiple CPUs`, `blocking IPC send-wakeup self-test failed`, `userspace init lifecycle failed`, storage-cert panics | FAILED — host-load flake family (identical SHA shows divergent outcomes across contexts) |
+| `0ec6d9d`, `772a923`, others, `78ef9b5` (PR context only; push context same SHA green, PR merge ref identical to push tree because `main` is a strict ancestor) | Same-code runs failing with `task owned by multiple CPUs`, `blocking IPC send-wakeup self-test failed`, `userspace init lifecycle failed`, storage-cert panics | FAILED — host-load flake family (identical SHA shows divergent outcomes across contexts) |
 
 The session milestone strings are grepped by the workflow, so a green
 run is machine-verified evidence, not a log skim.
@@ -71,7 +71,7 @@ versus an immediate return to green is what separated the two.
 | D | Android runtime | Baseline documented (AOSP 14/API 34/arm64-v8a) + tested-matrix policy in `ARCHITECTURE.md` §18; tested matrix empty | Contract + baseline documented — **no runtime, no claim** |
 | E | Browser tabs lifecycle | browser suite (16-tab ladder, crash recovery), strict URL parser, navigation controller (history/back/forward/blocking) | Core supported; engine/UI pending |
 | F | AI platform (separate from Forge AI) | AI broker suite, ARCHITECTURE §17 | Broker supported; adapters pending |
-| G | Study Center | Flashcard scheduler + focus-session suites (PHASES Phase 6) | Flashcard/focus core supported; PDF/OCR/formulas/dictionary pending |
+| G | Study Center | Flashcard scheduler + focus-session suites (PHASES Phase 6) + PDF subset contract (header/page-tree walk, per-page Tj/TJ extraction with escapes, 64-page/1 KiB bounds, explicit `-95` for FlateDecode filters and encryption, malformed/truncated `-22`, seeded hand-authored fixtures) | Flashcard/focus/PDF-subset supported; OCR/formulas/dictionary pending |
 | H | Media | Lawful-source/no-DRM policy in `PHASES.md` Phase 6 | Not implemented — policy binding |
 | I | Gaming | FPS monitor + performance-profile suites (budgets, percentiles, breaches) in `PHASES.md` Phase 11 | FPS/profiles supported; overlay/controllers/low-latency device support pending |
 | J | Cloud/device | Offline-first + explicit-permission contracts in `PHASES.md` Phase 11 | Not implemented — contract only |
