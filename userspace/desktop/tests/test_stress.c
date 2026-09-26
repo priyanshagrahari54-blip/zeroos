@@ -143,6 +143,135 @@ static void stress_fps_and_metrics(void) {
     ZD_CHECK_EQ(zd_metrics_percentile(&m, 50), 16u);
 }
 
+
+/* New shell/app cores (batch 10): volume churn with exact totals */
+static int st_fm_src(void *ctx, const char *path,
+                     struct zd_fm_entry *out, uint32_t cap,
+                     uint32_t *out_n) {
+    (void)ctx;
+    *out_n = 0;
+    if (strcmp(path, "/sr") == 0 || strcmp(path, "/sr/sub") == 0) {
+        uint32_t i;
+        if (cap < 3)
+            return -28;
+        for (i = 0; i < 3; ++i) {
+            memset(&out[i], 0, sizeof(out[i]));
+            out[i].name[0] = 'e';
+            out[i].name[1] = (char)('0' + (char)i);
+            out[i].size = i * 10;
+            out[i].mtime = (int64_t)i;
+        }
+        *out_n = 3;
+        return 0;
+    }
+    return -2;
+}
+
+static void stress_shell_cores(void) {
+    /* terminal: 200 rounds of fill+scroll on a 4x16 grid */
+    {
+        struct zd_term t;
+        uint32_t r;
+        zd_term_init(&t, 4, 16);
+        for (r = 0; r < 200; ++r)
+            ZD_CHECK_OK(zd_term_write(
+                &t, (const uint8_t *)"0123456789abcdef\r\n", 18));
+        ZD_CHECK_EQ(t.stats.writes, 200u); /* one write per round */
+        ZD_CHECK_EQ(t.stats.bytes, 200u * 18u);
+        ZD_CHECK_EQ(t.stats.scrolls, 197u); /* first 3 fill rows */
+        ZD_CHECK_EQ(t.sb_count, (uint32_t)ZD_TERM_SCROLLBACK);
+    }
+    /* file manager: 100 alternating opens + one back/forward pair */
+    {
+        struct zd_fm fm;
+        uint32_t r;
+        zd_fm_init(&fm, st_fm_src, 0);
+        for (r = 0; r < 100; ++r)
+            ZD_CHECK_OK(zd_fm_open(&fm, (r & 1) ? "/sr/sub" : "/sr"));
+        ZD_CHECK_EQ(fm.stats.navigations, 100u);
+        ZD_CHECK_EQ(fm.stats.refreshes, 100u);
+        /* history holds 16; 84 oldest entries were dropped */
+        ZD_CHECK_EQ(fm.hist_count, (uint32_t)ZD_FM_HISTORY);
+        ZD_CHECK_EQ(fm.stats.history_dropped, 84u);
+        ZD_CHECK_OK(zd_fm_back(&fm));
+        ZD_CHECK_OK(zd_fm_forward(&fm));
+        ZD_CHECK_EQ(fm.stats.backs, 1u);
+        ZD_CHECK_EQ(fm.stats.forwards, 1u);
+        ZD_CHECK_EQ(fm.stats.source_errors, 0u);
+    }
+    /* formula: 500 parse/eval cycles with a moving variable */
+    {
+        struct zd_formula f;
+        uint32_t r;
+        zd_formula_init(&f);
+        ZD_CHECK_OK(zd_formula_parse(&f, "1+2*3-x"));
+        for (r = 0; r < 500; ++r) {
+            double v = 0;
+            ZD_CHECK_OK(zd_formula_set_var(&f, "x", (double)r));
+            ZD_CHECK_OK(zd_formula_eval(&f, &v));
+            ZD_CHECK(v == 7.0 - (double)r);
+        }
+        ZD_CHECK_EQ(f.stats.parse_errors, 0u);
+        ZD_CHECK_EQ(f.stats.evals, 500u);
+        ZD_CHECK_EQ(f.stats.var_sets, 500u);
+        ZD_CHECK_EQ(f.stats.parses, 1u);
+    }
+    /* overview: 100 set+remove quadruples over 16-window batches */
+    {
+        struct zd_overview o;
+        struct zd_rect area;
+        uint32_t ids[16];
+        uint32_t r, i;
+        memset(&o, 0, sizeof(o));
+        area.x = 0;
+        area.y = 0;
+        area.w = 400;
+        area.h = 400;
+        ZD_CHECK_OK(zd_overview_open(&o, area, 4));
+        for (r = 0; r < 100; ++r) {
+            for (i = 0; i < 16; ++i)
+                ids[i] = r * 16 + i + 1;
+            ZD_CHECK_OK(zd_overview_set_windows(&o, ids, 16));
+            for (i = 0; i < 4; ++i)
+                ZD_CHECK_OK(zd_overview_remove(&o, ids[i]));
+        }
+        ZD_CHECK_EQ(o.stats.relayouts, 500u); /* 100 x (set+4 rm) */
+        ZD_CHECK_EQ(o.stats.closes, 400u);
+        ZD_CHECK_EQ(o.count, 12u);
+        ZD_CHECK_EQ(o.cols, 4u); /* ceil(sqrt(12)) */
+        ZD_CHECK_EQ(o.stats.rejected, 0u);
+    }
+    /* ecosystem: 100 pair/grant/queue/flush/unpair generations */
+    {
+        struct zd_eco e;
+        uint32_t r, idx = 0;
+        zd_eco_init(&e);
+        zd_eco_set_conn(&e, ZD_ECO_ONLINE);
+        for (r = 0; r < 100; ++r) {
+            char nm[8];
+            nm[0] = 'd';
+            nm[1] = (char)('0' + (char)(r % 10));
+            nm[2] = (char)('a' + (char)((r / 10) % 26));
+            nm[3] = 0;
+            ZD_CHECK_OK(zd_eco_pair(&e, nm, &idx));
+            ZD_CHECK_OK(zd_eco_grant(&e, idx,
+                                     ZD_ECO_PERM_SYNC_FILES));
+            ZD_CHECK_OK(zd_eco_enqueue(&e, idx,
+                                       ZD_ECO_PERM_SYNC_FILES, "p"));
+            ZD_CHECK_EQ(zd_eco_flush(&e), 1u);
+            ZD_CHECK_OK(zd_eco_unpair(&e, idx));
+        }
+        ZD_CHECK_EQ(e.stats.paired, 100u);
+        ZD_CHECK_EQ(e.stats.granted, 100u);
+        ZD_CHECK_EQ(e.stats.queued, 100u);
+        ZD_CHECK_EQ(e.stats.flushed, 100u);
+        ZD_CHECK_EQ(e.stats.unpairs, 100u);
+        ZD_CHECK_EQ(e.device_count, 0u);
+        ZD_CHECK_EQ(e.queued, 0u);
+        ZD_CHECK_EQ(e.stats.refused_perm, 0u);
+    }
+}
+
 void zd_test_stress_suite(void) {
     printf("  suite: stress/soak\n");
     ZD_RUN(stress_browser_cycles);
@@ -150,4 +279,5 @@ void zd_test_stress_suite(void) {
     ZD_RUN(stress_firewall_throughput);
     ZD_RUN(stress_snapshot_turnover);
     ZD_RUN(stress_fps_and_metrics);
+    ZD_RUN(stress_shell_cores);
 }
