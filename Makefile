@@ -20,13 +20,16 @@ CFLAGS += $(EXTRA_CFLAGS)
 ASFLAGS := -m64 -ffreestanding -fno-pic -fno-pie -nostdlib
 LDFLAGS := -m elf_x86_64 -T kernel/linker.ld -nostdlib
 
-.PHONY: all clean elf iso run check kernel-simd-check userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check
+.PHONY: all clean elf iso run check storage-tools-check kernel-simd-check userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check
 
 all: iso
 
-# Reproducible local release gate: the same compile, ABI, core, desktop,
-# compatibility, and SIMD-safety checks exercised by CI before guest boot.
-check: elf userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check
+# Reproducible local release gate: compile, ABI, core, desktop,
+# compatibility, storage-image recovery, and SIMD-safety checks before guest boot.
+check: elf userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check storage-tools-check
+
+storage-tools-check:
+	bash tools/storage/host_selftest.sh
 
 elf: $(KERNEL)
 

@@ -310,38 +310,6 @@ jobs:
             exit 1
           fi
 
-      - name: Storage host tools self-test
-        run: |
-          set -e
-          T=$(mktemp -d)
-          truncate -s 64M $T/t.img
-          python3 tools/storage/gpt.py create $T/t.img --part zjfs:40:data --part scratch:rest:scratch
-          python3 tools/storage/zjfs.py --part 1 $T/t.img mkfs --label ci
-          head -c 3000000 /dev/urandom > $T/blob
-          python3 tools/storage/zjfs.py --part 1 $T/t.img mkdir /d
-          python3 tools/storage/zjfs.py --part 1 $T/t.img put $T/blob /d/blob
-          python3 tools/storage/zjfs.py --part 1 $T/t.img cat /d/blob | cmp - $T/blob
-          python3 tools/storage/zjfs.py --part 1 $T/t.img fsck
-          # Corrupt the primary superblock: fsck must fall back to the backup.
-          OFF=$(python3 tools/storage/gpt.py offset $T/t.img 1 | cut -d" " -f1)
-          printf 'XXXX' | dd of=$T/t.img bs=1 seek=$OFF conv=notrunc status=none
-          python3 tools/storage/zjfs.py --part 1 $T/t.img fsck | grep -q "using backup"
-          python3 tools/storage/zjfs.py --part 1 $T/t.img fsck --repair
-          python3 tools/storage/zjfs.py --part 1 $T/t.img fsck | grep -q "RESULT clean"
-          # GPT: damaged primary -> backup fallback -> byte-exact repair;
-          # both copies damaged -> repair refuses (exit 2) and writes nothing.
-          cp $T/t.img $T/good.img
-          printf 'XXXX' | dd of=$T/t.img bs=1 seek=512 conv=notrunc status=none
-          python3 tools/storage/gpt.py list $T/t.img 2>&1 | grep -q "using backup"
-          python3 tools/storage/gpt.py repair $T/t.img | grep -q "primary GPT rebuilt from backup"
-          cmp $T/t.img $T/good.img
-          printf 'XXXX' | dd of=$T/t.img bs=1 seek=512 conv=notrunc status=none
-          printf 'Z' | dd of=$T/t.img bs=1 seek=$((64*1024*1024-512+20)) conv=notrunc status=none
-          cp $T/t.img $T/bad.img
-          rc=0; python3 tools/storage/gpt.py repair $T/t.img || rc=$?
-          test "$rc" = 2
-          cmp $T/t.img $T/bad.img
-
       - name: Storage persistence certification (q35 AHCI + NVMe, two boots)
         run: |
           set -e
