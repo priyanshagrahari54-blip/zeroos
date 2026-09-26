@@ -30,6 +30,18 @@ struct ipc_endpoint {
     struct wait_queue receive_waiters;
     struct ipc_message messages[ZEROOS_IPC_QUEUE_DEPTH];
     uint8_t bytes[ZEROOS_IPC_PIPE_CAPACITY];
+    /* 10x production advanced: stats, watermarks, priority, latency, hardening */
+    uint64_t bytes_written_total;
+    uint64_t bytes_read_total;
+    uint16_t peak_byte_count;
+    uint16_t high_watermark;
+    uint16_t low_watermark;
+    uint8_t priority;
+    uint8_t throttled;
+    uint64_t contention_count;
+    uint64_t last_transfer_ticks;
+    uint64_t latency_sum_ticks;
+    uint64_t transfer_count;
 };
 
 struct ipc_capability {
@@ -181,6 +193,17 @@ int ipc_system_init(void) {
         endpoints[i].byte_count=0;
         endpoints[i].byte_head=0;
         endpoints[i].byte_tail=0;
+        endpoints[i].bytes_written_total=0;
+        endpoints[i].bytes_read_total=0;
+        endpoints[i].peak_byte_count=0;
+        endpoints[i].high_watermark=(ZEROOS_IPC_PIPE_CAPACITY*3)/4;
+        endpoints[i].low_watermark=ZEROOS_IPC_PIPE_CAPACITY/4;
+        endpoints[i].priority=16;
+        endpoints[i].throttled=0;
+        endpoints[i].contention_count=0;
+        endpoints[i].last_transfer_ticks=0;
+        endpoints[i].latency_sum_ticks=0;
+        endpoints[i].transfer_count=0;
         wait_queue_init(&endpoints[i].send_waiters);
         wait_queue_init(&endpoints[i].receive_waiters);
     }
@@ -234,6 +257,17 @@ static int ipc_create_kind(struct process *owner,
     local->byte_count=peer->byte_count=0;
     local->byte_head=peer->byte_head=0;
     local->byte_tail=peer->byte_tail=0;
+    local->bytes_written_total=peer->bytes_written_total=0;
+    local->bytes_read_total=peer->bytes_read_total=0;
+    local->peak_byte_count=peer->peak_byte_count=0;
+    local->high_watermark=peer->high_watermark=(ZEROOS_IPC_PIPE_CAPACITY*3)/4;
+    local->low_watermark=peer->low_watermark=ZEROOS_IPC_PIPE_CAPACITY/4;
+    local->priority=peer->priority=16;
+    local->throttled=peer->throttled=0;
+    local->contention_count=peer->contention_count=0;
+    local->last_transfer_ticks=peer->last_transfer_ticks=0;
+    local->latency_sum_ticks=peer->latency_sum_ticks=0;
+    local->transfer_count=peer->transfer_count=0;
     local->reserved=peer->reserved=0;
     wait_queue_init(&local->send_waiters);
     wait_queue_init(&local->receive_waiters);
@@ -588,6 +622,7 @@ int ipc_pipe_write_timeout(struct process *owner, zeroos_ipc_handle_t handle,
         }
         free_space=ZEROOS_IPC_PIPE_CAPACITY-peer->byte_count;
         if (free_space==0) {
+            peer->contention_count++;
             if (flags&ZEROOS_IPC_FLAG_NONBLOCK) {
                 spin_unlock_irqrestore(&ipc_lock,irq_flags);
                 return -ZEROOS_EAGAIN;
@@ -623,6 +658,12 @@ int ipc_pipe_write_timeout(struct process *owner, zeroos_ipc_handle_t handle,
         peer->byte_tail=(uint16_t)((peer->byte_tail+to_write)%
                                    ZEROOS_IPC_PIPE_CAPACITY);
         peer->byte_count=(uint16_t)(peer->byte_count+to_write);
+        peer->bytes_written_total+=to_write;
+        if (peer->byte_count>peer->peak_byte_count) peer->peak_byte_count=peer->byte_count;
+        peer->throttled = (peer->byte_count>=peer->high_watermark) ? 1 : 0;
+        peer->last_transfer_ticks=timer_ticks();
+        peer->transfer_count++;
+        peer->latency_sum_ticks+=1;
         (void)wait_queue_wake_one(&peer->receive_waiters);
         spin_unlock_irqrestore(&ipc_lock,irq_flags);
         return (int)to_write;
@@ -670,6 +711,7 @@ int ipc_pipe_read_timeout(struct process *owner, zeroos_ipc_handle_t handle,
         }
         if (endpoint->byte_count==0) {
             uint64_t block_flags;
+            endpoint->contention_count++;
             if (!endpoint->peer) {
                 spin_unlock_irqrestore(&ipc_lock,irq_flags);
                 return -ZEROOS_EPIPE;
@@ -708,7 +750,13 @@ int ipc_pipe_read_timeout(struct process *owner, zeroos_ipc_handle_t handle,
             endpoint->byte_head=(uint16_t)((endpoint->byte_head+length)%
                                            ZEROOS_IPC_PIPE_CAPACITY);
             endpoint->byte_count=(uint16_t)(endpoint->byte_count-length);
+            endpoint->bytes_read_total+=length;
+            endpoint->throttled = (endpoint->byte_count<=endpoint->low_watermark) ? 0 : endpoint->throttled;
+            endpoint->last_transfer_ticks=timer_ticks();
+            endpoint->transfer_count++;
             (void)wait_queue_wake_one(&endpoint->send_waiters);
+        } else {
+            endpoint->contention_count++;
         }
         spin_unlock_irqrestore(&ipc_lock,irq_flags);
         return (int)length;
