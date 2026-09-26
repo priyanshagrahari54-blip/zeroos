@@ -26,11 +26,13 @@ The detailed product plan remains in ZEROOS_MASTER_ROADMAP.md.
     (layout/click/focus, registry/query/launch), browser tab
     lifecycle, navigation controller and notification/search/settings
     surfaces are host-tested in Stage 5 batches 4–7; shell chrome
-    rendering and app UI remain.  Batches 8–10 added the clipboard
+    rendering and app UI remain.  Batches 8–11 added the clipboard
     service, downloads manager, built-in search providers
-    (commands/diagnostics), the measured performance centre and the
-    terminal core (streaming escape parser, scrollback ring) — all
-    host-tested.
+    (commands/diagnostics), the measured performance centre, the
+    terminal core (streaming escape parser, scrollback ring), the
+    file manager (source-injected listings, path history,
+    permission-gated ops) and the shell overview/expose grid model —
+    all host-tested.
 11. System services: package/update/recovery/diagnostics/observability/power management.
     Status: RFC 8439 ChaCha20-Poly1305 primitives (block, cipher, MAC,
     key generation, AEAD) landed in `kernel/crypto.c`, linked into the
@@ -50,7 +52,10 @@ The detailed product plan remains in ZEROOS_MASTER_ROADMAP.md.
     Status: flashcard/spaced-repetition scheduler and focus sessions
     host-tested (Stage 5); the PDF subset contract (page tree, Tj/TJ
     extraction, explicit -95 for filters/encryption) landed in batch
-    9; OCR/formulas/dictionary and the app framework UI follow.
+    9; the formula engine (bounded parser/evaluator) and the
+    OCR capability contract (argument validation, honest -95 with no
+    engine linked) landed in batch 11; dictionary and the app
+    framework UI follow.
 14. Desktop app/ecosystem policy cores: media lawful-source gates,
     gaming profiles/cooperative yield, cloud-device offline-first sync,
     availability+lifecycle contract for terminal/file-manager.
