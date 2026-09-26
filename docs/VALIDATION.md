@@ -16,7 +16,7 @@ does not exist yet, the row says so — no claim is made without it.
 | SOAK | Long-duration idle residency (AI dormancy, 0 resident bytes idle, event-driven automation) + seeded 64-epoch churn with generation-isolation and steady-state bounds (clipboard, downloads FIFO totals, notify caps, lifecycle storms, settings schema isolation, perfcenter rings) | desktop suites | Green |
 | SECURITY | Permission gates (AI grants, automation permission-first ordering), crypto AEAD/ChaCha20 vectors, constant-time MAC compare, denied counters | crypto tests + desktop suites | Green |
 | RECOVERY | Browser crash recovery, service watchdog, display attach/detach, init recovery in guest, rollback contracts | desktop suites + CI boot milestones | Green (host), guest init recovery in CI |
-| QEMU | Boot certification block in CI: panic detection, session milestones, storage certification | `build.yml` on every push/PR | Green on every push context since the `dedb23f` revert (`c27ad12`, `56a009f`, `c24c6b2`, `69f053c`, `c8b75ae`, `92e5729`, `fecd7a3`, …); PR context green except the documented `78ef9b5`/`0b2b480` boot-flake rows above |
+| QEMU | Boot certification block in CI: panic detection, session milestones, storage certification | `build.yml` on every push/PR | Green on every push context since the `dedb23f` revert (`c27ad12`, `56a009f`, `c24c6b2`, `69f053c`, `c8b75ae`, `92e5729`, `fecd7a3`, `19ce0fa`, `eaac99c`, `d0bfc0c`, `d294b66`, `ef384d7`, …); PR context green except the documented `78ef9b5`/`0b2b480`/`98ba0ca` boot-flake rows below |
 | REAL-HARDWARE | Physical run of the certified ISO on bare metal | Not available in this environment | **Not run — no claim** |
 
 | PERFORMANCE | Frame pacing/vsync accounting (display tests), governor tier/pressure/effects (governor tests), metrics recorder with interval histogram + percentiles wired into `zd_display_service_present`, FPS monitor frame-time percentiles and budget breaches | desktop suite + session link | Green (host); on-device percentiles pending |
@@ -46,6 +46,8 @@ plus QEMU boot certification.
 | `f18c857` | PR-context full boot (network/DHCP core) | SUCCESS |
 | `c27ad12`, `ec2d1ce` | Both contexts green immediately after reverting the `dedb23f` task.c guard (experiment in section 3) | SUCCESS |
 | `0ec6d9d`, `772a923`, others, `78ef9b5` and `0b2b480` (both PR context only; push context same SHA green, PR merge ref identical to push tree because `main` is a strict ancestor, workflow has no event-conditional steps; the `0b2b480` failure was the QEMU "Boot test" step) | Same-code runs failing with `task owned by multiple CPUs`, `blocking IPC send-wakeup self-test failed`, `userspace init lifecycle failed`, storage-cert panics | FAILED — host-load flake family (identical SHA shows divergent outcomes across contexts) |
+| `19ce0fa`, `eaac99c`, `d0bfc0c`, `d294b66`, `ef384d7` (both contexts each) | Batch 8–11 wave: roadmap docs, filemgr+formula+OCR, overview model, binding inventory, stress volume, roadmap batch 11 | SUCCESS |
+| `98ba0ca` | PR context only (push same SHA SUCCESS): `ZEROOS PANIC: CPU hot-offline evacuation failed` during SMP teardown after all milestones | FAILED — same documented host-load flake family (overview is host-only geometry; identical push tree green) |
 
 The session milestone strings are grepped by the workflow, so a green
 run is machine-verified evidence, not a log skim.
