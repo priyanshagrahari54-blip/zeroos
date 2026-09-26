@@ -86,8 +86,11 @@ The authoritative per-core binding inventory (host-tested vs pending live integr
 | Userspace runtime contract | `make userspace-runtime-check` | PASS | 0 |
 | Full guest kernel build | `make elf -j4` | 0 warnings (Werror) | 0 |
 
-Reproduce all locally with the six commands above; CI runs the same set
-plus QEMU boot certification.
+Reproduce all host/build checks locally with `make check` (it builds the
+kernel and runs the ABI, runtime, hardware-core, desktop, compatibility, and
+SIMD-safety gates). CI runs `make check` after producing the boot ISO, then
+adds QEMU boot, SMP, and AHCI/NVMe persistence certification. A green
+`make check` is not a substitute for the guest or real-hardware gates.
 
 ## 3. CI/QEMU evidence by commit (branch `arena/01a0d3b0-zeroos`)
 

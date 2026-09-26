@@ -19,11 +19,8 @@ jobs:
       - name: Build ZEROOS
         run: make
 
-      - name: Check public userspace ABI, runtime, and hardware-core safety tests
-        run: make userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test
-
-      - name: Desktop platform core check (Stage 5)
-        run: make desktop-check compat-check
+      - name: Run reproducible local release gate
+        run: make check
 
       - name: Verify kernel image
         run: |
