@@ -184,4 +184,10 @@ uint64_t task_cpu_offline_from_interrupt(struct interrupt_frame *frame);
 int task_cpu_offline_pending(void);
 void task_cpu_offline_park(void);
 
+/* Tag on an interrupt_dispatch() frame return (frames are 16-byte aligned):
+ * the IRQ path switched tasks and isr.S must call task_handoff_complete()
+ * after moving RSP onto the destination frame. Bit 0 tags a cooperative
+ * saved-stack return. */
+#define ZEROOS_IRQ_RESUME_HANDOFF 2ULL
+
 #endif

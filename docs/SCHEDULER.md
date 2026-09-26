@@ -161,7 +161,10 @@ path can restore that context through the tagged `saved_stack` path, and any
 dispatch path can resume a preempted task through its live architectural
 frame via the same handoff primitive. Selection therefore treats both context
 forms uniformly: a runnable task is never skipped because of the way it was
-suspended.
+suspended. The single exception is the
+handoff quarantine described below: a task still published in any CPU's
+handoff slot is left queued and is not selected by any CPU until its
+previous CPU has left its stack.
 
 The design follows the same architectural principle used by mature kernels:
 interrupt entry/exit and scheduling state are explicit boundaries, and the
@@ -188,6 +191,13 @@ half-range.
 A task that returns from its entry function becomes `TASK_ZOMBIE`. Its kernel stack cannot be freed by the task itself because execution is still using that stack. The scheduler therefore reclaims zombie stacks from a later timer/scheduler context, resets the descriptor to `TASK_UNUSED`, and returns the physical page to the page allocator. This makes task slots reusable without allocating a separate reaper thread or permanent reaper stack.
 
 SMP reclamation is handoff-quiescent rather than merely state-based. Before releasing the scheduler metadata lock, a cooperative dispatch publishes the outgoing task in a per-CPU handoff-quarantine slot. The reaper will not free that task's stack while the slot is published. The destination clears the slot after it crosses the cooperative context boundary; a frame destination clears it from the assembly handoff immediately before loading the destination frame and executing `iretq`. This closes the race in which a remote timer could reclaim and reuse a zombie's stack while `context_switch_ex()` was still saving registers on it. The quarantine is protected by the same task lock and is included in the fatal scheduler ownership checks.
+
+The same quarantine covers the interrupt-driven switch. `task_reschedule_from_interrupt()` records the outgoing task's interrupt frame and requeues the task, possibly on another CPU's runqueue, before the CPU has left that task's kernel stack: the C return path and the ISR epilogue still run on it until the epilogue loads the destination RSP. The IRQ path therefore publishes the outgoing task in the per-CPU handoff slot under `task_lock`. A second pending handoff on one CPU is a fatal invariant violation. The slot is cleared on the destination side:
+
+- a frame destination is returned tagged with `ZEROOS_IRQ_RESUME_HANDOFF` (bit 1; frames are 16-byte aligned), so `boot/isr.S` calls `task_handoff_complete()` after moving RSP onto the destination frame;
+- a cooperative destination clears the slot in `dispatch_locked()` after `context_switch_ex()`, or in `task_trampoline_body()`.
+
+An untagged frame (no switch) never takes `task_lock` in the epilogue. The runqueue picker (`runqueue_pick_locked()`) skips any candidate published in any CPU's handoff slot. This makes the quarantine a selection rule, not just a reclamation and validation exemption, so no CPU can resume a task whose stack is still in use by its previous CPU.
 
 The lifecycle is therefore `UNUSED → RUNNABLE → RUNNING → BLOCKED/RUNNABLE → ZOMBIE → UNUSED`, with an explicit architectural handoff-quarantine interval between `ZOMBIE` and reclamation. A blocked task cannot become a zombie until it is explicitly resumed and exits.
 
@@ -228,8 +238,9 @@ The implemented scheduler/SMP boundary covers:
 - coordinated CPU hot-offline queue evacuation, AP TLB/CPU-local withdrawal,
   idle parking, bounded acknowledgement and scheduler validation.
 
-The remaining Stage 1 scheduler work is not hidden: extended FPU state
-switching and supported-hardware multi-vCPU validation remain required before
+The remaining Stage 1 scheduler work is not hidden: per-thread FPU/SIMD state
+switching (kernel code is general-purpose-register only and enforced by
+`kernel-simd-check`, see CPU_ARCHITECTURE.md) and supported-hardware multi-vCPU validation remain required before
 the Stage 1 exit gate. Equal-priority fairness/latency stress, the AP late-
 token/failed-dispatch recovery contract, and the per-AP local LAPIC clock-
 event contract (with an explicit targeted-IPI fallback) are now exercised by

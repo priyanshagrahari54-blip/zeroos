@@ -851,8 +851,15 @@ static struct task *runqueue_pick_locked(uint32_t queue_cpu,
     spin_lock(&queue->lock);
     for (struct task *candidate=queue->head; candidate;
          candidate=candidate->run_next) {
+        /* A task still in handoff is RUNNABLE but its owner CPU is still
+         * executing on its kernel stack (saving the cooperative context or
+         * unwinding the IRQ epilogue). Resuming it elsewhere before the
+         * owner has switched stacks would put two CPUs on one stack. It
+         * stays queued; the owner clears the marker within a few
+         * instructions and a later pick selects it. */
         if (candidate->state!=TASK_RUNNABLE ||
-            !task_can_run_on_cpu(candidate,execution_cpu))
+            !task_can_run_on_cpu(candidate,execution_cpu) ||
+            task_handoff_in_flight(candidate))
             continue;
         uint8_t priority=effective_priority(candidate);
         if (!selected || priority>selected_priority) {
@@ -1604,11 +1611,22 @@ uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
         task_context_panic("ZEROOS PANIC: IRQ target kernel stack publication failed.\n",
                            target);
     task_activate_address_space(target);
+    /* previous's IRQ frame and this CPU's live call chain are both on
+     * previous's kernel stack until the assembly epilogue switches RSP.
+     * Publish the same per-CPU handoff marker as the cooperative path so no
+     * other CPU can resume previous in that window. It is cleared on the
+     * destination side: by isr.S after the RSP switch (frame targets, tagged
+     * with ZEROOS_IRQ_RESUME_HANDOFF), or by the resumed cooperative
+     * context's task_handoff_complete() / task_trampoline_body(). */
+    if (handoff_tasks[cpu])
+        task_context_panic("ZEROOS PANIC: scheduler handoff already pending.\n",
+                           handoff_tasks[cpu]);
+    handoff_tasks[cpu]=previous;
     task_validate_table_at("ZEROOS PANIC: IRQ dispatch invariant failed.\n",previous);
     spin_unlock(&task_lock);
 
     if (target_frame)
-        return (uint64_t)target_frame;
+        return (uint64_t)target_frame | ZEROOS_IRQ_RESUME_HANDOFF;
     return target->saved_stack | 1ULL;
 }
 

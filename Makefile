@@ -8,12 +8,19 @@ CC := gcc
 LD := ld
 AS := gcc
 
-CFLAGS := -m64 -mno-red-zone -mcmodel=small -ffreestanding -fno-pic -fno-pie -fno-stack-protector -fno-builtin -nostdinc -Wall -Wextra -O2
+# -mgeneral-regs-only is mandatory: interrupt entry, the IRQ reschedule path
+# and context_switch_ex save only general-purpose registers, never x87/MMX/
+# SSE/AVX state. Without it GCC -O2 keeps constants and copies in XMM
+# registers, and any interrupt or task switch that also touches XMM silently
+# replaces them (observed: init code immediates 16->0 and 12->0xffffffff,
+# random IPC/storage self-test failures on SMP). kernel-simd-check enforces
+# the invariant on the linked image.
+CFLAGS := -m64 -mno-red-zone -mgeneral-regs-only -mcmodel=small -ffreestanding -fno-pic -fno-pie -fno-stack-protector -fno-builtin -nostdinc -Wall -Wextra -O2
 CFLAGS += $(EXTRA_CFLAGS)
 ASFLAGS := -m64 -ffreestanding -fno-pic -fno-pie -nostdlib
 LDFLAGS := -m elf_x86_64 -T kernel/linker.ld -nostdlib
 
-.PHONY: all clean elf iso run userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check
+.PHONY: all clean elf iso run kernel-simd-check userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check
 
 all: iso
 
@@ -273,6 +280,18 @@ $(BUILD)/storage_probe_image.o: kernel/storage_probe_image.S $(BUILD)/storage_pr
 
 $(KERNEL): $(BUILD)/boot.o $(BUILD)/isr.o $(BUILD)/context.o $(BUILD)/ap_trampoline.o $(BUILD)/user_entry.o $(BUILD)/kernel.o $(BUILD)/cpu.o $(BUILD)/apic.o $(BUILD)/smp.o $(BUILD)/acpi.o $(BUILD)/interrupts.o $(BUILD)/syscall.o $(BUILD)/ipc.o $(BUILD)/shmem.o $(BUILD)/fb.o $(BUILD)/input.o $(BUILD)/elf.o $(BUILD)/exec.o $(BUILD)/user.o $(BUILD)/pic.o $(BUILD)/timer.o $(BUILD)/sync.o $(BUILD)/memory.o $(BUILD)/gdt.o $(BUILD)/vmm.o $(BUILD)/tlb.o $(BUILD)/task.o $(BUILD)/wait.o $(BUILD)/scheduler.o $(BUILD)/thread.o $(BUILD)/process.o $(BUILD)/session_launch.o $(EXTRA_OBJS) $(HARDWARE_CORE_OBJS) kernel/linker.ld
 	$(LD) $(LDFLAGS) -o $@ $(BUILD)/session_launch.o $(BUILD)/boot.o $(BUILD)/isr.o $(BUILD)/context.o $(BUILD)/ap_trampoline.o $(BUILD)/user_entry.o $(BUILD)/kernel.o $(BUILD)/cpu.o $(BUILD)/apic.o $(BUILD)/smp.o $(BUILD)/acpi.o $(BUILD)/interrupts.o $(BUILD)/syscall.o $(BUILD)/ipc.o $(BUILD)/shmem.o $(BUILD)/fb.o $(BUILD)/input.o $(BUILD)/elf.o $(BUILD)/exec.o $(BUILD)/user.o $(BUILD)/pic.o $(BUILD)/timer.o $(BUILD)/sync.o $(BUILD)/memory.o $(BUILD)/gdt.o $(BUILD)/vmm.o $(BUILD)/tlb.o $(BUILD)/task.o $(BUILD)/wait.o $(BUILD)/scheduler.o $(BUILD)/thread.o $(BUILD)/process.o $(EXTRA_OBJS) $(HARDWARE_CORE_OBJS)
+	@$(MAKE) --no-print-directory kernel-simd-check
+
+# Fails the build if the linked kernel contains any x87/MMX/SSE/AVX
+# instruction (see the CFLAGS note: that state is never saved).
+kernel-simd-check:
+	@test -f $(KERNEL) || { echo "kernel-simd-check: $(KERNEL) missing"; exit 1; }
+	@objdump -d --no-show-raw-insn $(KERNEL) | \
+		grep -E '%[xyz]mm[0-9]|%mm[0-9]|%st(\(|[^a-z]|$$)|\b(f(ld|st|add|mul|sub|div|init|nstenv|xsave|xrstor|ninit)|ldmxcsr|stmxcsr|emms)[a-z0-9]*\b' \
+		> $(BUILD)/kernel-simd.txt; \
+	if [ -s $(BUILD)/kernel-simd.txt ]; then \
+		echo "kernel-simd-check: FP/SIMD instructions in kernel image:"; head -20 $(BUILD)/kernel-simd.txt; exit 1; \
+	fi; echo "kernel-simd-check: no FP/SIMD instructions in kernel image."
 
 iso: $(KERNEL)
 	rm -rf $(BUILD)/iso

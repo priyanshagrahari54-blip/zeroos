@@ -285,6 +285,24 @@ creation, fills the bounded IPC endpoint table, verifies the expected
 rejects non-page-aligned or overlapping segments before mapping and preserves
 distinct invalid-image and resource errors through the spawn ABI.
 
+Every assertion in the init image and in the service-manager image jumps to
+its own failure stub. The exit status therefore identifies both the check
+and the kernel's answer: `status = ((-rax) & 0xffffff) << 8 | (16 + i)`, where
+`i` is the check index in emission order and `-rax` is the errno returned by
+the failing syscall. For example, `3615 = 14 << 8 | 31` would be check 15
+failing with `EFAULT`. Both images must exit 0. The kernel prints any failure
+as `init reap failed (stage=..., exit_status=...)`, naming the reap
+precondition that failed (`thread-reap`, `process-state`, `process-reap`,
+`ipc-validate` or `exit-status`), so a CI log identifies the failing check
+without a debugger.
+
+The in-kernel blocking-wakeup self-tests (event, IPC close and IPC send) run
+their probe in a kernel thread. The probe publishes its final state before it
+returns into `thread_exit()`, so after observing that state the monitor waits,
+bounded, for the probe thread and its process to become zombies before it
+reaps them. On SMP, or after a preemption between the two steps, sampling the
+zombie state immediately would fail spuriously.
+
 After init and the IPC service recovery path, a separate Ring-3 service-manager
 process is published. It owns an explicit child limit, launches a worker,
 waits for its unhealthy exit status, patches only manager-owned image data for a

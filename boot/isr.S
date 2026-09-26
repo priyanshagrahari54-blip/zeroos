@@ -1835,7 +1835,23 @@ isr_common:
     retq
 
 1:
+    /*
+     * Bit 1 set: the IRQ path switched to another task's frame and published
+     * a per-CPU handoff marker for the outgoing task, whose kernel stack this
+     * CPU was still using. Move onto the destination frame first, then clear
+     * the marker (the frame is 16-byte aligned, so the call is ABI-aligned
+     * and uses only the destination stack below its frame). Untagged frames
+     * (no switch) never touch task_lock here.
+     */
+    test $2, %rax
+    jz 2f
+    andq $-3, %rax
     movq %rax, %rsp
+    call task_handoff_complete
+    jmp 3f
+2:
+    movq %rax, %rsp
+3:
     popq %r15
     popq %r14
     popq %r13

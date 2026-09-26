@@ -410,7 +410,12 @@ int input_wait(struct zeroos_input_event *event, uint64_t timeout_flags,
             return -ZEROOS_EBUSY;
         }
         spin_unlock(&input_lock);
-        if (wait_queue_commit(block_flags) != 0)
+        /* block_flags were sampled with input_lock held (IF=0); committing
+         * them would resume the woken task with interrupts disabled. Restore
+         * the caller's original interrupt state instead (same fix as ipc.c
+         * and process_child_wait_prepare). */
+        (void)block_flags;
+        if (wait_queue_commit(irq_flags) != 0)
             return -ZEROOS_EINTR;
     }
 }

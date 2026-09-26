@@ -258,11 +258,12 @@ static uint64_t build_child_elf(void) {
 /* A deliberately tiny statically linked init image. It is represented as a
  * real ET_EXEC ELF object so every boot exercises the same loader checks that
  * later service binaries will use. */
+#define INIT_FAILURE_STATUS_BASE 16U
+
 static uint64_t build_init_code(uint8_t *code) {
     uint64_t offset=0;
     uint64_t failure_jumps[32];
     uint32_t failure_jump_count=0;
-    uint64_t failure_label;
 
     code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_WRITE); offset+=4;
     code[offset++]=0xbf; put_u32(&code[offset],1); offset+=4;
@@ -770,14 +771,35 @@ static uint64_t build_init_code(uint8_t *code) {
     code[offset++]=0xcd; code[offset++]=0x80;
     code[offset++]=0xf4;
 
-    failure_label=offset;
-    for (uint32_t i=0; i<failure_jump_count; ++i)
-        put_u32(&code[failure_jumps[i]+2],
-                (uint32_t)(failure_label-(failure_jumps[i]+6ULL)));
-    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_EXIT); offset+=4;
-    code[offset++]=0xbf; put_u32(&code[offset],9); offset+=4;
-    code[offset++]=0xcd; code[offset++]=0x80;
-    code[offset++]=0xf4;
+    /* Each failed check jumps to its own stub so the exit status identifies
+     * both the check and the kernel's answer:
+     *   status = ((-rax) & 0xffffff) << 8 | (INIT_FAILURE_STATUS_BASE + i)
+     * where i is the check index in emission order and -rax is the errno
+     * returned by the failing syscall. Any nonzero status fails the init lifecycle gate.
+     * userspace_report_reap_failure() prints it for CI triage. */
+    {
+        uint64_t stubs[32];
+        uint64_t common_exit;
+        for (uint32_t i=0; i<failure_jump_count; ++i) {
+            stubs[i]=offset;
+            code[offset++]=0x89; code[offset++]=0xc7;             /* mov edi,eax */
+            code[offset++]=0xf7; code[offset++]=0xdf;             /* neg edi */
+            code[offset++]=0xc1; code[offset++]=0xe7; code[offset++]=0x08; /* shl edi,8 */
+            code[offset++]=0x81; code[offset++]=0xcf;             /* or edi,imm32 */
+            put_u32(&code[offset],INIT_FAILURE_STATUS_BASE+i); offset+=4;
+            code[offset++]=0xe9; put_u32(&code[offset],0); offset+=4; /* jmp exit */
+        }
+        common_exit=offset;
+        for (uint32_t i=0; i<failure_jump_count; ++i) {
+            put_u32(&code[failure_jumps[i]+2],
+                    (uint32_t)(stubs[i]-(failure_jumps[i]+6ULL)));
+            put_u32(&code[stubs[i]+14],
+                    (uint32_t)(common_exit-(stubs[i]+18ULL)));
+        }
+        code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_EXIT); offset+=4;
+        code[offset++]=0xcd; code[offset++]=0x80;
+        code[offset++]=0xf4;
+    }
     return offset;
 }
 
@@ -970,7 +992,6 @@ static uint64_t build_manager_code(uint8_t *code, uint64_t child_size) {
     uint64_t offset=0;
     uint64_t failure_jumps[8];
     uint32_t failure_jump_count=0;
-    uint64_t failure_label;
 
     code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_WRITE); offset+=4;
     code[offset++]=0xbf; put_u32(&code[offset],1); offset+=4;
@@ -1048,14 +1069,36 @@ static uint64_t build_manager_code(uint8_t *code, uint64_t child_size) {
     code[offset++]=0xcd; code[offset++]=0x80;
     code[offset++]=0xf4;
 
-    failure_label=offset;
-    for (uint32_t i=0; i<failure_jump_count; ++i)
-        put_u32(&code[failure_jumps[i]+2],
-                (uint32_t)(failure_label-(failure_jumps[i]+6ULL)));
-    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_EXIT); offset+=4;
-    code[offset++]=0xbf; put_u32(&code[offset],9); offset+=4;
-    code[offset++]=0xcd; code[offset++]=0x80;
-    code[offset++]=0xf4;
+    /* Each failed check jumps to its own stub so the exit status identifies
+     * both the check and the kernel's answer:
+     *   status = ((-rax) & 0xffffff) << 8 | (INIT_FAILURE_STATUS_BASE + i)
+     * where i is the check index in emission order and -rax is the errno
+     * returned by the failing syscall. The service manager must exit 0; any nonzero status fails its
+     * lifecycle gate.
+     * userspace_report_reap_failure() prints it for CI triage. */
+    {
+        uint64_t stubs[32];
+        uint64_t common_exit;
+        for (uint32_t i=0; i<failure_jump_count; ++i) {
+            stubs[i]=offset;
+            code[offset++]=0x89; code[offset++]=0xc7;             /* mov edi,eax */
+            code[offset++]=0xf7; code[offset++]=0xdf;             /* neg edi */
+            code[offset++]=0xc1; code[offset++]=0xe7; code[offset++]=0x08; /* shl edi,8 */
+            code[offset++]=0x81; code[offset++]=0xcf;             /* or edi,imm32 */
+            put_u32(&code[offset],INIT_FAILURE_STATUS_BASE+i); offset+=4;
+            code[offset++]=0xe9; put_u32(&code[offset],0); offset+=4; /* jmp exit */
+        }
+        common_exit=offset;
+        for (uint32_t i=0; i<failure_jump_count; ++i) {
+            put_u32(&code[failure_jumps[i]+2],
+                    (uint32_t)(stubs[i]-(failure_jumps[i]+6ULL)));
+            put_u32(&code[stubs[i]+14],
+                    (uint32_t)(common_exit-(stubs[i]+18ULL)));
+        }
+        code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_EXIT); offset+=4;
+        code[offset++]=0xcd; code[offset++]=0x80;
+        code[offset++]=0xf4;
+    }
     return offset;
 }
 
@@ -1590,6 +1633,24 @@ fail:
     return -1;
 }
 
+/* A probe thread publishes its final state (probe_state=2/3) and only then
+ * returns through the kernel-thread trampoline into thread_exit(). On SMP
+ * (or after a preemption between the two) the monitor can observe the final
+ * state before the probe has finished exiting, so zombie status must be
+ * awaited, not sampled. Bounded: a probe that never exits still fails the
+ * self-test instead of hanging the boot. */
+static int userspace_wait_probe_exit(const struct thread *thread,
+                                     const struct process *process) {
+    for (uint64_t i=0; i<100000ULL; ++i) {
+        if (thread && process &&
+            __atomic_load_n(&thread->state,__ATOMIC_ACQUIRE)==THREAD_ZOMBIE &&
+            __atomic_load_n(&process->state,__ATOMIC_ACQUIRE)==PROCESS_ZOMBIE)
+            return 0;
+        scheduler_yield();
+    }
+    return -1;
+}
+
 static void event_probe_entry(void *argument) {
     struct process *process=(struct process *)argument;
     atomic_u64_store(&event_probe_state,1);
@@ -1647,6 +1708,7 @@ static int userspace_event_blocking_self_test(void) {
         scheduler_yield();
     }
     if (atomic_u64_load(&event_probe_state)!=2 ||
+        userspace_wait_probe_exit(thread,event_probe_process)!=0 ||
         thread->state!=THREAD_ZOMBIE ||
         thread_reap(thread,&status)!=0 || status!=0 ||
         event_probe_process->state!=PROCESS_ZOMBIE ||
@@ -1754,6 +1816,7 @@ static int userspace_ipc_close_wakeup_self_test(void) {
         scheduler_yield();
     }
     if (atomic_u64_load(&ipc_close_probe_state)!=2 ||
+        userspace_wait_probe_exit(thread,ipc_close_probe_process)!=0 ||
         thread->state!=THREAD_ZOMBIE ||
         thread_reap(thread,&status)!=0 || status!=0 ||
         ipc_close_probe_process->state!=PROCESS_ZOMBIE ||
@@ -1871,6 +1934,7 @@ static int userspace_ipc_send_wakeup_self_test(void) {
         scheduler_yield();
     }
     if (atomic_u64_load(&ipc_send_probe_state)!=2 ||
+        userspace_wait_probe_exit(thread,ipc_send_probe_process)!=0 ||
         thread->state!=THREAD_ZOMBIE ||
         thread_reap(thread,&status)!=0 || status!=0 ||
         ipc_send_probe_process->state!=PROCESS_ZOMBIE ||
@@ -2482,6 +2546,16 @@ int user_thread_enter(struct thread *thread) {
     return -1;
 }
 
+/* Identifies which init-reap precondition failed (and the encoded init exit
+ * status, see INIT_FAILURE_STATUS_BASE) so CI logs name the failing check. */
+static void userspace_report_reap_failure(const char *stage, uint64_t status) {
+    serial_write_public("ZEROOS: init reap failed (stage=");
+    serial_write_public(stage);
+    serial_write_public(", exit_status=");
+    userspace_write_decimal(status);
+    serial_write_public(").\n");
+}
+
 int userspace_service_step(void) {
     uint64_t status=0;
     if (!init_started)
@@ -2495,15 +2569,26 @@ int userspace_service_step(void) {
         }
         if (!init_thread || init_thread->state!=THREAD_ZOMBIE)
             return 0;
-        if (thread_reap(init_thread,&status)!=0)
+        if (thread_reap(init_thread,&status)!=0) {
+            userspace_report_reap_failure("thread-reap",status);
             return -1;
-        if (!init_process || init_process->state!=PROCESS_ZOMBIE)
+        }
+        if (!init_process || init_process->state!=PROCESS_ZOMBIE) {
+            userspace_report_reap_failure("process-state",status);
             return -1;
-        if (vmm_activate_kernel()!=0 || process_reap(init_process,&status)!=0 ||
-            ipc_debug_validate()!=0)
+        }
+        if (vmm_activate_kernel()!=0 || process_reap(init_process,&status)!=0) {
+            userspace_report_reap_failure("process-reap",status);
             return -1;
-        if (status!=0)
+        }
+        if (ipc_debug_validate()!=0) {
+            userspace_report_reap_failure("ipc-validate",status);
             return -1;
+        }
+        if (status!=0) {
+            userspace_report_reap_failure("exit-status",status);
+            return -1;
+        }
         init_reaped=1;
         serial_write_public("ZEROOS: userspace negative syscall/fault/malformed-ELF probes passed.\n");
         serial_write_public("ZEROOS: init userspace process reaped cleanly.\n");
