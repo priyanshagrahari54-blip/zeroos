@@ -108,6 +108,18 @@ static void syscall_write(struct interrupt_frame *frame) {
     frame->rax=length;
 }
 
+static int syscall_child_final_thread_transition_pending(
+    const struct process *child) {
+    if (!child || child->live_thread_count || child->creating_threads ||
+        child->first_child || !child->first_thread)
+        return 0;
+    for (const struct thread *thread=child->first_thread; thread;
+         thread=thread->next_in_process)
+        if (thread->state!=THREAD_ZOMBIE)
+            return 1;
+    return 0;
+}
+
 static int syscall_reap_child(struct process *parent,
                                process_id_t pid,
                                uint64_t *status_out) {
@@ -498,11 +510,31 @@ void syscall_dispatch(struct interrupt_frame *frame) {
                 process_id_t child_pid=child->pid;
                 uint64_t status=0;
                 result=syscall_reap_child(process,child_pid,&status);
+                if (result==-ZEROOS_EBUSY &&
+                    !(frame->rdx&ZEROOS_WAIT_FLAG_NONBLOCK) &&
+                    syscall_child_final_thread_transition_pending(child)) {
+                    /* The final thread publishes process exit before its
+                     * thread object reaches the reapable state. Do not leak
+                     * this internal teardown window as EBUSY to a blocking
+                     * wait; sleep briefly and retry the child predicate. */
+                    if (timeout && (long long)(deadline-timer_ticks())<=0) {
+                        result=-ZEROOS_ETIMEDOUT;
+                        break;
+                    }
+                    if (task_sleep_ticks(1)!=0) {
+                        result=-ZEROOS_EINTR;
+                        break;
+                    }
+                    continue;
+                }
                 if (result==0 && status_address &&
                     copy_to_user(status_address,&status,sizeof(status))!=0)
                     result=-ZEROOS_EFAULT;
                 if (result==0)
                     frame->rax=child_pid;
+                else if (result==-ZEROOS_EBUSY &&
+                         (frame->rdx&ZEROOS_WAIT_FLAG_NONBLOCK))
+                    frame->rax=syscall_error(ZEROOS_EAGAIN);
                 else
                     frame->rax=syscall_result(result);
                 break;

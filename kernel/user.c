@@ -5,6 +5,7 @@
 #include "process.h"
 #include "thread.h"
 #include "task.h"
+#include "timer.h"
 #include "scheduler.h"
 #include "sync.h"
 #include "vmm.h"
@@ -1482,6 +1483,14 @@ static int userspace_child_wait_wakeup_self_test(void) {
     result=process_child_wait_prepare(parent,child_pid,&wait_flags);
     if (result<0 || (result==0 && wait_queue_commit(wait_flags)!=0))
         goto fail;
+    /* process_thread_exited publishes the process zombie immediately before
+     * thread_exit finishes publishing the thread zombie. The parent wake may
+     * therefore win the SMP race; wait for the reapability boundary rather
+     * than treating that valid ordering as a failed self-test. */
+    uint64_t exit_deadline=timer_ticks()+100U;
+    while (thread->state!=THREAD_ZOMBIE &&
+           (long long)(exit_deadline-timer_ticks())>0)
+        (void)task_sleep_ticks(1);
     if (child->state!=PROCESS_ZOMBIE || thread->state!=THREAD_ZOMBIE ||
         thread_reap(thread,&status)!=0 || status!=0 ||
         vmm_activate_kernel()!=0 || process_reap(child,&status)!=0 ||
