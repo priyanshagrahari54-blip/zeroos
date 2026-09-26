@@ -20,6 +20,27 @@ does not exist yet, the row says so — no claim is made without it.
 | REAL-HARDWARE | Physical run of the certified ISO on bare metal | Not available in this environment | **Not run — no claim** |
 
 | PERFORMANCE | Frame pacing/vsync accounting (display tests), governor tier/pressure/effects (governor tests), metrics recorder with interval histogram + percentiles wired into `zd_display_service_present`, FPS monitor frame-time percentiles and budget breaches | desktop suite + session link | Green (host); on-device percentiles pending |
+### Stage 5 part compliance matrix
+
+Authoritative prompt-part -> evidence map (see also the binding
+inventory in `ARCHITECTURE.md` for pending live integrations):
+
+| Part | Delivered (host-tested unless noted) | Honest limits |
+| --- | --- | --- |
+| A Graphics/desktop | display/compositor/window/input/wm workspaces+snap+DPI, bar, launcher, Universal Search pipeline + providers, settings schema, notifications, a11y tree, i18n en/hi, lifecycle, watchdog, overview, file manager, terminal core, clipboard, downloads, perf centre, UI condition contract | shell chrome *rendering* and app-framework UI pending; multi-GPU single path |
+| B Security/recovery/updates | sandbox (fail-closed), firewall (first-match), capability, vault (AEAD), crypto (RFC vectors), update 9-state + payload verify + rollback, snapshots, privacy centre | kernel enforcement hooks + PKI pending |
+| C Windows compat | pe/compat suites (107 checks), loader architecture documented | no Windows claim; runtime pieces pending |
+| D Android runtime | AOSP 14 baseline documented | capability absent - not run, no claim |
+| E Browser | tab lifecycle + crash recovery + nav/url | renderer binding pending (documented) |
+| F AI platform | broker (dormant/permission/demand-driven/wipe-on-drain), separate from Forge AI | no backend linked - injection points only |
+| G Study Center | PDF subset, notes, formulas, OCR contract, flashcards, focus sessions, dictionary, AI study assistant | OCR engine pending (-95); PDF filters/encryption -95; dictionary corpus binds later |
+| H Media | lawful-source gates, rights, DRM refusal | decoder backends pending; no DRM bypass exists |
+| I Gaming | profiles, FPS monitor, overlay policy, controllers contract, low-latency, cooperative yield | controller hardware pending |
+| J Cloud/device | pairing grants, offline queue, per-bit permissions | transports pending |
+| K Automation | permission-first event/action engine, bounded, auditable | event sources bind in session |
+| L Performance/governor | metrics percentiles, pressure ladder, thermal tiers, low-power/reduced-motion | on-device percentiles pending |
+| M Validation | section 1 + part M coverage map below | REAL-HARDWARE open |
+
 ### Part M checklist coverage map
 
 Each named "Validate" item from `STAGE_5_IMPLEMENTATION_PROMPT.md`
