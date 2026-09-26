@@ -210,7 +210,7 @@ uint64_t interrupt_dispatch(struct interrupt_frame *frame) {
 
     if (frame->vector==ZEROOS_SCHEDULER_OFFLINE_VECTOR) {
         if (cpu_current_id()==0) {
-            serial_write_public("ZEROOS PANIC: BSP received CPU-offline IPI.\\n");
+            serial_write_public("ZEROOS PANIC: BSP received CPU-offline IPI.\n");
             for (;;) __asm__ volatile ("cli; hlt");
         }
         result=task_cpu_offline_from_interrupt(frame);

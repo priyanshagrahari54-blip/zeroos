@@ -122,6 +122,22 @@ owner-cancel path actually kicking the owner CPU.  Earlier `772a923`
 remains on record as proof that both-red *can* be pure flake — 0/24
 versus an immediate return to green is what separated the two.
 
+Follow-up (re-land without swallowing wakes): the guard's goal, no remote
+pick of a task inside its prepare→commit window, is now met on the picker
+side. `task_wake()` is unchanged: it always sets RUNNABLE, enqueues and
+kicks. `runqueue_pick_locked()` refuses any candidate that is current on
+another CPU, and the owner's existing `task_block_locked()` RUNNABLE
+branch dequeues itself and cancels the block. No wake is dropped on any
+exit path, and no owner kick is needed because the owner is already
+running with IRQs off and reaches the cancel branch. Confound on record:
+`dedb23f` ran while the kernel was still built without
+`-mgeneral-regs-only`, so its XMM-clobber exposure depended on compiler
+code generation around the changed function. Still, the 0/24 streak is
+not attributed to that confound without evidence.
+Fixed in the same change: an idle AP could acknowledge CPU-offline from
+its idle loop before withdrawing TLB/cpu-local/SMP online state, which
+is the `98ba0ca` `evacuation failed (stage=7)` row.
+
 ## 4. Stage 5 part support matrix
 
 | Part | Capability | Evidence | Support status |

@@ -264,6 +264,20 @@ static int task_current_owner(const struct task *task) {
     return 0;
 }
 
+/* True while `task` is the current task of a CPU other than `cpu`. Such a
+ * task may already be RUNNABLE and queued - a remote task_wake() can land
+ * inside its task_prepare_block()..task_block_locked() window, where it is
+ * still executing on its owner CPU - but its saved context is stale until the
+ * owner either cancels the block (and dequeues itself) or switches away.
+ * Pickers therefore never select it for a different CPU. */
+static int task_current_on_other_cpu(const struct task *task, uint32_t cpu) {
+    for (uint32_t other=0; other<ZEROOS_MAX_CPUS; ++other)
+        if (other!=cpu && cpu_scheduler_started[other] &&
+            __atomic_load_n(&current_tasks[other],__ATOMIC_ACQUIRE)==task)
+            return 1;
+    return 0;
+}
+
 /*
  * Any CPU may be inside its own context_switch_ex() handoff while this CPU
  * validates under task_lock: handoff_tasks[cpu] is published under task_lock
@@ -856,10 +870,13 @@ static struct task *runqueue_pick_locked(uint32_t queue_cpu,
          * unwinding the IRQ epilogue). Resuming it elsewhere before the
          * owner has switched stacks would put two CPUs on one stack. It
          * stays queued; the owner clears the marker within a few
-         * instructions and a later pick selects it. */
+         * instructions and a later pick selects it. The same holds for a
+         * task that is still current on another CPU (woken inside its
+         * two-phase block window): the wake is kept, the owner resolves it. */
         if (candidate->state!=TASK_RUNNABLE ||
             !task_can_run_on_cpu(candidate,execution_cpu) ||
-            task_handoff_in_flight(candidate))
+            task_handoff_in_flight(candidate) ||
+            task_current_on_other_cpu(candidate,execution_cpu))
             continue;
         uint8_t priority=effective_priority(candidate);
         if (!selected || priority>selected_priority) {
@@ -1789,6 +1806,7 @@ int task_cpu_offline_pending(void) {
 void task_cpu_offline_park(void) {
     uint32_t cpu=task_cpu_index();
     struct task *idle;
+    uint64_t flags;
 
     if (cpu==0 || cpu>=ZEROOS_MAX_CPUS)
         return;
@@ -1797,10 +1815,29 @@ void task_cpu_offline_park(void) {
         current_task!=idle)
         return;
 
+    /* The idle loop can observe the published request before the offline
+     * IPI is serviced (any interrupt ends its hlt). The acknowledgement
+     * certifies that TLB, cpu-local and SMP ownership have all been
+     * released, so perform that transition here when the interrupt path has
+     * not done it yet. A pending TLB shootdown targeting this CPU makes the
+     * unregister fail; interrupts are re-enabled so the shootdown can be
+     * serviced, and the idle loop retries. */
+    flags=task_irq_save();
+    if (__atomic_load_n(&cpu_local_for_id(cpu)->online,__ATOMIC_ACQUIRE)) {
+        if (tlb_unregister_current_cpu(cpu)!=0) {
+            task_irq_restore(flags);
+            return;
+        }
+        if (cpu_mark_offline(cpu)!=0 || smp_mark_cpu_offline(cpu)!=0) {
+            serial_write_public("ZEROOS PANIC: AP CPU-offline ownership transition failed.\n");
+            for (;;) __asm__ volatile ("cli; hlt");
+        }
+    }
+
     __atomic_store_n(&cpu_offline_acknowledged[cpu],1,__ATOMIC_RELEASE);
     serial_write_public("ZEROOS: AP scheduler CPU quiesced and parked (cpu=");
     task_write_u64(cpu);
-    serial_write_public(").\\n");
+    serial_write_public(").\n");
     for (;;) {
         __asm__ volatile ("cli; hlt" : : : "memory");
     }
@@ -1821,7 +1858,7 @@ uint64_t task_cpu_offline_from_interrupt(struct interrupt_frame *frame) {
     if (tlb_unregister_current_cpu(cpu)!=0)
         return (uint64_t)frame;
     if (cpu_mark_offline(cpu)!=0 || smp_mark_cpu_offline(cpu)!=0) {
-        serial_write_public("ZEROOS PANIC: AP CPU-offline ownership transition failed.\\n");
+        serial_write_public("ZEROOS PANIC: AP CPU-offline ownership transition failed.\n");
         for (;;) __asm__ volatile ("cli; hlt");
     }
     current->need_resched=1;
@@ -1886,7 +1923,7 @@ int task_cpu_offline(uint32_t cpu_id) {
                             __ATOMIC_ACQUIRE))
             break;
         if (timer_ticks()-start>100ULL) {
-            serial_write_public("ZEROOS: AP CPU-offline acknowledgement timed out.\\n");
+            serial_write_public("ZEROOS: AP CPU-offline acknowledgement timed out.\n");
             /* Keep the request published: cancelling a transition after the
              * AP has removed its TLB ownership would be unsafe. */
             return -6;
