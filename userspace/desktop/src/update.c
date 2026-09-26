@@ -3,6 +3,7 @@
  * moves the machine to FAILED or ROLLING_BACK in one step, never a
  * half-applied intermediate. */
 #include <zeroos/desktop/update.h>
+#include "crypto.h"
 
 static const char *state_names[] = {
     "idle", "downloading", "verifying", "staging", "preflight",
@@ -204,4 +205,34 @@ const char *zd_update_state_name(const struct zd_update *u) {
                                                 sizeof(state_names[0])))
         return "?";
     return state_names[u->state];
+}
+
+/* AEAD payload integrity check — see update.h for the contract. */
+int zd_update_verify_payload(const uint8_t key[32], const uint8_t nonce[12],
+                             const char *version, const uint8_t *payload,
+                             uint32_t payload_len, const uint8_t tag[16]) {
+    uint8_t scratch[ZD_UPDATE_VERIFY_MAX];
+    uint32_t vlen = 0, out_len;
+    int r;
+    if (!key || !nonce || !version || !payload || !tag)
+        return -22;
+    if (payload_len == 0 || payload_len > ZD_UPDATE_VERIFY_MAX)
+        return -22;
+    while (version[vlen] && vlen < 64u)
+        ++vlen;
+    if (vlen == 0 || vlen >= 64u)
+        return -22;
+    out_len = 0;
+    r = zeroos_aead_decrypt(key, nonce, (const uint8_t *)version, vlen,
+                            payload, payload_len, tag, scratch);
+    /* scratch is transient; wipe regardless of outcome */
+    {
+        uint32_t i;
+        for (i = 0; i < payload_len; ++i)
+            scratch[i] = 0;
+    }
+    (void)out_len;
+    if (r != ZCRYPTO_OK)
+        return -3;
+    return 0;
 }

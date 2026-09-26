@@ -24,7 +24,7 @@ does not exist yet, the row says so — no claim is made without it.
 
 | Suite | Command | Assertions | Failures |
 |---|---|---|---|
-| Desktop modules (display, compositor, window, input, a11y, i18n, search, settings, notify, lifecycle, watchdog, governor, automation, browser, AI, bar, launcher, capability, metrics, update, url, study, fps, snapshot, vault, nav, firewall, sandbox, stress, integration) | `make desktop-check` | 37342 | 0 |
+| Desktop modules (display, compositor, window, input, a11y, i18n, search, settings, notify, lifecycle, watchdog, governor, automation, browser, AI, bar, launcher, capability, metrics, update, url, study, fps, snapshot, vault, nav, firewall, sandbox, clipboard, stress, integration) | `make desktop-check` | 37416 | 0 |
 | Windows compatibility core (lifecycle/paths/registry/DLL + PE validator) | `make compat-check` | 107 | 0 |
 | Hardware/driver cores (incl. crypto RFC vectors) | `make hardware-core-test` | per-suite PASS | 0 |
 | Public userspace ABI | `make userspace-abi-check`, `python3 userspace/tests/abi_consistency.py` | PASS | 0 |
@@ -65,8 +65,8 @@ versus an immediate return to green is what separated the two.
 | Part | Capability | Evidence | Support status |
 |---|---|---|---|
 | A | Graphics service split + window system | display/compositor/window/input suites, session CI milestones | Supported (userspace services; GPU beyond scanout not yet) |
-| A | Shell (ZERO Bar, launcher, search, notify, settings, overview) | bar/launcher/search/notify/settings suites | Core supported; chrome rendering pending |
-| B | Security/recovery/updates | crypto suite (linked into vault), watchdog/lifecycle, capability gate (wired into launcher/bar), transactional update machine, AEAD vault (tamper/wrong-key negatives), snapshot manager, firewall engine (first-match/default-deny/app+port+IP ranges/established-only), sandbox profiles (fail-closed class gates + audit ring) | Mostly supported: kernel packet-path binding (firewall) and enforcement hooks (sandbox seccomp/namespace) pending |
+| A | Shell (ZERO Bar, launcher, search, notify, settings, clipboard, overview) | bar/launcher/search/notify/settings/clipboard suites | Core supported; chrome rendering pending |
+| B | Security/recovery/updates | crypto suite (linked into vault + update verify), watchdog/lifecycle, capability gate, transactional update machine with AEAD payload verification (tamper/version-replay/wrong-key negatives), AEAD vault, snapshot manager, firewall engine, sandbox profiles | Mostly supported: kernel packet-path binding (firewall), enforcement hooks (sandbox) and asymmetric update key distribution pending |
 | C | Windows compatibility | `make compat-check` (incl. PE validator) | Core supported (lifecycle/paths/registry/DLL/image validation); API translation slice pending |
 | D | Android runtime | Baseline documented (AOSP 14/API 34/arm64-v8a) + tested-matrix policy in `ARCHITECTURE.md` §18; tested matrix empty | Contract + baseline documented — **no runtime, no claim** |
 | E | Browser tabs lifecycle | browser suite (16-tab ladder, crash recovery), strict URL parser, navigation controller (history/back/forward/blocking) | Core supported; engine/UI pending |

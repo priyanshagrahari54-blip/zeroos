@@ -1,6 +1,7 @@
 /* Transactional update state machine host tests (part B). */
 #include "test_harness.h"
 #include <zeroos/desktop/update.h>
+#include "crypto.h"
 
 struct hook_log {
     int stage_apply, activate, rollback, commit;
@@ -174,4 +175,47 @@ void zd_test_update_suite(void) {
     /* state names are always readable */
     zd_update_init(&u, 0);
     ZD_CHECK(zd_update_state_name(&u) != 0);
+
+    /* AEAD payload verification (real crypto, no mocks) */
+    {
+        uint8_t key[32], nonce[12], tag[16], payload[64], out_buf[64];
+        uint32_t i;
+        for (i = 0; i < 32; ++i)
+            key[i] = (uint8_t)(i * 3 + 7);
+        for (i = 0; i < 12; ++i)
+            nonce[i] = (uint8_t)(0x40 + i);
+        for (i = 0; i < sizeof(payload); ++i)
+            payload[i] = (uint8_t)(i ^ 0x5A);
+        /* producer side: encrypt with version bound as AAD */
+        ZD_CHECK(zeroos_aead_encrypt(key, nonce,
+                                     (const uint8_t *)"5.2.0", 5,
+                                     payload, sizeof(payload),
+                                     out_buf, tag) == 0);
+        /* intact bundle verifies */
+        ZD_CHECK(zd_update_verify_payload(key, nonce, "5.2.0", out_buf,
+                                          sizeof(payload), tag) == 0);
+        /* tampered payload fails */
+        out_buf[10] ^= 0x01;
+        ZD_CHECK(zd_update_verify_payload(key, nonce, "5.2.0", out_buf,
+                                          sizeof(payload), tag) == -3);
+        out_buf[10] ^= 0x01;
+        /* wrong version (AAD mismatch) fails — no cross-version replay */
+        ZD_CHECK(zd_update_verify_payload(key, nonce, "5.2.1", out_buf,
+                                          sizeof(payload), tag) == -3);
+        /* wrong key fails */
+        key[0] ^= 0xFF;
+        ZD_CHECK(zd_update_verify_payload(key, nonce, "5.2.0", out_buf,
+                                          sizeof(payload), tag) == -3);
+        key[0] ^= 0xFF;
+        /* bad args and oversize */
+        ZD_CHECK(zd_update_verify_payload(0, nonce, "5.2.0", out_buf,
+                                          sizeof(payload), tag) == -22);
+        ZD_CHECK(zd_update_verify_payload(key, nonce, "5.2.0", out_buf,
+                                          0, tag) == -22);
+        ZD_CHECK(zd_update_verify_payload(key, nonce, "", out_buf,
+                                          sizeof(payload), tag) == -22);
+        ZD_CHECK(zd_update_verify_payload(key, nonce, "5.2.0", out_buf,
+                                          ZD_UPDATE_VERIFY_MAX + 1,
+                                          tag) == -22);
+    }
 }

@@ -324,6 +324,15 @@ Implemented (this stage):
   audio/device classes), fail-closed checks for unknown profiles and
   classes, per-profile denial counters and an audit ring —
   host-tested; seccomp/namespace enforcement binds later.
+- Clipboard service (`userspace/desktop/src/clipboard.c`): bounded
+  11-entry history with owner/format metadata, sensitive clippings
+  that become current but never enter history, current-excluding
+  depth cycling, eviction of oldest and a clear-all privacy wipe —
+  host-tested.
+- Update payload verification (`zd_update_verify_payload`): AEAD
+  with producer nonce, injected update key and the version bound as
+  AAD — tamper, cross-version replay and wrong-key all return the
+  explicit failure (section 20).
 
 Not yet implemented (contracts defined, explicit in PHASES.md):
 - Shell UI chrome (ZERO Bar, launcher, overview surfaces) on top of the

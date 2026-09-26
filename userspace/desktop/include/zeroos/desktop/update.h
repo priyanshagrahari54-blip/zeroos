@@ -69,6 +69,16 @@ int zd_update_begin(struct zd_update *u, const char *version);
  * (mapped to FAILED/ROLLING_BACK per stage). */
 int zd_update_event(struct zd_update *u, int event);
 int zd_update_state(const struct zd_update *u);
+/* Payload integrity verification for the VERIFYING stage: AEAD
+ * (ChaCha20-Poly1305) with a producer-supplied 12-byte nonce and the
+ * injected 32-byte update key; version string is bound as AAD so a
+ * bundle cannot be replayed across versions.  0 = intact, -3 = tampered
+ * or wrong key/version, -22 = bad args/oversize (bounded to 4 KiB —
+ * larger payloads are chunk-verified by the fetcher). */
+#define ZD_UPDATE_VERIFY_MAX 4096u
+int zd_update_verify_payload(const uint8_t key[32], const uint8_t nonce[12],
+                             const char *version, const uint8_t *payload,
+                             uint32_t payload_len, const uint8_t tag[16]);
 const char *zd_update_state_name(const struct zd_update *u);
 int zd_update_can_cancel(const struct zd_update *u);
 

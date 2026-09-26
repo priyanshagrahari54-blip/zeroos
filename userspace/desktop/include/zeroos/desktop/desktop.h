@@ -37,6 +37,7 @@
 #include <zeroos/desktop/nav.h>
 #include <zeroos/desktop/firewall.h>
 #include <zeroos/desktop/sandbox.h>
+#include <zeroos/desktop/clipboard.h>
 #include <zeroos/desktop/search.h>
 #include <zeroos/desktop/settings.h>
 #include <zeroos/desktop/notify.h>
