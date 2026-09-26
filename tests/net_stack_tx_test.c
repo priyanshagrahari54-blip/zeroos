@@ -10,6 +10,30 @@ struct capture {
     int fail;
 };
 
+struct received_datagram {
+    uint32_t count;
+    uint16_t source_port, destination_port, length;
+    uint8_t payload[32];
+};
+
+static int receive_udp(void *context, uint8_t family, uint32_t interface_index,
+                       const uint8_t source[16], const uint8_t destination[16],
+                       uint16_t source_port, uint16_t destination_port,
+                       const uint8_t *payload, uint16_t length) {
+    struct received_datagram *received = (struct received_datagram *)context;
+    (void)source;
+    (void)destination;
+    assert(family == NET_STACK_FAMILY_IPV4 && interface_index == 2);
+    assert(length <= sizeof(received->payload));
+    received->count++;
+    received->source_port = source_port;
+    received->destination_port = destination_port;
+    received->length = length;
+    if (length)
+        memcpy(received->payload, payload, length);
+    return 0;
+}
+
 static uint64_t lock_noop(void *context) { (void)context; return 0; }
 static void unlock_noop(void *context, uint64_t state) {
     (void)context; (void)state;
@@ -52,8 +76,10 @@ static int udp_checksum_valid(const uint8_t *ip, const uint8_t *udp,
 
 int main(void) {
     struct capture capture = {0};
-    struct netif interface;
-    struct net_stack stack;
+    struct netif interface, receiver_interface;
+    struct net_stack stack, receiver_stack;
+    struct received_datagram received = {0};
+    struct net_firewall_rule allow_udp = {0};
     const uint8_t local_mac[6] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x01 };
     const uint8_t remote_mac[6] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x02 };
     const uint8_t payload[] = { 'z', 'e', 'r', 'o', 'o', 's', '!' };
@@ -89,6 +115,22 @@ int main(void) {
     assert((udp[6] || udp[7]) && udp_checksum_valid(ip, udp, 15));
     assert(memcmp(udp + 8, payload, sizeof(payload)) == 0);
 
+    /* Exercise the emitted wire frame through a separately initialized RX
+     * stack, including checksum validation and UDP callback delivery. */
+    assert(netif_init(&receiver_interface, "rx0", 2, remote_mac, 1500,
+                      &capture, transmit, lock_noop, unlock_noop) == 0);
+    assert(netif_set_link(&receiver_interface, 1) == 0);
+    net_stack_init(&receiver_stack, receive_udp, &received);
+    assert(net_stack_set_ipv4_address(&receiver_stack, remote_ip) == 0);
+    allow_udp.protocol = NET_PROTO_UDP;
+    allow_udp.action = NET_ACTION_ALLOW;
+    assert(net_firewall_add(&receiver_stack.ipv4_firewall, &allow_udp) == 0);
+    assert(net_stack_input(&receiver_stack, &receiver_interface, capture.frame,
+                           capture.length) == 0);
+    assert(received.count == 1 && received.source_port == 49152 &&
+           received.destination_port == 53 && received.length == sizeof(payload));
+    assert(memcmp(received.payload, payload, sizeof(payload)) == 0);
+
     /* Zero-length datagrams are legal, and still get a nonzero checksum. */
     assert(net_stack_send_udp_ipv4(&stack, &interface, remote_mac, remote_ip,
                                    49152, 7, 0, 0) == 0);
@@ -96,6 +138,10 @@ int main(void) {
     udp = ip + 20U;
     assert(capture.length == 42 && udp[4] == 0 && udp[5] == 8);
     assert((udp[6] || udp[7]) && udp_checksum_valid(ip, udp, 8));
+    assert(net_stack_input(&receiver_stack, &receiver_interface, capture.frame,
+                           capture.length) == 0);
+    assert(received.count == 2 && received.source_port == 49152 &&
+           received.destination_port == 7 && received.length == 0);
 
     uint8_t too_large[1473] = {0};
     assert(net_stack_send_udp_ipv4(&stack, &interface, remote_mac, remote_ip,
