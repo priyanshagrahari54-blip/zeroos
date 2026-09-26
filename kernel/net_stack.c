@@ -3,6 +3,12 @@
 #include "net_l2.h"
 #include "net_transport.h"
 
+static int ipv4_unicast_address(uint32_t address) {
+    uint8_t first = (uint8_t)(address >> 24);
+    return address != 0 && address != 0xffffffffU && first != 0 &&
+           first != 127 && first < 224;
+}
+
 static uint16_t read_be16(const uint8_t *p) {
     return (uint16_t)(((uint16_t)p[0] << 8) | p[1]);
 }
@@ -63,8 +69,7 @@ void net_stack_init(struct net_stack *stack, net_stack_udp_fn udp_receive,
 }
 
 int net_stack_set_ipv4_address(struct net_stack *stack, uint32_t address) {
-    if (!stack || address == 0 || address == 0xffffffffU ||
-        (address & 0xf0000000U) == 0xe0000000U)
+    if (!stack || !ipv4_unicast_address(address))
         return -1;
     stack->ipv4_local_address = address;
     stack->ipv4_configured = 1;
@@ -193,4 +198,97 @@ int net_stack_poll(struct net_stack *stack, struct netif *interface,
         ++processed;
     }
     return (int)processed;
+}
+
+static void write_be16(uint8_t *p, uint16_t value) {
+    p[0] = (uint8_t)(value >> 8);
+    p[1] = (uint8_t)value;
+}
+
+static uint16_t checksum_finish(uint32_t sum) {
+    sum = fold_checksum(sum);
+    return (uint16_t)~sum;
+}
+
+static int mac_is_usable_unicast(const uint8_t mac[6]) {
+    uint8_t any = 0;
+    for (uint32_t i = 0; i < 6U; ++i)
+        any |= mac[i];
+    return any && !(mac[0] & 1U);
+}
+
+int net_stack_send_udp_ipv4(struct net_stack *stack, struct netif *interface,
+                            const uint8_t destination_mac[6],
+                            uint32_t destination_address,
+                            uint16_t source_port, uint16_t destination_port,
+                            const uint8_t *payload, uint16_t payload_length) {
+    uint8_t frame[NETIF_FRAME_MAX];
+    uint8_t *ip = frame + 14U;
+    uint8_t *udp = ip + 20U;
+    uint32_t udp_length = 8U + payload_length;
+    uint32_t ip_length = 20U + udp_length;
+    uint32_t frame_length = 14U + ip_length;
+    if (!stack || !interface || !destination_mac ||
+        !stack->ipv4_configured || !interface->transmit ||
+        !interface->lock || !interface->unlock ||
+        !mac_is_usable_unicast(destination_mac) ||
+        !mac_is_usable_unicast(interface->address) ||
+        !ipv4_unicast_address(destination_address) ||
+        destination_address == stack->ipv4_local_address ||
+        !source_port || !destination_port ||
+        (payload_length && !payload)) {
+        if (stack)
+            stack->stats.transmit_errors++;
+        return -1;
+    }
+    if (ip_length > interface->mtu || frame_length > sizeof(frame) ||
+        ip_length > 0xffffU) {
+        stack->stats.transmit_errors++;
+        return -2;
+    }
+
+    for (uint32_t i = 0; i < 6U; ++i) {
+        frame[i] = destination_mac[i];
+        frame[6U + i] = interface->address[i];
+    }
+    write_be16(frame + 12U, NET_STACK_ETHERTYPE_IPV4);
+    for (uint32_t i = 0; i < 20U; ++i)
+        ip[i] = 0;
+    ip[0] = 0x45U;
+    write_be16(ip + 2U, (uint16_t)ip_length);
+    write_be16(ip + 6U, 0x4000U); /* DF: this primitive never fragments. */
+    ip[8] = 64U;
+    ip[9] = NET_STACK_PROTOCOL_UDP;
+    ip[12] = (uint8_t)(stack->ipv4_local_address >> 24);
+    ip[13] = (uint8_t)(stack->ipv4_local_address >> 16);
+    ip[14] = (uint8_t)(stack->ipv4_local_address >> 8);
+    ip[15] = (uint8_t)stack->ipv4_local_address;
+    ip[16] = (uint8_t)(destination_address >> 24);
+    ip[17] = (uint8_t)(destination_address >> 16);
+    ip[18] = (uint8_t)(destination_address >> 8);
+    ip[19] = (uint8_t)destination_address;
+    write_be16(ip + 10U, checksum_finish(checksum_add(0, ip, 20U)));
+
+    write_be16(udp, source_port);
+    write_be16(udp + 2U, destination_port);
+    write_be16(udp + 4U, (uint16_t)udp_length);
+    udp[6] = udp[7] = 0;
+    for (uint32_t i = 0; i < payload_length; ++i)
+        udp[8U + i] = payload[i];
+    uint32_t sum = checksum_add(0, ip + 12U, 8U);
+    uint8_t pseudo_tail[4] = { 0, NET_STACK_PROTOCOL_UDP,
+                               (uint8_t)(udp_length >> 8),
+                               (uint8_t)udp_length };
+    sum = checksum_add(sum, pseudo_tail, sizeof(pseudo_tail));
+    sum = checksum_add(sum, udp, udp_length);
+    uint16_t udp_checksum = checksum_finish(sum);
+    write_be16(udp + 6U, udp_checksum ? udp_checksum : 0xffffU);
+
+    int result = netif_send(interface, frame, frame_length);
+    if (result != 0) {
+        stack->stats.transmit_errors++;
+        return result;
+    }
+    stack->stats.udp_transmitted++;
+    return 0;
 }

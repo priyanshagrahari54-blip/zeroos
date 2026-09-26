@@ -178,6 +178,8 @@ hardware-core-test: | $(BUILD)
 	$(BUILD)/netif-test
 	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/net_stack_test.c kernel/net_stack.c kernel/netif.c kernel/net_l2.c kernel/net_core.c kernel/net_ipv6.c kernel/net_transport.c kernel/net_socket.c -o $(BUILD)/net-stack-test
 	$(BUILD)/net-stack-test
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/net_stack_tx_test.c kernel/net_stack.c kernel/netif.c kernel/net_l2.c kernel/net_core.c kernel/net_ipv6.c kernel/net_transport.c -o $(BUILD)/net-stack-tx-test
+	$(BUILD)/net-stack-tx-test
 	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/net_socket_test.c kernel/net_socket.c -o $(BUILD)/net-socket-test
 	$(BUILD)/net-socket-test
 	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/crypto_test.c kernel/crypto.c -o $(BUILD)/crypto-core-test
