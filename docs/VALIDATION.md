@@ -58,7 +58,7 @@ The authoritative per-core binding inventory (host-tested vs pending live integr
 
 | Suite | Command | Assertions | Failures |
 |---|---|---|---|
-| Desktop modules (display, compositor, window, input, a11y, i18n, search, settings, notify, lifecycle, watchdog, governor, automation, browser, AI, bar, launcher, capability, metrics, update, url, study, fps, snapshot, vault, nav, firewall, sandbox, clipboard, downloads, providers, perfcenter, fault, soak, pdf, media, gaming, eco, snapshot-bind, privacy, term, filemgr, formula, ocr, overview, notes, dict, assist, stress, integration) | `make desktop-check` | 120837 | 0 |
+| Desktop modules (display, compositor, window, input, a11y, i18n, search, settings, notify, lifecycle, watchdog, governor, automation, browser, AI, bar, launcher, capability, metrics, update, url, study, fps, snapshot, vault, nav, firewall, sandbox, clipboard, downloads, providers, perfcenter, fault, soak, pdf, media, gaming, eco, snapshot-bind, privacy, term, filemgr, formula, ocr, overview, notes, dict, assist, ui, stress, integration) | `make desktop-check` | 120907 | 0 |
 | Windows compatibility core (lifecycle/paths/registry/DLL + PE validator) | `make compat-check` | 107 | 0 |
 | Hardware/driver cores (incl. crypto RFC vectors) | `make hardware-core-test` | per-suite PASS | 0 |
 | Public userspace ABI | `make userspace-abi-check`, `python3 userspace/tests/abi_consistency.py` | PASS | 0 |
@@ -113,6 +113,7 @@ versus an immediate return to green is what separated the two.
 | J | Cloud/device ecosystem | Offline-first sync queue with explicit per-capability permissions (pairing grants nothing, grant/revoke exact bits, revoke drops dependent pending work, offline flush sends nothing, online flush re-checks pairing+perms), bounded devices/queue | Policy core supported (host-tested); transport + real devices pending |
 | K | Automation | automation suite (32 rules, audit ring, permission-first) | Supported |
 | L | Performance/resource governance | governor suite (tiers/pressure/effects) + metrics recorder (counters, interval histogram, p50/p99 reads) wired into the display present path | Core supported; on-device percentiles pending |
+| A-x | UI condition contract | `ui.h` shared NORMAL/LOADING/EMPTY/ERROR/OFFLINE/PERMISSION_DENIED/LOW_RESOURCE + mode flags, i18n `state.*` labels (en+hi, zero fallback), errno-to-condition map, per-surface adoption table (no surface redesign) | `desktop-check` test_ui suite | Green |
 | M | Validation | This document | Evidence ledger live; real-hardware row open |
 
 ## 5. Rules for extending this ledger

@@ -53,6 +53,7 @@
 #include <zeroos/desktop/overview.h>
 #include <zeroos/desktop/notes.h>
 #include <zeroos/desktop/dict.h>
+#include <zeroos/desktop/ui.h>
 #include <zeroos/desktop/search.h>
 #include <zeroos/desktop/settings.h>
 #include <zeroos/desktop/notify.h>

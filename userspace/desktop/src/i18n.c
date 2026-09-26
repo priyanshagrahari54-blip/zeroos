@@ -52,6 +52,7 @@ static const struct zd_i18n_entry shell_catalog[] = {
     {"vault.auth_failed", "Secret verification failed",
      "रहस्य सत्यापन विफल रहा"},
     {"nav.load_failed", "Page failed to load", "पेज लोड नहीं हो सका"},
+    {"state.normal", "Ready", "तैयार"},
     {"state.loading", "Loading…", "लोड हो रहा है…"},
     {"state.empty", "Nothing here yet", "यहाँ अभी कुछ नहीं है"},
     {"state.error", "Something went wrong", "कुछ गड़बड़ हो गई"},

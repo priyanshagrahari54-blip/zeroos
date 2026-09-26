@@ -463,6 +463,33 @@ Not yet implemented (contracts defined, explicit in PHASES.md):
   wheel/extended aux protocols, USB HID devices, cloud/device services
   (offline-first behavior, explicit per-device permissions).
 
+### UI condition contract (part A cross-cutting)
+
+`ui.h` owns the shared condition vocabulary mandated by the prompt:
+NORMAL / LOADING / EMPTY / ERROR / OFFLINE / PERMISSION_DENIED /
+LOW_RESOURCE, plus REDUCED_MOTION / KEYBOARD_NAV / LOCALIZED overlay
+modes that never replace the condition.  Labels are `state.*` catalog
+keys resolved through the i18n layer (English + Hindi, zero
+fallbacks enforced by tests), and negative `ZD_E*` returns map to
+conditions with a documented table.  Working per-surface state
+machines are NOT redesigned - they map into the contract:
+
+| Surface state machine | Maps to conditions |
+| --- | --- |
+| filemgr `hist_state` 0/1/2/3 | EMPTY / LOADING / NORMAL / ERROR |
+| nav `ZD_NAV_*` | EMPTY / LOADING / NORMAL / ERROR |
+| display `ZD_DISPLAY_*` | ATTACHING->LOADING, LIVE->NORMAL, DEGRADED/SUSPENDED->ERROR |
+| downloads `ZD_DL_*` | QUEUED/RUNNING->LOADING, DONE/CANCELED->NORMAL, FAILED->ERROR |
+| launcher `ZD_LAUNCH_*` | PENDING/RUNNING->LOADING, IDLE->NORMAL, FAILED->ERROR |
+| snapshot `ZD_SNAP_*` | EMPTY->EMPTY, CREATING->LOADING, READY->NORMAL, FAILED->ERROR |
+| notify lifecycle ACTIVE/DEFERRED | NORMAL while visible (domain lifecycle stays) |
+| eco connectivity offline | OFFLINE |
+| term parser `pstate` | internal parser phase - not a UI condition |
+
+Surfaces adopt incrementally; the contract + mapping is tested
+(`test_ui.c`: transitions, mode flags, interactivity matrix, errno
+mapping, localized labels for all seven conditions).
+
 ### Stage 5 binding inventory (production status)
 
 Every desktop core introduced in Stage 5 is host-tested with real
@@ -486,6 +513,7 @@ claim:
 | Search providers | commands/diagnostics live; pipeline suites | apps/files/settings providers bind to shell services |
 | Privacy centre | real-counter aggregation suites | session wiring over live engines |
 | Automation/AI/browser/watchdog/lifecycle/governor | suites + CI boot milestones | in-session activation (already exercised in guest CI where noted) |
+| UI condition contract | `test_ui.c` (7 conditions, modes, errno map, hi/en labels) | per-surface adoption is a mapping (table above), no surface redesign |
 | Real hardware | — | **not run — no claim** (VALIDATION row stays open) |
 
 ## 15. Networking
