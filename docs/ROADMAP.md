@@ -26,7 +26,11 @@ The detailed product plan remains in ZEROOS_MASTER_ROADMAP.md.
     (layout/click/focus, registry/query/launch), browser tab
     lifecycle, navigation controller and notification/search/settings
     surfaces are host-tested in Stage 5 batches 4–7; shell chrome
-    rendering and app UI remain.
+    rendering and app UI remain.  Batches 8–10 added the clipboard
+    service, downloads manager, built-in search providers
+    (commands/diagnostics), the measured performance centre and the
+    terminal core (streaming escape parser, scrollback ring) — all
+    host-tested.
 11. System services: package/update/recovery/diagnostics/observability/power management.
     Status: RFC 8439 ChaCha20-Poly1305 primitives (block, cipher, MAC,
     key generation, AEAD) landed in `kernel/crypto.c`, linked into the
@@ -34,12 +38,27 @@ The detailed product plan remains in ZEROOS_MASTER_ROADMAP.md.
     tamper/wrong-key negatives (`make hardware-core-test`); AEAD vault,
     transactional update state machine (section-20 pipeline with
     rollback), snapshot manager, firewall policy engine and sandbox
-    profiles are host-tested in Stage 5 batches 4–7.  Update payload
-    signing, kernel packet-path binding and enforcement hooks follow.
+    profiles are host-tested in Stage 5 batches 4–7.  Batches 8–10
+    added AEAD update payload verification (version-as-AAD, tamper/
+    replay/wrong-key negatives), the update<->snapshot production
+    binding with the previously-unwired stage_apply/capture hooks
+    restored fail-closed, and the privacy centre aggregation
+    (sandbox/firewall/media/eco/clipboard counters -> documented
+    risk ladder).  Kernel packet-path binding and enforcement hooks
+    follow.
 12. Study Center and app framework.
     Status: flashcard/spaced-repetition scheduler and focus sessions
-    host-tested (Stage 5); PDF/OCR/formulas/dictionary and the app
-    framework UI follow.
+    host-tested (Stage 5); the PDF subset contract (page tree, Tj/TJ
+    extraction, explicit -95 for filters/encryption) landed in batch
+    9; OCR/formulas/dictionary and the app framework UI follow.
+14. Desktop app/ecosystem policy cores: media lawful-source gates,
+    gaming profiles/cooperative yield, cloud-device offline-first sync,
+    availability+lifecycle contract for terminal/file-manager.
+    Status: media (default-deny origins, DRM refusal with no bypass
+    path), gaming (profiles, remap, yield matrix), and cloud/device
+    (pairing grants nothing, offline queue, per-bit permissions)
+    host-tested in Stage 5 batch 10; transports and hardware bindings
+    follow.
 13. Forge AI bridge: sandboxed local kernel/user API and external-service boundary.
     Note: the ZEROOS AI platform broker (permission grants, backend
     selection with remote downgrade, wipe-on-drain, dormant-until-
