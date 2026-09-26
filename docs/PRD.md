@@ -76,7 +76,7 @@ Windows compatibility targets broad Win32/Win64 APIs through a translation/runti
 Android support uses an AOSP-compatible Android runtime strategy selected at implementation time. The exact Android release is locked per supported ZEROOS release and updated through the compatibility lifecycle.
 
 ### 5.8 AI
-AI is an optional, event-driven system service. Forge AI remains a development/developer-agent project; ZEROOS may expose an OS AI service later. AI workloads are dormant when unused, hardware-aware, permissioned and resource-budgeted.
+AI is optional and must remain isolated from the kernel and core OS. ZEROOS has no Forge AI integration or dependency. Any future AI service must be independently permissioned, resource-budgeted and removable without affecting normal OS operation.
 
 ### 5.9 Security
 Secure boot integration where hardware permits, privilege separation, process isolation, capability/permission controls, encryption, firewall, antivirus/malware scanning, secure vault, privacy dashboard, update verification and recovery.
