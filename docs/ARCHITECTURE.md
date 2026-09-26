@@ -339,6 +339,16 @@ Implemented (this stage):
   deny for unregistered origins, and an unconditional DRM gate —
   protected items are refused with per-reason counters; the contract
   contains no bypass path by construction.  Host-tested.
+- Terminal core (`userspace/desktop/src/term.c`, shell surface):
+  bounded 24x80 (max 120x240) cell grid with streaming parser —
+  CSI cursor/erase/SGR (colors + bold/underline/inverse), LF/CR/BS/
+  TAB, column wrap, 128-line scrollback ring (oldest evicted, order
+  preserved), UTF-8 collected across writes with invalid bytes
+  counted, OSC titles consumed (BEL and ESC \ terminators), ESC
+  intermediates such as `ESC ( B` drained so their final bytes never
+  leak into the screen, oversized CSI counted once and drained.
+  Unknown sequences are consumed + counted, never shown as text.
+  No PTY yet: child binding comes later through zd_term_write.
 - Privacy centre (`userspace/desktop/src/privacy.c`, part B):
   read-only aggregation of denial/refusal counters from sandbox,
   firewall, media, ecosystem and clipboard engines into a domain

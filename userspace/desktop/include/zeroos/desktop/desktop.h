@@ -46,6 +46,7 @@
 #include <zeroos/desktop/gaming.h>
 #include <zeroos/desktop/eco.h>
 #include <zeroos/desktop/privacy.h>
+#include <zeroos/desktop/term.h>
 #include <zeroos/desktop/search.h>
 #include <zeroos/desktop/settings.h>
 #include <zeroos/desktop/notify.h>
