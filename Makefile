@@ -1,7 +1,7 @@
 BUILD := build
 KERNEL := $(BUILD)/zeroos.elf
 ISO := $(BUILD)/zeroos.iso
-HARDWARE_CORE_NAMES := net_core net_route net_transport net_conntrack net_l2 net_ipv6 netif net_stack net_socket dns_core dhcp_core input_core usb_core audio_core display_core driver_core dma resource_core scancode_core mouse_core crypto
+HARDWARE_CORE_NAMES := net_core net_route net_transport net_conntrack net_l2 net_arp net_ipv6 netif net_stack net_socket dns_core dhcp_core input_core usb_core audio_core display_core driver_core dma resource_core scancode_core mouse_core crypto
 HARDWARE_CORE_OBJS := $(addprefix $(BUILD)/hardware-,$(addsuffix .o,$(HARDWARE_CORE_NAMES)))
 
 CC := gcc
@@ -178,6 +178,8 @@ hardware-core-test: | $(BUILD)
 	$(BUILD)/dns-core-test
 	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/net_l2_test.c kernel/net_l2.c -o $(BUILD)/net-l2-test
 	$(BUILD)/net-l2-test
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/net_arp_test.c kernel/net_arp.c kernel/net_l2.c -o $(BUILD)/net-arp-test
+	$(BUILD)/net-arp-test
 	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/net_ipv6_test.c kernel/net_ipv6.c -o $(BUILD)/net-ipv6-test
 	$(BUILD)/net-ipv6-test
 	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/net_conntrack_test.c kernel/net_conntrack.c -o $(BUILD)/net-conntrack-test

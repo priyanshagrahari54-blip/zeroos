@@ -82,6 +82,7 @@ The authoritative per-core binding inventory (host-tested vs pending live integr
 | Desktop modules (display, compositor, window, input, a11y, i18n, search, settings, notify, lifecycle, watchdog, governor, automation, browser, AI, bar, launcher, capability, metrics, update, url, study, fps, snapshot, vault, nav, firewall, sandbox, clipboard, downloads, providers, perfcenter, fault, soak, pdf, media, gaming, eco, snapshot-bind, privacy, term, filemgr, formula, ocr, overview, notes, dict, assist, ui, stress, integration) | `make desktop-check` | 120907 | 0 |
 | Windows compatibility core (lifecycle/paths/registry/DLL + PE validator) | `make compat-check` | 107 | 0 |
 | Hardware/driver cores (incl. crypto RFC vectors) | `make hardware-core-test` | per-suite PASS | 0 |
+| IPv4 ARP parser/builders + expiring neighbor cache | `make hardware-core-test` | 68 | 0 |
 | Public userspace ABI | `make userspace-abi-check`, `python3 userspace/tests/abi_consistency.py` | PASS | 0 |
 | Userspace runtime contract | `make userspace-runtime-check` | PASS | 0 |
 | Full guest kernel build | `make elf -j4` | 0 warnings (Werror) | 0 |
