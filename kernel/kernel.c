@@ -1045,6 +1045,131 @@ static void scheduler_self_test(void) {
     serial_write_public("ZEROOS: Stage 4 USB/input/display/audio/net/power initialized.\n");
     serial_write_public("ZEROOS: Stage 5 graphics/compositor/window/desktop/shell/search/settings/docs initialized.\n");
     serial_write_public("ZEROOS: Stage 5B security/recovery/wincompat/android/browser/ai/media/gaming/cloud/automation/study initialized.\n");
+    /* Stage 2→Level 5 functional self-test: exercise each subsystem with bounded ops */
+    {
+        uint64_t dev_id=0, req_id=0, mount_id=0, file_id=0, pc_phys=0, dma_phys=0, dma_map_id=0;
+        uint64_t disp_id=0, net_if=0, sock_id=0, usb_ctrl=0, usb_dev=0, input_dev=0, audio_dev=0, audio_stream=0;
+        uint64_t power_dom=0, thermal_zone=0, ahci_ctrl=0, nvme_ctrl=0, fs_mount_id=0, gfx_ctx=0, gfx_buf=0;
+        uint64_t surf_id=0, layer_id=0, win_id=0, desktop_svc=0, notif_id=0;
+        uint64_t search_id=0, docs_id=0, sandbox_id=0, snap_id=0, upd_id=0, win_pid=0, dll_id=0;
+        uint64_t android_pkg=0, android_app=0, browser_proc=0, browser_tab=0, ai_model=0, ai_sess=0;
+        uint64_t media_track=0, media_playlist=0, game_profile=0, cloud_svc=0, auto_rule=0, study_sess=0;
+        uint8_t mac[6]={0x02,0,0,0,0,1};
+        struct zeroos_input_event ev={.timestamp=1,.type=1,.code=30,.value=1};
+        struct zeroos_search_entry results[4]; uint32_t res_count=0;
+        char val_buf[64]; uint64_t docs_size=0; char docs_buf[128];
+        enum zeroos_win_api_status api_status;
+        /* Block */
+        if (block_device_register(ZEROOS_BLOCK_TYPE_RAMDISK, "ram0", 1024*1024, 512, &dev_id)!=0) kernel_panic("block functional test failed");
+        if (block_submit_request(dev_id, ZEROOS_BLOCK_REQ_READ, 0, 1, 0, 100, &req_id)!=0) kernel_panic("block submit failed");
+        /* VFS */
+        if (vfs_mount(dev_id, "tmpfs", "/tmp", &mount_id)!=0) kernel_panic("vfs mount failed");
+        if (vfs_open("/tmp/test.txt", 0, 0644, &file_id)!=0) kernel_panic("vfs open failed");
+        /* Page cache */
+        void *pg=page_alloc(); if (!pg) kernel_panic("page alloc for cache failed");
+        if (page_cache_insert(file_id, 0, (uint64_t)pg, 0)!=0) kernel_panic("page_cache insert failed");
+        if (page_cache_lookup(file_id, 0, &pc_phys)!=0) kernel_panic("page_cache lookup failed");
+        /* PCI */
+        (void)pci_enumerate(); (void)pci_debug_validate();
+        /* DMA */
+        if (dma_map((uint64_t)pg, 4096, ZEROOS_DMA_BIDIRECTIONAL, dev_id, &dma_phys, &dma_map_id)!=0) kernel_panic("dma map failed");
+        if (dma_sync_for_device(dma_map_id)!=0) kernel_panic("dma sync failed");
+        if (dma_unmap(dma_map_id)!=0) kernel_panic("dma unmap failed");
+        /* Display */
+        if (display_device_register(ZEROOS_DISPLAY_TYPE_FRAMEBUFFER, "fb0", 0x1000000ULL, 8*1024*1024, &disp_id)!=0) kernel_panic("display register failed");
+        if (display_device_add_mode(disp_id, 1920,1080,60,32,0)!=0) kernel_panic("display add mode failed");
+        if (display_device_set_mode(disp_id, 0)!=0) kernel_panic("display set mode failed");
+        /* Net */
+        if (net_interface_register("eth0", mac, 1500, &net_if)!=0) kernel_panic("net if register failed");
+        if (net_interface_set_ipv4(net_if, 0x0100007fU, 0x00ffffffU, 0x0100007fU)!=0) kernel_panic("net ipv4 failed");
+        if (net_socket_create(ZEROOS_NET_SOCK_STREAM, &sock_id)!=0) kernel_panic("net socket create failed");
+        if (net_socket_bind(sock_id, 0x0100007fU, 8080)!=0) kernel_panic("net bind failed");
+        /* USB */
+        if (usb_controller_register(0x2000000ULL, 0x1000, 11, &usb_ctrl)!=0) kernel_panic("usb ctrl failed");
+        if (usb_device_register(usb_ctrl, 1, ZEROOS_USB_SPEED_HIGH, 0x1234, 0x5678, 0, &usb_dev)!=0) kernel_panic("usb dev failed");
+        if (usb_device_set_address(usb_dev, 2)!=0) kernel_panic("usb set addr failed");
+        /* Input */
+        if (input_device_register(ZEROOS_INPUT_TYPE_KEYBOARD, "kbd0", &input_dev)!=0) kernel_panic("input register failed");
+        if (input_device_push_event(input_dev, &ev)!=0) kernel_panic("input push failed");
+        /* Audio */
+        if (audio_device_register("hda0", 2, 48000, &audio_dev)!=0) kernel_panic("audio dev failed");
+        if (audio_stream_create(audio_dev, ZEROOS_AUDIO_PLAYBACK, ZEROOS_AUDIO_FMT_S16_LE, 48000, 2, 1, &audio_stream)!=0) kernel_panic("audio stream failed");
+        { const char dummy[16]={0}; if (audio_stream_write(audio_stream, dummy, 16, 0)<0) kernel_panic("audio write failed"); }
+        /* Power */
+        if (power_domain_register("cpu0", 1000, 2400, 15000, &power_dom)!=0) kernel_panic("power domain failed");
+        if (thermal_zone_register("cpu_thermal", 70,85,95, &thermal_zone)!=0) kernel_panic("thermal zone failed");
+        if (thermal_zone_update_temperature(thermal_zone, 60)!=0) kernel_panic("thermal update failed");
+        /* AHCI/NVMe */
+        if (ahci_controller_register(0x3000000ULL, 0x1000, 10, &ahci_ctrl)!=0) kernel_panic("ahci register failed");
+        if (ahci_port_scan(ahci_ctrl)!=0) kernel_panic("ahci scan failed");
+        if (nvme_controller_register(0x4000000ULL, 0x1000, 12, &nvme_ctrl)!=0) kernel_panic("nvme register failed");
+        if (nvme_controller_init_admin(nvme_ctrl)!=0) kernel_panic("nvme admin failed");
+        /* FS */
+        if (fs_mount(ZEROOS_FS_TYPE_TMPFS, dev_id, "/mnt", &fs_mount_id)!=0) kernel_panic("fs mount failed");
+        /* Graphics */
+        if (graphics_context_create(disp_id, 1, &gfx_ctx)!=0) kernel_panic("gfx ctx failed");
+        if (graphics_buffer_alloc(gfx_ctx, ZEROOS_GFX_BUFFER_FRAMEBUFFER, 4096, 1, &gfx_buf)!=0) kernel_panic("gfx buf failed");
+        { struct zeroos_graphics_command cmd={.context_id=gfx_ctx,.buffer_id=gfx_buf,.opcode=1,.size=64,.valid=1}; if (graphics_submit(gfx_ctx, &cmd, 1)!=0) kernel_panic("gfx submit failed"); }
+        /* Compositor */
+        if (compositor_set_display(disp_id)!=0) kernel_panic("compositor set display failed");
+        if (compositor_surface_create(800,600,3200, gfx_buf, 1, &surf_id)!=0) kernel_panic("compositor surface failed");
+        if (compositor_layer_create(ZEROOS_LAYER_WINDOW, surf_id, 0,0,1, &layer_id)!=0) kernel_panic("compositor layer failed");
+        if (compositor_set_state(ZEROOS_COMPOSITOR_ACTIVE)!=0) kernel_panic("compositor state failed");
+        if (compositor_composite_frame()!=0) kernel_panic("compositor composite failed");
+        /* Window */
+        if (window_create(ZEROOS_WINDOW_TYPE_NORMAL, "TestWindow", 100,100,800,600,1, &win_id)!=0) kernel_panic("window create failed");
+        if (window_set_position(win_id, 120,120)!=0) kernel_panic("window pos failed");
+        /* Desktop */
+        if (desktop_service_register(ZEROOS_DESKTOP_SERVICE_SHELL, "shell", 1, 3, &desktop_svc)!=0) kernel_panic("desktop svc failed");
+        if (desktop_notification_post("Test", "Production ready", 1, &notif_id)!=0) kernel_panic("notif post failed");
+        /* Shell/Search/Settings/Docs */
+        if (shell_system_init()!=0) kernel_panic("shell re-init failed"); /* re-init safe */
+        if (shell_execute("ls /tmp", 1)!=0) { (void)shell_set_state(ZEROOS_SHELL_ACTIVE); if (shell_execute("ls /tmp",1)!=0) kernel_panic("shell exec failed"); }
+        if (search_index_add("TestApp", "/apps/test", 1, &search_id)!=0) kernel_panic("search add failed");
+        if (search_query("Test", results, 4, &res_count)!=0) kernel_panic("search query failed");
+        if (settings_set("theme", "dark")!=0) kernel_panic("settings set failed");
+        if (settings_get("theme", val_buf, sizeof(val_buf))!=0) kernel_panic("settings get failed");
+        if (docs_create("Readme", "ZEROOS production", 1, &docs_id)!=0) kernel_panic("docs create failed");
+        if (docs_read(docs_id, docs_buf, sizeof(docs_buf), &docs_size)!=0) kernel_panic("docs read failed");
+        /* Security/Recovery */
+        if (security_sandbox_create(1, ZEROOS_CAP_FS_READ|ZEROOS_CAP_FS_WRITE, &sandbox_id)!=0) kernel_panic("sandbox create failed");
+        if (security_sandbox_check_capability(sandbox_id, ZEROOS_CAP_FS_READ)!=0) kernel_panic("sandbox check failed");
+        if (security_audit_log(1, 1, 0, "functional test")!=0) kernel_panic("audit log failed");
+        if (recovery_snapshot_create(ZEROOS_SNAPSHOT_FULL, "functional", 1024, &snap_id)!=0) kernel_panic("snapshot create failed");
+        if (recovery_update_stage(1,2, snap_id, &upd_id)!=0) kernel_panic("update stage failed");
+        if (recovery_update_verify(upd_id)!=0) kernel_panic("update verify failed");
+        if (recovery_update_apply(upd_id)!=0) kernel_panic("update apply failed");
+        /* WinCompat/Android/Browser/AI/Media/Gaming/Cloud/Automation/Study */
+        if (wincompat_process_create("C:\\test.exe", 1, &win_pid)!=0) kernel_panic("wincompat proc failed");
+        if (wincompat_dll_load(win_pid, "kernel32.dll", &dll_id)!=0) kernel_panic("wincompat dll failed");
+        if (wincompat_api_query("CreateFile", &api_status)!=0) kernel_panic("wincompat api query failed");
+        if (android_package_install("com.test.app", "1.0", 1024, 0x7, &android_pkg)!=0) kernel_panic("android pkg failed");
+        if (android_app_launch(android_pkg, 1, &android_app)!=0) kernel_panic("android launch failed");
+        if (android_app_pause(android_app)!=0) kernel_panic("android pause failed");
+        if (android_app_resume(android_app)!=0) kernel_panic("android resume failed");
+        if (browser_process_create(1, &browser_proc)!=0) kernel_panic("browser proc failed");
+        if (browser_tab_create(browser_proc, "https://example.com", &browser_tab)!=0) kernel_panic("browser tab failed");
+        if (browser_tab_set_state(browser_tab, ZEROOS_BROWSER_TAB_FROZEN)!=0) kernel_panic("browser freeze failed");
+        if (ai_model_register("test-model", 64*1024*1024, &ai_model)!=0) kernel_panic("ai model failed");
+        if (ai_session_create(ai_model, ZEROOS_AI_TASK_SEARCH, 1, 0x7, &ai_sess)!=0) kernel_panic("ai session failed");
+        if (ai_session_invoke(ai_sess)!=0) kernel_panic("ai invoke failed");
+        if (ai_session_complete(ai_sess)!=0) kernel_panic("ai complete failed");
+        if (media_track_add("Song", "Artist", 180000, &media_track)!=0) kernel_panic("media track failed");
+        if (media_playlist_create("Favorites", &media_playlist)!=0) kernel_panic("media playlist failed");
+        if (gaming_profile_create("Game", 60, 1, &game_profile)!=0) kernel_panic("gaming profile failed");
+        if (cloud_service_register("drive", 1, 1, &cloud_svc)!=0) kernel_panic("cloud svc failed");
+        if (automation_rule_create(ZEROOS_TRIGGER_FILE, "backup", 1, 0x7, &auto_rule)!=0) kernel_panic("automation rule failed");
+        if (study_session_create("Math", 3600000, 1, &study_sess)!=0) kernel_panic("study session failed");
+        serial_write_public("ZEROOS: Stage 2→Level 5 functional self-test passed — all subsystems exercised.\n");
+        /* Cleanup some */
+        (void)vfs_close(file_id); (void)page_free(pg); (void)net_socket_close(sock_id);
+        (void)audio_stream_close(audio_stream); (void)graphics_buffer_free(gfx_buf);
+        (void)graphics_context_destroy(gfx_ctx); (void)window_destroy(win_id);
+        (void)desktop_notification_dismiss(notif_id); (void)security_sandbox_destroy(sandbox_id);
+        (void)recovery_update_rollback(upd_id); (void)recovery_snapshot_delete(snap_id);
+        (void)wincompat_process_destroy(win_pid); (void)android_app_stop(android_app);
+        (void)browser_tab_close(browser_tab); (void)ai_session_destroy(ai_sess);
+    }
     /* Production readiness hardening: validate all subsystems, resource accounting, security boundaries */
     if (block_debug_validate()!=0 || gpt_debug_validate()!=0 || vfs_debug_validate()!=0 ||
         page_cache_debug_validate()!=0 || pci_debug_validate()!=0 || dma_debug_validate()!=0 ||
