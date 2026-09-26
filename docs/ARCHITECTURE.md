@@ -339,6 +339,12 @@ Implemented (this stage):
   deny for unregistered origins, and an unconditional DRM gate —
   protected items are refused with per-reason counters; the contract
   contains no bypass path by construction.  Host-tested.
+- Overview/expose model (`userspace/desktop/src/overview.c`, part
+  A): ceil(sqrt) thumbnail grid over a work area with edge-inclusive
+  gaps, exact hit-testing (gaps and empty cells excluded), keyboard
+  focus cycling with wrap, remove-with-relayout and degenerate-area
+  rejection (never zero-size thumbs).  Host-tested with exact grid
+  math.
 - File manager core (`userspace/desktop/src/filemgr.c`, shell
   surface): injected directory source (session binds
   `zeroos_readdir`; tests bind memory — never a faked filesystem),
