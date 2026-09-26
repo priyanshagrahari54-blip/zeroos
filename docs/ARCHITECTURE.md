@@ -447,6 +447,31 @@ Not yet implemented (contracts defined, explicit in PHASES.md):
   wheel/extended aux protocols, USB HID devices, cloud/device services
   (offline-first behavior, explicit per-device permissions).
 
+### Stage 5 binding inventory (production status)
+
+Every desktop core introduced in Stage 5 is host-tested with real
+assertions (no mocks presented as functionality).  This inventory is
+the authoritative list of what still connects those cores to live
+subsystems — each pending binding is a documented next step, never a
+claim:
+
+| Core | Host evidence | Pending live binding |
+| --- | --- | --- |
+| Display service + compositor + input router | session process wired to `DISPLAY_PRESENT`/`INPUT_*` + boot certification | multi-GPU beyond the single present path |
+| File manager | source-injected listing/sort/select/ops suites | session binds `zeroos_readdir` (ABI file calls 25–50) |
+| Terminal | parser/scrollback/SGR suites | PTY or pipe + child spawn for shell output |
+| Cloud/device sync | offline queue + permission suites | transport over kernel sockets; real device pairing |
+| Firewall engine | first-match/default-deny suites | kernel packet-path hook (userspace policy today) |
+| Sandbox profiles | fail-closed gates + audit suites | OS enforcement (seccomp/namespace) hooks |
+| Update payload verification | AEAD vectors + tamper/replay suites | key provisioning (OS-injected key; no PKI yet) |
+| OCR | capability gate + pluggable-engine path (fixture only) | licensed engine; until then `-95`, no accuracy claims |
+| PDF subset | hand-authored fixtures (plain streams) | filtered/encrypted docs stay `-95` (explicit) |
+| Media/gaming/ecosystem policy | gate/yield/permission suites | decoder backends, controller hardware, transports |
+| Search providers | commands/diagnostics live; pipeline suites | apps/files/settings providers bind to shell services |
+| Privacy centre | real-counter aggregation suites | session wiring over live engines |
+| Automation/AI/browser/watchdog/lifecycle/governor | suites + CI boot milestones | in-session activation (already exercised in guest CI where noted) |
+| Real hardware | — | **not run — no claim** (VALIDATION row stays open) |
+
 ## 15. Networking
 Network stack is independent of desktop UI.
 Network manager handles links/configuration.

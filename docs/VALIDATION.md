@@ -18,6 +18,8 @@ does not exist yet, the row says so — no claim is made without it.
 | RECOVERY | Browser crash recovery, service watchdog, display attach/detach, init recovery in guest, rollback contracts | desktop suites + CI boot milestones | Green (host), guest init recovery in CI |
 | QEMU | Boot certification block in CI: panic detection, session milestones, storage certification | `build.yml` on every push/PR | Green on every push context since the `dedb23f` revert (`c27ad12`, `56a009f`, `c24c6b2`, `69f053c`, `c8b75ae`, `92e5729`, `fecd7a3`, …); PR context green except the documented `78ef9b5`/`0b2b480` boot-flake rows above |
 | REAL-HARDWARE | Physical run of the certified ISO on bare metal | Not available in this environment | **Not run — no claim** |
+
+The authoritative per-core binding inventory (host-tested vs pending live integration vs no-claim) lives in `ARCHITECTURE.md` §14 "Stage 5 binding inventory".
 | PERFORMANCE | Frame pacing/vsync accounting (display tests), governor tier/pressure/effects (governor tests), metrics recorder with interval histogram + percentiles wired into `zd_display_service_present`, FPS monitor frame-time percentiles and budget breaches | desktop suite + session link | Green (host); on-device percentiles pending |
 
 ## 2. Measured test counts (host, this branch)
