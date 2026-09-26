@@ -41,6 +41,7 @@ void zd_test_soak_suite(void);
 void zd_test_pdf_suite(void);
 void zd_test_media_gaming_suite(void);
 void zd_test_eco_suite(void);
+void zd_test_privacy_suite(void);
 void zd_test_stress_suite(void);
 void zd_test_fps_suite(void);
 void zd_test_ai_suite(void);
@@ -83,6 +84,7 @@ int main(void) {
     zd_test_pdf_suite();
     zd_test_media_gaming_suite();
     zd_test_eco_suite();
+    zd_test_privacy_suite();
     zd_test_stress_suite();
     zd_test_fps_suite();
     zd_test_ai_suite();

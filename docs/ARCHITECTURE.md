@@ -339,6 +339,15 @@ Implemented (this stage):
   deny for unregistered origins, and an unconditional DRM gate —
   protected items are refused with per-reason counters; the contract
   contains no bypass path by construction.  Host-tested.
+- Privacy centre (`userspace/desktop/src/privacy.c`, part B):
+  read-only aggregation of denial/refusal counters from sandbox,
+  firewall, media, ecosystem and clipboard engines into a domain
+  breakdown (filesystem/network/content/sync) plus a documented risk
+  ladder (none/watch/review/elevated/act-now with explicit
+  thresholds 1/25/50/200 and review-over-elevated precedence),
+  sensitive-clip events surfaced as protected, optional sources
+  contribute zero rather than failing — host-tested against real
+  engine counters.
 - Update<->snapshot production binding (`zd_snapshots_bind_update`,
   part B): the update machine's `stage_apply` hook captures a fresh
   "update" snapshot (capture errors abort staging atomically) and
