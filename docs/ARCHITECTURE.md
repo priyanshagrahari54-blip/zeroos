@@ -339,6 +339,27 @@ Implemented (this stage):
   deny for unregistered origins, and an unconditional DRM gate —
   protected items are refused with per-reason counters; the contract
   contains no bypass path by construction.  Host-tested.
+- File manager core (`userspace/desktop/src/filemgr.c`, shell
+  surface): injected directory source (session binds
+  `zeroos_readdir`; tests bind memory — never a faked filesystem),
+  stable name/size/mtime sorts, hidden filtering with visible-index
+  selection, bounded 16-deep path history with back/forward and
+  forward-drop discipline, capacity truncation flagged (not hidden),
+  source errno propagation with explicit failed state, and
+  permission-gated remove/mkdir (join sanitation rejects traversal,
+  denied actors never touch ops).  Host-tested.
+- Formula engine (`userspace/desktop/src/formula.c`, part G):
+  documented math subset — precedence, right-associative INTEGER
+  powers (non-integer exponents are explicit errors, never
+  silent NaN), unary minus above power so `-2^2 = -4`, \frac and
+  \sqrt (Newton iteration, negative argument errors), variable
+  bindings across parses, 128-char input / 64-node arena / depth-16
+  caps all failing with positions.  Host-tested.
+- OCR contract (`userspace/desktop/src/ocr.c`, part G): honest
+  capability gate — no engine linked in this build, availability 0,
+  every call fails -95 AFTER full argument validation; pluggable
+  engine registration path tested with a test fixture.  No text is
+  ever fabricated and no accuracy is claimed until an engine lands.
 - Terminal core (`userspace/desktop/src/term.c`, shell surface):
   bounded 24x80 (max 120x240) cell grid with streaming parser —
   CSI cursor/erase/SGR (colors + bold/underline/inverse), LF/CR/BS/

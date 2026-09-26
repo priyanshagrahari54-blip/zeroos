@@ -47,6 +47,9 @@
 #include <zeroos/desktop/eco.h>
 #include <zeroos/desktop/privacy.h>
 #include <zeroos/desktop/term.h>
+#include <zeroos/desktop/filemgr.h>
+#include <zeroos/desktop/formula.h>
+#include <zeroos/desktop/ocr.h>
 #include <zeroos/desktop/search.h>
 #include <zeroos/desktop/settings.h>
 #include <zeroos/desktop/notify.h>
