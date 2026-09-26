@@ -361,6 +361,14 @@ Implemented (this stage):
   \sqrt (Newton iteration, negative argument errors), variable
   bindings across parses, 128-char input / 64-node arena / depth-16
   caps all failing with positions.  Host-tested.
+- Study notes + dictionary (`notes.c`/`dict.c`, part G): bounded
+  notebook (64 notes, 256-byte bodies, pin, case-insensitive
+  substring search over title+body with documented cap semantics)
+  and a dictionary loaded from an injected word source (case-
+  insensitive sort/dedup, binary-search lookup, prefix suggestions
+  with total-vs-written accounting; load errors leave the dict
+  unreadable at -95).  No bundled corpus is claimed — the word list
+  binds later, tests inject fixtures.  Host-tested.
 - OCR contract (`userspace/desktop/src/ocr.c`, part G): honest
   capability gate — no engine linked in this build, availability 0,
   every call fails -95 AFTER full argument validation; pluggable

@@ -52,10 +52,11 @@ The detailed product plan remains in ZEROOS_MASTER_ROADMAP.md.
     Status: flashcard/spaced-repetition scheduler and focus sessions
     host-tested (Stage 5); the PDF subset contract (page tree, Tj/TJ
     extraction, explicit -95 for filters/encryption) landed in batch
-    9; the formula engine (bounded parser/evaluator) and the
+    9; the formula engine (bounded parser/evaluator), the
     OCR capability contract (argument validation, honest -95 with no
-    engine linked) landed in batch 11; dictionary and the app
-    framework UI follow.
+    engine linked), the Study notes notebook and the dictionary
+    (injected source, case-insensitive lookup/suggestions) landed in
+    batch 11; only the app framework UI follows.
 14. Desktop app/ecosystem policy cores: media lawful-source gates,
     gaming profiles/cooperative yield, cloud-device offline-first sync,
     availability+lifecycle contract for terminal/file-manager.

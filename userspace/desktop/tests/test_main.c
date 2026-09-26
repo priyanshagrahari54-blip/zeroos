@@ -46,6 +46,7 @@ void zd_test_term_suite(void);
 void zd_test_filemgr_suite(void);
 void zd_test_formula_ocr_suite(void);
 void zd_test_overview_suite(void);
+void zd_test_notes_dict_suite(void);
 void zd_test_stress_suite(void);
 void zd_test_fps_suite(void);
 void zd_test_ai_suite(void);
@@ -93,6 +94,7 @@ int main(void) {
     zd_test_filemgr_suite();
     zd_test_formula_ocr_suite();
     zd_test_overview_suite();
+    zd_test_notes_dict_suite();
     zd_test_stress_suite();
     zd_test_fps_suite();
     zd_test_ai_suite();
