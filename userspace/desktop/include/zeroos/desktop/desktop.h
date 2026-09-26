@@ -40,6 +40,7 @@
 #include <zeroos/desktop/clipboard.h>
 #include <zeroos/desktop/downloads.h>
 #include <zeroos/desktop/providers.h>
+#include <zeroos/desktop/perfcenter.h>
 #include <zeroos/desktop/search.h>
 #include <zeroos/desktop/settings.h>
 #include <zeroos/desktop/notify.h>

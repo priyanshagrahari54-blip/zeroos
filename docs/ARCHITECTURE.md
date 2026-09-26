@@ -334,6 +334,14 @@ Implemented (this stage):
   single-active-transfer policy (cooperative sharing), monotonic
   progress with regression rejection, start-hook failure accounting
   and terminal-state immutability — host-tested.
+- Performance center (`userspace/desktop/src/perfcenter.c`): ring of
+  frame-time samples with p50/p95/worst percentiles and a health
+  ladder (good/fair/poor/critical) driven by measured thresholds —
+  p95 vs frame budget, FPS floor, memory-pressure bands, thermal
+  throttle, eco governor and staged-update flags — emitting
+  combinable, concrete suggestions (close background, lower detail,
+  reduce motion, cool down, wait for update, check memory).
+  Host-tested across every band plus ring-wrap.
 - Built-in search providers (`providers.c`): the commands provider
   (register/execute with prefix scoring and duplicate rejection) and
   the diagnostics provider (bounded health lines), both honoring the
