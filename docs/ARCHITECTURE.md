@@ -329,6 +329,16 @@ Implemented (this stage):
   that become current but never enter history, current-excluding
   depth cycling, eviction of oldest and a clear-all privacy wipe —
   host-tested.
+- Downloads manager (`userspace/desktop/src/downloads.c`): bounded
+  queue with explicit QUEUED/RUNNING/DONE/FAILED/CANCELED lifecycle,
+  single-active-transfer policy (cooperative sharing), monotonic
+  progress with regression rejection, start-hook failure accounting
+  and terminal-state immutability — host-tested.
+- Built-in search providers (`providers.c`): the commands provider
+  (register/execute with prefix scoring and duplicate rejection) and
+  the diagnostics provider (bounded health lines), both honoring the
+  pipeline cancellation contract; apps/files/settings providers bind
+  at the shell layer — host-tested.
 - Update payload verification (`zd_update_verify_payload`): AEAD
   with producer nonce, injected update key and the version bound as
   AAD — tamper, cross-version replay and wrong-key all return the
