@@ -37,6 +37,7 @@ void zd_test_downloads_suite(void);
 void zd_test_providers_suite(void);
 void zd_test_perfcenter_suite(void);
 void zd_test_fault_suite(void);
+void zd_test_soak_suite(void);
 void zd_test_stress_suite(void);
 void zd_test_fps_suite(void);
 void zd_test_ai_suite(void);
@@ -75,6 +76,7 @@ int main(void) {
     zd_test_providers_suite();
     zd_test_perfcenter_suite();
     zd_test_fault_suite();
+    zd_test_soak_suite();
     zd_test_stress_suite();
     zd_test_fps_suite();
     zd_test_ai_suite();
