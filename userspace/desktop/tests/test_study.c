@@ -3,6 +3,88 @@
 #include "test_harness.h"
 #include <zeroos/desktop/study.h>
 
+/* --- assistant broker fixtures --------------------------------- */
+static int as_select(void *ctx, const struct zd_ai_request *r,
+                     uint32_t grants, enum zd_ai_backend *out) {
+    (void)ctx;
+    (void)r;
+    if (!(grants & ZD_AI_GRANT_CONTEXT_SELECTION))
+        return -ZD_EPERM;
+    *out = ZD_AI_BACKEND_LOCAL;
+    return 0;
+}
+
+static int as_run(void *ctx, enum zd_ai_backend backend,
+                  const struct zd_ai_request *req, char *out,
+                  uint32_t out_cap, uint32_t *out_len) {
+    (void)ctx;
+    (void)req;
+    if (backend == ZD_AI_BACKEND_NONE || out_cap < 3)
+        return -ZD_EINVAL;
+    out[0] = 'o';
+    out[1] = 'k';
+    out[2] = 0;
+    *out_len = 2;
+    return 0;
+}
+
+static void test_study_assist(void) {
+    struct zd_study s;
+    struct zd_ai_broker b;
+    struct zd_ai_request r;
+    uint32_t done = 0;
+
+    zd_study_init(&s, "Spanish");
+    /* empty deck: nothing to ask about */
+    ZD_CHECK_EQ(zd_study_assist_request(&s, 0, &r), -2);
+    ZD_CHECK_EQ(zd_study_assist_request(&s, "hola", &r), -2);
+    ZD_CHECK_EQ(zd_study_assist_request(0, 0, &r), -22);
+    ZD_CHECK_OK(zd_study_add_card(&s, "hola", "hello"));
+    ZD_CHECK_OK(zd_study_add_card(&s, "gracias", "thanks"));
+
+    /* explicit card */
+    ZD_CHECK_OK(zd_study_assist_request(&s, "hola", &r));
+    ZD_CHECK_EQ((int)r.kind, (int)ZD_AI_REQ_SUMMARIZE);
+    ZD_CHECK_EQ(r.context_mask, (uint32_t)ZD_AI_GRANT_CONTEXT_SELECTION);
+    ZD_CHECK_EQ(r.active, 0u);
+    ZD_CHECK(strncmp(r.payload, "study Spanish: hola",
+                     strlen("study Spanish: hola")) == 0);
+    ZD_CHECK_EQ(r.payload[63], 0);
+    /* unknown card */
+    ZD_CHECK_EQ(zd_study_assist_request(&s, "nope", &r), -2);
+    /* NULL front picks the next due card */
+    ZD_CHECK_OK(zd_study_assist_request(&s, 0, &r));
+    ZD_CHECK(strstr(r.payload, "hola") != 0);
+    /* long front truncates safely inside the 64-byte payload */
+    {
+        char front[ZD_STUDY_TEXT];
+        memset(front, 'F', sizeof(front) - 1);
+        front[sizeof(front) - 1] = 0;
+        ZD_CHECK_OK(zd_study_add_card(&s, front, "back"));
+        ZD_CHECK_OK(zd_study_assist_request(&s, front, &r));
+        ZD_CHECK_EQ(r.payload[63], 0);
+        ZD_CHECK(strlen(r.payload) == 63);
+    }
+
+    /* broker path: granted -> accepted and drained */
+    memset(&b, 0, sizeof(b));
+    {
+        struct zd_ai_ops ops = {as_select, as_run, 0};
+        b.ops = ops;
+    }
+    zd_ai_grant(&b, ZD_AI_GRANT_CONTEXT_SELECTION);
+    ZD_CHECK_OK(zd_study_assist_submit(&s, &b, "hola"));
+    ZD_CHECK_OK(zd_ai_drain(&b, 8, &done));
+    ZD_CHECK_EQ(done, 1u);
+    ZD_CHECK_EQ(b.stats.completed, 1u);
+    /* revoked: build succeeds, broker rejects before any backend */
+    zd_ai_revoke(&b, ZD_AI_GRANT_CONTEXT_SELECTION);
+    ZD_CHECK_EQ(zd_study_assist_submit(&s, &b, "hola"), -ZD_EPERM);
+    ZD_CHECK_EQ(b.stats.denied_permission, 1u);
+    /* NULL broker rejected at the wrapper */
+    ZD_CHECK_EQ(zd_study_assist_submit(&s, 0, "hola"), -22);
+}
+
 void zd_test_study_suite(void) {
     struct zd_study s;
     struct zd_study_card *c;
@@ -105,4 +187,6 @@ void zd_test_study_suite(void) {
 
     ZD_CHECK(s.stats.reviews >= 6);
     ZD_CHECK(s.stats.sessions_started == 2);
+
+    test_study_assist();
 }

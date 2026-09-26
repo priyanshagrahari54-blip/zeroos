@@ -1,4 +1,5 @@
 /* Study Center core.  See study.h. */
+#include <string.h>
 #include <zeroos/desktop/study.h>
 
 static uint32_t s_len(const char *s) {
@@ -29,6 +30,54 @@ static int s_eq(const char *a, const char *b) {
         ++b;
     }
     return *a == 0 && *b == 0;
+}
+
+/* --- AI study assistant ---------------------------------------- */
+
+static void sa_append(char *dst, uint32_t cap, uint32_t *len,
+                      const char *src) {
+    uint32_t i = *len;
+    uint32_t j;
+    for (j = 0; src[j] && i + 1 < cap; ++j)
+        dst[i++] = src[j];
+    dst[i] = 0;
+    *len = i;
+}
+
+int zd_study_assist_request(struct zd_study *s, const char *front,
+                            struct zd_ai_request *out) {
+    struct zd_study_card *card;
+    uint32_t len = 0;
+    if (!s || !out)
+        return -22;
+    if (front) {
+        card = zd_study_find(s, front);
+        if (!card)
+            return -2;
+    } else {
+        card = zd_study_next_due(s);
+        if (!card)
+            return -2;
+    }
+    memset(out, 0, sizeof(*out));
+    out->kind = ZD_AI_REQ_SUMMARIZE;
+    out->context_mask = ZD_AI_GRANT_CONTEXT_SELECTION;
+    sa_append(out->payload, sizeof(out->payload), &len, "study ");
+    sa_append(out->payload, sizeof(out->payload), &len, s->deck);
+    sa_append(out->payload, sizeof(out->payload), &len, ": ");
+    sa_append(out->payload, sizeof(out->payload), &len, card->front);
+    return 0;
+}
+
+int zd_study_assist_submit(struct zd_study *s, struct zd_ai_broker *b,
+                           const char *front) {
+    struct zd_ai_request req;
+    int rc = zd_study_assist_request(s, front, &req);
+    if (rc < 0)
+        return rc;
+    if (b)
+        return zd_ai_submit(b, &req);
+    return -22;
 }
 
 int zd_study_init(struct zd_study *s, const char *deck_name) {

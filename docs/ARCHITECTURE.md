@@ -361,6 +361,14 @@ Implemented (this stage):
   \sqrt (Newton iteration, negative argument errors), variable
   bindings across parses, 128-char input / 64-node arena / depth-16
   caps all failing with positions.  Host-tested.
+- AI study assistant (`zd_study_assist_request/submit`, part G):
+  builds a SUMMARIZE broker request from study context (deck + due
+  card, SELECTION context bit only, payload truncated safely) and
+  submits through the AI broker — permission denial happens in the
+  broker up front, so an ungranted request never reaches a backend.
+  Fixed an include-guard mismatch in `ai.h` (define did not match
+  ifndef) exposed by the new include path; all desktop headers are
+  now guard-audited.
 - Study notes + dictionary (`notes.c`/`dict.c`, part G): bounded
   notebook (64 notes, 256-byte bodies, pin, case-insensitive
   substring search over title+body with documented cap semantics)

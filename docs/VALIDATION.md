@@ -20,6 +20,37 @@ does not exist yet, the row says so — no claim is made without it.
 | REAL-HARDWARE | Physical run of the certified ISO on bare metal | Not available in this environment | **Not run — no claim** |
 
 | PERFORMANCE | Frame pacing/vsync accounting (display tests), governor tier/pressure/effects (governor tests), metrics recorder with interval histogram + percentiles wired into `zd_display_service_present`, FPS monitor frame-time percentiles and budget breaches | desktop suite + session link | Green (host); on-device percentiles pending |
+### Part M checklist coverage map
+
+Each named "Validate" item from `STAGE_5_IMPLEMENTATION_PROMPT.md`
+PART M maps to concrete evidence (or an explicit no-claim):
+
+| Prompt item | Evidence |
+| --- | --- |
+| cold boot | QEMU boot certification block (section 3) |
+| desktop session | session milestones: service attached, shell rounds, probe pattern, clean reap (workflow-grepped) |
+| multi-window | compositor/window/workspaces suites + boot shell rounds |
+| input/display/audio | input router + display service suites (audio: no output path yet — pending, no claim) |
+| native app lifecycle | launcher/watchdog/lifecycle suites |
+| service crash/restart | watchdog suite (recovery), boot certification |
+| Windows runtime lifecycle | compat suites (`compat-check`, 107 checks) + ARCH §18 loader architecture (runtime pending, no running-Windows claim) |
+| Android runtime lifecycle | ARCH §18: AOSP baseline 14 documented, capability absent — **not run, no claim** |
+| browser tab lifecycle | browser ACTIVE/IDLE/FROZEN/DISCARDED suites + crash/reload fault tests |
+| AI activation/deactivation | ai broker dormancy/soak (0 resident idle) suites |
+| gaming workload | media+gaming suites (profiles, yield, FPS ring) |
+| media workload | media queue/rights suites (lawful sources, DRM refusal) |
+| study workload | study flashcard/focus + notes/dictionary/formula suites |
+| low-memory/high CPU-GPU | governor pressure-tier + capacity/stress suites |
+| thermal pressure | governor `thermal_state` tiers (0/1/2) covered in governor tests; no physical sensor — model-driven only |
+| network loss | eco offline queue + permission suites (offline-first) |
+| storage errors | filemgr source-errno failed-state suite + guest init recovery in CI |
+| update interruption | update suites: cancel pre-activation, verify/download fail-closed, health-fail rollback |
+| recovery/rollback | snapshot + update rollback + init recovery suites/CI |
+| security boundaries | sandbox/firewall/vault/AI-grant suites (SECURITY row) |
+| accessibility | a11y tree/focus/snapshot + keyboard-nav suites |
+| English/Hindi localization | i18n suites (en/hi catalogs) |
+| resource accounting | metrics recorder + perfcenter percentiles (PERFORMANCE row) |
+
 The authoritative per-core binding inventory (host-tested vs pending live integration vs no-claim) lives in `ARCHITECTURE.md` §14 "Stage 5 binding inventory".
 
 
@@ -27,7 +58,7 @@ The authoritative per-core binding inventory (host-tested vs pending live integr
 
 | Suite | Command | Assertions | Failures |
 |---|---|---|---|
-| Desktop modules (display, compositor, window, input, a11y, i18n, search, settings, notify, lifecycle, watchdog, governor, automation, browser, AI, bar, launcher, capability, metrics, update, url, study, fps, snapshot, vault, nav, firewall, sandbox, clipboard, downloads, providers, perfcenter, fault, soak, pdf, media, gaming, eco, snapshot-bind, privacy, term, filemgr, formula, ocr, overview, notes, dict, stress, integration) | `make desktop-check` | 120812 | 0 |
+| Desktop modules (display, compositor, window, input, a11y, i18n, search, settings, notify, lifecycle, watchdog, governor, automation, browser, AI, bar, launcher, capability, metrics, update, url, study, fps, snapshot, vault, nav, firewall, sandbox, clipboard, downloads, providers, perfcenter, fault, soak, pdf, media, gaming, eco, snapshot-bind, privacy, term, filemgr, formula, ocr, overview, notes, dict, assist, stress, integration) | `make desktop-check` | 120837 | 0 |
 | Windows compatibility core (lifecycle/paths/registry/DLL + PE validator) | `make compat-check` | 107 | 0 |
 | Hardware/driver cores (incl. crypto RFC vectors) | `make hardware-core-test` | per-suite PASS | 0 |
 | Public userspace ABI | `make userspace-abi-check`, `python3 userspace/tests/abi_consistency.py` | PASS | 0 |

@@ -5,6 +5,7 @@
 #define ZEROOS_DESKTOP_STUDY_H
 
 #include <stdint.h>
+#include <zeroos/desktop/ai.h> /* AI study assistant request types */
 
 #define ZD_STUDY_MAX_CARDS 64
 #define ZD_STUDY_MAX_DECK_NAME 32
@@ -63,5 +64,20 @@ int zd_study_advance_day(struct zd_study *s, uint32_t days);
 int zd_study_session_start(struct zd_study *s, uint32_t focus_minutes);
 int zd_study_session_tick(struct zd_study *s);   /* +1 minute */
 int zd_study_session_end(struct zd_study *s);
+
+/* --- AI study assistant ------------------------------------------
+ * Builds a broker request from study context; permission gating is
+ * the broker's job (submit rejects ungranted context bits up front). */
+/* Build a SUMMARIZE request: context_mask = CONTEXT_SELECTION, payload
+ * "study <deck>: <front>" truncated to fit the 64-byte payload.
+ * `front` NULL selects the next due card.  -22 bad args, -2 deck
+ * empty / front not found. */
+int zd_study_assist_request(struct zd_study *s, const char *front,
+                            struct zd_ai_request *out);
+/* Build + submit to the broker.  -ZD_EPERM when grants lack
+ * SELECTION (the broker counts denied_permission); -22 for a NULL
+ * broker; other build codes pass through. */
+int zd_study_assist_submit(struct zd_study *s, struct zd_ai_broker *b,
+                           const char *front);
 
 #endif /* ZEROOS_DESKTOP_STUDY_H */

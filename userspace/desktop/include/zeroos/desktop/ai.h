@@ -1,5 +1,5 @@
 #ifndef ZEROOS_DESKTOP_AI_H
-#define ZEROOS_DESKTOP_AI_AI_H
+#define ZEROOS_DESKTOP_AI_H
 /* ZEROOS AI platform broker (Stage 5 part F) — deliberately separate
  * from Forge AI: this module is only the local request broker, and it
  * is event-driven (dormant while no request exists), demand-driven
