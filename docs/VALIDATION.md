@@ -24,7 +24,7 @@ does not exist yet, the row says so — no claim is made without it.
 
 | Suite | Command | Assertions | Failures |
 |---|---|---|---|
-| Desktop modules (display, compositor, window, input, a11y, i18n, search, settings, notify, lifecycle, watchdog, governor, automation, browser, AI, bar, launcher, capability, metrics, update, url, study, fps, snapshot, vault, nav, firewall, sandbox, clipboard, downloads, providers, perfcenter, fault, soak, pdf, media, gaming, stress, integration) | `make desktop-check` | 116802 | 0 |
+| Desktop modules (display, compositor, window, input, a11y, i18n, search, settings, notify, lifecycle, watchdog, governor, automation, browser, AI, bar, launcher, capability, metrics, update, url, study, fps, snapshot, vault, nav, firewall, sandbox, clipboard, downloads, providers, perfcenter, fault, soak, pdf, media, gaming, eco, stress, integration) | `make desktop-check` | 116860 | 0 |
 | Windows compatibility core (lifecycle/paths/registry/DLL + PE validator) | `make compat-check` | 107 | 0 |
 | Hardware/driver cores (incl. crypto RFC vectors) | `make hardware-core-test` | per-suite PASS | 0 |
 | Public userspace ABI | `make userspace-abi-check`, `python3 userspace/tests/abi_consistency.py` | PASS | 0 |
@@ -42,7 +42,7 @@ plus QEMU boot certification.
 | `ccfa30d` | PR-context full boot with CI diagnostics | SUCCESS |
 | `f18c857` | PR-context full boot (network/DHCP core) | SUCCESS |
 | `c27ad12`, `ec2d1ce` | Both contexts green immediately after reverting the `dedb23f` task.c guard (experiment in section 3) | SUCCESS |
-| `0ec6d9d`, `772a923`, others, `78ef9b5` (PR context only; push context same SHA green, PR merge ref identical to push tree because `main` is a strict ancestor) | Same-code runs failing with `task owned by multiple CPUs`, `blocking IPC send-wakeup self-test failed`, `userspace init lifecycle failed`, storage-cert panics | FAILED — host-load flake family (identical SHA shows divergent outcomes across contexts) |
+| `0ec6d9d`, `772a923`, others, `78ef9b5` and `0b2b480` (both PR context only; push context same SHA green, PR merge ref identical to push tree because `main` is a strict ancestor, workflow has no event-conditional steps; the `0b2b480` failure was the QEMU "Boot test" step) | Same-code runs failing with `task owned by multiple CPUs`, `blocking IPC send-wakeup self-test failed`, `userspace init lifecycle failed`, storage-cert panics | FAILED — host-load flake family (identical SHA shows divergent outcomes across contexts) |
 
 The session milestone strings are grepped by the workflow, so a green
 run is machine-verified evidence, not a log skim.
@@ -74,7 +74,7 @@ versus an immediate return to green is what separated the two.
 | G | Study Center | Flashcard scheduler + focus-session suites (PHASES Phase 6) + PDF subset contract (header/page-tree walk, per-page Tj/TJ extraction with escapes, 64-page/1 KiB bounds, explicit `-95` for FlateDecode filters and encryption, malformed/truncated `-22`, seeded hand-authored fixtures) | Flashcard/focus/PDF-subset supported; OCR/formulas/dictionary pending |
 | H | Media | Lawful-source/no-DRM policy in `PHASES.md` Phase 6 + media policy core (origin registry default-deny, PLAY/CACHE/EXPORT/SYNC rights gates, DRM items refused with counted reasons and no bypass path anywhere) | Policy core supported (host-tested); decoder/playback integration binding pending |
 | I | Gaming | FPS monitor + performance-profile suites (budgets, percentiles, breaches) in `PHASES.md` Phase 11 + gaming core (per-app perf profiles, button remap table, overlay/low-latency flags, cooperative yield matrix from measured fps + pressure) | Profiles/remap/policy supported (host-tested); controller hardware + live overlay surface pending |
-| J | Cloud/device | Offline-first + explicit-permission contracts in `PHASES.md` Phase 11 | Not implemented — contract only |
+| J | Cloud/device ecosystem | Offline-first sync queue with explicit per-capability permissions (pairing grants nothing, grant/revoke exact bits, revoke drops dependent pending work, offline flush sends nothing, online flush re-checks pairing+perms), bounded devices/queue | Policy core supported (host-tested); transport + real devices pending |
 | K | Automation | automation suite (32 rules, audit ring, permission-first) | Supported |
 | L | Performance/resource governance | governor suite (tiers/pressure/effects) + metrics recorder (counters, interval histogram, p50/p99 reads) wired into the display present path | Core supported; on-device percentiles pending |
 | M | Validation | This document | Evidence ledger live; real-hardware row open |

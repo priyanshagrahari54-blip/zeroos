@@ -339,6 +339,13 @@ Implemented (this stage):
   deny for unregistered origins, and an unconditional DRM gate —
   protected items are refused with per-reason counters; the contract
   contains no bypass path by construction.  Host-tested.
+- Cloud/device ecosystem core (`userspace/desktop/src/eco.c`, part
+  J): offline-first sync queue — pairing grants zero permissions,
+  grants/revoke operate on exact bits, enqueue demands the paired
+  device + that bit, revoke/unpair drop dependent pending entries,
+  offline flush transmits nothing while keeping the queue intact,
+  and online flush re-validates pairing and permissions per entry
+  before delivery (refusals counted per reason).  Host-tested.
 - Gaming core (`userspace/desktop/src/gaming.c`, part I): per-app
   profiles (eco/balanced/perf, target fps, overlay + low-latency
   flags), physical-to-logical button remapping with unmapped
