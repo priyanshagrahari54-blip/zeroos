@@ -17,7 +17,7 @@ The detailed product plan remains in ZEROOS_MASTER_ROADMAP.md.
 10. Graphics/UI: framebuffer, compositor, windows, input routing, terminal, settings, file manager.
 11. System services: package/update/recovery/diagnostics/observability/power management.
 12. Study Center and app framework.
-13. Forge AI bridge: sandboxed local kernel/user API and external-service boundary.
+13. AI remains optional and isolated; no external development-agent bridge is part of ZEROOS.
 14. SMP/per-CPU scheduling, high-resolution timers, advanced memory management.
 15. Release engineering: reproducible builds, compatibility matrix, recovery media, long-duration stress and performance certification.
 
