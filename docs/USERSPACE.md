@@ -166,15 +166,68 @@ and requires the sender to complete; this covers the opposite backpressure
 wake direction rather than relying only on service receive wakeups.
 
 `PIPE_CREATE`, `PIPE_WRITE`, and `PIPE_READ` expose a bounded byte stream with
-`ZEROOS_IPC_PIPE_CAPACITY` bytes of kernel buffering. A write blocks until the
-whole requested chunk fits (or returns `EAGAIN`, `ETIMEDOUT`, `EINTR`, or
-`EPIPE`); a read returns any available bytes up to the requested capacity and
-may split one write across multiple reads. `PEEK` copies without consuming and
-therefore does not wake blocked writers. After the peer closes, buffered bytes
-remain readable and the empty pipe returns `EPIPE`. Pipe endpoints use the same
-generation-tagged handles, rights, wait-queue publication, cancellation, and
-rollback rules as message IPC, while the message channel retains its discrete
-record semantics.
+`ZEROOS_IPC_PIPE_CAPACITY` bytes of kernel buffering, implemented as a
+ring-buffer with head/tail/count and modulo wrap.
+
+Production byte-stream contract (Stage 2):
+
+- Fixed capacity: 2048 bytes, no dynamic allocation in data path.
+- Byte semantics: no record boundaries; a write may be split across multiple
+  reads and multiple writes may be coalesced in one read.
+- Partial transfers: read returns `min(available, requested)` (>=1 when data
+  present); write returns `min(free, requested)` (>=1 when space present).
+  A writer does not have to fit its entire length atomically; if free==0 it
+  blocks (or returns `EAGAIN`/`ETIMEDOUT`), otherwise it writes as much as fits
+  and returns the partial count. This matches POSIX pipe partial semantics and
+  the Stage 2 requirement for partial read/write.
+- Full-buffer backpressure: writer blocks on `send_waiters` when free==0,
+  woken by a reader that frees space.
+- Empty-buffer blocking: reader blocks on `receive_waiters` when count==0,
+  woken by a writer that adds data.
+- No lost wakeups: condition check and waiter publication are serialized by
+  `ipc_lock` spinlock (irqsave). Enqueue/dequeue and endpoint destruction wake
+  the opposite class.
+- Timeout-aware: infinite timeout uses event-driven wait_queue; timed timeout
+  uses 1-tick polling via `task_sleep_ticks(1)` with deadline overflow guard to
+  `~0ULL`, because the scheduler invariant forbids a task being in both wait
+  and sleep queues simultaneously. Deadline expiry returns `ETIMEDOUT`.
+- Cancellation: `endpoint_destroy_locked()` wakes all send and receive waiters
+  on both endpoints before invalidating generation.
+- Peer-close detection: writer sees `EPIPE` when peer is NULL (reader closed);
+  reader drains remaining bytes then sees `EPIPE` when peer is NULL and
+  count==0. EOF is therefore `EPIPE` after drain, consistent with message
+  queue semantics and verified by self-tests.
+- Lifetime/refcounting: generation-checked capabilities, refcount in
+  `endpoint->reserved`, process revocation on exit wakes blocked peers.
+- Concurrent readers/writers: protected by `ipc_lock`; each transfer is atomic
+  w.r.t. head/tail/count, multiple readers/writers may proceed serially.
+- Close while blocked: endpoint destruction wakes blocked tasks, they revalidate
+  and return `EPIPE`.
+- Exit while blocked: `ipc_process_revoke()` drops capabilities and destroys
+  endpoints, waking blocked peers.
+- `PEEK`: read-only flag, copies without consuming, does not wake writers.
+  Repeated PEEK observes identical bytes until a consuming read advances head.
+  Interaction:
+  * timeout: if empty, PEEK still blocks with same timeout semantics; expiry
+    returns `ETIMEDOUT`.
+  * close: if peer closed and empty, PEEK returns `EPIPE` (same as read).
+  * partial: PEEK returns `min(count, capacity)` without consuming.
+  * concurrent: PEEK and consuming reads are serialized by `ipc_lock`; a
+    concurrent consuming read that races a PEEK will be ordered before or after,
+    but never observes torn bytes. Multiple concurrent PEEKs see same data
+    until consumption.
+- User-copy validation: performed in syscall layer via
+  `process_address_space_is_user_range` and `copy_from/to_user` with overflow
+  checks.
+- Bounded memory/resource accounting: fixed ring buffer per endpoint (2048),
+  bounded endpoint table (64), capability table (128), max transfer 512.
+
+Pipe endpoints use the same generation-tagged handles, rights, wait-queue
+publication, cancellation, and rollback rules as message IPC, while the message
+channel retains its discrete record semantics. Extended self-tests cover
+empty/full, partial transfers, PEEK repeat, timeout, close/EOF, multiple
+readers/writers (via kernel-thread probes), blocked endpoint exit, invalid
+pointers (via Ring-3 negative probes), races, and memory exhaustion.
 
 `EVENT_CREATE` returns a signal handle and a wait handle. `EVENT_SIGNAL` sets a
 single pending bit on the peer and wakes one waiter; repeated signals while the

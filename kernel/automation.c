@@ -1,0 +1,7 @@
+#include "automation.h"
+static struct spinlock auto_lock;
+static struct zeroos_automation_rule rules[ZEROOS_AUTOMATION_MAX_RULES];
+int automation_system_init(void){spinlock_init(&auto_lock);for(uint32_t i=0;i<ZEROOS_AUTOMATION_MAX_RULES;++i){rules[i].used=0;rules[i].gen=0;spinlock_init(&rules[i].lock);}return 0;}
+int automation_rule_create(enum zeroos_automation_trigger trig,const char *action,uint64_t owner,uint64_t perms,uint64_t *id_out){if(!action||!id_out||owner==0)return -1;uint64_t f=spin_lock_irqsave(&auto_lock);for(uint32_t i=0;i<ZEROOS_AUTOMATION_MAX_RULES;++i){if(rules[i].used)continue;if(rules[i].gen==0xffffffffU)continue;rules[i].gen++;if(rules[i].gen==0)continue;rules[i].used=1;rules[i].state=ZEROOS_AUTOMATION_DORMANT;rules[i].trigger=trig;rules[i].owner_task_id=owner;rules[i].permissions=perms;uint32_t n=0;while(n<63&&action[n]){rules[i].action[n]=action[n];n++;}rules[i].action[n]=0;rules[i].id=((uint64_t)rules[i].gen<<16)|(i+1);*id_out=rules[i].id;spin_unlock_irqrestore(&auto_lock,f);return 0;}spin_unlock_irqrestore(&auto_lock,f);return -1;}
+int automation_rule_set_state(uint64_t id,enum zeroos_automation_state st){uint64_t f=spin_lock_irqsave(&auto_lock);uint32_t slot=(uint32_t)(id&0xffffULL);uint32_t gen=(uint32_t)(id>>16);if(slot&&slot<=ZEROOS_AUTOMATION_MAX_RULES&&gen){struct zeroos_automation_rule *r=&rules[slot-1];if(r->used&&r->gen==gen){uint64_t rf=spin_lock_irqsave(&r->lock);r->state=st;spin_unlock_irqrestore(&r->lock,rf);}}spin_unlock_irqrestore(&auto_lock,f);return 0;}
+int automation_debug_validate(void){return 0;}

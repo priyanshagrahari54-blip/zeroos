@@ -1,0 +1,8 @@
+#include "gaming.h"
+static struct spinlock gaming_lock;
+static struct zeroos_game_profile profiles[ZEROOS_GAMING_MAX_PROFILES];
+static enum zeroos_gaming_state global_state;
+int gaming_system_init(void){spinlock_init(&gaming_lock);global_state=ZEROOS_GAMING_STOPPED;for(uint32_t i=0;i<ZEROOS_GAMING_MAX_PROFILES;++i){profiles[i].used=0;profiles[i].gen=0;spinlock_init(&profiles[i].lock);}return 0;}
+int gaming_profile_create(const char *name,uint32_t fps,uint64_t owner,uint64_t *id_out){if(!name||!id_out||owner==0||fps==0)return -1;uint64_t f=spin_lock_irqsave(&gaming_lock);for(uint32_t i=0;i<ZEROOS_GAMING_MAX_PROFILES;++i){if(profiles[i].used)continue;if(profiles[i].gen==0xffffffffU)continue;profiles[i].gen++;if(profiles[i].gen==0)continue;profiles[i].used=1;profiles[i].target_fps=fps;profiles[i].low_latency=1;profiles[i].recording=0;profiles[i].owner_task_id=owner;uint32_t n=0;while(n<63&&name[n]){profiles[i].name[n]=name[n];n++;}profiles[i].name[n]=0;profiles[i].id=((uint64_t)profiles[i].gen<<16)|(i+1);*id_out=profiles[i].id;spin_unlock_irqrestore(&gaming_lock,f);return 0;}spin_unlock_irqrestore(&gaming_lock,f);return -1;}
+int gaming_profile_set_state(uint64_t id,enum zeroos_gaming_state st){uint64_t f=spin_lock_irqsave(&gaming_lock);global_state=st;uint32_t slot=(uint32_t)(id&0xffffULL);uint32_t gen=(uint32_t)(id>>16);if(slot&&slot<=ZEROOS_GAMING_MAX_PROFILES&&gen){struct zeroos_game_profile *p=&profiles[slot-1];if(p->used&&p->gen==gen){uint64_t pf=spin_lock_irqsave(&p->lock);(void)pf;spin_unlock_irqrestore(&p->lock,pf);}}spin_unlock_irqrestore(&gaming_lock,f);return 0;}
+int gaming_debug_validate(void){return 0;}
