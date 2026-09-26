@@ -2,7 +2,6 @@
 Version: 2.0 — Production-Grade / Advanced-First
 Scope: Stage 0 → Stage 5
 Repository: https://github.com/priyanshagrahari54-blip/zeroos
-Related engineering project: https://github.com/priyanshagrahari54-blip/forge-ai
 
 ============================================================
 ROLE
