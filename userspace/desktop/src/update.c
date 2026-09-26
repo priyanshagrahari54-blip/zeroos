@@ -113,6 +113,15 @@ int zd_update_event(struct zd_update *u, int event) {
     case ZD_UPD_EV_STAGE_OK:
         if (prev != ZD_UPD_STAGING)
             REJECT();
+        if (u->ops.stage_apply) {
+            /* documented hook: write payload to staging.  A failure
+             * aborts atomically here — nothing reaches preflight. */
+            int r = u->ops.stage_apply(u->ops.ctx);
+            if (r < 0) {
+                upd_fail(u);
+                return r;
+            }
+        }
         u->state = ZD_UPD_PREFLIGHT;
         break;
     case ZD_UPD_EV_PREFLIGHT_OK:

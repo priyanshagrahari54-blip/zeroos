@@ -111,4 +111,91 @@ void zd_test_snapshot_suite(void) {
         struct zd_snapshot *a = zd_snapshots_latest_ready(&s);
         ZD_CHECK(a != 0 && a->state == ZD_SNAP_READY);
     }
+
+    /* ---- production glue: update pipeline <-> snapshots ---- */
+    {
+        struct zd_snapshots sn2;
+        struct sn_log log2;
+        struct zd_snapshot_ops ops2;
+        struct zd_update u;
+        struct zd_update_ops uops;
+        int rc;
+
+        log2 = (struct sn_log){0, 0, 0, 0, 0};
+        ops2 = sn_ops(&log2);
+        zd_snapshots_init(&sn2, &ops2);
+
+        /* bind validation */
+        ZD_CHECK_EQ(zd_snapshots_bind_update(NULL, &uops), -22);
+        ZD_CHECK_EQ(zd_snapshots_bind_update(&sn2, NULL), -22);
+        ZD_CHECK_OK(zd_snapshots_bind_update(&sn2, &uops));
+        ZD_CHECK(uops.stage_apply != 0);
+        ZD_CHECK(uops.rollback != 0);
+        ZD_CHECK(uops.activate == 0); /* A/B flips stay in block layer */
+        ZD_CHECK(uops.commit == 0);
+
+        /* happy path: stage captures, activation fails, rollback
+         * restores the captured snapshot atomically */
+        zd_update_init(&u, &uops);
+        ZD_CHECK_OK(zd_update_begin(&u, "7.7.7"));
+        ZD_CHECK_EQ(zd_update_state(&u), ZD_UPD_DOWNLOADING);
+        ZD_CHECK_OK(zd_update_event(&u, ZD_UPD_EV_DOWNLOAD_OK));
+        ZD_CHECK_OK(zd_update_event(&u, ZD_UPD_EV_VERIFY_OK));
+        ZD_CHECK_EQ(zd_update_state(&u), ZD_UPD_STAGING);
+        ZD_CHECK_OK(zd_update_event(&u, ZD_UPD_EV_STAGE_OK));
+        ZD_CHECK_EQ(zd_update_state(&u), ZD_UPD_PREFLIGHT);
+        /* snapshot captured during staging */
+        ZD_CHECK(zd_snapshots_find(&sn2, "update") != 0);
+        ZD_CHECK(zd_snapshots_ready_count(&sn2) >= 1);
+        ZD_CHECK(log2.capture >= 1);
+        ZD_CHECK_OK(zd_update_event(&u, ZD_UPD_EV_PREFLIGHT_OK));
+        ZD_CHECK_EQ(zd_update_state(&u), ZD_UPD_ACTIVATING);
+        ZD_CHECK_OK(zd_update_event(&u, ZD_UPD_EV_ACTIVATE_FAIL));
+        ZD_CHECK_EQ(zd_update_state(&u), ZD_UPD_ROLLING_BACK);
+        rc = zd_update_event(&u, ZD_UPD_EV_ROLLBACK_DONE);
+        ZD_CHECK_OK(rc);
+        ZD_CHECK_EQ(zd_update_state(&u), ZD_UPD_FAILED);
+        ZD_CHECK_EQ(u.stats.rollbacks, 1u);
+        ZD_CHECK(log2.restore >= 1); /* restore hook actually ran */
+
+        /* fail-closed path: stage re-captures, then the snapshot is
+         * removed out-of-band — rollback must find nothing and the
+         * machine must fail without counting a completed rollback */
+        zd_update_init(&u, &uops);
+        ZD_CHECK_OK(zd_update_begin(&u, "8.0.0"));
+        ZD_CHECK_OK(zd_update_event(&u, ZD_UPD_EV_DOWNLOAD_OK));
+        ZD_CHECK_OK(zd_update_event(&u, ZD_UPD_EV_VERIFY_OK));
+        ZD_CHECK_OK(zd_update_event(&u, ZD_UPD_EV_STAGE_OK));
+        ZD_CHECK_OK(zd_update_event(&u, ZD_UPD_EV_PREFLIGHT_OK));
+        ZD_CHECK_OK(zd_snapshots_discard(&sn2, "update"));
+        ZD_CHECK_OK(zd_update_event(&u, ZD_UPD_EV_ACTIVATE_FAIL));
+        ZD_CHECK_EQ(zd_update_state(&u), ZD_UPD_ROLLING_BACK);
+        rc = zd_update_event(&u, ZD_UPD_EV_ROLLBACK_DONE);
+        ZD_CHECK_EQ(rc, -2);
+        ZD_CHECK_EQ(zd_update_state(&u), ZD_UPD_FAILED);
+        ZD_CHECK_EQ(u.stats.rollbacks, 0u);
+
+        /* stage capture error aborts staging (hook errno surfaces) */
+        {
+            struct zd_snapshots sn3;
+            struct sn_log log3;
+            struct zd_snapshot_ops ops3;
+            struct zd_update u3;
+            struct zd_update_ops u3ops;
+            log3 = (struct sn_log){0, 0, 0, 0, 1}; /* discard fails */
+            ops3 = sn_ops(&log3);
+            zd_snapshots_init(&sn3, &ops3);
+            /* pre-existing stale entry so the discard hook really runs */
+            ZD_CHECK_OK(zd_snapshots_create(&sn3, "update"));
+            ZD_CHECK_OK(zd_snapshots_create_finish(&sn3, 0));
+            ZD_CHECK_OK(zd_snapshots_bind_update(&sn3, &u3ops));
+            zd_update_init(&u3, &u3ops);
+            ZD_CHECK_OK(zd_update_begin(&u3, "9.0.0"));
+            ZD_CHECK_OK(zd_update_event(&u3, ZD_UPD_EV_DOWNLOAD_OK));
+            ZD_CHECK_OK(zd_update_event(&u3, ZD_UPD_EV_VERIFY_OK));
+            /* discard hook fails (-5) -> stage_apply surfaces it */
+            rc = zd_update_event(&u3, ZD_UPD_EV_STAGE_OK);
+            ZD_CHECK_EQ(rc, -5);
+        }
+    }
 }

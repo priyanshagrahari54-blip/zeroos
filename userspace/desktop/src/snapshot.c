@@ -122,6 +122,17 @@ int zd_snapshots_create_finish(struct zd_snapshots *s, int err) {
         s->stats.create_failed++;
         return 0;
     }
+    if (s->ops.capture) {
+        /* documented hook: capture payloads into the hook's storage.
+         * A failure marks creation FAILED — never a half-READY slot. */
+        int r = s->ops.capture(s->ops.ctx, s->slots[idx].name);
+        if (r < 0) {
+            s->slots[idx].state = ZD_SNAP_FAILED;
+            s->slots[idx].last_error = -r;
+            s->stats.create_failed++;
+            return r;
+        }
+    }
     s->slots[idx].state = ZD_SNAP_READY;
     s->slots[idx].seq = s->next_seq++;
     s->stats.created++;
@@ -205,5 +216,48 @@ int zd_snapshots_discard(struct zd_snapshots *s, const char *name) {
     s->slots[idx].state = ZD_SNAP_EMPTY;
     s->slots[idx].name[0] = 0;
     s->stats.discarded++;
+    return 0;
+}
+
+/* ---- update pipeline binding (see snapshot.h) ---- */
+
+static int sn_upd_stage(void *ctx) {
+    struct zd_snapshots *s = ctx;
+    int r;
+    if (!s)
+        return -22;
+    /* replace a stale capture from a previous attempt: absent (-2)
+     * is fine, any other error aborts staging fail-closed */
+    {
+        int d = zd_snapshots_discard(s, "update");
+        if (d < 0 && d != -2)
+            return d;
+    }
+    r = zd_snapshots_create(s, "update");
+    if (r < 0)
+        return r;
+    return zd_snapshots_create_finish(s, 0);
+}
+
+static int sn_upd_rollback(void *ctx) {
+    struct zd_snapshots *s = ctx;
+    struct zd_snapshot *latest;
+    if (!s)
+        return -22;
+    latest = zd_snapshots_latest_ready(s);
+    if (!latest)
+        return -2; /* nothing to restore: caller must fail closed */
+    return zd_snapshots_restore(s, latest->name);
+}
+
+int zd_snapshots_bind_update(struct zd_snapshots *s,
+                             struct zd_update_ops *out) {
+    if (!s || !out)
+        return -22;
+    out->stage_apply = sn_upd_stage;
+    out->activate = 0;
+    out->rollback = sn_upd_rollback;
+    out->commit = 0;
+    out->ctx = s;
     return 0;
 }

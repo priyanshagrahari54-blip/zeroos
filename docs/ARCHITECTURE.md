@@ -339,6 +339,14 @@ Implemented (this stage):
   deny for unregistered origins, and an unconditional DRM gate —
   protected items are refused with per-reason counters; the contract
   contains no bypass path by construction.  Host-tested.
+- Update<->snapshot production binding (`zd_snapshots_bind_update`,
+  part B): the update machine's `stage_apply` hook captures a fresh
+  "update" snapshot (capture errors abort staging atomically) and
+  `rollback` restores the newest READY one (none available -> -2,
+  which the machine converts to FAILED — never a silent half-
+  rollback).  Wiring fix: `stage_apply` and the snapshot `capture`
+  hook were documented but never invoked; both are now called during
+  their transitions with fail-closed semantics and regression tests.
 - Cloud/device ecosystem core (`userspace/desktop/src/eco.c`, part
   J): offline-first sync queue — pairing grants zero permissions,
   grants/revoke operate on exact bits, enqueue demands the paired

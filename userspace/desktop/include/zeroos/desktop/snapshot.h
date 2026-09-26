@@ -8,6 +8,7 @@
 #define ZEROOS_DESKTOP_SNAPSHOT_H
 
 #include <stdint.h>
+#include <zeroos/desktop/update.h>
 
 #define ZD_SNAP_MAX 8
 #define ZD_SNAP_NAME 32
@@ -60,5 +61,15 @@ struct zd_snapshot *zd_snapshots_find(struct zd_snapshots *s,
                                       const char *name);
 struct zd_snapshot *zd_snapshots_latest_ready(struct zd_snapshots *s);
 uint32_t zd_snapshots_ready_count(const struct zd_snapshots *s);
+
+/* Production glue (part B): fill `out` with update-pipeline hooks
+ * backed by this manager.  stage_apply captures a fresh "update"
+ * snapshot (replacing a stale one; capture errors abort staging),
+ * rollback restores the newest READY snapshot (none available ->
+ * -2, which the update machine converts to FAILED — atomic, never a
+ * silent half-rollback).  activate/commit stay NULL: A/B slot flips
+ * belong to the block layer, not to snapshot state. */
+int zd_snapshots_bind_update(struct zd_snapshots *s,
+                             struct zd_update_ops *out);
 
 #endif /* ZEROOS_DESKTOP_SNAPSHOT_H */
