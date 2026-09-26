@@ -38,6 +38,8 @@
 #include <zeroos/desktop/firewall.h>
 #include <zeroos/desktop/sandbox.h>
 #include <zeroos/desktop/clipboard.h>
+#include <zeroos/desktop/downloads.h>
+#include <zeroos/desktop/providers.h>
 #include <zeroos/desktop/search.h>
 #include <zeroos/desktop/settings.h>
 #include <zeroos/desktop/notify.h>

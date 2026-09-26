@@ -33,6 +33,8 @@ void zd_test_nav_suite(void);
 void zd_test_firewall_suite(void);
 void zd_test_sandbox_suite(void);
 void zd_test_clipboard_suite(void);
+void zd_test_downloads_suite(void);
+void zd_test_providers_suite(void);
 void zd_test_stress_suite(void);
 void zd_test_fps_suite(void);
 void zd_test_ai_suite(void);
@@ -67,6 +69,8 @@ int main(void) {
     zd_test_firewall_suite();
     zd_test_sandbox_suite();
     zd_test_clipboard_suite();
+    zd_test_downloads_suite();
+    zd_test_providers_suite();
     zd_test_stress_suite();
     zd_test_fps_suite();
     zd_test_ai_suite();
