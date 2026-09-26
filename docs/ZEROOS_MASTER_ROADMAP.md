@@ -382,7 +382,7 @@ Stable:
 ## Final dream
 
 ZEROOS becomes a complete ecosystem:
-Kernel + Drivers + Security + Storage + Network + Desktop + Native Apps + Study Platform + Compatibility + Recovery + Updates + Forge AI
+Kernel + Drivers + Security + Storage + Network + Desktop + Native Apps + Study Platform + Compatibility + Recovery + Updates
 
 while remaining fast, lightweight, native, reliable and measurable.
 
