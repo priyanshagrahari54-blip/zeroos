@@ -334,6 +334,13 @@ Implemented (this stage):
   single-active-transfer policy (cooperative sharing), monotonic
   progress with regression rejection, start-hook failure accounting
   and terminal-state immutability — host-tested.
+- Fault-injection suite (`userspace/desktop/tests/test_fault.c`):
+  seeded LCG drives 512 rounds of invalid inputs across settings,
+  notify, clipboard, downloads, snapshots, firewall, sandbox,
+  lifecycle and the performance center; every return must stay in
+  the errno range, caps must hold, state machines must reject
+  wrong-state sequences, and known-good paths must still succeed
+  afterwards — part M FAULT evidence, reproducible from a fixed seed.
 - Performance center (`userspace/desktop/src/perfcenter.c`): ring of
   frame-time samples with p50/p95/worst percentiles and a health
   ladder (good/fair/poor/critical) driven by measured thresholds —
