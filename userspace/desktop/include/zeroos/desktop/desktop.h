@@ -42,6 +42,8 @@
 #include <zeroos/desktop/providers.h>
 #include <zeroos/desktop/perfcenter.h>
 #include <zeroos/desktop/pdf.h>
+#include <zeroos/desktop/media.h>
+#include <zeroos/desktop/gaming.h>
 #include <zeroos/desktop/search.h>
 #include <zeroos/desktop/settings.h>
 #include <zeroos/desktop/notify.h>

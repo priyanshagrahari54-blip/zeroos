@@ -24,7 +24,7 @@ does not exist yet, the row says so — no claim is made without it.
 
 | Suite | Command | Assertions | Failures |
 |---|---|---|---|
-| Desktop modules (display, compositor, window, input, a11y, i18n, search, settings, notify, lifecycle, watchdog, governor, automation, browser, AI, bar, launcher, capability, metrics, update, url, study, fps, snapshot, vault, nav, firewall, sandbox, clipboard, downloads, providers, perfcenter, fault, soak, pdf, stress, integration) | `make desktop-check` | 116721 | 0 |
+| Desktop modules (display, compositor, window, input, a11y, i18n, search, settings, notify, lifecycle, watchdog, governor, automation, browser, AI, bar, launcher, capability, metrics, update, url, study, fps, snapshot, vault, nav, firewall, sandbox, clipboard, downloads, providers, perfcenter, fault, soak, pdf, media, gaming, stress, integration) | `make desktop-check` | 116802 | 0 |
 | Windows compatibility core (lifecycle/paths/registry/DLL + PE validator) | `make compat-check` | 107 | 0 |
 | Hardware/driver cores (incl. crypto RFC vectors) | `make hardware-core-test` | per-suite PASS | 0 |
 | Public userspace ABI | `make userspace-abi-check`, `python3 userspace/tests/abi_consistency.py` | PASS | 0 |
@@ -72,8 +72,8 @@ versus an immediate return to green is what separated the two.
 | E | Browser tabs lifecycle | browser suite (16-tab ladder, crash recovery), strict URL parser, navigation controller (history/back/forward/blocking) | Core supported; engine/UI pending |
 | F | AI platform (separate from Forge AI) | AI broker suite, ARCHITECTURE §17 | Broker supported; adapters pending |
 | G | Study Center | Flashcard scheduler + focus-session suites (PHASES Phase 6) + PDF subset contract (header/page-tree walk, per-page Tj/TJ extraction with escapes, 64-page/1 KiB bounds, explicit `-95` for FlateDecode filters and encryption, malformed/truncated `-22`, seeded hand-authored fixtures) | Flashcard/focus/PDF-subset supported; OCR/formulas/dictionary pending |
-| H | Media | Lawful-source/no-DRM policy in `PHASES.md` Phase 6 | Not implemented — policy binding |
-| I | Gaming | FPS monitor + performance-profile suites (budgets, percentiles, breaches) in `PHASES.md` Phase 11 | FPS/profiles supported; overlay/controllers/low-latency device support pending |
+| H | Media | Lawful-source/no-DRM policy in `PHASES.md` Phase 6 + media policy core (origin registry default-deny, PLAY/CACHE/EXPORT/SYNC rights gates, DRM items refused with counted reasons and no bypass path anywhere) | Policy core supported (host-tested); decoder/playback integration binding pending |
+| I | Gaming | FPS monitor + performance-profile suites (budgets, percentiles, breaches) in `PHASES.md` Phase 11 + gaming core (per-app perf profiles, button remap table, overlay/low-latency flags, cooperative yield matrix from measured fps + pressure) | Profiles/remap/policy supported (host-tested); controller hardware + live overlay surface pending |
 | J | Cloud/device | Offline-first + explicit-permission contracts in `PHASES.md` Phase 11 | Not implemented — contract only |
 | K | Automation | automation suite (32 rules, audit ring, permission-first) | Supported |
 | L | Performance/resource governance | governor suite (tiers/pressure/effects) + metrics recorder (counters, interval histogram, p50/p99 reads) wired into the display present path | Core supported; on-device percentiles pending |

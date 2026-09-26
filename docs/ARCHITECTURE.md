@@ -334,6 +334,17 @@ Implemented (this stage):
   single-active-transfer policy (cooperative sharing), monotonic
   progress with regression rejection, start-hook failure accounting
   and terminal-state immutability — host-tested.
+- Media policy core (`userspace/desktop/src/media.c`, part H): origin
+  registry with explicit rights (play/cache/export/sync), default
+  deny for unregistered origins, and an unconditional DRM gate —
+  protected items are refused with per-reason counters; the contract
+  contains no bypass path by construction.  Host-tested.
+- Gaming core (`userspace/desktop/src/gaming.c`, part I): per-app
+  profiles (eco/balanced/perf, target fps, overlay + low-latency
+  flags), physical-to-logical button remapping with unmapped
+  accounting, and a cooperative yield matrix (degrade / overlay-off /
+  target-floor) decided from measured fps and memory pressure —
+  decisions only; sampling stays in the fps ring.  Host-tested.
 - PDF document contract (`userspace/desktop/src/pdf.c`, part G):
   bounded zero-heap subset parser over caller-owned bytes — header
   and version check, `/Type /Page` walk with object-number recovery,
