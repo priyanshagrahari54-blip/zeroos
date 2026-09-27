@@ -27,6 +27,7 @@
 #include <zeroos/desktop/i18n.h>
 #include <zeroos/desktop/media.h>
 #include <zeroos/desktop/snapshot.h>
+#include <zeroos/desktop/vault.h>
 #include <zeroos/desktop/capability.h>
 #include <zeroos/desktop/update.h>
 #include "crypto.h"
@@ -526,6 +527,7 @@ static struct zd_perf_center session_perf;
 static struct zd_perf_center session_perf_cold;
 static struct zd_bar session_bar;
 static struct zd_metrics session_metrics;
+static struct zd_vault session_vault;
 static struct zd_snapshots session_snapshots;
 static struct zd_update_ops session_snap_update_ops;
 static uint8_t session_snap_buffer[64];
@@ -1073,6 +1075,13 @@ int session_main(void) {
     int media_i;
     int media_j;
     struct zd_snapshot *snap;
+    struct zd_vault_entry *vault_entry;
+    uint8_t vault_out[ZD_VAULT_SECRET_MAX];
+    uint8_t vault_wrong[ZD_VAULT_KEY_LEN];
+    uint32_t vault_len = 0;
+    int vault_i;
+    int vault_j;
+    int vault_match;
     uint32_t study_entries;
     uint32_t study_cards;
     int study_i;
@@ -3507,14 +3516,18 @@ int session_main(void) {
         return fail("media play", (int64_t)session_media.stats.plays);
     if (zd_media_request(&session_media, 1, ZD_MEDIA_RIGHT_CACHE) != 0)
         return fail("media cache right", 0);
-    if (zd_media_request(&session_media, 1, ZD_MEDIA_RIGHT_EXPORT) != -1)
-        return fail("media export gate", 0);
+    /* Export is not granted for that origin, so the request is refused and
+     * counted as the first rights refusal. */
+    if (zd_media_request(&session_media, 1, ZD_MEDIA_RIGHT_EXPORT) != -1 ||
+        session_media.stats.refusals_rights != 1)
+        return fail("media export gate",
+                    (int64_t)session_media.stats.refusals_rights);
     /* The same title under the origin that holds no rights is refused. */
     if (zd_media_add_item(&session_media, "file:/ram/shell", media_first,
                           0) != 0)
         return fail("media ungranted add", 0);
     if (zd_media_play(&session_media, media_count + 1) != -1 ||
-        session_media.stats.refusals_rights != 1)
+        session_media.stats.refusals_rights != 2)
         return fail("media rights refusal",
                     (int64_t)session_media.stats.refusals_rights);
     /* Protected content is listed but never played, and the refusal is
@@ -3625,7 +3638,99 @@ int session_main(void) {
                     (int64_t)session_snapshots.stats.discarded);
     say("ZEROOS: session recovery snapshots passed.");
 
-    /* 28. Update payload verification with a provisioned key. Nothing
+    /* 28. The secret vault over the kernel's certified AEAD, holding the very
+     * key material the update pipeline signs with. Nothing here is trusted:
+     * the plaintext must not appear in the stored ciphertext, a locked vault
+     * refuses on both paths, and a wrong key or a single flipped byte fails
+     * authentication rather than handing back garbage. */
+    zd_vault_init(&session_vault);
+    if (zd_vault_put(&session_vault, "update.key", update_key,
+                     (uint32_t)sizeof(update_key)) != -1 ||
+        session_vault.stats.rejected != 1)
+        return fail("vault locked put",
+                    (int64_t)session_vault.stats.rejected);
+    if (zd_vault_get(&session_vault, "update.key", vault_out,
+                     (uint32_t)sizeof(vault_out), &vault_len) != -1 ||
+        session_vault.stats.get_denied != 1)
+        return fail("vault locked get",
+                    (int64_t)session_vault.stats.get_denied);
+    if (zd_vault_unlock(&session_vault, update_key) != 0 ||
+        session_vault.unlocked != 1)
+        return fail("vault unlock", 0);
+    if (zd_vault_put(&session_vault, "update.key", update_key,
+                     (uint32_t)sizeof(update_key)) != 0 ||
+        session_vault.stats.puts != 1 ||
+        zd_vault_count(&session_vault) != 1)
+        return fail("vault put", (int64_t)zd_vault_count(&session_vault));
+    vault_entry = &session_vault.entries[0];
+    if (!vault_entry->in_use ||
+        vault_entry->ct_len !=
+            12u + (uint32_t)sizeof(update_key) + 16u)
+        return fail("vault ciphertext length",
+                    (int64_t)vault_entry->ct_len);
+    /* No run of the key may appear in what the vault keeps. */
+    vault_match = 0;
+    for (vault_i = 0; vault_i + 8 <= (int)vault_entry->ct_len; ++vault_i) {
+        vault_match = 1;
+        for (vault_j = 0; vault_j < 8; ++vault_j)
+            if (vault_entry->ct[vault_i + vault_j] != update_key[vault_j])
+                vault_match = 0;
+        if (vault_match)
+            break;
+    }
+    if (vault_match)
+        return fail("vault plaintext retained", 0);
+    if (zd_vault_get(&session_vault, "update.key", vault_out,
+                     (uint32_t)sizeof(vault_out), &vault_len) != 0 ||
+        vault_len != (uint32_t)sizeof(update_key) ||
+        session_vault.stats.gets != 1)
+        return fail("vault get", (int64_t)session_vault.stats.gets);
+    for (vault_i = 0; vault_i < (int)vault_len; ++vault_i)
+        if (vault_out[vault_i] != update_key[vault_i])
+            return fail("vault round trip", (int64_t)vault_i);
+    /* An over-long secret and an empty name are both refused and counted. */
+    if (zd_vault_put(&session_vault, "big", vault_out,
+                     ZD_VAULT_SECRET_MAX + 1) != -22 ||
+        zd_vault_put(&session_vault, "", vault_out, 8) != -22 ||
+        session_vault.stats.rejected != 3)
+        return fail("vault bounds",
+                    (int64_t)session_vault.stats.rejected);
+    /* Locking wipes the key and leaves the entries as ciphertext. */
+    if (zd_vault_lock(&session_vault) != 0 ||
+        session_vault.unlocked != 0 ||
+        session_vault.stats.wipes != 1 ||
+        zd_vault_count(&session_vault) != 1)
+        return fail("vault lock", (int64_t)session_vault.stats.wipes);
+    /* The wrong key does not decrypt: authentication fails explicitly. */
+    for (vault_i = 0; vault_i < (int)sizeof(vault_wrong); ++vault_i)
+        vault_wrong[vault_i] = (uint8_t)(update_key[vault_i] ^ 0xFFu);
+    if (zd_vault_unlock(&session_vault, vault_wrong) != 0)
+        return fail("vault wrong unlock", 0);
+    if (zd_vault_get(&session_vault, "update.key", vault_out,
+                     (uint32_t)sizeof(vault_out), &vault_len) != -3 ||
+        session_vault.stats.auth_failures != 1)
+        return fail("vault wrong key",
+                    (int64_t)session_vault.stats.auth_failures);
+    /* Neither does a single flipped ciphertext byte under the right key. */
+    if (zd_vault_unlock(&session_vault, update_key) != 0)
+        return fail("vault relock", 0);
+    session_vault.entries[0].ct[16] ^= 0x01u;
+    if (zd_vault_get(&session_vault, "update.key", vault_out,
+                     (uint32_t)sizeof(vault_out), &vault_len) != -3 ||
+        session_vault.stats.auth_failures != 2)
+        return fail("vault tamper",
+                    (int64_t)session_vault.stats.auth_failures);
+    session_vault.entries[0].ct[16] ^= 0x01u;
+    /* Forgetting erases the ciphertext and the entry with it. */
+    if (zd_vault_forget(&session_vault, "update.key") != 0 ||
+        zd_vault_count(&session_vault) != 0)
+        return fail("vault forget", (int64_t)zd_vault_count(&session_vault));
+    if (zd_vault_get(&session_vault, "update.key", vault_out,
+                     (uint32_t)sizeof(vault_out), &vault_len) != -2)
+        return fail("vault forgotten get", 0);
+    say("ZEROOS: session secret vault passed.");
+
+    /* 29. Update payload verification with a provisioned key. Nothing
      * here is a fixture: the key is provisioned through the filesystem
      * (written, read back, and only then used), the bundle is sealed with
      * the RFC 8439 AEAD core, and the update engine verifies it with the
@@ -3745,7 +3850,7 @@ int session_main(void) {
         return fail("update slot removed", 0);
     say("ZEROOS: session update verification passed.");
 
-    /* 29. Sandbox decisions enforced by the kernel, not only by Ring-3
+    /* 30. Sandbox decisions enforced by the kernel, not only by Ring-3
      * policy. The confined profile denies writes, so the session really
      * drops its identity: after SETCRED the VFS itself refuses the
      * owner-only file with EACCES while a world-readable file still
