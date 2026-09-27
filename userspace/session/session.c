@@ -205,6 +205,57 @@ static const uint32_t *session_pixel_source(void *context,
     return window_pixels;
 }
 
+/* Rename inside one filesystem: syscall 38, so a move within a directory
+ * is a real namespace operation rather than a copy. */
+static int session_fs_rename(void *context, const char *from,
+                             const char *to) {
+    (void)context;
+    return (int)zeroos_rename(from, to);
+}
+
+/* Bounded read for preview and copy. Never writes past `capacity`; the
+ * caller owns the buffer. */
+static int session_fs_read_file(void *context, const char *path, void *buffer,
+                                uint32_t capacity, uint32_t *out_length) {
+    int64_t fd;
+    int64_t n;
+    (void)context;
+    if (out_length)
+        *out_length = 0;
+    if (!buffer || capacity == 0)
+        return -ZEROOS_EINVAL;
+    fd = zeroos_open(path, ZEROOS_O_RDONLY, 0);
+    if (fd < 0)
+        return (int)fd;
+    n = zeroos_read(fd, buffer, capacity);
+    (void)zeroos_close(fd);
+    if (n < 0)
+        return (int)n;
+    if (out_length)
+        *out_length = (uint32_t)n;
+    return 0;
+}
+
+/* Create-or-truncate write: the destination of a copy is always a whole
+ * file, never an appended fragment. */
+static int session_fs_write_file(void *context, const char *path,
+                                 const void *buffer, uint32_t length) {
+    int64_t fd;
+    int64_t n;
+    (void)context;
+    fd = zeroos_open(path,
+                     ZEROOS_O_WRONLY | ZEROOS_O_CREAT | ZEROOS_O_TRUNC, 0644);
+    if (fd < 0)
+        return (int)fd;
+    n = zeroos_file_write(fd, buffer, length);
+    (void)zeroos_close(fd);
+    if (n < 0)
+        return (int)n;
+    if ((uint32_t)n != length)
+        return -ZEROOS_EIO;
+    return 0;
+}
+
 /* Builds "dir/name" into out; -ZD_EOVERFLOW when it would not fit. */
 static int session_join(char *out, uint32_t cap, const char *dir,
                         const char *name) {
@@ -395,6 +446,8 @@ int session_main(void) {
     zd_window_id window = ZD_INVALID_WINDOW;
     struct zd_bitmap target;
     struct zeroos_stat file_stat;
+    char preview[24];
+    uint32_t preview_len;
     int64_t sys_result;
     int attach_result;
     int live = 0;
@@ -584,6 +637,9 @@ int session_main(void) {
     zd_fm_init(&session_fm, session_dir_source, 0);
     session_fm.ops.remove = session_fs_remove;
     session_fm.ops.mkdir = session_fs_mkdir;
+    session_fm.ops.rename = session_fs_rename;
+    session_fm.ops.read_file = session_fs_read_file;
+    session_fm.ops.write_file = session_fs_write_file;
     session_fm.ops.ctx = 0;
     if (zd_fm_open(&session_fm, "/ram/shell") != 0)
         return fail("file manager open", session_fm.hist_state);
@@ -612,6 +668,41 @@ int session_main(void) {
     if (zd_fm_visible_count(&session_fm) != 2)
         return fail("file manager after mkdir",
                     (int64_t)zd_fm_visible_count(&session_fm));
+    /* Preview, copy, rename and move over the same VFS: the preview must
+     * return the bytes this process wrote, and every step is verified
+     * through STAT so a silent no-op cannot pass. */
+    preview_len = 0;
+    if (zd_fm_peek(&session_fm, ZD_FM_PERM_READ, "notes.txt", preview,
+                   sizeof(preview), &preview_len) != 0 ||
+        preview_len != sizeof(preview) - 1 ||
+        !session_streq(preview, "zeroos shell binding"))
+        return fail("file manager preview", (int64_t)preview_len);
+    if (zd_fm_peek(&session_fm, 0, "notes.txt", preview, sizeof(preview),
+                   &preview_len) != -1)
+        return fail("file manager preview permission gate", 0);
+    if (zd_fm_copy(&session_fm, ZD_FM_PERM_READ | ZD_FM_PERM_WRITE,
+                   "notes.txt", "/ram/shell/inbox", "copy.txt") != 0)
+        return fail("file manager copy", 0);
+    if (zeroos_stat("/ram/shell/inbox/copy.txt", &file_stat) != 0 ||
+        file_stat.size != 64)
+        return fail("file manager copy verify", (int64_t)file_stat.size);
+    if (zd_fm_copy(&session_fm, ZD_FM_PERM_READ | ZD_FM_PERM_WRITE,
+                   "notes.txt", "/ram/shell", "work.txt") != 0 ||
+        zd_fm_rename(&session_fm, ZD_FM_PERM_READ | ZD_FM_PERM_WRITE,
+                     "work.txt", "renamed.txt") != 0)
+        return fail("file manager rename", 0);
+    if (zeroos_stat("/ram/shell/work.txt", &file_stat) != -ZEROOS_ENOENT ||
+        zeroos_stat("/ram/shell/renamed.txt", &file_stat) != 0 ||
+        file_stat.size != 64)
+        return fail("file manager rename verify", 0);
+    if (zd_fm_move(&session_fm, ZD_FM_PERM_READ | ZD_FM_PERM_WRITE,
+                   "renamed.txt", "/ram/shell/inbox", "moved.txt") != 0)
+        return fail("file manager move", 0);
+    if (zeroos_stat("/ram/shell/renamed.txt", &file_stat) != -ZEROOS_ENOENT ||
+        zeroos_stat("/ram/shell/inbox/moved.txt", &file_stat) != 0 ||
+        file_stat.size != 64)
+        return fail("file manager move verify", 0);
+    say("ZEROOS: session file manager transfer ops passed.");
     if (zd_fm_remove(&session_fm, ZD_FM_PERM_WRITE, "notes.txt") != 0)
         return fail("file manager remove", 0);
     if (zeroos_stat("/ram/shell/notes.txt", &file_stat) != -ZEROOS_ENOENT)

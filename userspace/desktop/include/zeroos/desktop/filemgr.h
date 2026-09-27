@@ -19,6 +19,9 @@
 #define ZD_FM_NAME 48
 #define ZD_FM_PATH 96
 #define ZD_FM_HISTORY 16
+/* Bounded transfer window for copy/preview. A file larger than this is
+ * refused (-27) rather than silently truncated. */
+#define ZD_FM_COPY_MAX 4096
 
 /* entry kind flags */
 #define ZD_FM_DIR    (1u << 0)
@@ -46,6 +49,16 @@ typedef int (*zd_fm_source_fn)(void *ctx, const char *path,
 struct zd_fm_ops {
     int (*remove)(void *ctx, const char *path);
     int (*mkdir)(void *ctx, const char *path);
+    /* Rename inside one filesystem; both paths absolute. */
+    int (*rename)(void *ctx, const char *from, const char *to);
+    /* Bounded content transfer used by copy and preview. read_file fills
+     * at most `capacity` bytes and reports how many through *out_length;
+     * write_file creates or truncates. Both return 0 or a negative
+     * errno, and neither may write past `capacity`. */
+    int (*read_file)(void *ctx, const char *path, void *buffer,
+                     uint32_t capacity, uint32_t *out_length);
+    int (*write_file)(void *ctx, const char *path, const void *buffer,
+                      uint32_t length);
     void *ctx;
 };
 
@@ -74,7 +87,8 @@ struct zd_fm {
     struct {
         uint32_t refreshes, source_errors, truncations, rejected,
                  navigations, backs, forwards, history_dropped,
-                 selects, ops_perm_denied, removed, mkdirs, op_errors;
+                 selects, ops_perm_denied, removed, mkdirs, op_errors,
+                 renamed, copied, moved, peeks, refusals;
     } stats;
 };
 
@@ -103,5 +117,27 @@ int zd_fm_remove(struct zd_fm *fm, uint32_t actor_perms,
                  const char *name);
 int zd_fm_mkdir(struct zd_fm *fm, uint32_t actor_perms,
                 const char *name);
+
+/* Rename `name` inside the current directory. Both names are bare (no
+ * '/'); -1 permission denied, -22 bad args or no rename op, the op's
+ * errno otherwise. Refreshes the listing on success. */
+int zd_fm_rename(struct zd_fm *fm, uint32_t actor_perms, const char *name,
+                 const char *new_name);
+/* Copy `name` into `target_dir` (absolute) as `new_name`. Needs the
+ * read_file and write_file ops; -27 when the source is larger than
+ * ZD_FM_COPY_MAX or is not in the current listing, so a copy is never a
+ * half-written file. */
+int zd_fm_copy(struct zd_fm *fm, uint32_t actor_perms, const char *name,
+               const char *target_dir, const char *new_name);
+/* Move `name` into `target_dir` as `new_name`: a real rename when the
+ * target is the current directory, otherwise copy + remove (the source is
+ * only removed after the copy succeeded). */
+int zd_fm_move(struct zd_fm *fm, uint32_t actor_perms, const char *name,
+               const char *target_dir, const char *new_name);
+/* Content preview of `name` in the current directory: reads at most
+ * `capacity - 1` bytes into `out` and NUL-terminates, so the caller can
+ * treat it as text. Requires ZD_FM_PERM_READ and the read_file op. */
+int zd_fm_peek(struct zd_fm *fm, uint32_t actor_perms, const char *name,
+               char *out, uint32_t capacity, uint32_t *out_length);
 
 #endif /* ZEROOS_DESKTOP_FILEMGR_H */

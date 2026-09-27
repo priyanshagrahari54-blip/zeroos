@@ -95,6 +95,9 @@ void zd_fm_init(struct zd_fm *fm, zd_fm_source_fn source, void *ctx) {
     fm->source_ctx = ctx;
     fm->ops.remove = 0;
     fm->ops.mkdir = 0;
+    fm->ops.rename = 0;
+    fm->ops.read_file = 0;
+    fm->ops.write_file = 0;
     fm->ops.ctx = 0;
     fm->stats.refreshes = fm->stats.source_errors = 0;
     fm->stats.truncations = fm->stats.rejected = 0;
@@ -102,6 +105,8 @@ void zd_fm_init(struct zd_fm *fm, zd_fm_source_fn source, void *ctx) {
     fm->stats.history_dropped = fm->stats.selects = 0;
     fm->stats.ops_perm_denied = fm->stats.removed = 0;
     fm->stats.mkdirs = fm->stats.op_errors = 0;
+    fm->stats.renamed = fm->stats.copied = fm->stats.moved = 0;
+    fm->stats.peeks = fm->stats.refusals = 0;
 }
 
 /* ---- sort (stable insertion over the raw array) ---- */
@@ -428,5 +433,189 @@ int zd_fm_mkdir(struct zd_fm *fm, uint32_t actor_perms,
     }
     fm->stats.mkdirs++;
     (void)f_load(fm);
+    return 0;
+}
+
+/* ---- rename / copy / move / preview ----------------------------------
+ * Same conventions as remove and mkdir: -1 permission denied (counted),
+ * -22 bad arguments or a missing op, the injected op's errno otherwise.
+ * Nothing here resolves relative paths, and a copy is refused rather
+ * than truncated so the destination is never a half-written file. */
+
+static int f_dir_ok(const char *dir) {
+    uint32_t n;
+    if (!dir || dir[0] != '/')
+        return 0;
+    n = f_len(dir);
+    return n > 0 && n < ZD_FM_PATH;
+}
+
+static int f_join_dir(const char *dir, const char *name, char *out,
+                      uint32_t cap) {
+    uint32_t d = f_len(dir);
+    uint32_t n = f_len(name);
+    uint32_t i;
+    if (!d || !n || d + 1 + n + 1 > cap)
+        return -22;
+    f_copy(out, cap, dir);
+    if (d > 1) { /* root already provides the slash */
+        if (d + 1 >= cap)
+            return -22;
+        out[d++] = '/';
+    }
+    if (d + n + 1 > cap)
+        return -22;
+    for (i = 0; i < n; ++i)
+        out[d + i] = name[i];
+    out[d + n] = 0;
+    return 0;
+}
+
+/* Size of a listed entry; ~0ULL when the name is not in the listing. */
+static uint64_t f_listed_size(const struct zd_fm *fm, const char *name) {
+    uint32_t i;
+    for (i = 0; i < fm->count; ++i)
+        if (f_streq(fm->entries[i].name, name))
+            return fm->entries[i].size;
+    return ~0ULL;
+}
+
+int zd_fm_rename(struct zd_fm *fm, uint32_t actor_perms, const char *name,
+                 const char *new_name) {
+    char from[ZD_FM_PATH];
+    char to[ZD_FM_PATH];
+    int r;
+    if (!fm || !f_name_ok(name) || !f_name_ok(new_name) || !fm->path[0]) {
+        if (fm)
+            fm->stats.rejected++;
+        return -22;
+    }
+    if (!fm->ops.rename)
+        return -22;
+    if (!(actor_perms & ZD_FM_PERM_WRITE)) {
+        fm->stats.ops_perm_denied++;
+        return -1;
+    }
+    if (f_join(fm, name, from, sizeof(from)) < 0 ||
+        f_join(fm, new_name, to, sizeof(to)) < 0) {
+        fm->stats.rejected++;
+        return -22;
+    }
+    r = fm->ops.rename(fm->ops.ctx, from, to);
+    if (r < 0) {
+        fm->stats.op_errors++;
+        return r;
+    }
+    fm->stats.renamed++;
+    (void)f_load(fm);
+    return 0;
+}
+
+int zd_fm_peek(struct zd_fm *fm, uint32_t actor_perms, const char *name,
+               char *out, uint32_t capacity, uint32_t *out_length) {
+    char full[ZD_FM_PATH];
+    uint32_t got = 0;
+    int r;
+    if (!fm || !f_name_ok(name) || !fm->path[0] || !out || capacity == 0) {
+        if (fm)
+            fm->stats.rejected++;
+        return -22;
+    }
+    if (!fm->ops.read_file)
+        return -22;
+    if (!(actor_perms & ZD_FM_PERM_READ)) {
+        fm->stats.ops_perm_denied++;
+        return -1;
+    }
+    if (f_join(fm, name, full, sizeof(full)) < 0) {
+        fm->stats.rejected++;
+        return -22;
+    }
+    r = fm->ops.read_file(fm->ops.ctx, full, out, capacity - 1, &got);
+    if (r < 0) {
+        fm->stats.op_errors++;
+        return r;
+    }
+    if (got > capacity - 1)
+        got = capacity - 1;
+    out[got] = 0;
+    if (out_length)
+        *out_length = got;
+    fm->stats.peeks++;
+    return 0;
+}
+
+int zd_fm_copy(struct zd_fm *fm, uint32_t actor_perms, const char *name,
+               const char *target_dir, const char *new_name) {
+    char from[ZD_FM_PATH];
+    char to[ZD_FM_PATH];
+    static char buffer[ZD_FM_COPY_MAX];
+    uint32_t got = 0;
+    uint64_t size;
+    int r;
+    if (!fm || !f_name_ok(name) || !f_name_ok(new_name) ||
+        !f_dir_ok(target_dir) || !fm->path[0]) {
+        if (fm)
+            fm->stats.rejected++;
+        return -22;
+    }
+    if (!fm->ops.read_file || !fm->ops.write_file)
+        return -22;
+    if (!(actor_perms & ZD_FM_PERM_WRITE)) {
+        fm->stats.ops_perm_denied++;
+        return -1;
+    }
+    size = f_listed_size(fm, name);
+    if (size == ~0ULL || size > ZD_FM_COPY_MAX) {
+        /* Not listed, or too large for the bounded window: refuse instead
+         * of writing a truncated file the user would trust. */
+        fm->stats.refusals++;
+        return -27;
+    }
+    if (f_join(fm, name, from, sizeof(from)) < 0 ||
+        f_join_dir(target_dir, new_name, to, sizeof(to)) < 0) {
+        fm->stats.rejected++;
+        return -22;
+    }
+    r = fm->ops.read_file(fm->ops.ctx, from, buffer, sizeof(buffer), &got);
+    if (r < 0) {
+        fm->stats.op_errors++;
+        return r;
+    }
+    r = fm->ops.write_file(fm->ops.ctx, to, buffer, got);
+    if (r < 0) {
+        fm->stats.op_errors++;
+        return r;
+    }
+    fm->stats.copied++;
+    (void)f_load(fm); /* refreshes when the target is the current dir */
+    return 0;
+}
+
+int zd_fm_move(struct zd_fm *fm, uint32_t actor_perms, const char *name,
+               const char *target_dir, const char *new_name) {
+    int r;
+    if (!fm || !f_name_ok(name) || !f_name_ok(new_name) ||
+        !f_dir_ok(target_dir) || !fm->path[0]) {
+        if (fm)
+            fm->stats.rejected++;
+        return -22;
+    }
+    if (f_streq(target_dir, fm->path)) {
+        r = zd_fm_rename(fm, actor_perms, name, new_name);
+        if (r < 0)
+            return r;
+        fm->stats.moved++;
+        return 0;
+    }
+    r = zd_fm_copy(fm, actor_perms, name, target_dir, new_name);
+    if (r < 0)
+        return r;
+    /* Only after the copy landed: a failed remove leaves both copies,
+     * which is recoverable, while the reverse would lose data. */
+    r = zd_fm_remove(fm, actor_perms, name);
+    if (r < 0)
+        return r;
+    fm->stats.moved++;
     return 0;
 }

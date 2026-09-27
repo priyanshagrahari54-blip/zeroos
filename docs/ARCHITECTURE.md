@@ -501,7 +501,7 @@ claim:
 | Core | Host evidence | Pending live binding |
 | --- | --- | --- |
 | Display service + compositor + input router | session process wired to `DISPLAY_PRESENT`/`INPUT_*` + boot certification | multi-GPU beyond the single present path |
-| File manager | source-injected listing/sort/select/ops suites + live VFS binding in the session (`OPEN`/`READDIR`/`STAT`/`UNLINK`/`MKDIR`) with a boot milestone and a host replay of the same sequence | copy/move/rename ops and file-content preview |
+| File manager | source-injected listing/sort/select/ops suites + live VFS binding in the session (`OPEN`/`READDIR`/`STAT`/`UNLINK`/`MKDIR`/`RENAME`/`READ`/`WRITE`) with boot milestones and a host replay of the same sequence; preview, copy, rename and move are certified against real files (a copy larger than `ZD_FM_COPY_MAX` is refused, never truncated) | batch operations across the multi-selection |
 | Terminal | parser/scrollback/SGR suites | PTY or pipe + child spawn for shell output |
 | Cloud/device sync | offline queue + permission suites | transport over kernel sockets; real device pairing |
 | Firewall engine | first-match/default-deny suites | kernel packet-path hook (userspace policy today) |
