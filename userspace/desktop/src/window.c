@@ -586,6 +586,28 @@ int zd_wm_focus(struct zd_wm *wm, zd_window_id id) {
     return 0;
 }
 
+/* Resize the workspace set. Growing simply makes more workspaces
+ * addressable; shrinking pulls every window on a removed workspace onto the
+ * highest surviving one and clamps the active workspace, so no window can be
+ * left somewhere the shell can never switch to. */
+int zd_wm_set_workspace_count(struct zd_wm *wm, uint32_t count) {
+    uint32_t index;
+    if (!wm || count == 0 || count > ZD_MAX_WORKSPACES)
+        return -ZD_EINVAL;
+    if (count == wm->workspace_count)
+        return 0;
+    if (count < wm->workspace_count) {
+        for (index = 0; index < ZD_MAX_WINDOWS; ++index) {
+            if (wm->windows[index].in_use && wm->windows[index].workspace >= count)
+                wm->windows[index].workspace = count - 1U;
+        }
+        if (wm->active_workspace >= count)
+            wm->active_workspace = count - 1U;
+    }
+    wm->workspace_count = count;
+    return 0;
+}
+
 int zd_wm_set_workspace(struct zd_wm *wm, zd_window_id id, uint32_t workspace) {
     struct zd_window *window = window_at(wm, id);
     if (!window)

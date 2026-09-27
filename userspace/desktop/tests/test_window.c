@@ -193,7 +193,7 @@ static void test_workspaces(void) {
     struct zd_window_create_info info;
     zd_window_id on_ws0 = ZD_INVALID_WINDOW;
     setup();
-    wm.workspace_count = 3;
+    ZD_CHECK_OK(zd_wm_set_workspace_count(&wm, 3));
     info = make_info(client_a, 10, 10, 300, 200);
     ZD_CHECK_OK(zd_wm_create_window(&wm, &info, &on_ws0));
     ZD_CHECK_EQ(zd_wm_window(&wm, on_ws0)->workspace, 0U);
@@ -213,6 +213,24 @@ static void test_workspaces(void) {
     ZD_CHECK_OK(zd_wm_switch_workspace(&wm, 0));
     ZD_CHECK_EQ(zd_wm_keyboard_target(&wm), ZD_INVALID_WINDOW);
     ZD_CHECK_EQ(wm.stats.workspace_switches, 2U);
+
+    /* A fresh manager has a single workspace and refuses the rest. */
+    setup();
+    ZD_CHECK_EQ(wm.workspace_count, 1U);
+    ZD_CHECK_ERR(zd_wm_set_workspace_count(&wm, 0), ZD_EINVAL);
+    ZD_CHECK_ERR(zd_wm_set_workspace_count(&wm, ZD_MAX_WORKSPACES + 1), ZD_EINVAL);
+    /* Growing makes the next workspace addressable. */
+    ZD_CHECK_OK(zd_wm_set_workspace_count(&wm, 2));
+    info = make_info(client_a, 40, 40, 200, 120);
+    ZD_CHECK_OK(zd_wm_create_window(&wm, &info, &on_ws0));
+    ZD_CHECK_ERR(zd_wm_set_workspace(&wm, on_ws0, 2), ZD_EINVAL);
+    ZD_CHECK_OK(zd_wm_set_workspace(&wm, on_ws0, 1));
+    ZD_CHECK_OK(zd_wm_switch_workspace(&wm, 1));
+    /* Shrinking pulls stranded windows back and clamps the active one. */
+    ZD_CHECK_OK(zd_wm_set_workspace_count(&wm, 1));
+    ZD_CHECK_EQ(zd_wm_window(&wm, on_ws0)->workspace, 0U);
+    ZD_CHECK_EQ(wm.active_workspace, 0U);
+    ZD_CHECK_EQ(zd_wm_hit_test(&wm, 50, 50), on_ws0);
 }
 
 static void test_input_routing(void) {

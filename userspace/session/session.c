@@ -2251,6 +2251,14 @@ int session_main(void) {
         snap_left.w + snap_right.w > monitor.bounds.w)
         return fail("snap halves", (int64_t)snap_right.x);
     /* Workspaces: send the side window away, then follow it. */
+    /* A manager starts with a single workspace, so the move is refused
+     * until the set is grown through the API. */
+    if (zd_wm_set_workspace(&wm, window_side, 1) != -ZD_EINVAL)
+        return fail("workspace absent", 0);
+    if (zd_wm_set_workspace_count(&wm, ZD_MAX_WORKSPACES + 1) != -ZD_EINVAL)
+        return fail("workspace count reject", 0);
+    if (zd_wm_set_workspace_count(&wm, 2) != 0)
+        return fail("workspace count", 0);
     if (zd_wm_set_workspace(&wm, window_side, 1) != 0)
         return fail("window workspace move", 0);
     side_view = zd_wm_window_const(&wm, window_side);
