@@ -23,6 +23,8 @@
 #include <zeroos/desktop/study.h>
 #include <zeroos/desktop/fps.h>
 #include <zeroos/desktop/gaming.h>
+#include <zeroos/desktop/a11y.h>
+#include <zeroos/desktop/i18n.h>
 #include <zeroos/desktop/capability.h>
 #include <zeroos/desktop/update.h>
 #include "crypto.h"
@@ -522,6 +524,8 @@ static struct zd_perf_center session_perf;
 static struct zd_perf_center session_perf_cold;
 static struct zd_bar session_bar;
 static struct zd_metrics session_metrics;
+static struct zd_a11y session_a11y;
+static struct zd_i18n session_i18n;
 static struct zd_fps session_fps;
 static struct zd_gaming session_gaming;
 static struct zd_study session_study;
@@ -957,6 +961,27 @@ int session_main(void) {
     uint32_t game_effects;
     int game_yield;
     uint32_t fps_index;
+    struct zd_a11y_snapshot_row a11y_snap[8];
+    struct zd_a11y_announcement a11y_msg;
+    const struct zd_a11y_node *a11y_found;
+    const struct zd_window *a11y_win;
+    const struct zd_notification *a11y_note;
+    const char *i18n_text_en;
+    const char *i18n_text_hi;
+    zd_window_id a11y_ids[8];
+    zd_notification_id a11y_note_ids[4];
+    zd_window_id a11y_target;
+    uint32_t a11y_windows;
+    uint32_t a11y_node;
+    uint32_t a11y_rows;
+    uint32_t a11y_first;
+    uint32_t a11y_steps;
+    uint32_t a11y_states;
+    uint32_t a11y_notes;
+    uint32_t i18n_loaded;
+    uint32_t i18n_total;
+    uint32_t i18n_hi_present;
+    int a11y_i;
     uint32_t study_entries;
     uint32_t study_cards;
     int study_i;
@@ -3119,13 +3144,22 @@ int session_main(void) {
         (game_yield == ZD_GAME_YIELD_NONE ? 0U : 1U))
         return fail("gaming yield count",
                     (int64_t)session_gaming.stats.yields);
-    /* Both ends of the policy ladder are pinned. */
+    /* Both ends of the policy ladder are pinned. Holding the target floor is
+     * only reachable for a profile with no overlay, since dropping the
+     * overlay outranks it under the same pressure. */
+    if (zd_gaming_profile_set(&session_gaming, "no-overlay",
+                              ZD_GAME_BALANCED, 60,
+                              ZD_GAME_FLAG_LOW_LATENCY) != 0)
+        return fail("gaming second profile", 0);
     if (zd_gaming_cooperative(&session_gaming, "child", 60000U, 0U) !=
         ZD_GAME_YIELD_NONE)
         return fail("gaming policy none", 0);
-    if (zd_gaming_cooperative(&session_gaming, "child", 60000U, 90U) !=
+    if (zd_gaming_cooperative(&session_gaming, "no-overlay", 60000U, 90U) !=
         ZD_GAME_YIELD_TARGET_FLOOR)
         return fail("gaming policy floor", 0);
+    if (zd_gaming_cooperative(&session_gaming, "child", 60000U, 90U) !=
+        ZD_GAME_YIELD_OVERLAY_OFF)
+        return fail("gaming policy overlay", 0);
     if (zd_gaming_cooperative(&session_gaming, "child", 20000U, 90U) !=
         ZD_GAME_YIELD_DEGRADE)
         return fail("gaming policy degrade", 0);
@@ -3138,12 +3172,142 @@ int session_main(void) {
     if (game_budget != frame_budget)
         return fail("gaming bypassed the governor", (int64_t)game_budget);
     if (zd_gaming_profile_remove(&session_gaming, "child") != 0 ||
+        zd_gaming_profile_remove(&session_gaming, "no-overlay") != 0 ||
         session_gaming.count != 0 ||
         zd_gaming_profile_remove(&session_gaming, "child") != -2)
         return fail("gaming remove", (int64_t)session_gaming.count);
     say("ZEROOS: session gaming and fps passed.");
 
-    /* 25. Update payload verification with a provisioned key. Nothing
+    /* 25. Accessibility tree and localization over live shell state. Every
+     * node is a real window from the manager, named from its real title and
+     * bound to its window id; the announcement's urgency comes from a real
+     * notification's priority through the notification centre's own policy;
+     * and the announced text is the shell's own label from the localized
+     * catalog. */
+    zd_a11y_init(&session_a11y);
+    a11y_windows = zd_wm_stacking_order(&wm, a11y_ids,
+                                        ZD_ARRAY_COUNT(a11y_ids));
+    if (a11y_windows == 0)
+        return fail("a11y stacking", 0);
+    for (a11y_i = 0; a11y_i < (int)a11y_windows; ++a11y_i) {
+        a11y_win = zd_wm_window_const(&wm, a11y_ids[a11y_i]);
+        if (!a11y_win)
+            return fail("a11y window read", (int64_t)a11y_i);
+        a11y_states = ZD_A11Y_FOCUSABLE;
+        if (a11y_win->keyboard_focused)
+            a11y_states |= ZD_A11Y_FOCUSED;
+        if (a11y_win->state == ZD_WINDOW_MINIMIZED)
+            a11y_states |= ZD_A11Y_HIDDEN;
+        /* The node takes the window's own declared role, not a guess. */
+        if (zd_a11y_create(&session_a11y, ZD_A11Y_ROOT, a11y_win->role,
+                           a11y_win->title, a11y_states, a11y_win->id,
+                           &a11y_node) != 0 || a11y_node == ZD_A11Y_INVALID)
+            return fail("a11y node create", (int64_t)a11y_i);
+    }
+    if (session_a11y.stats.created != a11y_windows)
+        return fail("a11y created count",
+                    (int64_t)session_a11y.stats.created);
+    /* The snapshot walks the tree depth first: the node bound to the window
+     * the manager says has the keyboard must carry that window's title. */
+    a11y_rows = zd_a11y_snapshot(&session_a11y, a11y_snap,
+                                 ZD_ARRAY_COUNT(a11y_snap));
+    if (a11y_rows == 0)
+        return fail("a11y snapshot", 0);
+    a11y_target = zd_wm_keyboard_target(&wm);
+    if (a11y_target == ZD_INVALID_WINDOW)
+        return fail("a11y keyboard target", 0);
+    a11y_found = (const struct zd_a11y_node *)0;
+    for (a11y_i = 0; a11y_i < (int)a11y_rows; ++a11y_i) {
+        const struct zd_a11y_node *candidate =
+            zd_a11y_node_const(&session_a11y, a11y_snap[a11y_i].id);
+        if (candidate && candidate->widget == a11y_target)
+            a11y_found = candidate;
+    }
+    if (!a11y_found)
+        return fail("a11y window node", 0);
+    a11y_win = zd_wm_window_const(&wm, a11y_target);
+    if (!a11y_win)
+        return fail("a11y focused window", 0);
+    for (a11y_i = 0; a11y_found->name[a11y_i] || a11y_win->title[a11y_i];
+         ++a11y_i) {
+        if (a11y_found->name[a11y_i] != a11y_win->title[a11y_i])
+            return fail("a11y node name", (int64_t)a11y_i);
+    }
+    if (zd_a11y_focus_node(&session_a11y, a11y_found->id) != 0 ||
+        zd_a11y_focused(&session_a11y) != a11y_found->id)
+        return fail("a11y focus node", (int64_t)a11y_found->id);
+    /* Traversal walks the focusable nodes and wraps back to where it began. */
+    a11y_first = zd_a11y_focus_next(&session_a11y);
+    if (a11y_first == ZD_A11Y_INVALID)
+        return fail("a11y focus next", 0);
+    a11y_steps = 1;
+    while (zd_a11y_focused(&session_a11y) != a11y_first &&
+           a11y_steps <= a11y_windows) {
+        if (zd_a11y_focus_next(&session_a11y) == ZD_A11Y_INVALID)
+            return fail("a11y focus walk", (int64_t)a11y_steps);
+        ++a11y_steps;
+    }
+    if (zd_a11y_focused(&session_a11y) != a11y_first)
+        return fail("a11y focus wrap", (int64_t)a11y_steps);
+    /* The urgency of what the shell announces is the notification centre's
+     * own accessibility verdict for a notification that is really visible. */
+    a11y_notes = zd_notify_visible(&session_notify, notify_now, a11y_note_ids,
+                                   ZD_ARRAY_COUNT(a11y_note_ids));
+    if (a11y_notes == 0)
+        return fail("a11y notification source", 0);
+    a11y_note = zd_notify_get(&session_notify, a11y_note_ids[0]);
+    if (!a11y_note)
+        return fail("a11y notification read", 0);
+    if (zd_notify_a11y_policy(a11y_note->priority) != ZD_NOTIFY_A11Y_ASSERTIVE)
+        return fail("a11y policy",
+                    (int64_t)zd_notify_a11y_policy(a11y_note->priority));
+    /* Localization: the shell's own labels come from the catalog, both
+     * locales are present for every key, and the two really differ. */
+    zd_i18n_init(&session_i18n, ZD_LOCALE_EN);
+    i18n_loaded = zd_i18n_load_shell_catalog(&session_i18n);
+    if (i18n_loaded == 0)
+        return fail("i18n catalog", 0);
+    zd_i18n_coverage(&session_i18n, &i18n_total, &i18n_hi_present);
+    if (i18n_total != i18n_loaded || i18n_hi_present != i18n_total)
+        return fail("i18n coverage", (int64_t)i18n_hi_present);
+    i18n_text_en = zd_i18n_text(&session_i18n, "shell.zero_bar");
+    if (!i18n_text_en || !i18n_text_en[0])
+        return fail("i18n english label", 0);
+    zd_i18n_set_locale(&session_i18n, ZD_LOCALE_HI);
+    if (zd_i18n_locale(&session_i18n) != ZD_LOCALE_HI)
+        return fail("i18n locale", 0);
+    i18n_text_hi = zd_i18n_text(&session_i18n, "shell.zero_bar");
+    if (!i18n_text_hi || !i18n_text_hi[0])
+        return fail("i18n hindi label", 0);
+    for (a11y_i = 0; i18n_text_en[a11y_i] || i18n_text_hi[a11y_i]; ++a11y_i) {
+        if (i18n_text_en[a11y_i] != i18n_text_hi[a11y_i])
+            break;
+    }
+    if (!i18n_text_en[a11y_i] && !i18n_text_hi[a11y_i])
+        return fail("i18n localization", 0);
+    if (zd_i18n_locale_from_name(zd_i18n_locale_name(ZD_LOCALE_HI)) !=
+        ZD_LOCALE_HI)
+        return fail("i18n locale round trip", 0);
+    /* A low-urgency announcement is pending; the localized high-urgency one
+     * must preempt it, because that is what the policy just decided. */
+    if (zd_a11y_announce(&session_a11y, a11y_found->id, a11y_win->title,
+                         ZD_A11Y_URGENCY_LOW) != 0)
+        return fail("a11y announce low", 0);
+    if (zd_a11y_announce(&session_a11y, a11y_found->id, i18n_text_hi,
+                         ZD_A11Y_URGENCY_HIGH) != 0)
+        return fail("a11y announce", 0);
+    if (zd_a11y_next_announcement(&session_a11y, &a11y_msg) != 0)
+        return fail("a11y announcement read", 0);
+    if (a11y_msg.urgency != ZD_A11Y_URGENCY_HIGH)
+        return fail("a11y preemption", (int64_t)a11y_msg.urgency);
+    for (a11y_i = 0; a11y_msg.text[a11y_i] || i18n_text_hi[a11y_i];
+         ++a11y_i) {
+        if (a11y_msg.text[a11y_i] != i18n_text_hi[a11y_i])
+            return fail("a11y announcement text", (int64_t)a11y_i);
+    }
+    say("ZEROOS: session accessibility and localization passed.");
+
+    /* 26. Update payload verification with a provisioned key. Nothing
      * here is a fixture: the key is provisioned through the filesystem
      * (written, read back, and only then used), the bundle is sealed with
      * the RFC 8439 AEAD core, and the update engine verifies it with the
@@ -3263,7 +3427,7 @@ int session_main(void) {
         return fail("update slot removed", 0);
     say("ZEROOS: session update verification passed.");
 
-    /* 26. Sandbox decisions enforced by the kernel, not only by Ring-3
+    /* 27. Sandbox decisions enforced by the kernel, not only by Ring-3
      * policy. The confined profile denies writes, so the session really
      * drops its identity: after SETCRED the VFS itself refuses the
      * owner-only file with EACCES while a world-readable file still
