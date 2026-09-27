@@ -32,6 +32,7 @@ static struct zd_diag_provider session_diagnostics;
 static struct zd_search_result session_results[8];
 /* Terminal screen buffer (~476 KiB): must stay in .bss, never on the
  * 64 KiB user stack. */
+static struct zd_sandbox session_sandbox;
 static struct zd_term session_term;
 /* One line of shell output: SGR colour, text, CRLF. It travels through a
  * real kernel pipe before the VT parser sees a single byte. */
@@ -488,6 +489,10 @@ int session_main(void) {
     uint32_t row_len;
     uint32_t preview_len;
     struct zd_fm_batch_result batch;
+    struct zd_privacy_sources sources;
+    struct zd_privacy_report report;
+    struct zd_sb_audit sb_audit[4];
+    int audit_entries;
     int64_t sys_result;
     int attach_result;
     int live = 0;
@@ -1233,6 +1238,50 @@ int session_main(void) {
         return fail("terminal byte count",
                     (int64_t)session_term.stats.bytes);
     say("ZEROOS: session terminal pipe binding passed.");
+
+    /* 11. Privacy centre over live refusal counters. The filesystem domain
+     * is real: the shell defines a sandbox profile and the denials counted
+     * here are actual policy decisions taken during this boot, not a
+     * fixture. Domains without a live engine are passed as NULL, which the
+     * centre documents as "unavailable, contributes zero" — they are never
+     * reported as zero-risk. */
+    zd_sandbox_init(&session_sandbox);
+    if (zd_sandbox_define(&session_sandbox, "shell",
+                          (1U << ZD_SB_FS_READ) |
+                          (1U << ZD_SB_FS_WRITE)) != 0)
+        return fail("privacy sandbox profile", 0);
+    /* Allowed by the profile: the shell really reads and writes files. */
+    if (zd_sandbox_check(&session_sandbox, "shell", ZD_SB_FS_READ) != 0 ||
+        zd_sandbox_check(&session_sandbox, "shell", ZD_SB_FS_WRITE) != 0)
+        return fail("privacy allowed check", 0);
+    /* Outside the profile: process spawn and raw devices. Both must deny. */
+    if (zd_sandbox_check(&session_sandbox, "shell", ZD_SB_PROC_SPAWN) != -1)
+        return fail("privacy spawn denial", 0);
+    if (zd_sandbox_check(&session_sandbox, "shell", ZD_SB_DEVICE) != -1)
+        return fail("privacy device denial", 0);
+    /* An unknown profile fails closed and is still counted. */
+    if (zd_sandbox_check(&session_sandbox, "no-such-profile",
+                         ZD_SB_FS_READ) != -1)
+        return fail("privacy unknown profile", 0);
+    sources.sb = &session_sandbox;
+    sources.fw = 0;      /* no live packet path in this build */
+    sources.clip = 0;    /* no clipboard engine in the session yet */
+    sources.media = 0;   /* decoder backends pending */
+    sources.eco = 0;     /* transports pending */
+    if (zd_privacy_assess(&sources, &report) != 0)
+        return fail("privacy assess", 0);
+    if (report.denials_total != 3 || report.bd.filesystem != 3)
+        return fail("privacy denial count",
+                    (int64_t)report.denials_total);
+    /* Three denials, no domain at the review threshold: "watch". */
+    if (report.risk != ZD_PRIV_RISK_WATCH)
+        return fail("privacy risk band", (int64_t)report.risk);
+    /* The audit ring is the evidence behind the number. */
+    audit_entries = zd_sandbox_audit_recent(&session_sandbox, sb_audit,
+                                            ZD_ARRAY_COUNT(sb_audit));
+    if (audit_entries == 0)
+        return fail("privacy audit ring", 0);
+    say("ZEROOS: session privacy aggregation passed.");
 
     say("ZEROOS: session shell process complete.");
     return 0;
