@@ -9,6 +9,10 @@
 #include "cpu.h"
 #include "ipc.h"
 #include "shmem.h"
+#include "storage/fsyscall.h"
+#include "fb.h"
+#include "display_core.h"
+#include "input.h"
 
 extern void serial_write_public(const char *text);
 
@@ -104,6 +108,18 @@ static void syscall_write(struct interrupt_frame *frame) {
     frame->rax=length;
 }
 
+static int syscall_child_final_thread_transition_pending(
+    const struct process *child) {
+    if (!child || child->live_thread_count || child->creating_threads ||
+        child->first_child || !child->first_thread)
+        return 0;
+    for (const struct thread *thread=child->first_thread; thread;
+         thread=thread->next_in_process)
+        if (thread->state!=THREAD_ZOMBIE)
+            return 1;
+    return 0;
+}
+
 static int syscall_reap_child(struct process *parent,
                                process_id_t pid,
                                uint64_t *status_out) {
@@ -189,7 +205,11 @@ void syscall_dispatch(struct interrupt_frame *frame) {
                       ZEROOS_ABI_FEATURE_INIT |
                       ZEROOS_ABI_FEATURE_PIPE |
                       ZEROOS_ABI_FEATURE_EVENT |
-                      ZEROOS_ABI_FEATURE_SHMEM,
+                      ZEROOS_ABI_FEATURE_SHMEM |
+                      ZEROOS_ABI_FEATURE_FILES |
+                      ZEROOS_ABI_FEATURE_DISPLAY |
+                      ZEROOS_ABI_FEATURE_PRESENT |
+                      ZEROOS_ABI_FEATURE_INPUT,
             .max_transfer=ZEROOS_SYSCALL_MAX_TRANSFER
         };
         if (frame->rdi==0 || frame->rsi<sizeof(info) ||
@@ -490,11 +510,31 @@ void syscall_dispatch(struct interrupt_frame *frame) {
                 process_id_t child_pid=child->pid;
                 uint64_t status=0;
                 result=syscall_reap_child(process,child_pid,&status);
+                if (result==-ZEROOS_EBUSY &&
+                    !(frame->rdx&ZEROOS_WAIT_FLAG_NONBLOCK) &&
+                    syscall_child_final_thread_transition_pending(child)) {
+                    /* The final thread publishes process exit before its
+                     * thread object reaches the reapable state. Do not leak
+                     * this internal teardown window as EBUSY to a blocking
+                     * wait; sleep briefly and retry the child predicate. */
+                    if (timeout && (long long)(deadline-timer_ticks())<=0) {
+                        result=-ZEROOS_ETIMEDOUT;
+                        break;
+                    }
+                    if (task_sleep_ticks(1)!=0) {
+                        result=-ZEROOS_EINTR;
+                        break;
+                    }
+                    continue;
+                }
                 if (result==0 && status_address &&
                     copy_to_user(status_address,&status,sizeof(status))!=0)
                     result=-ZEROOS_EFAULT;
                 if (result==0)
                     frame->rax=child_pid;
+                else if (result==-ZEROOS_EBUSY &&
+                         (frame->rdx&ZEROOS_WAIT_FLAG_NONBLOCK))
+                    frame->rax=syscall_error(ZEROOS_EAGAIN);
                 else
                     frame->rax=syscall_result(result);
                 break;
@@ -532,10 +572,135 @@ void syscall_dispatch(struct interrupt_frame *frame) {
             frame->rax=syscall_result(result);
         break;
     }
+    case ZEROOS_SYS_DISPLAY_INFO: {
+        /* Geometry only: the kernel never hands scanout pixels to
+         * userspace through this path. flags bit0 distinguishes a live
+         * linear framebuffer from a degraded serial-only boot so the
+         * display service can show its offline/error state. */
+        const struct zeroos_display_info *info=fb_display_info();
+        if (frame->rdi==0 || frame->rsi<sizeof(*info) ||
+            copy_to_user(frame->rdi,info,sizeof(*info))!=0)
+            frame->rax=syscall_error(ZEROOS_EFAULT);
+        else
+            frame->rax=0;
+        break;
+    }
+    case ZEROOS_SYS_DISPLAY_PRESENT: {
+        /* Pixel-mapping contract (Stage 5A): the display service submits
+         * damage rectangles in the scanout's native format. The kernel
+         * validates device presence, geometry, and the complete source
+         * range before any byte is copied, then streams row chunks through
+         * the bounds-checked fb primitive. Bounds/format rules live in
+         * display_core so host tests exercise the exact arithmetic. */
+        const struct zeroos_display_info *info=fb_display_info();
+        uint32_t x=(uint32_t)frame->rdi;
+        uint32_t y=(uint32_t)frame->rsi;
+        uint32_t width=(uint32_t)frame->rdx;
+        uint32_t height=(uint32_t)frame->r10;
+        uint32_t stride=(uint32_t)frame->r8;
+        uint64_t pixels=frame->r9;
+        uint32_t bytes_pp;
+        uint64_t total;
+        uint8_t chunk[256];
+        uint32_t chunk_pixels;
+        int failed=0;
+
+        if (!fb_present_active()) {
+            /* A degraded serial-only boot has no geometry to validate
+             * against; every present fails ENOENT by contract. */
+            frame->rax=syscall_error(ZEROOS_ENOENT);
+            break;
+        }
+        if (!display_present_request_valid(info->width,info->height,
+                                           info->bpp,info->format,
+                                           x,y,width,height,stride)) {
+            frame->rax=syscall_error(ZEROOS_EINVAL);
+            break;
+        }
+        bytes_pp=(info->bpp+7U)/8U;
+        total=(uint64_t)(height-1U)*stride+(uint64_t)width*bytes_pp;
+        if (pixels==0 ||
+            !process_address_space_is_user_range(process,pixels,total,0)) {
+            frame->rax=syscall_error(ZEROOS_EFAULT);
+            break;
+        }
+        chunk_pixels=(uint32_t)sizeof(chunk)/bytes_pp;
+        if (chunk_pixels==0) {
+            frame->rax=syscall_error(ZEROOS_EINVAL);
+            break;
+        }
+        for (uint32_t row=0; row<height && !failed; ++row) {
+            uint32_t done=0;
+            while (done<width) {
+                uint32_t count=width-done<chunk_pixels ?
+                               width-done : chunk_pixels;
+                uint64_t source=pixels+(uint64_t)row*stride+
+                                (uint64_t)done*bytes_pp;
+                if (copy_from_user(chunk,source,(uint64_t)count*bytes_pp)!=0) {
+                    frame->rax=syscall_error(ZEROOS_EFAULT);
+                    failed=1;
+                    break;
+                }
+                if (fb_write_pixels(x+done,y+row,count,chunk)!=0) {
+                    frame->rax=syscall_error(ZEROOS_EINVAL);
+                    failed=1;
+                    break;
+                }
+                done+=count;
+            }
+        }
+        if (!failed)
+            frame->rax=0;
+        break;
+    }
+    case ZEROOS_SYS_INPUT_POLL: {
+        struct zeroos_input_event event;
+        int result;
+        if (frame->rdi==0 ||
+            !process_address_space_is_user_range(process,frame->rdi,
+                                                 sizeof(event),1)) {
+            frame->rax=syscall_error(ZEROOS_EFAULT);
+            break;
+        }
+        result=input_poll(&event);
+        if (result==0 && copy_to_user(frame->rdi,&event,sizeof(event))!=0)
+            frame->rax=syscall_error(ZEROOS_EFAULT);
+        else
+            frame->rax=syscall_result(result);
+        break;
+    }
+    case ZEROOS_SYS_INPUT_WAIT: {
+        struct zeroos_input_event event;
+        int result;
+        if (frame->rdi==0 ||
+            !process_address_space_is_user_range(process,frame->rdi,
+                                                 sizeof(event),1)) {
+            frame->rax=syscall_error(ZEROOS_EFAULT);
+            break;
+        }
+        result=input_wait(&event,frame->rsi,frame->rdx);
+        if (result==0 && copy_to_user(frame->rdi,&event,sizeof(event))!=0)
+            frame->rax=syscall_error(ZEROOS_EFAULT);
+        else
+            frame->rax=syscall_result(result);
+        break;
+    }
     default:
+        if (frame->rax>=ZEROOS_SYS_OPEN && frame->rax<=ZEROOS_SYS_CHOWN) {
+            fsyscall_dispatch(frame,process);
+            break;
+        }
         frame->rax=syscall_error(ZEROOS_ENOSYS);
         break;
     }
+}
+
+int syscall_copy_from_user(void *destination, uint64_t source, uint64_t length) {
+    return copy_from_user(destination,source,length);
+}
+
+int syscall_copy_to_user(uint64_t destination, const void *source, uint64_t length) {
+    return copy_to_user(destination,source,length);
 }
 
 int syscall_debug_validate(void) {
@@ -543,7 +708,12 @@ int syscall_debug_validate(void) {
     if (ZEROOS_SYSCALL_VECTOR<32 || ZEROOS_SYSCALL_VECTOR>=256 ||
         ZEROOS_SYSCALL_ABI_VERSION==0 || sizeof(info)!=24U ||
         ZEROOS_SYSCALL_MAX_TRANSFER==0 ||
-        ZEROOS_SYS_SHM_CLOSE+1U!=ZEROOS_SYS_MAX)
+        ZEROOS_SYS_SHM_CLOSE+1U!=ZEROOS_SYS_OPEN ||
+        ZEROOS_SYS_CHOWN+1U!=ZEROOS_SYS_DISPLAY_INFO ||
+        ZEROOS_SYS_DISPLAY_INFO+1U!=ZEROOS_SYS_DISPLAY_PRESENT ||
+        ZEROOS_SYS_DISPLAY_PRESENT+1U!=ZEROOS_SYS_INPUT_POLL ||
+        ZEROOS_SYS_INPUT_POLL+1U!=ZEROOS_SYS_INPUT_WAIT ||
+        ZEROOS_SYS_INPUT_WAIT+1U!=ZEROOS_SYS_MAX)
         return -1;
     return 0;
 }

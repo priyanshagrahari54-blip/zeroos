@@ -1,0 +1,3 @@
+#include <assert.h>
+#include "../kernel/net_transport.h"
+int main(void){uint8_t u[]={0,53,0,7,0,11,0,0,1,2,3};struct net_udp_view v;assert(net_udp_parse(u,sizeof(u),&v)==0&&v.payload_length==3&&v.destination_port==7);u[5]=12;assert(net_udp_parse(u,sizeof(u),&v)==-1);struct net_tcp_conn c={0};c.state=TCP_LISTEN;c.snd_nxt=100;assert(net_tcp_input(&c,0x02,40,0,10,5)==1&&c.state==TCP_SYN_RECEIVED);assert(net_tcp_input(&c,0x10,41,101,11,5)==1&&c.state==TCP_ESTABLISHED);assert(net_tcp_input(&c,0x01,41,101,12,5)==1&&c.state==TCP_CLOSE_WAIT);c.state=TCP_SYN_SENT;c.snd_nxt=6;c.deadline=5;assert(net_tcp_timeout(&c,5,1,8)==1);assert(net_tcp_timeout(&c,13,1,8)==-1&&c.state==TCP_CLOSED);return 0;}

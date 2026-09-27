@@ -5,6 +5,17 @@ mb2_header:
     .long 0
     .long mb2_header_end - mb2_header
     .long -(0xe85250d6 + 0 + (mb2_header_end - mb2_header))
+    # Optional framebuffer request (header tag type 5, flags=0): ask GRUB
+    # for a linear 1024x768x32 mode; boots fine when unsupported. Size 20
+    # with 4 pad bytes keeps the next tag 8-byte aligned.
+    .short 5
+    .short 0
+    .long 20
+    .long 1024
+    .long 768
+    .long 32
+    .long 0
+
     .short 0
     .short 0
     .long 8

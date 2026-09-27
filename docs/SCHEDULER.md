@@ -161,7 +161,10 @@ path can restore that context through the tagged `saved_stack` path, and any
 dispatch path can resume a preempted task through its live architectural
 frame via the same handoff primitive. Selection therefore treats both context
 forms uniformly: a runnable task is never skipped because of the way it was
-suspended.
+suspended. The single exception is the
+handoff quarantine described below: a task still published in any CPU's
+handoff slot is left queued and is not selected by any CPU until its
+previous CPU has left its stack.
 
 The design follows the same architectural principle used by mature kernels:
 interrupt entry/exit and scheduling state are explicit boundaries, and the
@@ -187,7 +190,18 @@ half-range.
 
 A task that returns from its entry function becomes `TASK_ZOMBIE`. Its kernel stack cannot be freed by the task itself because execution is still using that stack. The scheduler therefore reclaims zombie stacks from a later timer/scheduler context, resets the descriptor to `TASK_UNUSED`, and returns the physical page to the page allocator. This makes task slots reusable without allocating a separate reaper thread or permanent reaper stack.
 
-SMP reclamation is handoff-quiescent rather than merely state-based. Before releasing the scheduler metadata lock, a cooperative dispatch publishes the outgoing task in a per-CPU handoff-quarantine slot. The reaper will not free that task's stack while the slot is published. The destination clears the slot after it crosses the cooperative context boundary; a frame destination clears it from the assembly handoff immediately before loading the destination frame and executing `iretq`. This closes the race in which a remote timer could reclaim and reuse a zombie's stack while `context_switch_ex()` was still saving registers on it. The quarantine is protected by the same task lock and is included in the fatal scheduler ownership checks.
+SMP reclamation is handoff-quiescent rather than merely state-based. Before releasing the scheduler metadata lock, a cooperative dispatch publishes the outgoing task in a per-CPU handoff-quarantine slot. The reaper will not free that task's stack while the slot is published. A cooperative destination clears the slot after `context_switch_ex()` has returned on the destination stack. For frame destinations, both assembly paths first load the destination RSP and only then call `task_handoff_complete()` below the saved frame. Clearing before the RSP switch is unsafe: another CPU could select the outgoing task while the original CPU is still executing on that stack. This closes both the stack-reuse and duplicate-CPU ownership windows. The quarantine is protected by the same task lock and is included in the fatal scheduler ownership checks.
+
+The same quarantine covers the interrupt-driven switch. `task_reschedule_from_interrupt()` records the outgoing task's interrupt frame and requeues the task, possibly on another CPU's runqueue, before the CPU has left that task's kernel stack: the C return path and the ISR epilogue still run on it until the epilogue loads the destination RSP. The IRQ path therefore publishes the outgoing task in the per-CPU handoff slot under `task_lock`. A second pending handoff on one CPU is a fatal invariant violation. The slot is cleared on the destination side:
+
+- an interrupt-exit frame destination is returned tagged with `ZEROOS_IRQ_RESUME_HANDOFF` (bit 1; frames are 16-byte aligned), so `boot/isr.S` moves RSP to the destination frame before calling `task_handoff_complete()`;
+- a cooperative scheduler dispatch with a frame target does the same in `kernel/context.S`; a cooperative saved-stack target clears the slot after `context_switch_ex()` returns, or in `task_trampoline_body()`.
+
+An untagged frame (no switch) never takes `task_lock` in the epilogue. The runqueue picker (`runqueue_pick_locked()`) skips any candidate published in any CPU's handoff slot. This makes the quarantine a selection rule, not just a reclamation and validation exemption, so no CPU can resume a task whose stack is still in use by its previous CPU.
+
+The same selection rule covers the two-phase block window. `wait_queue_prepare()` (via `task_prepare_block()`) publishes the current task as `BLOCKED` with `scheduler_transition=1` and drops `task_lock` while the task keeps executing, with local interrupts disabled, until `wait_queue_commit()` reaches `task_block_locked()`. A remote `task_wake()` inside that window is kept, not swallowed: it marks the task `RUNNABLE`, appends it to a runqueue and kicks the chosen CPU as usual. The task's saved context is stale, though, because its owner is still running it. `runqueue_pick_locked()` therefore also skips any candidate that is the current task of a CPU other than the picking CPU. The owner then finds itself `RUNNABLE` in `task_block_locked()`, removes itself from the runqueue, restores `RUNNING` and returns 0, so the caller re-checks its wait condition. A CPU may still re-pick its own current task (for example, a yield with no other runnable work). Without this rule a remote CPU could resume the still-running task from its previous saved context. That produced the intermittent `task owned by multiple CPUs`, `invalid saved context RIP` and `recursive kmutex acquisition` panics.
+
+CPU hot-offline acknowledgement certifies that the AP has withdrawn TLB-shootdown membership, its cpu-local online flag and its SMP online record. An idle AP can observe the published offline request from its idle loop before it services the offline IPI (any interrupt ends its `hlt`). `task_cpu_offline_park()` therefore performs that withdrawal itself, with interrupts disabled, when the interrupt path has not already done it. If a TLB shootdown still targets the CPU, it re-enables interrupts and retries from the idle loop instead of acknowledging early.
 
 The lifecycle is therefore `UNUSED → RUNNABLE → RUNNING → BLOCKED/RUNNABLE → ZOMBIE → UNUSED`, with an explicit architectural handoff-quarantine interval between `ZOMBIE` and reclamation. A blocked task cannot become a zombie until it is explicitly resumed and exits.
 
@@ -228,8 +242,9 @@ The implemented scheduler/SMP boundary covers:
 - coordinated CPU hot-offline queue evacuation, AP TLB/CPU-local withdrawal,
   idle parking, bounded acknowledgement and scheduler validation.
 
-The remaining Stage 1 scheduler work is not hidden: extended FPU state
-switching and supported-hardware multi-vCPU validation remain required before
+The remaining Stage 1 scheduler work is not hidden: per-thread FPU/SIMD state
+switching (kernel code is general-purpose-register only and enforced by
+`kernel-simd-check`, see CPU_ARCHITECTURE.md) and supported-hardware multi-vCPU validation remain required before
 the Stage 1 exit gate. Equal-priority fairness/latency stress, the AP late-
 token/failed-dispatch recovery contract, and the per-AP local LAPIC clock-
 event contract (with an explicit targeted-IPI fallback) are now exercised by

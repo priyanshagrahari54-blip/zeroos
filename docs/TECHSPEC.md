@@ -81,6 +81,19 @@ Design principles:
 Initial syscall groups:
 process, thread, memory, file, directory, time, IPC, synchronization, device, network.
 
+Stage 5 additions: `DISPLAY_INFO` (ID 51) — display geometry read-only query;
+`DISPLAY_PRESENT` (ID 52) — pixel-mapping scanout submit;
+`INPUT_POLL` (ID 53) / `INPUT_WAIT` (ID 54) — keyboard/pointer event drain
+and blocking wait; ABI feature bits 8 (`ZEROOS_ABI_FEATURE_DISPLAY`),
+9 (`ZEROOS_ABI_FEATURE_PRESENT`) and 10 (`ZEROOS_ABI_FEATURE_INPUT`). (Before
+the Stage 3/Stage 5 merge the unreleased Stage 5 branch used IDs 25/26 and
+bits 7/8, which collided with the Stage 3 file ABI; they were renumbered
+before reaching main. IDs 25–50 and bit 7 belong to the file ABI, see VFS.md
+§7.) Any new syscall ID must be mirrored in `kernel/syscall.h`,
+`userspace/include/zeroos/syscall.h` and pass
+`userspace/tests/abi_consistency.py` (enum/keycode/pointer-code,
+feature-bit uniqueness/drift and shared-struct/input-struct drift gates).
+
 ## 8. Filesystem/VFS
 VFS objects:
 superblock, mount, inode/node, directory entry, file object, descriptor.
@@ -95,11 +108,29 @@ Requirements:
 - fsync,
 - error recovery.
 
+Implemented (Stage 3): VFS.md specifies the objects, lock order,
+per-operation blocking/error/concurrency/crash semantics and the file
+syscall ABI (numbers 25–50, feature bit 7, additive to ABI v1).
+ZJFS.md specifies the on-disk format v1, the journal commit/replay
+protocol, error behavior and the fsck/repair contract.
+
 ## 9. Storage
 Block layer provides sector/block I/O and queueing.
 I/O scheduler adapts to HDD/SSD/NVMe.
 HDD policy: sequential batching and low random background I/O.
 NVMe policy: queue depth and parallelism may increase when safe.
+
+Implemented (Stage 3, STORAGE.md):
+- priorities FOREGROUND/NORMAL/BACKGROUND with 50-tick aging;
+- background I/O capped at 1/4 of the hardware depth and kept out of the
+  last 1/4 of the request pool;
+- HDD C-SCAN, SSD FIFO, and NVMe FIFO over up to 4 CPU-local hardware
+  queues;
+- back-merging up to 32 segments;
+- up to 2 retries for failed reads and writes;
+- 5 s timeouts, with poll-before-reset lost-interrupt recovery;
+- the page cache limited to min(4096 pages, free/4), with a 25% dirty
+  limit and a 10% background threshold.
 
 ## 10. Networking
 Required layers:
@@ -117,6 +148,56 @@ Display capabilities:
 resolution, refresh rate, color depth, acceleration, multi-monitor.
 Compositor uses retained scene state and damage tracking.
 Fallback path supports software composition.
+
+Stage 5 implemented contracts:
+- Kernel `fb_init` parses the Multiboot2 framebuffer tag (type 8), accepts
+  only page-aligned RGB linear framebuffers with 16/24/32 bpp and
+  pitch >= width*bpp/8, size <= 256 MiB; maps them at
+  `VMM_MMIO_BASE + 0x20000000` (UC + NX, supervisor-only) and verifies by
+  non-destructive readback. GRUB is configured with `gfxpayload=1024x768x32`
+  plus an optional Multiboot2 header framebuffer tag (type 5).
+- `ZEROOS_SYS_DISPLAY_INFO` (ID 51) returns `struct zeroos_display_info`
+  {physical_address, byte_size, width, height, pitch, bpp, format, flags};
+  `ZEROOS_DISPLAY_FLAG_PRESENT` distinguishes a live scanout from a
+  degraded serial-only boot.
+- `ZEROOS_SYS_DISPLAY_PRESENT` (ID 52, feature bit 9) is the pixel-mapping
+  channel: arguments are (x, y, width, height, stride_bytes, pixels_ptr) in
+  the scanout's native format. Contract: a degraded boot fails ENOENT for
+  every call (device absence dominates because there is no geometry to
+  validate); otherwise bounds/format/stride rules come from
+  `display_present_request_valid` in `display_core` (host-tested) and
+  return EINVAL, an out-of-range or null pixel pointer returns EFAULT, and
+  success streams row chunks through the bounds-checked `fb_write_pixels`
+  primitive under an internal lock. The full source range is validated
+  before any byte is copied. The boot certification presents a 4x4 probe
+  pattern from Ring-3 through the real syscall and verifies it through the
+  real read path (`ZEROOS: display present contract verified.`). Scanout
+  writes are serialized; the display service is the single writer by
+  desktop policy, while the kernel guarantees memory safety for any caller.
+- `ZEROOS_SYS_INPUT_POLL` (ID 53) and `ZEROOS_SYS_INPUT_WAIT` (ID 54,
+  feature bit 10) deliver `struct zeroos_input_event` records (ABI copy of
+  `input_core.h`, struct-gated) from the kernel input queue. POLL drains
+  nonblocking (-EAGAIN when empty); WAIT accepts `ZEROOS_WAIT_FLAG_NONBLOCK`
+  and a scheduler-tick timeout (0 = forever) with -ETIMEDOUT/-EINTR, using
+  the same wait-queue and tick-deadline discipline as the IPC syscalls.
+  Events come from the PS/2 i8042 driver (`kernel/input.c`): keyboard on
+  IRQ1 (set-1 decoding via `scancode_core`) and mouse on IRQ12 (3-byte
+  auxiliary packets via `mouse_core`), both host-tested and routed on
+  IOAPIC and PIC topologies. KIND_POINTER motion events carry relative
+  deltas (device orientation, y up) with value = button mask; button
+  transitions use `zeroos_pointer_code` 1..5 with value = pressed, the
+  same numbering the desktop router consumes via
+  `zd_input_pointer_relative` (clamped absolute conversion in userspace).
+  A degraded device prints a reason and keeps the queue/syscalls usable
+  (keyboard readiness gates Ring-3 start; the mouse is best-effort);
+  boot certification proves the empty-queue, timeout, argument fault,
+  and blocking wait/wake paths.
+- Userspace desktop platform core in `userspace/desktop/` follows the
+  signed 0/-ZD_E* error convention, fixed capacities (64 windows, 4
+  monitors, 8 workspaces, 1024 search documents, 64 notifications, 256
+  a11y nodes, 128 settings keys, 16 watchdog services), listener-callback
+  events, and must compile with `-ffreestanding -fno-builtin` under
+  `-Wall -Wextra -Werror` (enforced by `make desktop-check`).
 
 ## 13. Audio
 Audio graph:
@@ -260,3 +341,17 @@ Production desktop targets include:
 ### Testing
 
 Each production subsystem must have an explicit validation matrix covering normal, boundary, failure, stress, resource and recovery behavior. Unsupported hardware must be reported rather than silently treated as supported.
+
+## Stage 4 hardware inventory API
+`kernel/pci.h` defines the bounded `pci_device` table (`pci_init`,
+`pci_device_at`). Enumeration uses legacy mechanism #1 on segment 0. It
+reads identity/class, walks capabilities with a bound, and sizes BARs with
+decoding disabled (display controllers are recorded but never sized). Table
+overflow is explicit. Resource activation (decoding, bus mastering, MMIO
+mapping, MSI/MSI-X) happens only for devices a driver claims; see
+HARDWARE.md and STORAGE.md §3. A separate bounded `resource_core` registry
+records typed ranges, checks overflow and overlap, supports containment
+checks, and protects reserved intervals from release. All calls require
+caller-side IRQ-safe serialization, and it does not program the PCI
+resource tree (it is not yet consulted by `pci_map_bar`). PCIe ECAM and
+extended capabilities are outside scope. Portable `net_core`, `input_core`, `usb_core`, `audio_core`, and `display_core` helpers provide bounded parsing/queues and input-level validity checks. They are not wired to device hardware or service syscalls, with two limited integrations: `input_core` is consumed by the kernel PS/2 driver (`kernel/input.c` — keyboard IRQ1 + mouse IRQ12), which supplies locking, IRQ delivery and Ring-3 syscalls; the network helper path composes netif frames, IPv4/UDP policy/validation and an owner-tagged UDP endpoint queue in host-tested callback flow, but has no NIC, synchronization/registry, or user socket syscall integration. `net_core` validates IPv4 header length/checksum and evaluates an ordered default-deny table; `usb_core` only validates descriptor framing/minimum sizes; audio is a bounded sample ring; display validates bounded framebuffer mode dimensions; input defines a bounded device registry/event queue plus the host-tested scancode (`scancode_core`) and mouse-packet (`mouse_core`) decoders. `make hardware-core-test` covers helper-level allow/deny, malformed input, queue backpressure, descriptor truncation, audio underrun/overrun, and display bounds. `netif` defines an event-driven bounded Ethernet-frame ingress queue and transmit callback, accounts drops/errors, validates MTU/link state, and requires caller-supplied lock/unlock hooks suitable for IRQ/SMP serialization; it has no NIC backend. `netif` adds a bounded event-driven Ethernet RX queue, validated MTU/link transitions, TX callback and counters with caller-supplied IRQ-safe serialization hooks, but no concrete NIC driver. `net_stack` composes Ethernet/IPv4/UDP input validation, enforces a configured local destination and default-deny IPv4 firewall, verifies UDP checksums (allowing zero only for IPv4), and dispatches accepted datagrams through a callback; fragments are dropped and IPv6 remains fail-closed pending family-specific policy. Its bounded IPv4/UDP transmit helper builds DF-marked Ethernet/IP/UDP frames, emits IPv4 and UDP checksums, validates unicast addresses and MTU, then calls `netif_send`; callers must already resolve the next-hop MAC, with live ARP/neighbor resolution, route-to-transmit integration, retransmission and NIC integration explicitly absent. `net_arp` provides a host-tested IPv4 ARP request/reply validator/builder and fixed-capacity expiring neighbor cache; reply learning requires a matching live request and local IP/MAC identity, but the helper is not wired into this transmit path. `net_socket` adds a caller-serialized, bounded IPv4 UDP endpoint table with owner-bound generation handles, exclusive wildcard/specific-address bind rules, per-endpoint receive queues, queue-full drop accounting and stale-handle rejection; it is wired to the dispatcher callback but is not exposed as user-visible POSIX/BSD socket syscalls. The dispatcher’s bounded polling API returns on an empty queue and neither layer has bus/NIC integration. `net_l2` bounds Ethernet/VLAN and ARP frames; `net_ipv6` validates the IPv6 base header and walks bounded Hop-by-Hop, Routing, Fragment, AH and Destination Options extension chains (maximum 8 headers/256 bytes); it reports fragments but does not reassemble them, and rejects ESP/jumbograms; `net_conntrack` stores bounded flow observations with expiration/eviction; `net_route` provides a bounded IPv4 longest-prefix/metric lookup table; `net_transport` validates UDP framing and offers a limited TCP state/timeout helper (not RFC-complete TCP, retransmission/congestion/window management, or sockets); `dhcp_core` bounds BOOTP/DHCP option parsing but has no client state machine; `dns_core` validates bounded DNS message framing/name compression but does not resolve or cache names. `dma` defines an owner-scoped callback contract and refuses owner destruction while mappings remain, but supplies no IOMMU/cache-coherency backend. `driver_core` provides an explicit lifecycle transition and reverse-order exactly-once release bookkeeping. These helpers, apart from the PS/2 hardware input path and the host-tested netif→IPv4/UDP dispatcher→UDP endpoint callback composition noted above, are not wired to a bus or hardware resources. Neither the network composition nor the endpoint table is exposed through a synchronized kernel registry or userspace socket ABI. They are foundations—not operational network drivers or complete subsystem implementations. See `HARDWARE.md` for the support matrix.

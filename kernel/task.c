@@ -264,6 +264,35 @@ static int task_current_owner(const struct task *task) {
     return 0;
 }
 
+/* True while `task` is the current task of a CPU other than `cpu`. Such a
+ * task may already be RUNNABLE and queued - a remote task_wake() can land
+ * inside its task_prepare_block()..task_block_locked() window, where it is
+ * still executing on its owner CPU - but its saved context is stale until the
+ * owner either cancels the block (and dequeues itself) or switches away.
+ * Pickers therefore never select it for a different CPU. */
+static int task_current_on_other_cpu(const struct task *task, uint32_t cpu) {
+    for (uint32_t other=0; other<ZEROOS_MAX_CPUS; ++other)
+        if (other!=cpu && cpu_scheduler_started[other] &&
+            __atomic_load_n(&current_tasks[other],__ATOMIC_ACQUIRE)==task)
+            return 1;
+    return 0;
+}
+
+/*
+ * Any CPU may be inside its own context_switch_ex() handoff while this CPU
+ * validates under task_lock: handoff_tasks[cpu] is published under task_lock
+ * before the lock is dropped for the assembly switch and cleared only after
+ * the outgoing context is fully saved. Such a task's saved_stack/return slot
+ * still holds the previous switch's (now stale) values, so it is exempt from
+ * saved-context checks exactly like the local handoff task.
+ */
+static int task_handoff_in_flight(const struct task *task) {
+    for (uint32_t cpu=0; cpu<ZEROOS_MAX_CPUS; ++cpu)
+        if (handoff_tasks[cpu]==task)
+            return 1;
+    return 0;
+}
+
 static int task_slot_for_pointer(const struct task *task) {
     uint64_t address;
     uint64_t base;
@@ -399,7 +428,7 @@ static void task_validate_table_at(const char *where,
         }
 
         /* The handoff task's saved context is mid-write. */
-        if (task==handoff)
+        if (task==handoff || task_handoff_in_flight(task))
             continue;
 
         if (task->interrupt_frame) {
@@ -432,7 +461,8 @@ static void task_validate_table_at(const char *where,
             ++running;
         } else if (idle->state==TASK_ZOMBIE || idle->run_next) {
             task_context_panic("ZEROOS PANIC: AP idle queue state invalid.\n",idle);
-        } else if (idle!=handoff && idle->interrupt_frame==0 && idle->saved_stack!=0 &&
+        } else if (idle!=handoff && !task_handoff_in_flight(idle) &&
+                   idle->interrupt_frame==0 && idle->saved_stack!=0 &&
                    (!task_saved_stack_ok(idle) || !task_saved_context_ok(idle))) {
             task_saved_context_panic(idle);
         }
@@ -562,6 +592,9 @@ static void task_prepare_stack(struct task *task) {
     uint64_t *sp;
 
     *(uint64_t *)(uint64_t)task->stack_base=ZEROOS_TASK_STACK_GUARD;
+    for (uint64_t *paint=(uint64_t *)(uint64_t)(task->stack_base+8ULL);
+         (uint64_t)paint<top-64ULL; ++paint)
+        *paint=ZEROOS_TASK_STACK_PAINT;
 
     /*
      * context_switch_ex restores six callee-saved registers then retq. The
@@ -639,7 +672,7 @@ static void reap_zombies_locked(void) {
         }
         if (task_current_owner(task))
             task_context_panic("ZEROOS PANIC: zombie task still owns a CPU.\n",task);
-        page_free((void *)task->stack_base);
+        page_free_contiguous((void *)task->stack_base,ZEROOS_TASK_STACK_PAGES);
         task->id=0;
         task->state=TASK_UNUSED;
         task->saved_stack=0;
@@ -832,8 +865,18 @@ static struct task *runqueue_pick_locked(uint32_t queue_cpu,
     spin_lock(&queue->lock);
     for (struct task *candidate=queue->head; candidate;
          candidate=candidate->run_next) {
+        /* A task still in handoff is RUNNABLE but its owner CPU is still
+         * executing on its kernel stack (saving the cooperative context or
+         * unwinding the IRQ epilogue). Resuming it elsewhere before the
+         * owner has switched stacks would put two CPUs on one stack. It
+         * stays queued; the owner clears the marker within a few
+         * instructions and a later pick selects it. The same holds for a
+         * task that is still current on another CPU (woken inside its
+         * two-phase block window): the wake is kept, the owner resolves it. */
         if (candidate->state!=TASK_RUNNABLE ||
-            !task_can_run_on_cpu(candidate,execution_cpu))
+            !task_can_run_on_cpu(candidate,execution_cpu) ||
+            task_handoff_in_flight(candidate) ||
+            task_current_on_other_cpu(candidate,execution_cpu))
             continue;
         uint8_t priority=effective_priority(candidate);
         if (!selected || priority>selected_priority) {
@@ -1029,7 +1072,7 @@ int task_system_init(void) {
         (tasks[0].kernel_stack_top & 0xfULL)!=0)
         return -1;
 
-    idle_stack=page_alloc();
+    idle_stack=page_alloc_contiguous(ZEROOS_TASK_STACK_PAGES);
     if (!idle_stack) return -1;
 
     tasks[ZEROOS_IDLE_SLOT].id=1;
@@ -1095,7 +1138,7 @@ static int task_create_owned_internal(task_entry_t entry, void *argument,
         return -1;
     }
 
-    void *stack=page_alloc();
+    void *stack=page_alloc_contiguous(ZEROOS_TASK_STACK_PAGES);
     if (!stack) {
         spin_unlock_irqrestore(&task_lock,flags);
         return -1;
@@ -1134,7 +1177,7 @@ static int task_create_owned_internal(task_entry_t entry, void *argument,
     if (publish) {
         int owner=task_choose_cpu_locked(task);
         if (owner<0) {
-            page_free(stack);
+            page_free_contiguous(stack,ZEROOS_TASK_STACK_PAGES);
             task->id=0;
             task->state=TASK_UNUSED;
             spin_unlock_irqrestore(&task_lock,flags);
@@ -1585,11 +1628,22 @@ uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
         task_context_panic("ZEROOS PANIC: IRQ target kernel stack publication failed.\n",
                            target);
     task_activate_address_space(target);
+    /* previous's IRQ frame and this CPU's live call chain are both on
+     * previous's kernel stack until the assembly epilogue switches RSP.
+     * Publish the same per-CPU handoff marker as the cooperative path so no
+     * other CPU can resume previous in that window. It is cleared on the
+     * destination side: by isr.S after the RSP switch (frame targets, tagged
+     * with ZEROOS_IRQ_RESUME_HANDOFF), or by the resumed cooperative
+     * context's task_handoff_complete() / task_trampoline_body(). */
+    if (handoff_tasks[cpu])
+        task_context_panic("ZEROOS PANIC: scheduler handoff already pending.\n",
+                           handoff_tasks[cpu]);
+    handoff_tasks[cpu]=previous;
     task_validate_table_at("ZEROOS PANIC: IRQ dispatch invariant failed.\n",previous);
     spin_unlock(&task_lock);
 
     if (target_frame)
-        return (uint64_t)target_frame;
+        return (uint64_t)target_frame | ZEROOS_IRQ_RESUME_HANDOFF;
     return target->saved_stack | 1ULL;
 }
 
@@ -1752,6 +1806,7 @@ int task_cpu_offline_pending(void) {
 void task_cpu_offline_park(void) {
     uint32_t cpu=task_cpu_index();
     struct task *idle;
+    uint64_t flags;
 
     if (cpu==0 || cpu>=ZEROOS_MAX_CPUS)
         return;
@@ -1760,10 +1815,29 @@ void task_cpu_offline_park(void) {
         current_task!=idle)
         return;
 
+    /* The idle loop can observe the published request before the offline
+     * IPI is serviced (any interrupt ends its hlt). The acknowledgement
+     * certifies that TLB, cpu-local and SMP ownership have all been
+     * released, so perform that transition here when the interrupt path has
+     * not done it yet. A pending TLB shootdown targeting this CPU makes the
+     * unregister fail; interrupts are re-enabled so the shootdown can be
+     * serviced, and the idle loop retries. */
+    flags=task_irq_save();
+    if (__atomic_load_n(&cpu_local_for_id(cpu)->online,__ATOMIC_ACQUIRE)) {
+        if (tlb_unregister_current_cpu(cpu)!=0) {
+            task_irq_restore(flags);
+            return;
+        }
+        if (cpu_mark_offline(cpu)!=0 || smp_mark_cpu_offline(cpu)!=0) {
+            serial_write_public("ZEROOS PANIC: AP CPU-offline ownership transition failed.\n");
+            for (;;) __asm__ volatile ("cli; hlt");
+        }
+    }
+
     __atomic_store_n(&cpu_offline_acknowledged[cpu],1,__ATOMIC_RELEASE);
     serial_write_public("ZEROOS: AP scheduler CPU quiesced and parked (cpu=");
     task_write_u64(cpu);
-    serial_write_public(").\\n");
+    serial_write_public(").\n");
     for (;;) {
         __asm__ volatile ("cli; hlt" : : : "memory");
     }
@@ -1784,7 +1858,7 @@ uint64_t task_cpu_offline_from_interrupt(struct interrupt_frame *frame) {
     if (tlb_unregister_current_cpu(cpu)!=0)
         return (uint64_t)frame;
     if (cpu_mark_offline(cpu)!=0 || smp_mark_cpu_offline(cpu)!=0) {
-        serial_write_public("ZEROOS PANIC: AP CPU-offline ownership transition failed.\\n");
+        serial_write_public("ZEROOS PANIC: AP CPU-offline ownership transition failed.\n");
         for (;;) __asm__ volatile ("cli; hlt");
     }
     current->need_resched=1;
@@ -1849,7 +1923,7 @@ int task_cpu_offline(uint32_t cpu_id) {
                             __ATOMIC_ACQUIRE))
             break;
         if (timer_ticks()-start>100ULL) {
-            serial_write_public("ZEROOS: AP CPU-offline acknowledgement timed out.\\n");
+            serial_write_public("ZEROOS: AP CPU-offline acknowledgement timed out.\n");
             /* Keep the request published: cancelling a transition after the
              * AP has removed its TLB ownership would be unsafe. */
             return -6;
@@ -1979,4 +2053,16 @@ uint64_t task_count(void) {
         if (tasks[i].state!=TASK_UNUSED)
             ++count;
     return count;
+}
+
+uint64_t task_stack_high_water(const struct task *task) {
+    const uint64_t *cursor;
+    uint64_t end;
+    if (!task || !task->stack_base)
+        return 0;
+    end=task->stack_base+ZEROOS_TASK_STACK_SIZE;
+    cursor=(const uint64_t *)(uint64_t)(task->stack_base+8ULL);
+    while ((uint64_t)cursor<end && *cursor==ZEROOS_TASK_STACK_PAINT)
+        ++cursor;
+    return end-(uint64_t)cursor;
 }

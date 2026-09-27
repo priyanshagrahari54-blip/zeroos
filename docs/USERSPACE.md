@@ -107,6 +107,9 @@ The initial v1 calls are:
 | 22 | `SHM_MAP` | map the whole object at a caller-selected user address with read or read/write permissions |
 | 23 | `SHM_UNMAP` | unmap one whole-object mapping and release its page references |
 | 24 | `SHM_CLOSE` | close a shared-memory capability; active mappings keep their pages alive |
+| 25–50 | file/VFS calls | Stage 3, additive, gated by `ZEROOS_ABI_FEATURE_FILES` (bit 7). Semantics, structures and migration notes are in [VFS.md](VFS.md) §7; wrappers are in `userspace/include/zeroos/storage.h` |
+| 51 | `DISPLAY_INFO` | Stage 5, gated by `ZEROOS_ABI_FEATURE_DISPLAY` (bit 8): copy the read-only `struct zeroos_display_info` geometry record (see TECHSPEC.md) |
+| 52 | `DISPLAY_PRESENT` | Stage 5, gated by `ZEROOS_ABI_FEATURE_PRESENT` (bit 9): pixel-mapping scanout submit (see TECHSPEC.md) |
 
 The public freestanding wrapper surface is
 `userspace/include/zeroos/syscall.h`. It contains the fixed-width ABI
@@ -281,6 +284,24 @@ creation, fills the bounded IPC endpoint table, verifies the expected
 `ENOMEM` boundary, and closes every resource before continuing. The loader
 rejects non-page-aligned or overlapping segments before mapping and preserves
 distinct invalid-image and resource errors through the spawn ABI.
+
+Every assertion in the init image and in the service-manager image jumps to
+its own failure stub. The exit status therefore identifies both the check
+and the kernel's answer: `status = ((-rax) & 0xffffff) << 8 | (16 + i)`, where
+`i` is the check index in emission order and `-rax` is the errno returned by
+the failing syscall. For example, `3615 = 14 << 8 | 31` would be check 15
+failing with `EFAULT`. Both images must exit 0. The kernel prints any failure
+as `init reap failed (stage=..., exit_status=...)`, naming the reap
+precondition that failed (`thread-reap`, `process-state`, `process-reap`,
+`ipc-validate` or `exit-status`), so a CI log identifies the failing check
+without a debugger.
+
+The in-kernel blocking-wakeup self-tests (event, IPC close and IPC send) run
+their probe in a kernel thread. The probe publishes its final state before it
+returns into `thread_exit()`, so after observing that state the monitor waits,
+bounded, for the probe thread and its process to become zombies before it
+reaps them. On SMP, or after a preemption between the two steps, sampling the
+zombie state immediately would fail spuriously.
 
 After init and the IPC service recovery path, a separate Ring-3 service-manager
 process is published. It owns an explicit child limit, launches a worker,

@@ -37,6 +37,28 @@ the same CR0 policy during their protected-mode transition. Extended XSAVE/AVX
 state is not enabled until a future per-thread FPU ownership policy is
 present; this prevents silently corrupting architectural state.
 
+### Kernel code is general-purpose-register only
+
+No kernel path saves or restores x87/MMX/SSE/AVX state: the common ISR saves
+the 15 general-purpose registers plus the hardware frame, the IRQ reschedule
+path resumes a saved frame, and `context_switch_ex()` saves only the
+callee-saved general-purpose registers. The kernel is therefore compiled with
+`-mgeneral-regs-only`, and `make` runs `kernel-simd-check` after linking,
+which fails the build if the kernel image contains any x87/MMX/SSE/AVX
+instruction.
+
+This is a correctness invariant, not an optimisation choice. Before the flag
+was added, GCC `-O2` emitted about 1,800 SSE instructions across 131 kernel
+functions (constant materialisation, zeroing and copies). Any interrupt or
+task switch whose code also used XMM silently replaced live values in the
+interrupted task. The visible symptoms were intermittent SMP boot failures:
+Ring-3 init code built with wrong immediates (`16 -> 0`, `12 -> 0xffffffff`,
+giving ENOSYS/EFAULT from valid syscalls), and random IPC and storage
+self-test failures. Because this state is not preserved per task, Ring-3
+images are also built with `-mgeneral-regs-only`. User code that executes SSE
+has undefined results across preemption until per-thread FPU ownership exists
+(PARTIAL, see below).
+
 ## Per-CPU state
 
 `struct cpu_local` is the ownership boundary for:
@@ -106,8 +128,9 @@ The boot certification checks:
 ## Remaining Stage 1 boundary
 
 Full IOAPIC IRQ ownership beyond the timer route, CPU hot-offline evacuation,
-remote TLB-shootdown stress beyond boot certification, extended FPU state
-switching, and supported-hardware multi-vCPU validation remain required before
+remote TLB-shootdown stress beyond boot certification, per-thread FPU/SIMD
+state switching (the kernel and shipped Ring-3 images are currently
+general-purpose-register only), and supported-hardware multi-vCPU validation remain required before
 claiming complete SMP hardware support. The TLB request/acknowledgement
 contract and AP startup handshake are implemented and fail closed when an AP
 cannot reach the published state. These capabilities are deliberately

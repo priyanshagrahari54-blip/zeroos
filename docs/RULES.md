@@ -141,3 +141,10 @@ A stub, partial driver, mock service or demo path must retain PARTIAL/EXPERIMENT
 ## R36 — Recovery Is Part of Implementation
 
 Failure detection, isolation, diagnostics, recovery and user-visible status are part of the feature itself, not optional post-release work.
+
+## R hardware discovery is not device support
+A discovered hardware identifier is not an operational driver. Generic
+enumeration must not enable bus mastering, probe BAR sizes by destructive
+writes, map unvalidated ranges, or activate interrupts. Device resources need
+exclusive ownership and exactly-once cleanup. Unsupported devices remain
+unbound and must be reported honestly.

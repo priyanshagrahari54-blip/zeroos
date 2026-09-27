@@ -4,6 +4,7 @@
 #include "ipc.h"
 #include "shmem.h"
 #include "syscall.h"
+#include "storage/fsyscall.h"
 
 #define ZEROOS_MAX_PROCESSES 16U
 #define ZEROOS_PROCESS_SLOT_BITS 16U
@@ -79,6 +80,8 @@ static void process_reset_locked(struct process *process) {
     process->max_address_space_pages=0;
     process->resident_pages=0;
     process->exit_status=0;
+    process->uid=0;
+    process->gid=0;
     process->address_space.root=0;
     process->address_space.root_physical=0;
     process->address_space.mapped_pages=0;
@@ -157,6 +160,8 @@ int process_create(struct process *parent, process_id_t *pid_out) {
     process->pid=process_make_id((uint32_t)slot,generation);
     process->state=PROCESS_NEW;
     process->parent=parent;
+    process->uid=parent ? parent->uid : 0U;
+    process->gid=parent ? parent->gid : 0U;
     process->first_child=0;
     process->next_sibling=0;
     process->child_count=0;
@@ -297,7 +302,11 @@ int process_child_wait_prepare(struct process *parent, process_id_t pid,
      * the process lock without restoring them so the condition check and the
      * eventual task_block remain one atomic publication boundary. */
     spin_unlock(&process_lock);
-    *flags_out=wait_flags;
+    /* wait_flags were sampled after process_lock already disabled IRQs, so
+     * they always carry IF=0. The commit must restore the caller's original
+     * interrupt state, otherwise the woken task resumes with IRQs disabled. */
+    (void)wait_flags;
+    *flags_out=process_flags;
     return 0;
 }
 
@@ -524,6 +533,8 @@ int process_reap(struct process *process, uint64_t *exit_status_out) {
 
     if (exit_status_out)
         *exit_status_out=process->exit_status;
+    process_id_t exited_pid=process->pid;
+    uint32_t exited_generation=process->generation;
 
     /* IPC and shared-memory capability references are revoked before the
      * process object is reset. Both revoke paths only take their subsystem
@@ -561,6 +572,9 @@ int process_reap(struct process *process, uint64_t *exit_status_out) {
     }
     process_reset_locked(process);
     spin_unlock_irqrestore(&process_lock,flags);
+    /* Outside process_lock: queue descriptor/mapping teardown for the
+     * storage worker (non-blocking). */
+    storage_process_exit(exited_pid,exited_generation);
     return 0;
 }
 

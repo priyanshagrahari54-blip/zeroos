@@ -17,4 +17,13 @@ uint64_t interrupt_dispatch(struct interrupt_frame *frame);
 int irq_register(uint8_t irq, irq_handler_t handler, void *context);
 int irq_unregister(uint8_t irq, irq_handler_t handler, void *context);
 
+/* MSI/MSI-X vectors for PCI devices (0x60-0x6f, delivered to the BSP LAPIC).
+ * The handler runs in interrupt context with the vector as `irq`; EOI and
+ * rescheduling are performed by the dispatcher. */
+#define ZEROOS_DEVICE_VECTOR_BASE 0x60U
+#define ZEROOS_DEVICE_VECTOR_COUNT 16U
+int irq_vector_alloc(irq_handler_t handler, void *context);
+int irq_vector_free(int vector);
+uint64_t irq_vector_spurious_count(void);
+
 #endif

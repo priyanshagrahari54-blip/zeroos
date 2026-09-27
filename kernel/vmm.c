@@ -833,30 +833,51 @@ int vmm_space_is_executable(const struct vmm_space *space,
     return 1;
 }
 
-int vmm_space_activate(const struct vmm_space *space) {
-    uint32_t cpu;
-    if (!space || !space->root || space->root_physical==0)
+/*
+ * CR3 activation must be atomic with respect to preemption and migration.
+ * The per-CPU active_root_physical[] cache is used both to skip redundant
+ * CR3 loads and, via root_active_on_any_cpu(), to decide whether a root may
+ * be destroyed. If a task were preempted (or migrated) between sampling its
+ * CPU id, loading CR3 and publishing the root, the cache for one CPU would
+ * no longer match that CPU's real CR3: a later switch could then skip a
+ * required CR3 load (a user thread running on another process's page
+ * tables), and process reaping could either refuse a dead root or free page
+ * tables still loaded on a CPU. Interrupts are therefore disabled locally
+ * for the whole compare/load/publish sequence.
+ */
+static inline uint64_t vmm_irq_save(void) {
+    uint64_t flags;
+    __asm__ volatile ("pushfq; popq %0; cli" : "=r"(flags) : : "memory");
+    return flags;
+}
+
+static inline void vmm_irq_restore(uint64_t flags) {
+    if (flags&(1ULL<<9))
+        __asm__ volatile ("sti" : : : "memory");
+}
+
+static int vmm_activate_root(uint64_t physical) {
+    uint64_t flags=vmm_irq_save();
+    uint32_t cpu=cpu_current_id();
+    if (cpu>=ZEROOS_MAX_CPUS) {
+        vmm_irq_restore(flags);
         return -1;
-    cpu=cpu_current_id();
-    if (cpu>=ZEROOS_MAX_CPUS)
-        return -1;
-    if (active_root_for_cpu()!=space->root_physical)
-        write_cr3(space->root_physical);
-    __atomic_store_n(&active_root_physical[cpu],space->root_physical,
-                     __ATOMIC_RELEASE);
+    }
+    if (__atomic_load_n(&active_root_physical[cpu],__ATOMIC_ACQUIRE)!=physical)
+        write_cr3(physical);
+    __atomic_store_n(&active_root_physical[cpu],physical,__ATOMIC_RELEASE);
+    vmm_irq_restore(flags);
     return 0;
 }
 
+int vmm_space_activate(const struct vmm_space *space) {
+    if (!space || !space->root || space->root_physical==0)
+        return -1;
+    return vmm_activate_root(space->root_physical);
+}
+
 int vmm_activate_kernel(void) {
-    uint32_t cpu;
     if (!root_table || root_physical==0)
         return -1;
-    cpu=cpu_current_id();
-    if (cpu>=ZEROOS_MAX_CPUS)
-        return -1;
-    if (active_root_for_cpu()!=root_physical)
-        write_cr3(root_physical);
-    __atomic_store_n(&active_root_physical[cpu],root_physical,
-                     __ATOMIC_RELEASE);
-    return 0;
+    return vmm_activate_root(root_physical);
 }

@@ -187,14 +187,16 @@ static void apic_delay_us(uint64_t microseconds) {
 }
 
 static int locate_timer_route(const struct acpi_info *firmware,
+                              uint32_t source_irq,
                               uint32_t *ioapic_index, uint32_t *pin,
                               uint16_t *source_flags) {
-    uint32_t gsi=0;
+    /* ISA identity by default (GSI == IRQ); ACPI overrides rewrite it. */
+    uint32_t gsi=source_irq;
     uint16_t flags=0;
     for (uint32_t i=0; i<firmware->interrupt_override_count; ++i) {
         const struct acpi_interrupt_override *override=
             &firmware->overrides[i];
-        if (override->bus==0 && override->source==0) {
+        if (override->bus==0 && override->source==source_irq) {
             gsi=override->gsi;
             flags=override->flags;
             break;
@@ -278,7 +280,7 @@ int apic_activate_timer(void) {
 
     if (!state.initialized || !state.local_apic_present ||
         !state.acpi_valid || !state.ioapic_discovered ||
-        !firmware->valid || locate_timer_route(firmware,&ioapic_index,&pin,
+        !firmware->valid || locate_timer_route(firmware,0,&ioapic_index,&pin,
                                                &source_flags)!=0)
         return -1;
 
@@ -306,6 +308,37 @@ int apic_activate_timer(void) {
 
 const struct apic_info *apic_info(void) {
     return &state;
+}
+
+/* Route a legacy ISA IRQ (0..15) to IDT vector 32+irq on the IOAPIC path
+ * and unmask its redirection entry. Returns 0 on success, -1 when the
+ * active topology cannot route it (caller falls back to the PIC). */
+int apic_route_legacy_irq(uint8_t irq) {
+    const struct acpi_info *firmware=acpi_info();
+    uint32_t ioapic_index=0;
+    uint32_t pin=0;
+    uint16_t source_flags=0;
+    uint32_t low;
+    uint8_t low_register;
+    uint8_t high_register;
+
+    if (irq>=16)
+        return -1;
+    if (!state.initialized || !state.local_apic_present ||
+        state.controller!=ZEROOS_IRQ_CONTROLLER_LAPIC_IOAPIC ||
+        !state.acpi_valid || !state.ioapic_discovered ||
+        !firmware->valid ||
+        locate_timer_route(firmware,irq,&ioapic_index,&pin,
+                           &source_flags)!=0)
+        return -1;
+    low=(uint32_t)(32U+irq)|ioapic_entry_flags(source_flags);
+    low_register=(uint8_t)(IOAPIC_REG_REDIRECTION_BASE+pin*2U);
+    high_register=(uint8_t)(low_register+1U);
+    /* Destination first with the entry masked, then publish unmasked. */
+    ioapic_write(ioapic_index,high_register,state.local_apic_id<<24);
+    ioapic_write(ioapic_index,low_register,low|(1U<<16));
+    ioapic_write(ioapic_index,low_register,low);
+    return 0;
 }
 
 int apic_available(void) {

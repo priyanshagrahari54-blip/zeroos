@@ -63,22 +63,69 @@ Exit: practical hardware I/O works on defined test hardware.
 ## Phase 5 — Graphics and Desktop
 ### 5.1 Graphics service
 Display abstraction and GPU interface.
+Status: kernel display primitive landed (Multiboot2 framebuffer discovery,
+reservation, UC MMIO mapping, `DISPLAY_INFO` syscall, active/degraded boot
+milestones) plus the `DISPLAY_PRESENT` pixel-mapping syscall (ID 52,
+host-tested bounds/stride validation, ENOENT degraded contract, Ring-3
+probe with kernel readback certification). GPU acceleration and the
+userspace display-service process are the next batch.
 ### 5.2 Compositor
 Windows, surfaces, damage tracking.
+Status: desktop platform core implemented and unit-tested in
+`userspace/desktop/` (retained scene, per-owner damage, occlusion
+subtraction, frame pacing, LRU surface cache, software raster fallback,
+buffer-generation rejection, crash drop path) — see `make desktop-check`.
+Event-level input routing (pointer focus, click-to-focus/raise, implicit
+grab, overlay priority) is implemented and tested in
+`userspace/desktop/src/input.c`, including clamped conversion of PS/2
+relative motion to absolute coordinates (`zd_input_pointer_relative`).
+Wire-up to a live scanout surface depends on the display-service batch.
 ### 5.3 Shell
 ZERO Bar, launcher, notifications, workspaces.
+Status: shell platform services (lifecycle, workspaces, search, settings,
+notifications, a11y, i18n, watchdog) are implemented as tested userspace
+modules. The display service (`userspace/desktop/src/display.c`) owns the
+DISPLAY_INFO/DISPLAY_PRESENT submission path — degraded/paced/empty/
+suspended gating, damage merge, rect-local present contract, explicit
+re-attach recovery — and is host-tested. The embedded session process
+(`userspace/session/session.c`, launched by `kernel/session.c`) binds it
+to the real syscalls, runs the compositor window path over a staging
+framebuffer and pumps input through the router, with boot milestones
+grepped in CI (live and degraded variants); shell UI chrome built on
+this session remains. The automation framework
+(`userspace/desktop/src/automation.c`) provides bounded, auditable
+event/action rules — explicit permission grants, cooldown rate limits,
+fire caps, injected actions, drainable audit ring — host-tested;
+producers/consumers wire in with the shell chrome.
 ### 5.4 Settings
 System configuration service.
+Status: schema-driven settings module implemented (defaults, permissions,
+scopes, dependencies, transactions, import/export, v1 migration, stats).
 ### 5.5 Accessibility
 Semantic tree, keyboard navigation, scaling and reduced motion.
+Status: semantic tree, focus traversal, announcements and en+hi localization
+implemented and tested in `userspace/desktop/`.
 Exit: desktop session is usable without kernel debugging tools.
 
 ## Phase 6 — Core Native Apps
 File manager, terminal, browser foundation, settings, package manager, text editor/notes, PDF reader, media player, screenshot/recorder and hardware center.
 Each app must have resource lifecycle policy and crash isolation.
+Status/contracts: browser lifecycle core (Phase 8.5), ZERO Bar core
+(applets, toggles, badges, focus) and launcher core (registry, query
+ranking, launch dedup) are implemented and host-tested; engine,
+rendering chrome and app surface remain.  Study Center: the
+flashcard/spaced-repetition scheduler (bounded 0/1/3/7/21/60-day
+ladder, lapse tracking) and focus-session core are implemented and
+host-tested; PDF, OCR, formulas, dictionary and assistant attach on
+these contracts later.  Media policy is binding: lawful sources only, no DRM
+bypass, and no proprietary codec/container claims without tests.
 
 ## Phase 7 — Security, Update and Recovery
 Firewall, permissions, encryption integration, antivirus scanning, privacy center, secure vault, update manager, snapshots and rollback.
+Status: kernel crypto primitives (RFC 8439 ChaCha20-Poly1305: block,
+cipher, Poly1305, key generation, AEAD — vector-tested plus tamper
+negatives) landed as `kernel/crypto.c` and are linked into the kernel;
+firewall/permissions/vault/privacy/audit and the integrations remain.
 Exit: system can recover from controlled update and application failures.
 
 ## Phase 8 — Performance/Power
@@ -91,14 +138,30 @@ Power profiles and suspend.
 ### 8.4 Storage adaptation
 HDD/SSD/NVMe policies.
 ### 8.5 Browser lifecycle
-Active/idle/frozen/discarded tabs.
+Active/idle/frozen/discarded tabs (plus navigation history controller:
+validated URLs only, bounded back/forward).
+Status: implemented and host-tested in
+`userspace/desktop/src/browser.c` (clock-injected ladder, discard keeps
+metadata and drops the document, crash/reload rules, bounded tabs);
+wiring into a real engine remains behind these contracts.
+Status: stress/soak suite (`test_stress.c`) runs 41 tab fill/drain
+rounds, 100 vault cycles, 20 000 firewall decisions and 10 000 frame
+recordings with exact end-state counters — host evidence for the
+stress row in `VALIDATION.md`.
 Exit: background work is demonstrably controlled.
 
 ## Phase 9 — Compatibility
 ### 9.1 Windows
 Start with a narrow Win32 API slice, expand through test suites.
+Status: compatibility core (lifecycle, paths, registry, DLL
+bookkeeping) and the PE image validator implemented and host-tested
+via `make compat-check`; the Win32 API slice starts on top of it.
 ### 9.2 Android
 Integrate isolated Android runtime using the selected AOSP baseline.
+Baseline documented: AOSP 14 (API 34), arm64-v8a primary ABI; runtime
+isolated in its own userspace compartment.  Claims policy: only
+tested-matrix combinations may be claimed — tested matrix is currently
+empty, so no Android support is claimed.
 ### 9.3 Packaging
 Make compatibility runtimes independently updateable.
 Exit: defined application compatibility matrix, not vague “supports Windows/Android”.
@@ -106,9 +169,25 @@ Exit: defined application compatibility matrix, not vague “supports Windows/An
 ## Phase 10 — AI and Automation
 AI broker, local/remote model adapters, system search, diagnostics, coding assistant, study assistant, automation engine and performance explanations.
 AI is optional and event-driven.
+Status: automation engine landed in 5.3a; the AI broker (permission
+grants, backend selection with remote downgrade, bounded queue, wipe-on-
+drain, dormant-until-submit) is implemented and host-tested in
+`userspace/desktop/src/ai.c`.  Adapters, assistants and explanations
+remain.  The ZEROOS AI platform is separate from Forge AI.
 
 ## Phase 11 — Ecosystem
 Cloud sync, device link, offline maps, smart-home integrations, P2P transfer, themes/widgets, localization expansion, developer SDK and package repository.
+Contracts: cloud/device features are offline-first (every surface works
+without network) and gate each device/account behind explicit
+permissions.  Gaming platform: performance profiles, FPS monitoring and
+overlay, controller support, low-latency modes and a cooperative
+resource policy sharing the governor — none of these may claim support
+without measured evidence.
+Status: FPS monitor (clock-injected sliding window, frame-time
+percentiles, budget-breach counting) and the three performance
+profiles (8/16/33 ms budgets published for the governor) are
+implemented and host-tested; overlay, controller support and
+device-level low-latency remain — no support claimed for them.
 
 ## Phase 12 — Release Engineering
 Hardware certification matrix, release channels, LTS branch, security advisories, rollback tests, upgrade tests and long-term maintenance.
@@ -140,7 +219,7 @@ Every stage targets the production architecture appropriate to its scope:
 - Stage 0: production engineering, reproducibility, CI and architecture governance.
 - Stage 1: production kernel, scheduler, memory, process/thread and interrupt architecture.
 - Stage 2: production userspace, syscall ABI, executable runtime, services and IPC.
-- Stage 3: production storage, VFS, filesystem, cache, recovery and persistent-data integrity.
+- Stage 3: production storage, VFS, filesystem, cache, recovery and persistent-data integrity (implemented; see STORAGE.md, VFS.md, ZJFS.md — PARTIAL items are listed in STORAGE.md §12).
 - Stage 4: production hardware, drivers, networking, audio, display, power and thermal architecture.
 - Stage 5: production graphics, compositor, window system, shell, search, settings, notifications and accessibility.
 

@@ -3,6 +3,7 @@ name: ZEROOS Build
 on:
   push:
   pull_request:
+  workflow_dispatch: # manual re-run of boot certification (CI recovery)
 
 jobs:
   build:
@@ -18,8 +19,8 @@ jobs:
       - name: Build ZEROOS
         run: make
 
-      - name: Check public userspace ABI and runtime
-        run: make userspace-abi-check userspace-runtime-check userspace-abi-consistency
+      - name: Run reproducible local release gate
+        run: make check
 
       - name: Verify kernel image
         run: |
@@ -50,6 +51,9 @@ jobs:
           # runtime invariant suite, and the interrupt-frame ownership defect
           # this gates against was nondeterministic. A single green boot is
           # not sufficient evidence.
+          # On any grep failure, surface the serial tail so the exact missing
+          # milestone (or the lines before a hang) is visible in annotations.
+          trap 'echo "boot milestone failed; log END follows first"; echo "::error title=serial end::$(tail -c 1800 build/serial.log | tr "\\r\\n" "  ")"; echo "boot milestone failed; serial tail follows"; tail -c 6000 build/serial.log | tr "\\r\\n" "  "; echo' ERR
           for iteration in 1 2 3; do
             echo "===== ZEROOS boot certification iteration ${iteration} ====="
             timeout 45s qemu-system-x86_64             -smp 2             -cdrom build/zeroos.iso             -serial file:build/serial.log             -display none             -no-reboot             -no-shutdown             -debugcon file:build/debug.log             -global isa-debugcon.iobase=0xe9             -d int,guest_errors,cpu_reset             -D build/qemu.log || true
@@ -62,6 +66,11 @@ jobs:
             grep -q "ZEROOS: exception IST routing self-test passed." build/serial.log
             grep -q "ZEROOS: IRQ controller capability:" build/serial.log
             grep -Eq 'ZEROOS: (LAPIC/IOAPIC timer routing activated|legacy PIC timer routing retained)\.' build/serial.log
+          grep -Eq 'ZEROOS: display primitive (ready|degraded \(serial-only\))\.' build/serial.log
+          grep -q "ZEROOS: display present contract verified." build/serial.log
+          grep -Eq 'ZEROOS: (PS/2 keyboard input stack ready|input stack degraded \([^)]*\))\.' build/serial.log
+          grep -q "ZEROOS: input blocking wait/wake path passed." build/serial.log
+          grep -Eq 'ZEROOS: (PS/2 mouse pointer ready|mouse pointer degraded \([^)]*\))\.' build/serial.log
             grep -q "ZEROOS: user fault containment policy armed." build/serial.log
             grep -q "ZEROOS: ACPI routing discovery:" build/serial.log
             grep -q "ZEROOS: SMP startup self-test passed." build/serial.log
@@ -124,6 +133,26 @@ jobs:
             grep -q "ZEROOS: userspace negative syscall/fault/malformed-ELF probes passed." build/serial.log
             grep -q "ZEROOS: init userspace process reaped cleanly." build/serial.log
             grep -q "ZEROOS: Ring-3 transition, syscall ABI, and init recovery passed." build/serial.log
+            grep -q "ZEROOS: storage block layer scheduler/fault/timeout self-test passed." build/serial.log
+            grep -q "ZEROOS: storage GPT validation/recovery self-test passed." build/serial.log
+            grep -q "ZEROOS: storage VFS/ZJFS/page-cache self-test passed." build/serial.log
+            grep -q "ZEROOS: storage crash-consistency (power-cut/replay/fsck) self-test passed." build/serial.log
+            grep -q "ZEROOS: storage stack certification passed" build/serial.log
+            grep -q "ZEROOS: storage worker periodic commit verified" build/serial.log
+            grep -q "ZEROOS: storage userspace probe passed." build/serial.log
+            grep -q "ZEROOS: storage userspace probe reaped; descriptors and mappings released" build/serial.log
+            grep -q "ZEROOS: storage Stage 3 certification complete." build/serial.log
+            grep -Eq 'ZEROOS: session display service attached \((live|degraded)\)\.' build/serial.log
+            grep -q "ZEROOS: session compositor frame path passed." build/serial.log
+            grep -Eq 'ZEROOS: session (scanout present contract|scanout degraded path) passed\.' build/serial.log
+            grep -q "ZEROOS: session input pump passed." build/serial.log
+            grep -q "ZEROOS: session input routing passed." build/serial.log
+            grep -q "ZEROOS: session shell process complete." build/serial.log
+            grep -q "ZEROOS: session shell process reaped cleanly." build/serial.log
+            if grep -q "storage.*FAILED" build/serial.log; then
+              grep "FAILED" build/serial.log
+              exit 1
+            fi
 
             if grep -q "ZEROOS PANIC:" build/serial.log; then
               echo "ZEROOS scheduler/runtime panic detected:"
@@ -147,7 +176,7 @@ jobs:
           if grep -q "ZEROOS PANIC:" build/serial-smp4.log; then
             echo "ZEROOS four-vCPU boot reported a panic before scheduler gates:"
             grep "ZEROOS PANIC:" build/serial-smp4.log
-            smp4_summary=$(tail -c 12000 build/serial-smp4.log | tr '\r\n' '  ')
+            smp4_summary=$(tail -c 3800 build/serial-smp4.log | tr '\r\n' '  ')
             echo "::error title=four-vCPU serial tail::$smp4_summary"
             exit 1
           fi
@@ -175,13 +204,21 @@ jobs:
           grep -q "ZEROOS: blocking IPC close-wakeup path passed." build/serial-smp4.log
           grep -q "ZEROOS: blocking IPC send-wakeup path passed." build/serial-smp4.log
           grep -q "ZEROOS: isolated service process setup complete." build/serial-smp4.log
+          grep -q "ZEROOS: storage Stage 3 certification complete." build/serial-smp4.log
+          grep -Eq 'ZEROOS: session display service attached \((live|degraded)\)\.' build/serial-smp4.log
+          grep -q "ZEROOS: session compositor frame path passed." build/serial-smp4.log
+          grep -Eq 'ZEROOS: session (scanout present contract|scanout degraded path) passed\.' build/serial-smp4.log
+          grep -q "ZEROOS: session input pump passed." build/serial-smp4.log
+          grep -q "ZEROOS: session input routing passed." build/serial-smp4.log
+          grep -q "ZEROOS: session shell process complete." build/serial-smp4.log
+          grep -q "ZEROOS: session shell process reaped cleanly." build/serial-smp4.log
           grep -q "ZEROOS: shared-memory map/grant/lifecycle self-test passed." build/serial-smp4.log
           grep -q "ZEROOS: userspace negative syscall/fault/malformed-ELF probes passed." build/serial-smp4.log
           grep -q "ZEROOS: Ring-3 transition, syscall ABI, and init recovery passed." build/serial-smp4.log
           if grep -q "ZEROOS PANIC:" build/serial-smp4.log; then
             echo "ZEROOS four-vCPU boot reported a panic:"
             grep "ZEROOS PANIC:" build/serial-smp4.log
-            smp4_summary=$(tail -c 12000 build/serial-smp4.log | tr '\r\n' '  ')
+            smp4_summary=$(tail -c 3800 build/serial-smp4.log | tr '\r\n' '  ')
             echo "::error title=four-vCPU serial tail::$smp4_summary"
             exit 1
           fi
@@ -232,6 +269,7 @@ jobs:
           fi
 
           echo "===== ZEROOS failed-IPI recovery fault boot ====="
+          trap 'echo "fault-boot milestone failed; serial tail follows"; tail -c 6000 build-fault/serial.log | tr "\\r\\n" "  "; echo' ERR
           make BUILD=build-fault EXTRA_CFLAGS=-DZEROOS_TEST_SMP_FAILED_DISPATCH
           timeout 45s qemu-system-x86_64 \
             -smp 2 \
@@ -271,6 +309,45 @@ jobs:
             grep "ZEROOS PANIC:" build-fault/serial.log
             exit 1
           fi
+
+      - name: Storage persistence certification (q35 AHCI + NVMe, two boots)
+        run: |
+          set -e
+          trap 'echo "storage persistence gate failed; missing patterns + log ends:"; for p in "storage discovery: sata_disks=1 nvme_namespaces=1." "storage driver test sata0 destructive" "storage driver test nvme0n1 destructive" "vfs: mounted sata0p1" "storage persistence: /data boot counter" "storage persistence check passed" "storage userspace probe wrote" "storage Stage 3 certification complete." "ZEROOS PANIC:|FAILED"; do grep -qE "$p" build/serial-disk1.log 2>/dev/null || echo "MISSING boot1: $p"; grep -qE "$p" build/serial-disk2.log 2>/dev/null || echo "MISSING boot2: $p"; done; for f in build/serial-disk1.log build/serial-disk2.log; do if test -f "$f"; then echo "END of $f"; echo "::error title=$f log end::$(tail -c 1800 "$f" | tr "\r\n" "  ")"; fi; done' ERR
+          mkdir -p build/disks
+          for d in sata nvme; do
+            rm -f build/disks/$d.img
+            truncate -s 64M build/disks/$d.img
+            python3 tools/storage/gpt.py create build/disks/$d.img --part zjfs:40:data --part scratch:rest:scratch
+            python3 tools/storage/zjfs.py --part 1 build/disks/$d.img mkfs --label $d
+          done
+          echo "hello from the host" > build/disks/hello.txt
+          python3 tools/storage/zjfs.py --part 1 build/disks/sata.img put build/disks/hello.txt /hello.txt
+          for boot in 1 2; do
+            timeout 45s qemu-system-x86_64 -machine q35 -smp 4 -m 256M \
+              -cdrom build/zeroos.iso -boot d \
+              -drive file=build/disks/sata.img,if=none,id=d0,format=raw -device ide-hd,drive=d0,bus=ide.0 \
+              -drive file=build/disks/nvme.img,if=none,id=n0,format=raw -device nvme,serial=zeroos1,drive=n0 \
+              -serial file:build/serial-disk$boot.log -display none -no-reboot -no-shutdown || true
+            L=build/serial-disk$boot.log
+            grep -q "ZEROOS: storage discovery: sata_disks=1 nvme_namespaces=1." $L
+            grep -q "ZEROOS: storage driver test sata0 destructive (on sata0p2) passed." $L
+            grep -q "ZEROOS: storage driver test nvme0n1 destructive (on nvme0n1p2) passed." $L
+            grep -q "ZEROOS: vfs: mounted sata0p1 (zjfs) at /data." $L
+            grep -q "ZEROOS: storage persistence: /data boot counter $boot (previous $((boot-1)))." $L
+            grep -q "ZEROOS: storage persistence: host file /data/hello.txt bytes=20" $L
+            grep -q "ZEROOS: storage persistence check passed" $L
+            grep -q "ZEROOS: storage userspace probe wrote /data/user-probe.txt (fsync ok)." $L
+            grep -q "ZEROOS: storage Stage 3 certification complete." $L
+            if grep -qE "ZEROOS PANIC:|FAILED" $L; then grep -E "ZEROOS PANIC:|FAILED" $L; exit 1; fi
+            # QEMU was killed: an unclean shutdown. The host checker must see a
+            # consistent filesystem and the Ring-3 write.
+            python3 tools/storage/zjfs.py --part 1 build/disks/sata.img fsck
+            python3 tools/storage/zjfs.py --part 1 build/disks/sata.img cat /user-probe.txt | grep -q "written from ring 3"
+            test "$(python3 tools/storage/zjfs.py --part 1 build/disks/sata.img get-counter)" = "$boot"
+          done
+          python3 tools/storage/zjfs.py --part 1 build/disks/sata.img fsck --repair
+          python3 tools/storage/zjfs.py --part 1 build/disks/sata.img info | grep -q "state=CLEAN"
 
       - name: Serial summary
         if: always()
@@ -335,6 +412,16 @@ jobs:
       - name: Publish boot failure summary
         if: failure()
         run: |
+          # Exact panic lines first: annotation messages are capped near 4KB
+          # and the full serial tails truncate precisely where they matter.
+          trap - ERR
+          for log in build/serial.log build/serial-smp4.log build/serial-nx-off.log build-fault/serial.log; do
+            if test -f "$log" && grep -q "ZEROOS PANIC:" "$log"; then
+              panic_line=$(grep -m1 -o "ZEROOS PANIC:.*" "$log")
+              title=$(basename "$log")
+              echo "::error title=panic in ${title}::${panic_line}"
+            fi
+          done
           if test -s build/serial.log; then
             summary=$(tr '\r\n' '  ' < build/serial.log | cut -c1-6000)
             echo "::error title=ZEROOS serial log::$summary"
@@ -380,3 +467,5 @@ jobs:
             build/serial-smp4.log
             build/debug-smp4.log
             build/qemu-smp4.log
+            build/serial-disk1.log
+            build/serial-disk2.log

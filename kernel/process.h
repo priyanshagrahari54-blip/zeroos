@@ -51,6 +51,12 @@ struct process {
 
     uint64_t exit_status;
 
+    /* Filesystem credentials (Stage 3). Inherited from the parent at
+     * creation; kernel-created processes start as uid/gid 0. Only uid 0
+     * may change them (SETCRED); the change is one-way for non-root. */
+    uint32_t uid;
+    uint32_t gid;
+
     /* The process owns its private user address-space root. */
     struct vmm_space address_space;
 };

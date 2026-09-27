@@ -30,8 +30,16 @@ static inline void invalidate_local(uint64_t virtual_address) {
 
 static inline void flush_local(void) {
     uint64_t cr3;
-    __asm__ volatile("mov %%cr3,%0" : "=r"(cr3) : : "memory");
-    __asm__ volatile("mov %0,%%cr3" : : "r"(cr3) : "memory");
+    /* Read and reload CR3 with interrupts disabled: if the task were
+     * preempted between the two moves it could reload a CR3 sampled for a
+     * different task (or on a different CPU after migration). popfq
+     * restores the caller's interrupt state. */
+    __asm__ volatile("pushfq\n\t"
+                     "cli\n\t"
+                     "mov %%cr3,%0\n\t"
+                     "mov %0,%%cr3\n\t"
+                     "popfq"
+                     : "=&r"(cr3) : : "memory", "cc");
 }
 
 static inline void relax_local(void) {

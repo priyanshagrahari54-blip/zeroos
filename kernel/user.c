@@ -5,12 +5,14 @@
 #include "process.h"
 #include "thread.h"
 #include "task.h"
+#include "timer.h"
 #include "scheduler.h"
 #include "sync.h"
 #include "vmm.h"
 #include "syscall.h"
 #include "ipc.h"
 #include "shmem.h"
+#include "fb.h"
 
 extern void serial_write_public(const char *text);
 extern void zeroos_user_enter(uint64_t entry, uint64_t stack);
@@ -68,6 +70,14 @@ static const char init_message[]=
 #define INIT_ELF_ARG0_OFFSET 0x3640ULL
 #define INIT_ELF_ARG1_OFFSET 0x3660ULL
 #define INIT_ELF_ENV0_OFFSET 0x3680ULL
+/* Stage 5A present-probe payload: native-format 4x4 pattern plus the
+ * DISPLAY_INFO record the probe reads back; both live in the init data
+ * segment below the status word. */
+#define INIT_ELF_PRESENT_OFFSET 0x3800ULL
+#define INIT_ELF_DISPLAY_INFO_OFFSET 0x3840ULL
+/* Input probe event record (struct zeroos_input_event) lands after the
+ * display-info record in the same data page. */
+#define INIT_ELF_INPUT_EVENT_OFFSET 0x3870ULL
 #define INIT_ELF_DATA_FILE_END (INIT_ELF_STATUS_OFFSET+sizeof(uint64_t))
 #define INIT_ELF_DATA_MEMORY_SIZE ((INIT_ELF_DATA_FILE_END-INIT_ELF_DATA_OFFSET+\
                                     VMM_PAGE_SIZE-1ULL)&~(VMM_PAGE_SIZE-1ULL))
@@ -249,11 +259,12 @@ static uint64_t build_child_elf(void) {
 /* A deliberately tiny statically linked init image. It is represented as a
  * real ET_EXEC ELF object so every boot exercises the same loader checks that
  * later service binaries will use. */
+#define INIT_FAILURE_STATUS_BASE 16U
+
 static uint64_t build_init_code(uint8_t *code) {
     uint64_t offset=0;
-    uint64_t failure_jumps[20];
+    uint64_t failure_jumps[32];
     uint32_t failure_jump_count=0;
-    uint64_t failure_label;
 
     code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_WRITE); offset+=4;
     code[offset++]=0xbf; put_u32(&code[offset],1); offset+=4;
@@ -274,6 +285,221 @@ static uint64_t build_init_code(uint8_t *code) {
     code[offset++]=0x0f; code[offset++]=0x88;
     put_u32(&code[offset],0); offset+=4;
 
+    /*
+     * Stage 5A pixel-mapping probes. The live/degraded branch is decided
+     * when the image is built: on a live scanout the positive present must
+     * return 0 and the negative probes must fail with their exact errors
+     * (EINVAL for out-of-bounds/undersized-stride, EFAULT for unmapped or
+     * null pixel pointers); on a degraded serial-only boot every present
+     * must fail ENOENT. DISPLAY_INFO itself always succeeds.
+     */
+    {
+        const struct zeroos_display_info *display=fb_display_info();
+        int display_live=(display->flags & ZEROOS_DISPLAY_FLAG_PRESENT) &&
+                         display->width>=FB_PRESENT_PROBE_W &&
+                         display->height>=FB_PRESENT_PROBE_H;
+        uint32_t bytes_pp=display_live ? (display->bpp+7U)/8U : 4U;
+        uint32_t present_stride=FB_PRESENT_PROBE_W*bytes_pp;
+        uint64_t present_pixels=ZEROOS_USER_DATA_BASE+
+            (INIT_ELF_PRESENT_OFFSET-INIT_ELF_DATA_OFFSET);
+        uint64_t display_info_ptr=ZEROOS_USER_DATA_BASE+
+            (INIT_ELF_DISPLAY_INFO_OFFSET-INIT_ELF_DATA_OFFSET);
+
+        code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_DISPLAY_INFO); offset+=4;
+        code[offset++]=0x48; code[offset++]=0xbf;
+        put_u64(&code[offset],display_info_ptr); offset+=8;
+        code[offset++]=0xbe;
+        put_u32(&code[offset],(uint32_t)sizeof(*display)); offset+=4;
+        code[offset++]=0xcd; code[offset++]=0x80;
+        code[offset++]=0x48; code[offset++]=0x85; code[offset++]=0xc0;
+        failure_jumps[failure_jump_count++]=offset;
+        code[offset++]=0x0f; code[offset++]=0x85;
+        put_u32(&code[offset],0); offset+=4;
+
+        /* DISPLAY_PRESENT (0,0,4,4,stride,pixels): 0 when live, -ENOENT
+         * when degraded. */
+        code[offset++]=0xb8;
+        put_u32(&code[offset],ZEROOS_SYS_DISPLAY_PRESENT); offset+=4;
+        code[offset++]=0x31; code[offset++]=0xff;
+        code[offset++]=0x31; code[offset++]=0xf6;
+        code[offset++]=0xba;
+        put_u32(&code[offset],FB_PRESENT_PROBE_W); offset+=4;
+        code[offset++]=0x41; code[offset++]=0xba;
+        put_u32(&code[offset],FB_PRESENT_PROBE_H); offset+=4;
+        code[offset++]=0x41; code[offset++]=0xb8;
+        put_u32(&code[offset],present_stride); offset+=4;
+        code[offset++]=0x49; code[offset++]=0xb9;
+        put_u64(&code[offset],present_pixels); offset+=8;
+        code[offset++]=0xcd; code[offset++]=0x80;
+        if (display_live) {
+            code[offset++]=0x48; code[offset++]=0x85; code[offset++]=0xc0;
+        } else {
+            /* cmp rax,-2 : degraded boots must fail ENOENT exactly. */
+            code[offset++]=0x48; code[offset++]=0x83;
+            code[offset++]=0xf8; code[offset++]=0xfe;
+        }
+        failure_jumps[failure_jump_count++]=offset;
+        code[offset++]=0x0f; code[offset++]=0x85;
+        put_u32(&code[offset],0); offset+=4;
+
+        if (display_live) {
+            /* Out-of-bounds origin: x+width exceeds the scanout. */
+            code[offset++]=0xb8;
+            put_u32(&code[offset],ZEROOS_SYS_DISPLAY_PRESENT); offset+=4;
+            code[offset++]=0xbf;
+            put_u32(&code[offset],display->width+64U); offset+=4;
+            code[offset++]=0x31; code[offset++]=0xf6;
+            code[offset++]=0xba;
+            put_u32(&code[offset],FB_PRESENT_PROBE_W); offset+=4;
+            code[offset++]=0x41; code[offset++]=0xba;
+            put_u32(&code[offset],FB_PRESENT_PROBE_H); offset+=4;
+            code[offset++]=0x41; code[offset++]=0xb8;
+            put_u32(&code[offset],present_stride); offset+=4;
+            code[offset++]=0x49; code[offset++]=0xb9;
+            put_u64(&code[offset],present_pixels); offset+=8;
+            code[offset++]=0xcd; code[offset++]=0x80;
+            /* cmp rax,-22 (EINVAL); jne fail. */
+            code[offset++]=0x48; code[offset++]=0x83;
+            code[offset++]=0xf8; code[offset++]=0xea;
+            failure_jumps[failure_jump_count++]=offset;
+            code[offset++]=0x0f; code[offset++]=0x85;
+            put_u32(&code[offset],0); offset+=4;
+
+            /* Undersized source stride. */
+            code[offset++]=0xb8;
+            put_u32(&code[offset],ZEROOS_SYS_DISPLAY_PRESENT); offset+=4;
+            code[offset++]=0x31; code[offset++]=0xff;
+            code[offset++]=0x31; code[offset++]=0xf6;
+            code[offset++]=0xba;
+            put_u32(&code[offset],FB_PRESENT_PROBE_W); offset+=4;
+            code[offset++]=0x41; code[offset++]=0xba;
+            put_u32(&code[offset],FB_PRESENT_PROBE_H); offset+=4;
+            code[offset++]=0x41; code[offset++]=0xb8;
+            put_u32(&code[offset],present_stride-bytes_pp); offset+=4;
+            code[offset++]=0x49; code[offset++]=0xb9;
+            put_u64(&code[offset],present_pixels); offset+=8;
+            code[offset++]=0xcd; code[offset++]=0x80;
+            code[offset++]=0x48; code[offset++]=0x83;
+            code[offset++]=0xf8; code[offset++]=0xea;
+            failure_jumps[failure_jump_count++]=offset;
+            code[offset++]=0x0f; code[offset++]=0x85;
+            put_u32(&code[offset],0); offset+=4;
+
+            /* Unmapped then null pixel pointer: both EFAULT (-14). */
+            code[offset++]=0xb8;
+            put_u32(&code[offset],ZEROOS_SYS_DISPLAY_PRESENT); offset+=4;
+            code[offset++]=0x31; code[offset++]=0xff;
+            code[offset++]=0x31; code[offset++]=0xf6;
+            code[offset++]=0xba;
+            put_u32(&code[offset],FB_PRESENT_PROBE_W); offset+=4;
+            code[offset++]=0x41; code[offset++]=0xba;
+            put_u32(&code[offset],FB_PRESENT_PROBE_H); offset+=4;
+            code[offset++]=0x41; code[offset++]=0xb8;
+            put_u32(&code[offset],present_stride); offset+=4;
+            code[offset++]=0x49; code[offset++]=0xb9;
+            put_u64(&code[offset],1); offset+=8;
+            code[offset++]=0xcd; code[offset++]=0x80;
+            code[offset++]=0x48; code[offset++]=0x83;
+            code[offset++]=0xf8; code[offset++]=0xf2;
+            failure_jumps[failure_jump_count++]=offset;
+            code[offset++]=0x0f; code[offset++]=0x85;
+            put_u32(&code[offset],0); offset+=4;
+
+            code[offset++]=0xb8;
+            put_u32(&code[offset],ZEROOS_SYS_DISPLAY_PRESENT); offset+=4;
+            code[offset++]=0x31; code[offset++]=0xff;
+            code[offset++]=0x31; code[offset++]=0xf6;
+            code[offset++]=0xba;
+            put_u32(&code[offset],FB_PRESENT_PROBE_W); offset+=4;
+            code[offset++]=0x41; code[offset++]=0xba;
+            put_u32(&code[offset],FB_PRESENT_PROBE_H); offset+=4;
+            code[offset++]=0x41; code[offset++]=0xb8;
+            put_u32(&code[offset],present_stride); offset+=4;
+            code[offset++]=0x4d; code[offset++]=0x31; code[offset++]=0xc9;
+            code[offset++]=0xcd; code[offset++]=0x80;
+            code[offset++]=0x48; code[offset++]=0x83;
+            code[offset++]=0xf8; code[offset++]=0xf2;
+            failure_jumps[failure_jump_count++]=offset;
+            code[offset++]=0x0f; code[offset++]=0x85;
+            put_u32(&code[offset],0); offset+=4;
+        }
+    }
+
+    /*
+     * Stage 5A input probes. The queue is certified empty before Ring-3
+     * starts (kernel probe consumed, one-shot drain), so POLL and the
+     * nonblocking wait must observe -EAGAIN; the timed wait must observe
+     * -ETIMEDOUT. All three also accept 0-with-event so a keystroke on
+     * real hardware during boot never fails certification — both outcomes
+     * are valid contract results. Argument faults must be exact.
+     */
+    {
+        uint64_t input_event_ptr=ZEROOS_USER_DATA_BASE+
+            (INIT_ELF_INPUT_EVENT_OFFSET-INIT_ELF_DATA_OFFSET);
+
+        /* INPUT_POLL: expect -EAGAIN (-11) or 0. */
+        code[offset++]=0xb8;
+        put_u32(&code[offset],ZEROOS_SYS_INPUT_POLL); offset+=4;
+        code[offset++]=0x48; code[offset++]=0xbf;
+        put_u64(&code[offset],input_event_ptr); offset+=8;
+        code[offset++]=0xcd; code[offset++]=0x80;
+        /* cmp rax,-11; je accept; test rax,rax; jnz fail. */
+        code[offset++]=0x48; code[offset++]=0x83;
+        code[offset++]=0xf8; code[offset++]=0xf5;
+        code[offset++]=0x74; code[offset++]=0x09;
+        code[offset++]=0x48; code[offset++]=0x85;
+        code[offset++]=0xc0;
+        failure_jumps[failure_jump_count++]=offset;
+        code[offset++]=0x0f; code[offset++]=0x85;
+        put_u32(&code[offset],0); offset+=4;
+
+        /* INPUT_POLL with an unmapped pointer: exact -EFAULT (-14). */
+        code[offset++]=0xb8;
+        put_u32(&code[offset],ZEROOS_SYS_INPUT_POLL); offset+=4;
+        code[offset++]=0xbf; put_u32(&code[offset],1); offset+=4;
+        code[offset++]=0xcd; code[offset++]=0x80;
+        code[offset++]=0x48; code[offset++]=0x83;
+        code[offset++]=0xf8; code[offset++]=0xf2;
+        failure_jumps[failure_jump_count++]=offset;
+        code[offset++]=0x0f; code[offset++]=0x85;
+        put_u32(&code[offset],0); offset+=4;
+
+        /* INPUT_WAIT nonblocking, empty: -EAGAIN or 0. */
+        code[offset++]=0xb8;
+        put_u32(&code[offset],ZEROOS_SYS_INPUT_WAIT); offset+=4;
+        code[offset++]=0x48; code[offset++]=0xbf;
+        put_u64(&code[offset],input_event_ptr); offset+=8;
+        code[offset++]=0xbe;
+        put_u32(&code[offset],ZEROOS_WAIT_FLAG_NONBLOCK); offset+=4;
+        code[offset++]=0x31; code[offset++]=0xd2;
+        code[offset++]=0xcd; code[offset++]=0x80;
+        code[offset++]=0x48; code[offset++]=0x83;
+        code[offset++]=0xf8; code[offset++]=0xf5;
+        code[offset++]=0x74; code[offset++]=0x09;
+        code[offset++]=0x48; code[offset++]=0x85;
+        code[offset++]=0xc0;
+        failure_jumps[failure_jump_count++]=offset;
+        code[offset++]=0x0f; code[offset++]=0x85;
+        put_u32(&code[offset],0); offset+=4;
+
+        /* INPUT_WAIT timed (5 ticks): -ETIMEDOUT (-110) or 0. */
+        code[offset++]=0xb8;
+        put_u32(&code[offset],ZEROOS_SYS_INPUT_WAIT); offset+=4;
+        code[offset++]=0x48; code[offset++]=0xbf;
+        put_u64(&code[offset],input_event_ptr); offset+=8;
+        code[offset++]=0x31; code[offset++]=0xf6;
+        code[offset++]=0xba; put_u32(&code[offset],5); offset+=4;
+        code[offset++]=0xcd; code[offset++]=0x80;
+        code[offset++]=0x48; code[offset++]=0x83;
+        code[offset++]=0xf8; code[offset++]=0x92;
+        code[offset++]=0x74; code[offset++]=0x09;
+        code[offset++]=0x48; code[offset++]=0x85;
+        code[offset++]=0xc0;
+        failure_jumps[failure_jump_count++]=offset;
+        code[offset++]=0x0f; code[offset++]=0x85;
+        put_u32(&code[offset],0); offset+=4;
+    }
+
     /* Negative ABI probes run from Ring 3 and must fail closed without
      * creating a capability, child, or address-space side effect. */
     code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_IPC_CREATE); offset+=4;
@@ -290,7 +516,7 @@ static uint64_t build_init_code(uint8_t *code) {
     code[offset++]=0x48; code[offset++]=0xbe;
     put_u64(&code[offset],0x100ULL); offset+=8;
     code[offset++]=0x48; code[offset++]=0x31; code[offset++]=0xd2;
-    code[offset++]=0x49; code[offset++]=0x31; code[offset++]=0xd2;
+    code[offset++]=0x4d; code[offset++]=0x31; code[offset++]=0xd2;
     code[offset++]=0xcd; code[offset++]=0x80;
     code[offset++]=0x48; code[offset++]=0x85; code[offset++]=0xc0;
     failure_jumps[failure_jump_count++]=offset;
@@ -345,7 +571,7 @@ static uint64_t build_init_code(uint8_t *code) {
     put_u64(&code[offset],ZEROOS_USER_DATA_BASE+
             (INIT_ELF_EVENT_OFFSET-INIT_ELF_DATA_OFFSET)); offset+=8;
     code[offset++]=0x48; code[offset++]=0x8b; code[offset++]=0x3f;
-    code[offset++]=0x49; code[offset++]=0x31; code[offset++]=0xd2;
+    code[offset++]=0x4d; code[offset++]=0x31; code[offset++]=0xd2;
     code[offset++]=0xcd; code[offset++]=0x80;
     code[offset++]=0x48; code[offset++]=0x83; code[offset++]=0xf8; code[offset++]=1;
     failure_jumps[failure_jump_count++]=offset;
@@ -409,7 +635,7 @@ static uint64_t build_init_code(uint8_t *code) {
     put_u32(&code[offset],(uint32_t)(sizeof(init_message)-1U)); offset+=4;
     code[offset++]=0x41; code[offset++]=0xba;
     put_u32(&code[offset],ZEROOS_IPC_FLAG_NONBLOCK); offset+=4;
-    code[offset++]=0x49; code[offset++]=0x31; code[offset++]=0xc9;
+    code[offset++]=0x4d; code[offset++]=0x31; code[offset++]=0xc9;
     code[offset++]=0xcd; code[offset++]=0x80;
     code[offset++]=0x48; code[offset++]=0x3d;
     put_u32(&code[offset],(uint32_t)(sizeof(init_message)-1U)); offset+=4;
@@ -431,7 +657,7 @@ static uint64_t build_init_code(uint8_t *code) {
     code[offset++]=0x49; code[offset++]=0xb8;
     put_u64(&code[offset],ZEROOS_USER_DATA_BASE+
             (INIT_ELF_PIPE_LENGTH_OFFSET-INIT_ELF_DATA_OFFSET)); offset+=8;
-    code[offset++]=0x49; code[offset++]=0x31; code[offset++]=0xc9;
+    code[offset++]=0x4d; code[offset++]=0x31; code[offset++]=0xc9;
     code[offset++]=0xcd; code[offset++]=0x80;
     code[offset++]=0x48; code[offset++]=0x3d;
     put_u32(&code[offset],(uint32_t)(sizeof(init_message)-1U)); offset+=4;
@@ -546,14 +772,35 @@ static uint64_t build_init_code(uint8_t *code) {
     code[offset++]=0xcd; code[offset++]=0x80;
     code[offset++]=0xf4;
 
-    failure_label=offset;
-    for (uint32_t i=0; i<failure_jump_count; ++i)
-        put_u32(&code[failure_jumps[i]+2],
-                (uint32_t)(failure_label-(failure_jumps[i]+6ULL)));
-    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_EXIT); offset+=4;
-    code[offset++]=0xbf; put_u32(&code[offset],9); offset+=4;
-    code[offset++]=0xcd; code[offset++]=0x80;
-    code[offset++]=0xf4;
+    /* Each failed check jumps to its own stub so the exit status identifies
+     * both the check and the kernel's answer:
+     *   status = ((-rax) & 0xffffff) << 8 | (INIT_FAILURE_STATUS_BASE + i)
+     * where i is the check index in emission order and -rax is the errno
+     * returned by the failing syscall. Any nonzero status fails the init lifecycle gate.
+     * userspace_report_reap_failure() prints it for CI triage. */
+    {
+        uint64_t stubs[32];
+        uint64_t common_exit;
+        for (uint32_t i=0; i<failure_jump_count; ++i) {
+            stubs[i]=offset;
+            code[offset++]=0x89; code[offset++]=0xc7;             /* mov edi,eax */
+            code[offset++]=0xf7; code[offset++]=0xdf;             /* neg edi */
+            code[offset++]=0xc1; code[offset++]=0xe7; code[offset++]=0x08; /* shl edi,8 */
+            code[offset++]=0x81; code[offset++]=0xcf;             /* or edi,imm32 */
+            put_u32(&code[offset],INIT_FAILURE_STATUS_BASE+i); offset+=4;
+            code[offset++]=0xe9; put_u32(&code[offset],0); offset+=4; /* jmp exit */
+        }
+        common_exit=offset;
+        for (uint32_t i=0; i<failure_jump_count; ++i) {
+            put_u32(&code[failure_jumps[i]+2],
+                    (uint32_t)(stubs[i]-(failure_jumps[i]+6ULL)));
+            put_u32(&code[stubs[i]+14],
+                    (uint32_t)(common_exit-(stubs[i]+18ULL)));
+        }
+        code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_EXIT); offset+=4;
+        code[offset++]=0xcd; code[offset++]=0x80;
+        code[offset++]=0xf4;
+    }
     return offset;
 }
 
@@ -599,12 +846,22 @@ static uint64_t build_init_elf(void) {
     data_segment->memory_size=INIT_ELF_DATA_MEMORY_SIZE;
     data_segment->alignment=VMM_PAGE_SIZE;
 
-    if (build_init_code(init_elf_image+INIT_ELF_ENTRY_OFFSET)>VMM_PAGE_SIZE) {
+    /* The code segment maps VMM_PAGE_SIZE bytes from image offset 0, and
+     * the entry point starts at INIT_ELF_ENTRY_OFFSET, so the emitted code
+     * must fit in the remainder of that page — not merely "one page". */
+    if (build_init_code(init_elf_image+INIT_ELF_ENTRY_OFFSET)>
+        VMM_PAGE_SIZE-INIT_ELF_ENTRY_OFFSET) {
         serial_write_public("ZEROOS PANIC: init syscall probe image exceeds one code page.\n");
         return 0;
     }
     for (uint64_t i=0; i<sizeof(init_message)-1U; ++i)
         init_elf_image[INIT_ELF_DATA_OFFSET+i]=(uint8_t)init_message[i];
+    /* Preload the present-probe payload in the scanout's native format so
+     * the Ring-3 positive probe pushes real bytes through the syscall. */
+    if (fb_present_active())
+        (void)fb_fill_probe_native(
+            &init_elf_image[INIT_ELF_PRESENT_OFFSET],
+            INIT_ELF_DISPLAY_INFO_OFFSET-INIT_ELF_PRESENT_OFFSET);
     for (uint64_t i=0; i<child_image_size; ++i)
         init_elf_image[INIT_ELF_CHILD_FILE_OFFSET+i]=init_child_elf_image[i];
     put_u64(&init_elf_image[INIT_ELF_ARGV_OFFSET],
@@ -736,7 +993,6 @@ static uint64_t build_manager_code(uint8_t *code, uint64_t child_size) {
     uint64_t offset=0;
     uint64_t failure_jumps[8];
     uint32_t failure_jump_count=0;
-    uint64_t failure_label;
 
     code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_WRITE); offset+=4;
     code[offset++]=0xbf; put_u32(&code[offset],1); offset+=4;
@@ -814,14 +1070,36 @@ static uint64_t build_manager_code(uint8_t *code, uint64_t child_size) {
     code[offset++]=0xcd; code[offset++]=0x80;
     code[offset++]=0xf4;
 
-    failure_label=offset;
-    for (uint32_t i=0; i<failure_jump_count; ++i)
-        put_u32(&code[failure_jumps[i]+2],
-                (uint32_t)(failure_label-(failure_jumps[i]+6ULL)));
-    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_EXIT); offset+=4;
-    code[offset++]=0xbf; put_u32(&code[offset],9); offset+=4;
-    code[offset++]=0xcd; code[offset++]=0x80;
-    code[offset++]=0xf4;
+    /* Each failed check jumps to its own stub so the exit status identifies
+     * both the check and the kernel's answer:
+     *   status = ((-rax) & 0xffffff) << 8 | (INIT_FAILURE_STATUS_BASE + i)
+     * where i is the check index in emission order and -rax is the errno
+     * returned by the failing syscall. The service manager must exit 0; any nonzero status fails its
+     * lifecycle gate.
+     * userspace_report_reap_failure() prints it for CI triage. */
+    {
+        uint64_t stubs[32];
+        uint64_t common_exit;
+        for (uint32_t i=0; i<failure_jump_count; ++i) {
+            stubs[i]=offset;
+            code[offset++]=0x89; code[offset++]=0xc7;             /* mov edi,eax */
+            code[offset++]=0xf7; code[offset++]=0xdf;             /* neg edi */
+            code[offset++]=0xc1; code[offset++]=0xe7; code[offset++]=0x08; /* shl edi,8 */
+            code[offset++]=0x81; code[offset++]=0xcf;             /* or edi,imm32 */
+            put_u32(&code[offset],INIT_FAILURE_STATUS_BASE+i); offset+=4;
+            code[offset++]=0xe9; put_u32(&code[offset],0); offset+=4; /* jmp exit */
+        }
+        common_exit=offset;
+        for (uint32_t i=0; i<failure_jump_count; ++i) {
+            put_u32(&code[failure_jumps[i]+2],
+                    (uint32_t)(stubs[i]-(failure_jumps[i]+6ULL)));
+            put_u32(&code[stubs[i]+14],
+                    (uint32_t)(common_exit-(stubs[i]+18ULL)));
+        }
+        code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_EXIT); offset+=4;
+        code[offset++]=0xcd; code[offset++]=0x80;
+        code[offset++]=0xf4;
+    }
     return offset;
 }
 
@@ -1205,6 +1483,14 @@ static int userspace_child_wait_wakeup_self_test(void) {
     result=process_child_wait_prepare(parent,child_pid,&wait_flags);
     if (result<0 || (result==0 && wait_queue_commit(wait_flags)!=0))
         goto fail;
+    /* process_thread_exited publishes the process zombie immediately before
+     * thread_exit finishes publishing the thread zombie. The parent wake may
+     * therefore win the SMP race; wait for the reapability boundary rather
+     * than treating that valid ordering as a failed self-test. */
+    uint64_t exit_deadline=timer_ticks()+100U;
+    while (thread->state!=THREAD_ZOMBIE &&
+           (long long)(exit_deadline-timer_ticks())>0)
+        (void)task_sleep_ticks(1);
     if (child->state!=PROCESS_ZOMBIE || thread->state!=THREAD_ZOMBIE ||
         thread_reap(thread,&status)!=0 || status!=0 ||
         vmm_activate_kernel()!=0 || process_reap(child,&status)!=0 ||
@@ -1356,6 +1642,24 @@ fail:
     return -1;
 }
 
+/* A probe thread publishes its final state (probe_state=2/3) and only then
+ * returns through the kernel-thread trampoline into thread_exit(). On SMP
+ * (or after a preemption between the two) the monitor can observe the final
+ * state before the probe has finished exiting, so zombie status must be
+ * awaited, not sampled. Bounded: a probe that never exits still fails the
+ * self-test instead of hanging the boot. */
+static int userspace_wait_probe_exit(const struct thread *thread,
+                                     const struct process *process) {
+    for (uint64_t i=0; i<100000ULL; ++i) {
+        if (thread && process &&
+            __atomic_load_n(&thread->state,__ATOMIC_ACQUIRE)==THREAD_ZOMBIE &&
+            __atomic_load_n(&process->state,__ATOMIC_ACQUIRE)==PROCESS_ZOMBIE)
+            return 0;
+        scheduler_yield();
+    }
+    return -1;
+}
+
 static void event_probe_entry(void *argument) {
     struct process *process=(struct process *)argument;
     atomic_u64_store(&event_probe_state,1);
@@ -1413,6 +1717,7 @@ static int userspace_event_blocking_self_test(void) {
         scheduler_yield();
     }
     if (atomic_u64_load(&event_probe_state)!=2 ||
+        userspace_wait_probe_exit(thread,event_probe_process)!=0 ||
         thread->state!=THREAD_ZOMBIE ||
         thread_reap(thread,&status)!=0 || status!=0 ||
         event_probe_process->state!=PROCESS_ZOMBIE ||
@@ -1520,6 +1825,7 @@ static int userspace_ipc_close_wakeup_self_test(void) {
         scheduler_yield();
     }
     if (atomic_u64_load(&ipc_close_probe_state)!=2 ||
+        userspace_wait_probe_exit(thread,ipc_close_probe_process)!=0 ||
         thread->state!=THREAD_ZOMBIE ||
         thread_reap(thread,&status)!=0 || status!=0 ||
         ipc_close_probe_process->state!=PROCESS_ZOMBIE ||
@@ -1637,6 +1943,7 @@ static int userspace_ipc_send_wakeup_self_test(void) {
         scheduler_yield();
     }
     if (atomic_u64_load(&ipc_send_probe_state)!=2 ||
+        userspace_wait_probe_exit(thread,ipc_send_probe_process)!=0 ||
         thread->state!=THREAD_ZOMBIE ||
         thread_reap(thread,&status)!=0 || status!=0 ||
         ipc_send_probe_process->state!=PROCESS_ZOMBIE ||
@@ -2096,6 +2403,31 @@ int userspace_system_init(void) {
     return 0;
 }
 
+static void userspace_write_decimal(uint64_t value) {
+    char digits[21];
+    uint32_t count=0;
+    do {
+        digits[count++]=(char)('0'+value%10U);
+        value/=10U;
+    } while (value && count<sizeof(digits)-1U);
+    char text[22];
+    for (uint32_t i=0; i<count; ++i)
+        text[i]=digits[count-1U-i];
+    text[count]=0;
+    serial_write_public(text);
+}
+
+/* Diagnostic only: identifies which init-load precondition failed. */
+static void userspace_report_elf_failure(int result, uint64_t entry) {
+    serial_write_public("ZEROOS: userspace init setup failed (stage=elf-load, error=");
+    userspace_write_decimal((uint64_t)(result<0 ? -result : result));
+    serial_write_public(", entry_ok=");
+    userspace_write_decimal(entry==ZEROOS_USER_CODE_BASE+INIT_ELF_ENTRY_OFFSET);
+    serial_write_public(", free_pages=");
+    userspace_write_decimal(memory_free_pages());
+    serial_write_public(").\n");
+}
+
 int userspace_start_init(void) {
     void *stack_page=0;
     process_id_t pid=0;
@@ -2155,25 +2487,32 @@ int userspace_start_init(void) {
     }
     serial_write_public("ZEROOS: userspace resource exhaustion/recovery passed.\n");
 
-    if (elf_load_image(init_process,init_elf_image,image_size,
-                       &load_result)!=0 ||
-        load_result.entry!=ZEROOS_USER_CODE_BASE+INIT_ELF_ENTRY_OFFSET)
+    int elf_result=elf_load_image(init_process,init_elf_image,image_size,
+                                  &load_result);
+    if (elf_result!=0 ||
+        load_result.entry!=ZEROOS_USER_CODE_BASE+INIT_ELF_ENTRY_OFFSET) {
+        userspace_report_elf_failure(elf_result,load_result.entry);
         goto fail;
+    }
     image_loaded=1;
 
     stack_page=page_alloc_zero();
     if (!stack_page ||
         process_address_space_map_page(init_process,ZEROOS_USER_STACK_PAGE,
                                        (uint64_t)stack_page,
-                                       VMM_USER|VMM_WRITABLE|VMM_NO_EXECUTE)!=0)
+                                       VMM_USER|VMM_WRITABLE|VMM_NO_EXECUTE)!=0) {
+        serial_write_public("ZEROOS: userspace init setup failed (stage=stack-map).\n");
         goto fail;
+    }
     page_free(stack_page);
     stack_page=0;
     stack_mapped=1;
 
     if (thread_create_user(init_process,load_result.entry,
-                           ZEROOS_USER_STACK_TOP,&tid)!=0)
+                           ZEROOS_USER_STACK_TOP,&tid)!=0) {
+        serial_write_public("ZEROOS: userspace init setup failed (stage=thread-create).\n");
         goto fail;
+    }
     init_thread=thread_lookup(tid);
     if (!init_thread) {
         serial_write_public("ZEROOS PANIC: published user thread lookup failed.\n");
@@ -2181,8 +2520,10 @@ int userspace_start_init(void) {
     }
 
     init_started=1;
-    if (userspace_start_service(1)!=0)
+    if (userspace_start_service(1)!=0) {
+        serial_write_public("ZEROOS: userspace init setup failed (stage=service-start).\n");
         return -1;
+    }
     serial_write_public("ZEROOS: userspace init process published.\n");
     return 0;
 
@@ -2214,6 +2555,16 @@ int user_thread_enter(struct thread *thread) {
     return -1;
 }
 
+/* Identifies which init-reap precondition failed (and the encoded init exit
+ * status, see INIT_FAILURE_STATUS_BASE) so CI logs name the failing check. */
+static void userspace_report_reap_failure(const char *stage, uint64_t status) {
+    serial_write_public("ZEROOS: init reap failed (stage=");
+    serial_write_public(stage);
+    serial_write_public(", exit_status=");
+    userspace_write_decimal(status);
+    serial_write_public(").\n");
+}
+
 int userspace_service_step(void) {
     uint64_t status=0;
     if (!init_started)
@@ -2227,15 +2578,26 @@ int userspace_service_step(void) {
         }
         if (!init_thread || init_thread->state!=THREAD_ZOMBIE)
             return 0;
-        if (thread_reap(init_thread,&status)!=0)
+        if (thread_reap(init_thread,&status)!=0) {
+            userspace_report_reap_failure("thread-reap",status);
             return -1;
-        if (!init_process || init_process->state!=PROCESS_ZOMBIE)
+        }
+        if (!init_process || init_process->state!=PROCESS_ZOMBIE) {
+            userspace_report_reap_failure("process-state",status);
             return -1;
-        if (vmm_activate_kernel()!=0 || process_reap(init_process,&status)!=0 ||
-            ipc_debug_validate()!=0)
+        }
+        if (vmm_activate_kernel()!=0 || process_reap(init_process,&status)!=0) {
+            userspace_report_reap_failure("process-reap",status);
             return -1;
-        if (status!=0)
+        }
+        if (ipc_debug_validate()!=0) {
+            userspace_report_reap_failure("ipc-validate",status);
             return -1;
+        }
+        if (status!=0) {
+            userspace_report_reap_failure("exit-status",status);
+            return -1;
+        }
         init_reaped=1;
         serial_write_public("ZEROOS: userspace negative syscall/fault/malformed-ELF probes passed.\n");
         serial_write_public("ZEROOS: init userspace process reaped cleanly.\n");
