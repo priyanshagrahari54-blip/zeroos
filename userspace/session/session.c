@@ -20,6 +20,7 @@
 #include <zeroos/desktop/metrics.h>
 #include <zeroos/desktop/ai.h>
 #include <zeroos/desktop/browser.h>
+#include <zeroos/desktop/study.h>
 #include <zeroos/desktop/capability.h>
 #include <zeroos/desktop/update.h>
 #include "crypto.h"
@@ -519,6 +520,7 @@ static struct zd_perf_center session_perf;
 static struct zd_perf_center session_perf_cold;
 static struct zd_bar session_bar;
 static struct zd_metrics session_metrics;
+static struct zd_study session_study;
 static struct zd_browser session_browser;
 static struct zd_ai_broker session_ai;
 static uint32_t session_ai_reads;
@@ -552,37 +554,63 @@ static int session_ai_select(void *ctx, const struct zd_ai_request *req,
     return 0;
 }
 
-/* The shell's own backend: a summarize request carries a path, and the
- * answer is that document's size as the kernel reports it. A missing grant,
- * a missing file or a fabricated answer all come out as a wrong number. */
-static int session_ai_run(void *ctx, enum zd_ai_backend backend,
-                          const struct zd_ai_request *req, char *out,
-                          uint32_t out_cap, uint32_t *out_len) {
-    uint8_t buf[128];
+/* Decimal rendering for the freestanding shell (no libc here). */
+static uint32_t session_decimal(char *out, uint32_t cap, uint64_t value) {
     char digits[24];
-    uint64_t len = 0;
-    uint64_t value;
     uint32_t n = 0;
     uint32_t written = 0;
-    (void)ctx;
-    if (backend == ZD_AI_BACKEND_NONE || !out || !out_len)
-        return -ZD_EINVAL;
-    if (session_read_buffer(req->payload, buf, sizeof(buf), &len) != 0)
-        return -ZD_ENOENT;
-    ++session_ai_reads;
-    session_ai_bytes = len;
-    value = len;
+    if (!out || !cap)
+        return 0;
     if (value == 0)
         digits[n++] = '0';
     while (value != 0 && n < (uint32_t)sizeof(digits)) {
         digits[n++] = (char)('0' + (int)(value % 10U));
         value /= 10U;
     }
-    while (n != 0 && written + 1 < out_cap)
+    while (n != 0 && written + 1 < cap)
         out[written++] = digits[--n];
-    if (written < out_cap)
+    if (written < cap)
         out[written] = 0;
-    *out_len = written;
+    return written;
+}
+
+/* The study assistant's requests carry "study <deck>: <front>" rather than a
+ * path. */
+static int session_payload_is_study(const char *payload) {
+    static const char prefix[] = "study ";
+    uint32_t i;
+    if (!payload)
+        return 0;
+    for (i = 0; prefix[i]; ++i) {
+        if (payload[i] != prefix[i])
+            return 0;
+    }
+    return 1;
+}
+
+/* The shell's own backend: a summarize request carries a path and the answer
+ * is that document's size as the kernel reports it; a study-assistant request
+ * is answered from the live deck. A missing grant, a missing file or a
+ * fabricated answer all come out as a wrong number. */
+static int session_ai_run(void *ctx, enum zd_ai_backend backend,
+                          const struct zd_ai_request *req, char *out,
+                          uint32_t out_cap, uint32_t *out_len) {
+    uint8_t buf[128];
+    uint64_t len = 0;
+    uint64_t value;
+    (void)ctx;
+    if (backend == ZD_AI_BACKEND_NONE || !out || !out_len)
+        return -ZD_EINVAL;
+    if (session_payload_is_study(req->payload)) {
+        value = session_study.card_count;
+    } else {
+        if (session_read_buffer(req->payload, buf, sizeof(buf), &len) != 0)
+            return -ZD_ENOENT;
+        ++session_ai_reads;
+        session_ai_bytes = len;
+        value = len;
+    }
+    *out_len = session_decimal(out, out_cap, value);
     return 0;
 }
 
@@ -912,6 +940,12 @@ int session_main(void) {
     struct zeroos_system_info status_info;
     struct zd_ai_request ai_request;
     const struct zd_tab *tab;
+    const struct zd_fm_entry *study_entry;
+    struct zd_study_card *study_card;
+    char study_back[24];
+    uint32_t study_entries;
+    uint32_t study_cards;
+    int study_i;
     uint8_t browser_doc[128];
     uint64_t browser_origin;
     uint64_t doc_len;
@@ -2849,7 +2883,106 @@ int session_main(void) {
                     (int64_t)session_browser.stats.rejected_events);
     say("ZEROOS: session browser lifecycle passed.");
 
-    /* 23. Update payload verification with a provisioned key. Nothing
+    /* 23. Study centre over live shell data. The deck is built from the
+     * directory the file manager is really listing, the scheduler is driven
+     * through its bounded ladder with the day counter the app injects, and
+     * the study assistant's request travels through the same AI broker with
+     * the shell's backend answering from the live deck. */
+    if (zd_study_init(&session_study, "ZeroOS shell") != 0)
+        return fail("study init", 0);
+    if (zd_fm_open(&session_fm, "/ram/shell") != 0)
+        return fail("study listing", 0);
+    study_entries = zd_fm_visible_count(&session_fm);
+    if (study_entries == 0)
+        return fail("study listing empty", 0);
+    study_cards = study_entries < 3U ? study_entries : 3U;
+    for (study_i = 0; study_i < (int)study_cards; ++study_i) {
+        study_entry = zd_fm_visible(&session_fm, (uint32_t)study_i);
+        if (!study_entry)
+            return fail("study entry", (int64_t)study_i);
+        /* Front: the live name. Back: its size in bytes, rendered here. */
+        session_decimal(study_back, (uint32_t)sizeof(study_back),
+                        study_entry->size);
+        if (zd_study_add_card(&session_study, study_entry->name,
+                              study_back) != 0)
+            return fail("study add card", (int64_t)study_i);
+        if (!zd_study_find(&session_study, study_entry->name))
+            return fail("study card lookup", (int64_t)study_i);
+    }
+    if (session_study.card_count != study_cards)
+        return fail("study card count", (int64_t)session_study.card_count);
+    /* A duplicate front is refused, not silently replaced. */
+    study_entry = zd_fm_visible(&session_fm, 0);
+    if (!study_entry)
+        return fail("study first entry", 0);
+    if (zd_study_add_card(&session_study, study_entry->name, "0") != -17)
+        return fail("study duplicate", 0);
+    /* The ladder: 0 -> 1 day on GOOD, two rungs on EASY, and AGAIN is a lapse
+     * that resets the interval and lowers the ease. */
+    study_card = zd_study_next_due(&session_study);
+    if (!study_card)
+        return fail("study next due", 0);
+    if (zd_study_grade(&session_study, study_card->front,
+                       ZD_STUDY_GOOD) != 0)
+        return fail("study grade", 0);
+    if (study_card->interval_days != 1 || study_card->due_day != 1 ||
+        study_card->reps != 1 || session_study.stats.reviews != 1)
+        return fail("study ladder good", (int64_t)study_card->interval_days);
+    if (zd_study_advance_day(&session_study, 0) != -22)
+        return fail("study day refusal", 0);
+    if (zd_study_advance_day(&session_study, 1) != 0 ||
+        session_study.day != 1)
+        return fail("study day advance", (int64_t)session_study.day);
+    if (zd_study_grade(&session_study, study_card->front,
+                       ZD_STUDY_EASY) != 0)
+        return fail("study grade easy", 0);
+    if (study_card->interval_days != 7 || study_card->due_day != 8 ||
+        study_card->ease != 265)
+        return fail("study ladder easy", (int64_t)study_card->interval_days);
+    if (zd_study_grade(&session_study, study_card->front,
+                       ZD_STUDY_AGAIN) != 0)
+        return fail("study grade again", 0);
+    if (study_card->interval_days != 1 || study_card->lapses != 1 ||
+        session_study.stats.lapses != 1 || study_card->ease != 245)
+        return fail("study lapse", (int64_t)study_card->lapses);
+    /* It is no longer the card that is due next. */
+    if (zd_study_next_due(&session_study) == study_card)
+        return fail("study due rotation", 0);
+    /* Focus mode: bounded block, counted once, and it must be started. */
+    if (zd_study_session_start(&session_study, 0) != -22)
+        return fail("study focus range", 0);
+    if (zd_study_session_start(&session_study, 2) != 0)
+        return fail("study focus start", 0);
+    if (zd_study_session_start(&session_study, 2) != -16)
+        return fail("study focus busy", 0);
+    if (zd_study_session_tick(&session_study) != 0 ||
+        zd_study_session_tick(&session_study) != 0)
+        return fail("study focus tick", 0);
+    if (session_study.session.focus_elapsed != 2 ||
+        session_study.stats.focus_blocks != 1)
+        return fail("study focus block",
+                    (int64_t)session_study.session.focus_elapsed);
+    if (zd_study_session_tick(&session_study) != 0 ||
+        session_study.stats.focus_blocks != 1 ||
+        session_study.session.focus_elapsed != 2)
+        return fail("study focus overrun", 0);
+    if (zd_study_session_end(&session_study) != 0 ||
+        zd_study_session_tick(&session_study) != -22)
+        return fail("study focus end", 0);
+    /* The assistant's request goes through the same broker, and the answer is
+     * the deck's real card count. */
+    if (zd_study_assist_submit(&session_study, &session_ai,
+                              (const char *)0) != 0)
+        return fail("study assist submit", 0);
+    if (zd_ai_drain(&session_ai, 4, &ai_done) != 0 || ai_done != 1)
+        return fail("study assist drain", (int64_t)ai_done);
+    if (session_ai.last_output_len != 1 ||
+        session_ai.last_output[0] != (char)('0' + (int)study_cards))
+        return fail("study assist answer",
+                    (int64_t)session_ai.last_output_len);
+    say("ZEROOS: session study center passed.");
+
+    /* 24. Update payload verification with a provisioned key. Nothing
      * here is a fixture: the key is provisioned through the filesystem
      * (written, read back, and only then used), the bundle is sealed with
      * the RFC 8439 AEAD core, and the update engine verifies it with the
@@ -2969,7 +3102,7 @@ int session_main(void) {
         return fail("update slot removed", 0);
     say("ZEROOS: session update verification passed.");
 
-    /* 24. Sandbox decisions enforced by the kernel, not only by Ring-3
+    /* 25. Sandbox decisions enforced by the kernel, not only by Ring-3
      * policy. The confined profile denies writes, so the session really
      * drops its identity: after SETCRED the VFS itself refuses the
      * owner-only file with EACCES while a world-readable file still

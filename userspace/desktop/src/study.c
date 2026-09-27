@@ -59,7 +59,11 @@ int zd_study_assist_request(struct zd_study *s, const char *front,
         if (!card)
             return -2;
     }
-    memset(out, 0, sizeof(*out));
+    {
+        uint32_t zi;
+        for (zi = 0; zi < sizeof(*out); ++zi)
+            ((uint8_t *)out)[zi] = 0;
+    }
     out->kind = ZD_AI_REQ_SUMMARIZE;
     out->context_mask = ZD_AI_GRANT_CONTEXT_SELECTION;
     sa_append(out->payload, sizeof(out->payload), &len, "study ");
