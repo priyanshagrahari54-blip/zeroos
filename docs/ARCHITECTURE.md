@@ -510,9 +510,10 @@ claim:
 | OCR | capability gate + pluggable-engine path (fixture only) | licensed engine; until then `-95`, no accuracy claims |
 | PDF subset | hand-authored fixtures (plain streams) | filtered/encrypted docs stay `-95` (explicit) |
 | Media/gaming/ecosystem policy | gate/yield/permission suites | decoder backends, controller hardware, transports |
-| Search providers | commands/diagnostics/files/settings live in the session (files walks the same VFS source as the file manager, bounded depth + per-query directory budget, `full_scans` pinned at 0); pipeline suites | apps provider binds to the live window list at shell-chrome time |
-| Privacy centre | real-counter aggregation suites | session wiring over live engines |
-| Automation/AI/browser/watchdog/lifecycle/governor | suites + CI boot milestones | in-session activation (already exercised in guest CI where noted) |
+| Search providers | commands/diagnostics/files/settings/apps live in the session (files walks the same VFS source as the file manager, bounded depth + per-query directory budget, `full_scans` pinned at 0; apps reads the live window-manager list); pipeline suites | content/media result kinds once those backends exist |
+| Privacy centre | real-counter aggregation suites; the automation audit ring it would read is drained in the session | session wiring of the remaining domains (firewall/media/eco counters have no live engine yet) |
+| Automation/watchdog/lifecycle/governor | suites + in-session activation on real kernel state: the monotonic clock (syscall 55) drives present pacing, automation cooldowns and watchdog heartbeats; the governor reads real CPU/memory topology and measured free memory; the watchdog restarts the real search service; each step has a boot milestone | AI and browser cores still have no in-session activation |
+| Ring-3 time source | `SYSTEM_INFO` (ID 55) exposes `timer_monotonic_ns()` plus topology; the session proves the clock advances and that pacing refuses/accepts around it | wall-clock (RTC) time is still kernel-only |
 | UI condition contract | `test_ui.c` (7 conditions, modes, errno map, hi/en labels) | per-surface adoption is a mapping (table above), no surface redesign |
 | Real hardware | — | **not run — no claim** (VALIDATION row stays open) |
 

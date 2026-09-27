@@ -13,6 +13,8 @@
 #include "fb.h"
 #include "display_core.h"
 #include "input.h"
+#include "smp.h"
+#include "memory.h"
 
 extern void serial_write_public(const char *text);
 
@@ -209,7 +211,8 @@ void syscall_dispatch(struct interrupt_frame *frame) {
                       ZEROOS_ABI_FEATURE_FILES |
                       ZEROOS_ABI_FEATURE_DISPLAY |
                       ZEROOS_ABI_FEATURE_PRESENT |
-                      ZEROOS_ABI_FEATURE_INPUT,
+                      ZEROOS_ABI_FEATURE_INPUT |
+                      ZEROOS_ABI_FEATURE_SYSINFO,
             .max_transfer=ZEROOS_SYSCALL_MAX_TRANSFER
         };
         if (frame->rdi==0 || frame->rsi<sizeof(info) ||
@@ -683,6 +686,32 @@ void syscall_dispatch(struct interrupt_frame *frame) {
             frame->rax=syscall_error(ZEROOS_EFAULT);
         else
             frame->rax=syscall_result(result);
+        break;
+    }
+    case ZEROOS_SYS_SYSTEM_INFO: {
+        struct zeroos_system_info info={
+            .version=ZEROOS_SYSTEM_INFO_VERSION,
+            .size=(uint32_t)sizeof(info),
+            .cpus_online=smp_online_count(),
+            .cpus_discovered=smp_discovered_count(),
+            .page_size=ZEROOS_PAGE_SIZE,
+            .timer_hz=timer_frequency_hz(),
+            .clock_source=cpu_has(ZEROOS_CPU_FEATURE_INVARIANT_TSC)?1U:0U,
+            .padding=0,
+            .uptime_ns=timer_monotonic_ns(),
+            .ram_total_bytes=memory_total_pages()*ZEROOS_PAGE_SIZE,
+            .ram_free_bytes=memory_free_pages()*ZEROOS_PAGE_SIZE
+        };
+        if (frame->rdi==0 || frame->rsi<sizeof(info) ||
+            !process_address_space_is_user_range(process,frame->rdi,
+                                                 sizeof(info),1)) {
+            frame->rax=syscall_error(ZEROOS_EFAULT);
+            break;
+        }
+        if (copy_to_user(frame->rdi,&info,sizeof(info))!=0)
+            frame->rax=syscall_error(ZEROOS_EFAULT);
+        else
+            frame->rax=0;
         break;
     }
     default:

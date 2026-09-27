@@ -63,6 +63,7 @@ enum zeroos_syscall_id {
     ZEROOS_SYS_DISPLAY_PRESENT = 52,
     ZEROOS_SYS_INPUT_POLL = 53,
     ZEROOS_SYS_INPUT_WAIT = 54,
+    ZEROOS_SYS_SYSTEM_INFO = 55,
     ZEROOS_SYS_MAX
 };
 
@@ -118,6 +119,8 @@ enum zeroos_syscall_error {
 #define ZEROOS_ABI_FEATURE_DISPLAY  (1ULL << 8)
 #define ZEROOS_ABI_FEATURE_PRESENT  (1ULL << 9)
 #define ZEROOS_ABI_FEATURE_INPUT    (1ULL << 10)
+/* System topology plus a monotonic uptime clock (syscall 55). */
+#define ZEROOS_ABI_FEATURE_SYSINFO  (1ULL << 11)
 
 /* Display geometry: ABI copy of kernel/fb.h (abi_consistency.py gates the
  * struct body against the public header). */
@@ -279,6 +282,27 @@ struct zeroos_input_event {
     int32_t x, y, value;
     uint16_t code;
     uint8_t kind, flags;
+};
+
+/* System information (ZEROOS_SYS_SYSTEM_INFO). Ring 3 has no other time
+ * source: the ABI exposes no wall clock, so session services that need
+ * deadlines (watchdog heartbeats, automation cooldowns, metrics windows)
+ * read uptime_ns here. Every field is kernel-reported, never derived by
+ * the caller; `size` lets the kernel grow the struct later, and a caller
+ * passing a smaller size gets -EFAULT rather than a partial write. */
+#define ZEROOS_SYSTEM_INFO_VERSION 1
+struct zeroos_system_info {
+    uint32_t version;         /* ZEROOS_SYSTEM_INFO_VERSION */
+    uint32_t size;            /* sizeof(struct zeroos_system_info) */
+    uint32_t cpus_online;     /* booted CPUs, BSP included */
+    uint32_t cpus_discovered; /* CPUs found in the firmware tables */
+    uint32_t page_size;       /* ZEROOS_PAGE_SIZE */
+    uint32_t timer_hz;        /* scheduler tick frequency */
+    uint32_t clock_source;    /* 1 = invariant TSC, 0 = PIT fallback */
+    uint32_t padding;         /* keeps the 64-bit fields aligned */
+    uint64_t uptime_ns;       /* monotonic since boot; never goes back */
+    uint64_t ram_total_bytes; /* managed physical memory */
+    uint64_t ram_free_bytes;  /* free managed pages right now */
 };
 
 struct zeroos_syscall_abi_info {

@@ -30,6 +30,84 @@ static struct zd_settings_provider session_settings_provider;
 static struct zd_cmd_provider session_commands;
 static struct zd_diag_provider session_diagnostics;
 static struct zd_search_result session_results[8];
+static struct zd_automation session_automation;
+static struct zd_lifecycle session_lifecycle;
+static struct zd_governor session_governor;
+static struct zd_watchdog session_watchdog;
+static uint32_t session_notify_posts;
+static uint32_t session_auto_callbacks;
+static uint32_t session_wd_restarts;
+static uint32_t session_wd_degraded;
+static uint32_t session_lifecycle_transitions;
+
+/* 20 ms pacing floor and automation cooldown, expressed in uptime
+ * nanoseconds because the display service compares the tick hook's own
+ * units (the shell feeds it monotonic ns). */
+#define SESSION_PACING_NS 20000000ULL
+
+/* Automation actions reach real services: notifications really count, a
+ * setting really changes in the schema registry, callbacks really run. */
+static int session_auto_notify(void *context, const char *target) {
+    (void)context;
+    if (!target || target[0] == '\0')
+        return -ZD_EINVAL;
+    ++session_notify_posts;
+    return 0;
+}
+
+static int session_auto_set_setting(void *context, const char *target,
+                                    int32_t value) {
+    uint32_t changed = 0;
+    (void)context;
+    if (!target)
+        return -ZD_EINVAL;
+    return zd_settings_set_number(&session_settings, target, (int64_t)value,
+                                  ZD_PERM_SETTINGS_USER, &changed);
+}
+
+static int session_auto_callback(void *context, const char *target,
+                                 uint32_t event) {
+    (void)context;
+    (void)event;
+    if (!target)
+        return -ZD_EINVAL;
+    ++session_auto_callbacks;
+    return 0;
+}
+
+static const struct zd_automation_ops session_auto_ops = {
+    .notify = session_auto_notify,
+    .set_setting = session_auto_set_setting,
+    .callback = session_auto_callback,
+    .log = 0,
+    .context = 0
+};
+
+static void session_lifecycle_on_change(void *context,
+                                        enum zd_lifecycle_state previous,
+                                        enum zd_lifecycle_state next,
+                                        enum zd_lifecycle_event cause) {
+    (void)context;
+    (void)previous;
+    (void)next;
+    (void)cause;
+    ++session_lifecycle_transitions;
+}
+
+static void session_wd_on_decision(void *context, uint32_t service_id,
+                                   enum zd_watchdog_decision decision,
+                                   uint64_t delay_ns) {
+    (void)context;
+    (void)service_id;
+    (void)delay_ns;
+    if (decision == ZD_WD_RESTART)
+        ++session_wd_restarts;
+}
+
+static void session_wd_on_degraded(void *context) {
+    (void)context;
+    ++session_wd_degraded;
+}
 
 static uint64_t slen(const char *s) {
     uint64_t n = 0;
@@ -97,12 +175,22 @@ static int session_present(void *context, uint32_t x, uint32_t y,
                                        pixels);
 }
 
-/* No wall-clock syscall exists in ABI v1; pacing is disabled on-target
- * (min_present_interval_ticks stays 0) and the tick source is only a
- * required hook — host tests own the pacing behavior. */
+/* Monotonic clock for the shell. ABI v1 exposes no wall clock, so the
+ * system-information syscall (55) provides the kernel's own monotonic
+ * time — invariant TSC when the CPU guarantees it, PIT otherwise. Every
+ * deadline in the shell (present pacing, automation cooldowns, watchdog
+ * heartbeats) is compared in these nanoseconds; 0 means the read failed
+ * and callers treat that as "no time has passed". */
+static uint64_t session_uptime_ns(void) {
+    static struct zeroos_system_info clock;
+    if (zeroos_system_info(&clock, sizeof(clock)) != 0)
+        return 0;
+    return clock.uptime_ns;
+}
+
 static uint64_t session_ticks(void *context) {
     (void)context;
-    return 0;
+    return session_uptime_ns();
 }
 
 static const uint32_t *session_pixel_source(void *context,
@@ -314,6 +402,23 @@ int session_main(void) {
     uint32_t result_count;
     uint32_t found;
     uint32_t i;
+    struct zeroos_system_info sysinfo;
+    struct zd_capabilities caps;
+    struct zd_automation_rule rule;
+    struct zd_watchdog_result wd_result;
+    struct zd_automation_audit_entry audit[4];
+    const struct zd_window *live_apps[1];
+    uint64_t uptime;
+    int64_t setting_value;
+    uint32_t consumed;
+    uint32_t fired;
+    uint32_t audit_count;
+    uint32_t notify_rule;
+    uint32_t frame_budget;
+    uint32_t effects;
+    uint32_t free_percent;
+    uint32_t display_service;
+    enum zd_pressure_level pressure;
 
     /* 1. Display geometry from the kernel. */
     sys_result = zeroos_display_info(&raw_info);
@@ -621,7 +726,280 @@ int session_main(void) {
         session_files.stats.full_scans != 0)
         return fail("search full scan",
                     (int64_t)session_search.index_stats.full_scans);
+    /* Live windows are part of the index: the app provider reads the real
+     * window-manager list, so a hit proves the shell chrome is searchable
+     * without a canned app table. */
+    live_apps[0] = zd_wm_window_const(&wm, window);
+    if (!live_apps[0])
+        return fail("search app window", 0);
+    zd_search_set_live_apps(&session_search, live_apps, 1);
+    result_count = 0;
+    if (zd_search_query(&session_search, "app:session", session_results,
+                        ZD_ARRAY_COUNT(session_results),
+                        &result_count) != 0 || result_count == 0)
+        return fail("search app query", (int64_t)result_count);
+    found = 0;
+    for (i = 0; i < result_count; ++i)
+        if (session_results[i].kind == ZD_SEARCH_APP)
+            found = 1;
+    if (!found)
+        return fail("search app result", (int64_t)result_count);
     say("ZEROOS: session universal search live providers passed.");
+
+    /* 9. Shell platform services on real kernel state. The system
+     * information syscall gives Ring 3 a monotonic clock plus the real
+     * CPU/memory topology, so the display pacer, the resource governor,
+     * the session lifecycle, the service watchdog and the automation
+     * engine all run on measured values instead of caller-supplied
+     * ticks. */
+    sys_result = zeroos_system_info(&sysinfo, sizeof(sysinfo));
+    if (sys_result != 0 ||
+        sysinfo.version != ZEROOS_SYSTEM_INFO_VERSION ||
+        sysinfo.size != sizeof(sysinfo) ||
+        sysinfo.cpus_online == 0 ||
+        sysinfo.cpus_discovered < sysinfo.cpus_online ||
+        sysinfo.page_size != ZEROOS_PAGE_SIZE ||
+        sysinfo.timer_hz == 0 ||
+        sysinfo.ram_total_bytes == 0 ||
+        sysinfo.ram_free_bytes > sysinfo.ram_total_bytes)
+        return fail("system information", sys_result);
+    if (zeroos_system_info(0, sizeof(sysinfo)) != -ZEROOS_EFAULT)
+        return fail("system information null buffer", 0);
+    if (zeroos_system_info(&sysinfo, 8) != -ZEROOS_EFAULT)
+        return fail("system information short buffer", 0);
+
+    /* The clock must really advance, or nothing that depends on it
+     * (pacing, cooldowns, heartbeats) means anything. */
+    uptime = sysinfo.uptime_ns;
+    sys_result = zeroos_input_wait(&event, 0, (sysinfo.timer_hz / 10) + 1);
+    if (sys_result != 0 && sys_result != -ZEROOS_ETIMEDOUT)
+        return fail("monotonic clock wait", sys_result);
+    if (session_uptime_ns() <= uptime)
+        return fail("monotonic clock advance", 0);
+
+    /* Present pacing on the live scanout: inside the interval the frame
+     * is refused and counted, after real elapsed time the same damage is
+     * accepted again. */
+    if (live) {
+        display.min_present_interval_ticks = SESSION_PACING_NS;
+        if (zd_display_service_damage(
+                &display,
+                (struct zd_rect){10, 10, SESSION_WINDOW_W,
+                                 SESSION_WINDOW_H}) != 0)
+            return fail("pacing damage", 0);
+        sys_result = zd_display_service_present(&display, staging,
+                                                SESSION_TARGET_W * 4,
+                                                session_uptime_ns());
+        if (sys_result != -ZD_EAGAIN ||
+            display.stats.presents_refused_paced != 1)
+            return fail("display pacing refusal", sys_result);
+        sys_result = zeroos_input_wait(&event, 0, (sysinfo.timer_hz / 2) + 1);
+        if (sys_result != 0 && sys_result != -ZEROOS_ETIMEDOUT)
+            return fail("pacing wait", sys_result);
+        sys_result = zd_display_service_present(&display, staging,
+                                                SESSION_TARGET_W * 4,
+                                                session_uptime_ns());
+        if (sys_result != 0)
+            return fail("display pacing resume", sys_result);
+        display.min_present_interval_ticks = 0;
+    }
+    say("ZEROOS: session monotonic clock and pacing passed.");
+
+    /* Resource governance from measured topology and measured free
+     * memory; the tier's frame budget must be real and the action set
+     * must match the requested pressure level. */
+    caps.cpu_count = sysinfo.cpus_online;
+    caps.ram_mb = (uint32_t)(sysinfo.ram_total_bytes / (1024ULL * 1024ULL));
+    caps.gpu_tier = 0; /* software compositing: no GPU path exists yet */
+    caps.display_width = raw_info.width;
+    caps.display_height = raw_info.height;
+    caps.refresh_mhz = 0; /* on-demand present: no refresh domain */
+    caps.hardware_accel = 0;
+    caps.thermal_state = 0;
+    caps.battery_powered = 0;
+    zd_governor_init(&session_governor, &caps);
+    zd_governor_effects_for_tier(session_governor.tier, &frame_budget,
+                                 &effects);
+    if (caps.cpu_count == 0 || caps.ram_mb == 0 || frame_budget == 0)
+        return fail("governor tier", (int64_t)frame_budget);
+    free_percent = (uint32_t)((sysinfo.ram_free_bytes * 100ULL) /
+                              sysinfo.ram_total_bytes);
+    pressure = free_percent < 10U ? ZD_PRESSURE_CRITICAL :
+               free_percent < 25U ? ZD_PRESSURE_HIGH :
+               free_percent < 50U ? ZD_PRESSURE_MODERATE :
+               free_percent < 75U ? ZD_PRESSURE_LOW : ZD_PRESSURE_NONE;
+    if (zd_governor_set_pressure(&session_governor, pressure, 0) != 0 ||
+        session_governor.active_actions !=
+            zd_governor_actions_for_level(pressure, 0))
+        return fail("governor pressure", (int64_t)free_percent);
+
+    /* Lifecycle: real session transitions drive the state machine, an
+     * illegal event is rejected, and heavy engines are gated by state. */
+    zd_lifecycle_init(&session_lifecycle);
+    if (zd_lifecycle_add_listener(&session_lifecycle,
+                                  session_lifecycle_on_change, 0) != 0)
+        return fail("lifecycle listener", 0);
+    if (zd_lifecycle_dispatch(&session_lifecycle, ZD_LIFECYCLE_START,
+                              uptime) != 0 ||
+        zd_lifecycle_dispatch(&session_lifecycle,
+                              ZD_LIFECYCLE_CONTROLLERS_UP, uptime) != 0 ||
+        zd_lifecycle_dispatch(&session_lifecycle, ZD_LIFECYCLE_ACTIVATE,
+                              uptime) != 0 ||
+        zd_lifecycle_state(&session_lifecycle) != ZD_LIFECYCLE_ACTIVE)
+        return fail("lifecycle activation",
+                    zd_lifecycle_state(&session_lifecycle));
+    if (!zd_lifecycle_allows_heavy_work(&session_lifecycle))
+        return fail("lifecycle heavy work gate", 0);
+    if (zd_lifecycle_dispatch(&session_lifecycle, ZD_LIFECYCLE_START,
+                              uptime) == 0)
+        return fail("lifecycle illegal event", 0);
+    if (zd_lifecycle_dispatch(&session_lifecycle, ZD_LIFECYCLE_PRESSURE,
+                              uptime) != 0 ||
+        zd_lifecycle_allows_heavy_work(&session_lifecycle))
+        return fail("lifecycle throttle gate", 0);
+    if (zd_lifecycle_dispatch(&session_lifecycle,
+                              ZD_LIFECYCLE_PRESSURE_RELEASED, uptime) != 0 ||
+        zd_lifecycle_state(&session_lifecycle) != ZD_LIFECYCLE_ACTIVE)
+        return fail("lifecycle pressure release",
+                    zd_lifecycle_state(&session_lifecycle));
+    if (session_lifecycle_transitions != 5)
+        return fail("lifecycle listener count",
+                    (int64_t)session_lifecycle_transitions);
+    say("ZEROOS: session lifecycle governor activation passed.");
+
+    /* Watchdog over the real search service: healthy evaluation, a
+     * failure that produces a restart decision, the restart performed for
+     * real (the provider is re-bound and answers a query again), and a
+     * healthy evaluation afterwards. */
+    zd_watchdog_init(&session_watchdog);
+    if (zd_watchdog_set_listener(&session_watchdog, session_wd_on_decision,
+                                 session_wd_on_degraded, 0) != 0)
+        return fail("watchdog listener", 0);
+    if (zd_watchdog_register(&session_watchdog, "search", ZD_WD_ON_FAILURE,
+                             3, 0, SESSION_PACING_NS,
+                             SESSION_PACING_NS * 8, &display_service) != 0)
+        return fail("watchdog register", 0);
+    if (zd_watchdog_set_heartbeat(&session_watchdog, display_service,
+                                  SESSION_PACING_NS * 4) != 0 ||
+        zd_watchdog_note_start(&session_watchdog, display_service,
+                               uptime) != 0 ||
+        zd_watchdog_note_heartbeat(&session_watchdog, display_service,
+                                   uptime) != 0)
+        return fail("watchdog start", 0);
+    if (zd_watchdog_evaluate(&session_watchdog, display_service, uptime,
+                             &wd_result) != 0 ||
+        wd_result.decision != ZD_WD_CONTINUE)
+        return fail("watchdog healthy evaluation", (int64_t)wd_result.decision);
+    if (zd_watchdog_note_exit(&session_watchdog, display_service,
+                              uptime + 1, 1, &wd_result) != 0 ||
+        wd_result.decision != ZD_WD_RESTART || session_wd_restarts != 1)
+        return fail("watchdog restart decision", (int64_t)wd_result.decision);
+    if (zd_files_provider_init(&session_files, session_dir_source, 0) != 0 ||
+        zd_files_provider_add_root(&session_files, "/ram/shell") != 0)
+        return fail("watchdog recovery rebind", 0);
+    result_count = 0;
+    if (zd_search_query(&session_search, "folder:inbox", session_results,
+                        ZD_ARRAY_COUNT(session_results),
+                        &result_count) != 0 || result_count == 0)
+        return fail("watchdog recovery query", (int64_t)result_count);
+    if (zd_watchdog_note_start(&session_watchdog, display_service,
+                               uptime + 2) != 0 ||
+        zd_watchdog_evaluate(&session_watchdog, display_service, uptime + 2,
+                             &wd_result) != 0 ||
+        wd_result.decision != ZD_WD_CONTINUE)
+        return fail("watchdog recovery evaluation",
+                    (int64_t)wd_result.decision);
+    say("ZEROOS: session watchdog recovery passed.");
+
+    /* Automation on real events: the supervisor's restart is the event
+     * source, permission is enforced before any action runs, the setting
+     * action really writes the registry, and the cooldown really
+     * rate-limits until measured time passes. */
+    if (zd_automation_init(&session_automation, &session_auto_ops) != 0)
+        return fail("automation init", 0);
+    rule.enabled = 1;
+    rule.event = ZD_AUTO_EV_SERVICE_FAILED;
+    rule.action = ZD_AUTO_ACT_NOTIFY;
+    rule.target[0] = 's';
+    rule.target[1] = 'h';
+    rule.target[2] = 'e';
+    rule.target[3] = 'l';
+    rule.target[4] = 'l';
+    rule.target[5] = 0;
+    rule.setting_value = 0;
+    rule.cooldown_ticks = 0;
+    rule.fire_cap = 0;
+    rule.fires = 0;
+    rule.last_fire_tick = 0;
+    rule.permission = 0;
+    rule.id = 0;
+    if (zd_automation_add(&session_automation, &rule, &notify_rule) != 0)
+        return fail("automation notify rule", 0);
+    if (zd_automation_fire(&session_automation, ZD_AUTO_EV_SERVICE_FAILED,
+                           uptime) != 0 || session_notify_posts != 0 ||
+        session_automation.stats.denied_permission != 1)
+        return fail("automation permission gate",
+                    (int64_t)session_notify_posts);
+    if (zd_automation_set_permission(&session_automation, notify_rule,
+                                     1) != 0 ||
+        zd_automation_fire(&session_automation, ZD_AUTO_EV_SERVICE_FAILED,
+                           uptime) != 1 || session_notify_posts != 1)
+        return fail("automation notify action",
+                    (int64_t)session_notify_posts);
+
+    rule.event = ZD_AUTO_EV_CALLER_TICK;
+    rule.action = ZD_AUTO_ACT_SETTING;
+    rule.target[0] = 's';
+    rule.target[1] = 'h';
+    rule.target[2] = 'e';
+    rule.target[3] = 'l';
+    rule.target[4] = 'l';
+    rule.target[5] = '.';
+    rule.target[6] = 's';
+    rule.target[7] = 'c';
+    rule.target[8] = 'a';
+    rule.target[9] = 'l';
+    rule.target[10] = 'e';
+    rule.target[11] = '_';
+    rule.target[12] = 'p';
+    rule.target[13] = 'e';
+    rule.target[14] = 'r';
+    rule.target[15] = 'c';
+    rule.target[16] = 'e';
+    rule.target[17] = 'n';
+    rule.target[18] = 't';
+    rule.target[19] = 0;
+    rule.setting_value = 150;
+    rule.cooldown_ticks = SESSION_PACING_NS;
+    rule.permission = 1;
+    if (zd_automation_add(&session_automation, &rule, &notify_rule) != 0)
+        return fail("automation tick rule", 0);
+    fired = zd_automation_fire(&session_automation, ZD_AUTO_EV_CALLER_TICK,
+                               uptime);
+    if (fired != 1)
+        return fail("automation tick fire", (int64_t)fired);
+    if (zd_settings_get(&session_settings, "shell.scale_percent",
+                        &setting_value, 0, 0) != 0 || setting_value != 150)
+        return fail("automation setting write", (int64_t)setting_value);
+    fired = zd_automation_fire(&session_automation, ZD_AUTO_EV_CALLER_TICK,
+                               uptime + 1);
+    if (fired != 0 || session_automation.stats.rate_limited != 1)
+        return fail("automation rate limit", (int64_t)fired);
+    sys_result = zeroos_input_wait(&event, 0, (sysinfo.timer_hz / 2) + 1);
+    if (sys_result != 0 && sys_result != -ZEROOS_ETIMEDOUT)
+        return fail("automation cooldown wait", sys_result);
+    fired = zd_automation_fire(&session_automation, ZD_AUTO_EV_CALLER_TICK,
+                               session_uptime_ns());
+    if (fired != 1 || session_automation.stats.fires != 3)
+        return fail("automation cooldown release", (int64_t)fired);
+
+    /* The audit ring is the privacy trail: draining it must return the
+     * fires and the denial recorded above. */
+    audit_count = zd_automation_drain_audit(&session_automation, audit,
+                                            ZD_ARRAY_COUNT(audit), &consumed);
+    if (audit_count == 0 || consumed != audit_count)
+        return fail("automation audit drain", (int64_t)audit_count);
+    say("ZEROOS: session automation live events passed.");
 
     say("ZEROOS: session shell process complete.");
     return 0;

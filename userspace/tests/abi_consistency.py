@@ -57,6 +57,7 @@ for name in (
     "ZEROOS_SYSCALL_MAX_TRANSFER",
     "ZEROOS_INPUT_FLAG_DOWN",
     "ZEROOS_INPUT_FLAG_REPEAT",
+    "ZEROOS_SYSTEM_INFO_VERSION",
 ):
     if macro(PUBLIC, name) != macro(KERNEL, name):
         raise SystemExit(f"macro drift for {name}")
@@ -162,7 +163,8 @@ def struct_body(text: str, name: str) -> str:
     return re.sub(r",\s*", ",", body)
 
 
-for name in ("zeroos_stat", "zeroos_statfs", "zeroos_dirent", "zeroos_display_info"):
+for name in ("zeroos_stat", "zeroos_statfs", "zeroos_dirent",
+             "zeroos_display_info", "zeroos_system_info"):
     if struct_body(PUBLIC, name) != struct_body(KERNEL, name):
         raise SystemExit(f"struct layout drift for {name}")
 

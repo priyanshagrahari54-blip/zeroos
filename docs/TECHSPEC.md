@@ -84,8 +84,10 @@ process, thread, memory, file, directory, time, IPC, synchronization, device, ne
 Stage 5 additions: `DISPLAY_INFO` (ID 51) — display geometry read-only query;
 `DISPLAY_PRESENT` (ID 52) — pixel-mapping scanout submit;
 `INPUT_POLL` (ID 53) / `INPUT_WAIT` (ID 54) — keyboard/pointer event drain
-and blocking wait; ABI feature bits 8 (`ZEROOS_ABI_FEATURE_DISPLAY`),
-9 (`ZEROOS_ABI_FEATURE_PRESENT`) and 10 (`ZEROOS_ABI_FEATURE_INPUT`). (Before
+and blocking wait; `SYSTEM_INFO` (ID 55) — CPU topology, memory totals and
+the kernel monotonic clock; ABI feature bits 8
+(`ZEROOS_ABI_FEATURE_DISPLAY`), 9 (`ZEROOS_ABI_FEATURE_PRESENT`),
+10 (`ZEROOS_ABI_FEATURE_INPUT`) and 11 (`ZEROOS_ABI_FEATURE_SYSINFO`). (Before
 the Stage 3/Stage 5 merge the unreleased Stage 5 branch used IDs 25/26 and
 bits 7/8, which collided with the Stage 3 file ABI; they were renumbered
 before reaching main. IDs 25–50 and bit 7 belong to the file ABI, see VFS.md
@@ -180,6 +182,20 @@ Stage 5 implemented contracts:
   nonblocking (-EAGAIN when empty); WAIT accepts `ZEROOS_WAIT_FLAG_NONBLOCK`
   and a scheduler-tick timeout (0 = forever) with -ETIMEDOUT/-EINTR, using
   the same wait-queue and tick-deadline discipline as the IPC syscalls.
+- `ZEROOS_SYS_SYSTEM_INFO` (ID 55, feature bit 11) fills
+  `struct zeroos_system_info` (struct-gated between the public and kernel
+  headers) with kernel-reported facts: online/discovered CPUs, page size,
+  scheduler tick frequency, clock source, `uptime_ns`, and total/free
+  managed memory. `uptime_ns` comes from `timer_monotonic_ns()` — the
+  invariant TSC when the CPU guarantees it, the 100 Hz PIT otherwise — and
+  is the only monotonic time source Ring 3 has: present pacing, automation
+  cooldowns and watchdog heartbeats are all expressed in these
+  nanoseconds. The caller passes its own `size`; a NULL buffer or a size
+  smaller than the kernel's struct is rejected with -EFAULT so the kernel
+  never writes past the caller's structure. The session certifies that the
+  clock really advances across a timed wait, that the pacing floor refuses
+  and then accepts the same damage, and that both bad-pointer cases fail
+  closed.
   Events come from the PS/2 i8042 driver (`kernel/input.c`): keyboard on
   IRQ1 (set-1 decoding via `scancode_core`) and mouse on IRQ12 (3-byte
   auxiliary packets via `mouse_core`), both host-tested and routed on
