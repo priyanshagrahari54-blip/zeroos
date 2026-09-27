@@ -149,6 +149,7 @@ jobs:
             grep -q "ZEROOS: session input routing passed." build/serial.log
             grep -q "ZEROOS: session file manager VFS binding passed." build/serial.log
             grep -q "ZEROOS: session file manager transfer ops passed." build/serial.log
+            grep -q "ZEROOS: session file manager batch operations passed." build/serial.log
             grep -q "ZEROOS: session universal search live providers passed." build/serial.log
             grep -q "ZEROOS: session monotonic clock and pacing passed." build/serial.log
             grep -q "ZEROOS: session lifecycle governor activation passed." build/serial.log
@@ -220,6 +221,7 @@ jobs:
           grep -q "ZEROOS: session input routing passed." build/serial-smp4.log
           grep -q "ZEROOS: session file manager VFS binding passed." build/serial-smp4.log
           grep -q "ZEROOS: session file manager transfer ops passed." build/serial-smp4.log
+          grep -q "ZEROOS: session file manager batch operations passed." build/serial-smp4.log
           grep -q "ZEROOS: session universal search live providers passed." build/serial-smp4.log
           grep -q "ZEROOS: session monotonic clock and pacing passed." build/serial-smp4.log
           grep -q "ZEROOS: session lifecycle governor activation passed." build/serial-smp4.log

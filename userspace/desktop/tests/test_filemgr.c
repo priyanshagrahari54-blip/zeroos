@@ -66,11 +66,15 @@ static void op_note(const char *s) {
         op_log[op_len++] = *s++;
     op_log[op_len] = 0;
 }
+static char op_fail_path[ZD_FM_PATH];
+static int op_fail_path_errno;
 static int fm_remove_fn(void *ctx, const char *path) {
     (void)ctx;
     op_note("R:");
     op_note(path);
     op_note(";");
+    if (op_fail_path[0] && strcmp(op_fail_path, path) == 0)
+        return op_fail_path_errno;
     return op_fail;
 }
 static int fm_mkdir_fn(void *ctx, const char *path) {
@@ -127,7 +131,7 @@ struct fm_file {
     char data[256];
     uint32_t len;
 };
-static struct fm_file fm_files[4];
+static struct fm_file fm_files[16];
 static uint32_t fm_nfiles;
 
 static void fm_files_reset(void) {
@@ -145,8 +149,8 @@ static struct fm_file *fm_file(const char *path) {
 
 static void fm_file_add(const char *path, const char *data) {
     struct fm_file *f;
-    ZD_CHECK(fm_nfiles < 4);
-    if (fm_nfiles >= 4)
+    ZD_CHECK(fm_nfiles < 16);
+    if (fm_nfiles >= 16)
         return;
     f = &fm_files[fm_nfiles++];
     snprintf(f->path, sizeof(f->path), "%s", path);
@@ -187,8 +191,8 @@ static int fm_write_fn(void *ctx, const char *path, const void *buffer,
         return -27;
     f = fm_file(path);
     if (!f) {
-        ZD_CHECK(fm_nfiles < 4);
-        if (fm_nfiles >= 4)
+        ZD_CHECK(fm_nfiles < 16);
+        if (fm_nfiles >= 16)
             return -28;
         f = &fm_files[fm_nfiles++];
         snprintf(f->path, sizeof(f->path), "%s", path);
@@ -331,6 +335,165 @@ static void test_rename_copy_move_peek(void) {
     /* the remove must come after the write, never before */
     ZD_CHECK(strstr(op_log, "W:/dest/e.txt;") < strstr(op_log,
                                                        "R:/docs/a.txt;"));
+}
+
+
+/* ---- batch operations over the selection ----------------------------- */
+
+static void fm_batch_fixture(void) {
+    ndirs = 0;
+    op_len = 0;
+    op_log[0] = 0;
+    op_fail = 0;
+    op_fail_path[0] = 0;
+    op_fail_path_errno = 0;
+    memset(dirs, 0, sizeof(dirs));
+    fm_files_reset();
+
+    dirs[ndirs].path = "/work";
+    /* A hidden entry between two visible ones makes the visible/raw index
+     * mapping differ, which is what the selection snapshot must survive. */
+    fm_add(&dirs[ndirs], "a.txt", 4, 1, 0);
+    fm_add(&dirs[ndirs], "b.txt", 4, 2, 0);
+    fm_add(&dirs[ndirs], "sub", 0, 3, ZD_FM_DIR);
+    fm_add(&dirs[ndirs], ".hidden", 4, 4, ZD_FM_HIDDEN);
+    fm_add(&dirs[ndirs], "c.txt", 4, 5, 0);
+    ndirs++;
+    dirs[ndirs].path = "/dest";
+    ndirs++;
+
+    fm_file_add("/work/a.txt", "aaaa");
+    fm_file_add("/work/b.txt", "bbbb");
+    fm_file_add("/work/c.txt", "cccc");
+}
+
+static void select_all_visible(struct zd_fm *fm) {
+    uint32_t i;
+    for (i = 0; i < zd_fm_visible_count(fm); ++i)
+        ZD_CHECK_OK(zd_fm_select(fm, i));
+}
+
+static void test_batch_operations(void) {
+    struct zd_fm fm;
+    struct zd_fm_batch_result result;
+
+    /* ---- argument and permission contract ---- */
+    zd_fm_init(&fm, fm_source, 0);
+    fm_batch_fixture();
+    ZD_CHECK_OK(zd_fm_open(&fm, "/work"));
+    memset(&result, 0xEE, sizeof(result));
+    ZD_CHECK_EQ(zd_fm_batch_remove(NULL, ZD_FM_PERM_WRITE, 0, &result), -22);
+    ZD_CHECK_EQ(zd_fm_batch_remove(&fm, ZD_FM_PERM_WRITE, 0, NULL), -22);
+    /* A missing op is a binding error and fails fast, before the selection
+     * is even examined: reporting the same errno per entry would hide it. */
+    select_all_visible(&fm);
+    ZD_CHECK_EQ(zd_fm_batch_remove(&fm, ZD_FM_PERM_WRITE, 0, &result), -22);
+    ZD_CHECK_EQ(zd_fm_batch_copy(&fm, ZD_FM_PERM_WRITE, "/dest", 0, &result),
+                -22);
+    ZD_CHECK_EQ(zd_fm_batch_move(&fm, ZD_FM_PERM_WRITE, "/dest", 0, &result),
+                -22);
+
+    fm.ops.remove = fm_remove_fn;
+    fm.ops.read_file = fm_read_fn;
+    fm.ops.write_file = fm_write_fn;
+
+    /* nothing selected: a no-op, and the result struct is still defined */
+    zd_fm_clear_selection(&fm);
+    ZD_CHECK_EQ(zd_fm_batch_remove(&fm, ZD_FM_PERM_WRITE, 0, &result), 0);
+    ZD_CHECK_EQ(result.attempted, 0U);
+    ZD_CHECK_EQ(result.succeeded, 0U);
+    ZD_CHECK_EQ(result.failed, 0U);
+    /* read-only actor -> -1, counted, and no op runs */
+    select_all_visible(&fm);
+    ZD_CHECK_EQ(zd_fm_batch_remove(&fm, ZD_FM_PERM_READ, 0, &result), -1);
+    ZD_CHECK_EQ(fm.stats.ops_perm_denied, 1U);
+    ZD_CHECK_EQ(op_len, 0);
+    /* relative target dir rejected for copy/move */
+    ZD_CHECK_EQ(zd_fm_batch_copy(&fm, ZD_FM_PERM_WRITE, "dest", 0, &result),
+                -22);
+    ZD_CHECK_EQ(zd_fm_batch_move(&fm, ZD_FM_PERM_WRITE, "", 0, &result), -22);
+
+    /* ---- directory policy: a recursive delete is never implied ---- */
+    ZD_CHECK_OK(zd_fm_refresh(&fm));
+    select_all_visible(&fm);
+    ZD_CHECK_EQ(zd_fm_selected_count(&fm), 4U); /* a, b, c, sub */
+    ZD_CHECK_OK(zd_fm_batch_remove(&fm, ZD_FM_PERM_WRITE, 0, &result));
+    ZD_CHECK_EQ(result.attempted, 3U);
+    ZD_CHECK_EQ(result.succeeded, 3U);
+    ZD_CHECK_EQ(result.skipped_dirs, 1U);
+    ZD_CHECK_EQ(result.failed, 0U);
+    ZD_CHECK(strstr(op_log, "R:/work/a.txt;") != 0);
+    ZD_CHECK(strstr(op_log, "R:/work/c.txt;") != 0);
+    ZD_CHECK(strstr(op_log, "R:/work/sub;") == 0);
+    /* the snapshot survives the refresh each single op performs */
+    ZD_CHECK_EQ(fm.stats.batch_ops, 1U);
+    ZD_CHECK_EQ(fm.stats.batch_entries, 3U);
+
+    /* ---- explicit opt-in removes directories too ---- */
+    op_len = 0;
+    op_log[0] = 0;
+    ZD_CHECK_OK(zd_fm_refresh(&fm));
+    select_all_visible(&fm);
+    ZD_CHECK_OK(zd_fm_batch_remove(&fm, ZD_FM_PERM_WRITE, 1, &result));
+    ZD_CHECK_EQ(result.attempted, 4U);
+    ZD_CHECK_EQ(result.skipped_dirs, 0U);
+    ZD_CHECK(strstr(op_log, "R:/work/sub;") != 0);
+
+    /* ---- partial failure: the batch continues and reports the first ---- */
+    op_len = 0;
+    op_log[0] = 0;
+    snprintf(op_fail_path, sizeof(op_fail_path), "/work/b.txt");
+    op_fail_path_errno = -13;
+    ZD_CHECK_OK(zd_fm_refresh(&fm));
+    select_all_visible(&fm);
+    ZD_CHECK_OK(zd_fm_batch_remove(&fm, ZD_FM_PERM_WRITE, 0, &result));
+    ZD_CHECK_EQ(result.attempted, 3U);
+    ZD_CHECK_EQ(result.succeeded, 2U);
+    ZD_CHECK_EQ(result.failed, 1U);
+    ZD_CHECK_EQ(result.last_errno, -13);
+    ZD_CHECK(strcmp(result.first_failed, "b.txt") == 0);
+    /* a.txt and c.txt were still attempted after b.txt failed */
+    ZD_CHECK(strstr(op_log, "R:/work/a.txt;") != 0);
+    ZD_CHECK(strstr(op_log, "R:/work/c.txt;") != 0);
+    op_fail_path[0] = 0;
+
+    /* ---- batch copy keeps names and never removes the source ---- */
+    op_len = 0;
+    op_log[0] = 0;
+    ZD_CHECK_OK(zd_fm_refresh(&fm));
+    select_all_visible(&fm);
+    ZD_CHECK_OK(zd_fm_batch_copy(&fm, ZD_FM_PERM_WRITE, "/dest", 0,
+                                 &result));
+    ZD_CHECK_EQ(result.attempted, 3U);
+    ZD_CHECK_EQ(result.succeeded, 3U);
+    ZD_CHECK_EQ(result.skipped_dirs, 1U);
+    ZD_CHECK(strstr(op_log, "W:/dest/a.txt;") != 0);
+    ZD_CHECK(strstr(op_log, "W:/dest/c.txt;") != 0);
+    ZD_CHECK(strstr(op_log, "R:") == 0); /* no removals in a copy */
+    ZD_CHECK(fm_file("/dest/a.txt") != 0);
+    ZD_CHECK(strcmp(fm_file("/dest/a.txt")->data, "aaaa") == 0);
+
+    /* ---- batch move removes the source only after the copy landed ---- */
+    op_len = 0;
+    op_log[0] = 0;
+    ZD_CHECK_OK(zd_fm_refresh(&fm));
+    select_all_visible(&fm);
+    ZD_CHECK_OK(zd_fm_batch_move(&fm, ZD_FM_PERM_WRITE, "/dest", 0,
+                                 &result));
+    ZD_CHECK_EQ(result.attempted, 3U);
+    ZD_CHECK_EQ(result.succeeded, 3U);
+    ZD_CHECK(strstr(op_log, "W:/dest/a.txt;") < strstr(op_log,
+                                                       "R:/work/a.txt;"));
+
+    /* ---- selection larger than the batch cap is reported, not dropped ---- */
+    fm_fixture();
+    ZD_CHECK_OK(zd_fm_open(&fm, "/big"));
+    select_all_visible(&fm);
+    ZD_CHECK(zd_fm_selected_count(&fm) > ZD_FM_BATCH_MAX);
+    ZD_CHECK_OK(zd_fm_batch_remove(&fm, ZD_FM_PERM_WRITE, 0, &result));
+    ZD_CHECK_EQ(result.attempted + result.skipped_dirs,
+                (uint32_t)ZD_FM_BATCH_MAX);
+    ZD_CHECK(result.selection_overflow > 0U);
 }
 
 void zd_test_filemgr_suite(void) {
@@ -492,4 +655,5 @@ void zd_test_filemgr_suite(void) {
     ZD_CHECK(zd_fm_visible(NULL, 0) == NULL);
 
     test_rename_copy_move_peek();
+    test_batch_operations();
 }

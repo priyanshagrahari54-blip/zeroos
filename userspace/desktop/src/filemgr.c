@@ -107,6 +107,8 @@ void zd_fm_init(struct zd_fm *fm, zd_fm_source_fn source, void *ctx) {
     fm->stats.mkdirs = fm->stats.op_errors = 0;
     fm->stats.renamed = fm->stats.copied = fm->stats.moved = 0;
     fm->stats.peeks = fm->stats.refusals = 0;
+    fm->stats.batch_ops = fm->stats.batch_entries = 0;
+    fm->stats.batch_failures = fm->stats.batch_skipped = 0;
 }
 
 /* ---- sort (stable insertion over the raw array) ---- */
@@ -618,4 +620,174 @@ int zd_fm_move(struct zd_fm *fm, uint32_t actor_perms, const char *name,
         return r;
     fm->stats.moved++;
     return 0;
+}
+
+/* ---- batch operations over the selection ------------------------------
+ * Snapshot-then-apply: each single-entry operation refreshes the listing
+ * and clears the selection, so the selection is copied by name up front.
+ * Per-entry failures are recorded and the batch continues; the caller
+ * reads struct zd_fm_batch_result for the outcome. */
+
+typedef int (*f_batch_step)(struct zd_fm *fm, uint32_t actor_perms,
+                            const char *name, const char *target_dir);
+
+/* Flags of a listed entry; ~0U when the name is not in the listing. */
+static uint32_t f_listed_flags(const struct zd_fm *fm, const char *name) {
+    uint32_t i;
+    for (i = 0; i < fm->count; ++i)
+        if (f_streq(fm->entries[i].name, name))
+            return fm->entries[i].flags;
+    return ~0U;
+}
+
+static int f_step_remove(struct zd_fm *fm, uint32_t actor_perms,
+                         const char *name, const char *target_dir) {
+    (void)target_dir;
+    return zd_fm_remove(fm, actor_perms, name);
+}
+
+static int f_step_copy(struct zd_fm *fm, uint32_t actor_perms,
+                       const char *name, const char *target_dir) {
+    return zd_fm_copy(fm, actor_perms, name, target_dir, name);
+}
+
+static int f_step_move(struct zd_fm *fm, uint32_t actor_perms,
+                       const char *name, const char *target_dir) {
+    return zd_fm_move(fm, actor_perms, name, target_dir, name);
+}
+
+static int f_batch(struct zd_fm *fm, uint32_t actor_perms, uint32_t need_perm,
+                   uint32_t allow_dirs, const char *target_dir,
+                   f_batch_step step, struct zd_fm_batch_result *out) {
+    static char names[ZD_FM_BATCH_MAX][ZD_FM_NAME];
+    uint32_t selected[ZD_FM_MAX];
+    uint32_t visible;
+    uint32_t taken = 0;
+    uint32_t total_selected = 0;
+    uint32_t index;
+
+    if (!fm || !out || !step) {
+        if (fm)
+            fm->stats.rejected++;
+        return -22;
+    }
+    if (!fm->path[0]) {
+        fm->stats.rejected++;
+        return -22;
+    }
+    if (!(actor_perms & need_perm)) {
+        fm->stats.ops_perm_denied++;
+        return -1;
+    }
+
+    out->attempted = 0;
+    out->succeeded = 0;
+    out->failed = 0;
+    out->skipped_dirs = 0;
+    out->selection_overflow = 0;
+    out->last_errno = 0;
+    out->first_failed[0] = 0;
+
+    /* Collect the selected VISIBLE indices before touching anything. The
+     * selection bitmap is keyed by the RAW entry index (see f_sel_op), so
+     * each visible index is mapped through f_raw first. */
+    visible = zd_fm_visible_count(fm);
+    for (index = 0; index < visible; ++index) {
+        int raw = f_raw(fm, index);
+        uint32_t word;
+        uint32_t bit;
+        if (raw < 0)
+            continue;
+        word = (uint32_t)raw / 64U;
+        bit = (uint32_t)raw % 64U;
+        if (fm->selected[word] & ((uint64_t)1 << bit))
+            selected[total_selected++] = index;
+    }
+    /* Snapshot names: visible entries can be indexed safely here because
+     * nothing has run yet. */
+    for (index = 0; index < total_selected; ++index) {
+        const struct zd_fm_entry *entry = zd_fm_visible(fm, selected[index]);
+        if (!entry)
+            continue;
+        if (taken >= ZD_FM_BATCH_MAX) {
+            out->selection_overflow++;
+            continue;
+        }
+        f_copy(names[taken], ZD_FM_NAME, entry->name);
+        ++taken;
+    }
+    if (taken == 0)
+        return 0; /* nothing selected: a no-op, not an error */
+
+    fm->stats.batch_ops++;
+    for (index = 0; index < taken; ++index) {
+        uint32_t flags = f_listed_flags(fm, names[index]);
+        int r;
+        /* Directory policy: a recursive delete is never implied. An entry
+         * that is no longer listed is attempted anyway so the filesystem
+         * reports the real errno. */
+        if (!allow_dirs && flags != ~0U && (flags & ZD_FM_DIR)) {
+            out->skipped_dirs++;
+            fm->stats.batch_skipped++;
+            continue;
+        }
+        out->attempted++;
+        fm->stats.batch_entries++;
+        r = step(fm, actor_perms, names[index], target_dir);
+        if (r == 0) {
+            out->succeeded++;
+            continue;
+        }
+        out->failed++;
+        out->last_errno = (int32_t)r;
+        if (out->first_failed[0] == 0)
+            f_copy(out->first_failed, ZD_FM_NAME, names[index]);
+        fm->stats.batch_failures++;
+    }
+    return 0;
+}
+
+int zd_fm_batch_remove(struct zd_fm *fm, uint32_t actor_perms,
+                       uint32_t allow_dirs, struct zd_fm_batch_result *out) {
+    /* Fail fast on a misconfigured binding instead of reporting the same
+     * missing-op errno once per entry. */
+    if (fm && !fm->ops.remove)
+        return -22;
+    return f_batch(fm, actor_perms, ZD_FM_PERM_WRITE, allow_dirs, 0,
+                   f_step_remove, out);
+}
+
+int zd_fm_batch_copy(struct zd_fm *fm, uint32_t actor_perms,
+                     const char *target_dir, uint32_t allow_dirs,
+                     struct zd_fm_batch_result *out) {
+    if (!f_dir_ok(target_dir)) {
+        if (fm)
+            fm->stats.rejected++;
+        return -22;
+    }
+    if (fm && (!fm->ops.read_file || !fm->ops.write_file))
+        return -22;
+    return f_batch(fm, actor_perms, ZD_FM_PERM_WRITE, allow_dirs, target_dir,
+                   f_step_copy, out);
+}
+
+int zd_fm_batch_move(struct zd_fm *fm, uint32_t actor_perms,
+                     const char *target_dir, uint32_t allow_dirs,
+                     struct zd_fm_batch_result *out) {
+    if (!f_dir_ok(target_dir)) {
+        if (fm)
+            fm->stats.rejected++;
+        return -22;
+    }
+    /* A move inside the current directory is a rename; anywhere else it is
+     * copy-then-remove. Require exactly the ops the chosen path uses. */
+    if (fm && f_streq(target_dir, fm->path)) {
+        if (!fm->ops.rename)
+            return -22;
+    } else if (fm && (!fm->ops.read_file || !fm->ops.write_file ||
+                      !fm->ops.remove)) {
+        return -22;
+    }
+    return f_batch(fm, actor_perms, ZD_FM_PERM_WRITE, allow_dirs, target_dir,
+                   f_step_move, out);
 }

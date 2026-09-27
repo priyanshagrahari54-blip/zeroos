@@ -400,6 +400,23 @@ static int session_streq(const char *a, const char *b) {
     return a[i] == 0 && b[i] == 0;
 }
 
+/* Select the visible entry with this exact name; -1 when it is absent.
+ * Selections are by visible index, so the lookup has to run against the
+ * filtered, sorted listing the user actually sees. */
+static int session_select_by_name(struct zd_fm *fm, const char *name) {
+    uint32_t i;
+    for (i = 0; i < zd_fm_visible_count(fm); ++i) {
+        const struct zd_fm_entry *entry = zd_fm_visible(fm, i);
+        if (entry && session_streq(entry->name, name)) {
+            if (zd_fm_select(fm, i) != 0)
+                return -1;
+            return (int)i;
+        }
+    }
+    return -1;
+}
+
+
 /* "shell reload" command: proves a command provider entry executes real
  * work against the live file manager. */
 static uint32_t session_command_runs;
@@ -470,6 +487,7 @@ int session_main(void) {
     uint32_t term_line_len;
     uint32_t row_len;
     uint32_t preview_len;
+    struct zd_fm_batch_result batch;
     int64_t sys_result;
     int attach_result;
     int live = 0;
@@ -750,6 +768,47 @@ int session_main(void) {
                     (int64_t)zd_ui_condition_from_vfs_rc(sys_result));
     if (zd_fm_open(&session_fm, "/ram/shell") != 0)
         return fail("file manager reopen", 0);
+    /* Batch operations over a real multi-selection. Every operation
+     * refreshes the listing and clears the selection, so the selection is
+     * rebuilt from names; the directory policy is verified against a real
+     * subdirectory, which must survive a batch delete it was not opted
+     * into. */
+    if (session_write_file("/ram/shell/batch-a.txt", 16) != 0 ||
+        session_write_file("/ram/shell/batch-b.txt", 16) != 0 ||
+        session_write_file("/ram/shell/batch-c.txt", 16) != 0)
+        return fail("batch fixture", 0);
+    if (zd_fm_refresh(&session_fm) != 0)
+        return fail("batch refresh", 0);
+    if (session_select_by_name(&session_fm, "batch-a.txt") < 0 ||
+        session_select_by_name(&session_fm, "batch-b.txt") < 0 ||
+        session_select_by_name(&session_fm, "batch-c.txt") < 0)
+        return fail("batch selection", 0);
+    if (zd_fm_batch_copy(&session_fm, ZD_FM_PERM_READ | ZD_FM_PERM_WRITE,
+                         "/ram/shell/inbox", 0, &batch) != 0 ||
+        batch.attempted != 3 || batch.succeeded != 3 || batch.failed != 0)
+        return fail("batch copy", (int64_t)batch.succeeded);
+    if (zeroos_stat("/ram/shell/inbox/batch-c.txt", &file_stat) != 0 ||
+        file_stat.size != 16)
+        return fail("batch copy verify", (int64_t)file_stat.size);
+    if (zd_fm_mkdir(&session_fm, ZD_FM_PERM_READ | ZD_FM_PERM_WRITE,
+                    "batchdir") != 0)
+        return fail("batch directory fixture", 0);
+    if (session_select_by_name(&session_fm, "batch-a.txt") < 0 ||
+        session_select_by_name(&session_fm, "batch-b.txt") < 0 ||
+        session_select_by_name(&session_fm, "batch-c.txt") < 0 ||
+        session_select_by_name(&session_fm, "batchdir") < 0)
+        return fail("batch reselection", 0);
+    if (zd_fm_batch_remove(&session_fm, ZD_FM_PERM_READ | ZD_FM_PERM_WRITE,
+                           0, &batch) != 0 ||
+        batch.attempted != 3 || batch.succeeded != 3 ||
+        batch.skipped_dirs != 1)
+        return fail("batch directory policy", (int64_t)batch.skipped_dirs);
+    if (zeroos_stat("/ram/shell/batchdir", &file_stat) != 0)
+        return fail("batch deleted a directory", 0);
+    if (zeroos_stat("/ram/shell/batch-a.txt", &file_stat) != -ZEROOS_ENOENT ||
+        zeroos_stat("/ram/shell/batch-c.txt", &file_stat) != -ZEROOS_ENOENT)
+        return fail("batch remove verify", 0);
+    say("ZEROOS: session file manager batch operations passed.");
     say("ZEROOS: session file manager VFS binding passed.");
 
     /* 8. Universal Search over the live shell services: the files provider
