@@ -147,6 +147,8 @@ jobs:
             grep -Eq 'ZEROOS: session (scanout present contract|scanout degraded path) passed\.' build/serial.log
             grep -q "ZEROOS: session input pump passed." build/serial.log
             grep -q "ZEROOS: session input routing passed." build/serial.log
+            grep -q "ZEROOS: session file manager VFS binding passed." build/serial.log
+            grep -q "ZEROOS: session universal search live providers passed." build/serial.log
             grep -q "ZEROOS: session shell process complete." build/serial.log
             grep -q "ZEROOS: session shell process reaped cleanly." build/serial.log
             if grep -q "storage.*FAILED" build/serial.log; then
@@ -210,6 +212,8 @@ jobs:
           grep -Eq 'ZEROOS: session (scanout present contract|scanout degraded path) passed\.' build/serial-smp4.log
           grep -q "ZEROOS: session input pump passed." build/serial-smp4.log
           grep -q "ZEROOS: session input routing passed." build/serial-smp4.log
+          grep -q "ZEROOS: session file manager VFS binding passed." build/serial-smp4.log
+          grep -q "ZEROOS: session universal search live providers passed." build/serial-smp4.log
           grep -q "ZEROOS: session shell process complete." build/serial-smp4.log
           grep -q "ZEROOS: session shell process reaped cleanly." build/serial-smp4.log
           grep -q "ZEROOS: shared-memory map/grant/lifecycle self-test passed." build/serial-smp4.log

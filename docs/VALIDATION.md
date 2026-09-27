@@ -8,13 +8,14 @@ does not exist yet, the row says so — no claim is made without it.
 
 | Class | How it is exercised | Where it runs | Status |
 |---|---|---|---|
-| UNIT | Host unit suites: desktop (ZD_CHECK assertions), compat, hardware cores, crypto RFC vectors | `make desktop-check compat-check hardware-core-test` | Green on demand; counts in section 2 |
+| UNIT | Host unit suites: desktop (ZD_CHECK assertions), compat, hardware cores, crypto RFC vectors, shell search providers + session-binding replay | `make desktop-check compat-check hardware-core-test` | Green on demand; counts in section 2 |
 | INTEGRATION | Full guest boot: kernel + session + storage/init lifecycles on QEMU | CI workflow `build.yml` (push + pull_request) | Green on recorded commits, section 3 |
 | NEGATIVE | Per-suites error paths: EINVAL/ENOSPC/EPERM/ESTATE/EBUSY branches asserted, denial stats | desktop/compat suites | Green |
 | FAULT | Injected failures: display degraded present, AI hook failure, launch-hook errno, browser CRASHED/RELOAD, automation action failures + deterministic 512-round API-boundary fault suite (settings/notify/clipboard/downloads/snapshot/firewall/sandbox/lifecycle/perfcenter: errno-range invariant, wrong-state sequences, post-fault sanity, seeded) | desktop/compat suites | Green |
 | STRESS | Capacity loops (tab/app/rule/DLL caps) plus `test_stress`: 41 fill/drain browser rounds, 100 vault put/get/forget cycles with 20 lock churns, 20 000 firewall decisions, 24 snapshot turnovers, 10 000 frame recordings, 200 terminal fill/scroll rounds, 100 file-manager navigation generations (84 history evictions accounted), 500 formula re-evals, 100 overview set/remove quadruples (500 relayouts), 100 ecosystem pair/grant/queue/flush/unpair generations — exact end-state accounting | desktop suite | Green (host), guest probes in CI |
 | SOAK | Long-duration idle residency (AI dormancy, 0 resident bytes idle, event-driven automation) + seeded 64-epoch churn with generation-isolation and steady-state bounds (clipboard, downloads FIFO totals, notify caps, lifecycle storms, settings schema isolation, perfcenter rings) | desktop suites | Green |
 | SECURITY | Permission gates (AI grants, automation permission-first ordering), crypto AEAD/ChaCha20 vectors, constant-time MAC compare, denied counters | crypto tests + desktop suites | Green |
+| MEMORY-SAFETY | Every host suite (24 core suites, desktop, compat) rebuilt under AddressSanitizer + UndefinedBehaviorSanitizer with `-fno-sanitize-recover=all`; leak detection on | `make sanitizer-check` (part of `make check`) | Green; this gate is what caught the PS/2 extended-key down-state overrun, and it was verified to fail (exit 2 + OOB trace) when that bug is reintroduced |
 | RECOVERY | Browser crash recovery, service watchdog, display attach/detach, init recovery in guest, rollback contracts | desktop suites + CI boot milestones | Green (host), guest init recovery in CI |
 | QEMU | Boot certification block in CI: panic detection, session milestones, storage certification | `build.yml` on every push/PR | Green on every push context since the `dedb23f` revert (`c27ad12`, `56a009f`, `c24c6b2`, `69f053c`, `c8b75ae`, `92e5729`, `fecd7a3`, `19ce0fa`, `eaac99c`, `d0bfc0c`, `d294b66`, `ef384d7`, …); PR context green except the documented `78ef9b5`/`0b2b480`/`98ba0ca` boot-flake rows below |
 | REAL-HARDWARE | Physical run of the certified ISO on bare metal | Not available in this environment | **Not run — no claim** |
@@ -27,7 +28,7 @@ inventory in `ARCHITECTURE.md` for pending live integrations):
 
 | Part | Delivered (host-tested unless noted) | Honest limits |
 | --- | --- | --- |
-| A Graphics/desktop | display/compositor/window/input/wm workspaces+snap+DPI, bar, launcher, Universal Search pipeline + providers, settings schema, notifications, a11y tree, i18n en/hi, lifecycle, watchdog, overview, file manager, terminal core, clipboard, downloads, perf centre, UI condition contract | shell chrome *rendering* and app-framework UI pending; multi-GPU single path |
+| A Graphics/desktop | display/compositor/window/input/wm workspaces+snap+DPI, bar, launcher, Universal Search pipeline + providers (files/settings/commands/diagnostics live in the session), settings schema, notifications, a11y tree, i18n en/hi, lifecycle, watchdog, overview, file manager bound to the real VFS in the session, terminal core, clipboard, downloads, perf centre, UI condition contract + VFS-error mapping | shell chrome *rendering* and app-framework UI pending; multi-GPU single path; terminal child spawn pending |
 | B Security/recovery/updates | sandbox (fail-closed), firewall (first-match), capability, vault (AEAD), crypto (RFC vectors), update 9-state + payload verify + rollback, snapshots, privacy centre | kernel enforcement hooks + PKI pending |
 | C Windows compat | pe/compat suites (107 checks), loader architecture documented | no Windows claim; runtime pieces pending |
 | D Android runtime | AOSP 14 baseline documented | capability absent - not run, no claim |
@@ -49,7 +50,7 @@ PART M maps to concrete evidence (or an explicit no-claim):
 | Prompt item | Evidence |
 | --- | --- |
 | cold boot | QEMU boot certification block (section 3) |
-| desktop session | session milestones: service attached, shell rounds, probe pattern, clean reap (workflow-grepped) |
+| desktop session | session milestones: service attached, shell rounds, probe pattern, file-manager VFS binding, Universal Search live providers, clean reap (workflow-grepped) |
 | multi-window | compositor/window/workspaces suites + boot shell rounds |
 | input/display/audio | input router + display service suites (audio: no output path yet — pending, no claim) |
 | native app lifecycle | launcher/watchdog/lifecycle suites |
@@ -79,7 +80,7 @@ The authoritative per-core binding inventory (host-tested vs pending live integr
 
 | Suite | Command | Assertions | Failures |
 |---|---|---|---|
-| Desktop modules (display, compositor, window, input, a11y, i18n, search, settings, notify, lifecycle, watchdog, governor, automation, browser, AI, bar, launcher, capability, metrics, update, url, study, fps, snapshot, vault, nav, firewall, sandbox, clipboard, downloads, providers, perfcenter, fault, soak, pdf, media, gaming, eco, snapshot-bind, privacy, term, filemgr, formula, ocr, overview, notes, dict, assist, ui, stress, integration) | `make desktop-check` | 120907 | 0 |
+| Desktop modules (display, compositor, window, input, a11y, i18n, search, settings, notify, lifecycle, watchdog, governor, automation, browser, AI, bar, launcher, capability, metrics, update, url, study, fps, snapshot, vault, nav, firewall, sandbox, clipboard, downloads, providers, shell providers + session-binding replay, perfcenter, fault, soak, pdf, media, gaming, eco, snapshot-bind, privacy, term, filemgr, formula, ocr, overview, notes, dict, assist, ui, stress, integration) | `make desktop-check` | 121375 | 0 |
 | Windows compatibility core (lifecycle/paths/registry/DLL + PE validator) | `make compat-check` | 107 | 0 |
 | Hardware/driver cores (incl. crypto RFC vectors) | `make hardware-core-test` | per-suite PASS | 0 |
 | IPv4 ARP parser/builders + solicited-only expiring neighbor cache | `make hardware-core-test` | 85 | 0 |
@@ -89,7 +90,8 @@ The authoritative per-core binding inventory (host-tested vs pending live integr
 
 Reproduce all host/build checks locally with `make check` (it builds the
 kernel and runs the ABI, runtime, hardware-core, desktop, compatibility,
-GPT/ZJFS host-image recovery, and SIMD-safety gates). CI runs `make check`
+GPT/ZJFS host-image recovery, ASan/UBSan memory-safety, and SIMD-safety
+gates). CI runs `make check`
 after producing the boot ISO, then adds QEMU boot, SMP, and AHCI/NVMe
 persistence certification. A green
 `make check` is not a substitute for the guest or real-hardware gates.

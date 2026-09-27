@@ -198,6 +198,21 @@ Stage 5 implemented contracts:
   a11y nodes, 128 settings keys, 16 watchdog services), listener-callback
   events, and must compile with `-ffreestanding -fno-builtin` under
   `-Wall -Wextra -Werror` (enforced by `make desktop-check`).
+- Two error namespaces coexist and the boundary is explicit. The desktop
+  core returns `-ZD_E*` (`ZD_EINVAL = 1`, `ZD_ENOENT = 3`, ...). The cores
+  that bind to the file syscalls — the file manager (`filemgr.h`) and the
+  files search provider — propagate the kernel's `ZEROOS_E*` values, which
+  are the POSIX numbers (`ZEROOS_EINVAL = 22`, `ZEROOS_ENOENT = 2`),
+  because that is what the injected directory/ops callbacks return. The
+  two enums are *not* the same integers, so a VFS error must never be fed
+  to `zd_ui_condition_from_rc`; `zd_ui_condition_from_vfs_rc` is the only
+  supported VFS-error -> UI-condition path (a VFS `-ENOENT` fed to the
+  `ZD_*` mapper renders as LOW_RESOURCE instead of EMPTY).
+- Every host suite is also rebuilt under AddressSanitizer +
+  UndefinedBehaviorSanitizer with `-fno-sanitize-recover=all`
+  (`make sanitizer-check`, part of `make check`), so an out-of-bounds
+  index or UB operation fails the build instead of printing a report
+  nobody reads.
 
 ## 13. Audio
 Audio graph:

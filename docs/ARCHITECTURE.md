@@ -501,7 +501,7 @@ claim:
 | Core | Host evidence | Pending live binding |
 | --- | --- | --- |
 | Display service + compositor + input router | session process wired to `DISPLAY_PRESENT`/`INPUT_*` + boot certification | multi-GPU beyond the single present path |
-| File manager | source-injected listing/sort/select/ops suites | session binds `zeroos_readdir` (ABI file calls 25–50) |
+| File manager | source-injected listing/sort/select/ops suites + live VFS binding in the session (`OPEN`/`READDIR`/`STAT`/`UNLINK`/`MKDIR`) with a boot milestone and a host replay of the same sequence | copy/move/rename ops and file-content preview |
 | Terminal | parser/scrollback/SGR suites | PTY or pipe + child spawn for shell output |
 | Cloud/device sync | offline queue + permission suites | transport over kernel sockets; real device pairing |
 | Firewall engine | first-match/default-deny suites | kernel packet-path hook (userspace policy today) |
@@ -510,7 +510,7 @@ claim:
 | OCR | capability gate + pluggable-engine path (fixture only) | licensed engine; until then `-95`, no accuracy claims |
 | PDF subset | hand-authored fixtures (plain streams) | filtered/encrypted docs stay `-95` (explicit) |
 | Media/gaming/ecosystem policy | gate/yield/permission suites | decoder backends, controller hardware, transports |
-| Search providers | commands/diagnostics live; pipeline suites | apps/files/settings providers bind to shell services |
+| Search providers | commands/diagnostics/files/settings live in the session (files walks the same VFS source as the file manager, bounded depth + per-query directory budget, `full_scans` pinned at 0); pipeline suites | apps provider binds to the live window list at shell-chrome time |
 | Privacy centre | real-counter aggregation suites | session wiring over live engines |
 | Automation/AI/browser/watchdog/lifecycle/governor | suites + CI boot milestones | in-session activation (already exercised in guest CI where noted) |
 | UI condition contract | `test_ui.c` (7 conditions, modes, errno map, hi/en labels) | per-surface adoption is a mapping (table above), no surface redesign |

@@ -97,6 +97,15 @@ this session remains. The automation framework
 event/action rules — explicit permission grants, cooldown rate limits,
 fire caps, injected actions, drainable audit ring — host-tested;
 producers/consumers wire in with the shell chrome.
+The session also binds the shell services to the real VFS: the file
+manager lists/mutates `/ram/shell` through `OPEN`/`READDIR`/`STAT`/
+`UNLINK`/`MKDIR` (permission gate, hidden filter, VFS-errno -> UI
+condition mapping) and Universal Search runs live files/settings/
+commands/diagnostics providers over it — the files provider walks the
+same directory source within a bounded depth and per-query directory
+budget, with `full_scans` asserted at 0. Both are separate grepped boot
+milestones, and the same sequence is replayed on the host so a
+miscounted milestone fails before the guest runs.
 ### 5.4 Settings
 System configuration service.
 Status: schema-driven settings module implemented (defaults, permissions,
