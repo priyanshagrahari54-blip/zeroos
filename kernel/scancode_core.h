@@ -17,7 +17,12 @@
  * ASCII value; non-printable keys use ZEROOS_KEY_* above 0xFF.
  */
 
-#define SCANCODER_TABLE_SIZE 128U
+/* The down-state index is (e0 << 7) | make_code, so the index space is the
+ * full byte range: an E0-prefixed key reaches 0x80..0xFF. The table must
+ * therefore hold 256 entries — a 128-entry table overran into the rest of
+ * the decoder (and past it) for every extended key (arrows, numpad enter,
+ * right ctrl/alt, super). */
+#define SCANCODER_TABLE_SIZE 256U
 
 struct scancode_decoder {
     /* (e0 << 7 | scancode) -> code emitted at make; 0 = not down. */

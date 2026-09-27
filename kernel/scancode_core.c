@@ -1,5 +1,10 @@
 #include "scancode_core.h"
 
+/* The down-state index is (e0 << 7) | make_code, i.e. the full byte range.
+ * A smaller table silently overran the decoder for every E0-prefixed key. */
+_Static_assert(SCANCODER_TABLE_SIZE == 256U,
+               "scancode down-state table must cover the E0 index space");
+
 /* Scancode set-1 make codes with translation enabled (XT subset). */
 #define SC_PREFIX     0xe0U
 #define SC_BREAK      0x80U
