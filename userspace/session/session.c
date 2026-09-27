@@ -17,6 +17,7 @@
 #include <zeroos/desktop/perfcenter.h>
 #include <zeroos/desktop/overview.h>
 #include <zeroos/desktop/bar.h>
+#include <zeroos/desktop/metrics.h>
 #include <zeroos/desktop/capability.h>
 #include <zeroos/desktop/update.h>
 #include "crypto.h"
@@ -486,6 +487,7 @@ static struct zd_overview session_overview;
 static struct zd_perf_center session_perf;
 static struct zd_perf_center session_perf_cold;
 static struct zd_bar session_bar;
+static struct zd_metrics session_metrics;
 static uint8_t session_toggle_applied[ZD_BAR_TOGGLE_COUNT];
 static int session_bar_toggle_seen = -1;
 
@@ -807,6 +809,20 @@ int session_main(void) {
     struct zd_notify_group note_groups[4];
     uint64_t notify_now;
     zd_notification_id bar_note_ids[4];
+    struct zeroos_system_info status_info;
+    uint32_t status_free;
+    struct session_status {
+        uint64_t uptime_ns;
+        uint32_t cpu_count;
+        uint32_t ram_mb;
+        uint32_t free_percent;
+        uint32_t frame_budget_ms;
+        uint64_t avg_interval_ms;
+        uint64_t p95_interval_ms;
+        uint64_t frames;
+        uint32_t health;
+        uint32_t notifications;
+    } sys_status;
     uint32_t bar_notes;
     int bar_action;
     int bar_arg;
@@ -2166,6 +2182,7 @@ int session_main(void) {
      * percentiles describe this machine instead of a fixture, and the
      * health verdict is derived from the documented thresholds. */
     zd_perf_center_init(&session_perf);
+    zd_metrics_init(&session_metrics);
     if (frame_budget == 0)
         return fail("perf frame budget", 0);
     perf_cycle_ns = (uint64_t)frame_budget * 1000000ULL;
@@ -2184,6 +2201,11 @@ int session_main(void) {
         perf_frame_us = (uint32_t)((perf_now - perf_start) / 1000ULL);
         if (zd_perf_center_record(&session_perf, perf_frame_us) != 0)
             return fail("perf sample", (int64_t)perf_frame_us);
+        /* The same measured cycle feeds the metrics recorder, in the
+         * milliseconds the status readout reports. */
+        zd_metrics_add(&session_metrics, ZD_METRIC_FRAMES_PRESENTED, 1);
+        zd_metrics_record_interval(&session_metrics,
+                                   (perf_now - perf_start) / 1000000ULL);
     }
     perf_in.budget_us = frame_budget * 1000U;
     perf_in.fps_milli = (uint32_t)(1000000000000ULL / perf_cycle_ns);
@@ -2447,7 +2469,76 @@ int session_main(void) {
         return fail("bar activate action", (int64_t)bar_action);
     say("ZEROOS: session bar and quick controls passed.");
 
-    /* 20. Update payload verification with a provisioned key. Nothing
+    /* 20. System status assembled from live sources. Nothing in the readout
+     * is a fixture: the counters come from the shells' own statistics, the
+     * interval histogram from the measured present cycles above, and the
+     * hardware figures from a fresh SYSTEM_INFO read -- and each is asserted
+     * against its source rather than trusted. */
+    if (session_metrics.interval_count != 8U)
+        return fail("status interval count",
+                    (int64_t)session_metrics.interval_count);
+    if (zd_metrics_avg_interval(&session_metrics) == 0)
+        return fail("status average interval", 0);
+    if (zd_metrics_percentile(&session_metrics, 0) >
+            zd_metrics_percentile(&session_metrics, 50) ||
+        zd_metrics_percentile(&session_metrics, 50) >
+            zd_metrics_percentile(&session_metrics, 95) ||
+        zd_metrics_percentile(&session_metrics, 95) >
+            zd_metrics_percentile(&session_metrics, 100))
+        return fail("status percentile order", 0);
+    if (zd_metrics_percentile(&session_metrics, 100) <
+        session_metrics.interval_max)
+        return fail("status percentile ceiling", 0);
+    zd_metrics_add(&session_metrics, ZD_METRIC_INPUT_EVENTS,
+                   router.stats.pointer_moves + router.stats.button_events);
+    zd_metrics_add(&session_metrics, ZD_METRIC_LAUNCHES,
+                   session_launcher.stats.launches);
+    zd_metrics_add(&session_metrics, ZD_METRIC_CAP_DENIALS,
+                   session_launcher.stats.cap_denied +
+                       session_bar.stats.denied_toggles);
+    if (zd_metrics_get(&session_metrics, ZD_METRIC_FRAMES_PRESENTED) !=
+            session_perf.count ||
+        zd_metrics_get(&session_metrics, ZD_METRIC_INPUT_EVENTS) !=
+            router.stats.pointer_moves + router.stats.button_events ||
+        zd_metrics_get(&session_metrics, ZD_METRIC_LAUNCHES) !=
+            session_launcher.stats.launches ||
+        zd_metrics_get(&session_metrics, ZD_METRIC_CAP_DENIALS) !=
+            session_launcher.stats.cap_denied +
+                session_bar.stats.denied_toggles)
+        return fail("status counters", 0);
+    /* The hardware figures are re-read from the kernel rather than carried
+     * over, so the readout describes the machine as it is now. */
+    if (zeroos_system_info(&status_info, sizeof(status_info)) != 0 ||
+        status_info.version != ZEROOS_SYSTEM_INFO_VERSION)
+        return fail("status system info", 0);
+    if (status_info.uptime_ns < perf_now)
+        return fail("status clock regression", 0);
+    if (status_info.ram_free_bytes > status_info.ram_total_bytes ||
+        status_info.ram_total_bytes == 0)
+        return fail("status memory", 0);
+    status_free = (uint32_t)((status_info.ram_free_bytes * 100ULL) /
+                             status_info.ram_total_bytes);
+    sys_status.uptime_ns = status_info.uptime_ns;
+    sys_status.cpu_count = caps.cpu_count;
+    sys_status.ram_mb = caps.ram_mb;
+    sys_status.free_percent = status_free;
+    sys_status.frame_budget_ms = (uint32_t)frame_budget;
+    sys_status.avg_interval_ms = zd_metrics_avg_interval(&session_metrics);
+    sys_status.p95_interval_ms = zd_metrics_percentile(&session_metrics, 95);
+    sys_status.frames = zd_metrics_get(&session_metrics,
+                                   ZD_METRIC_FRAMES_PRESENTED);
+    sys_status.health = (uint32_t)perf_report.health;
+    sys_status.notifications = session_bar.notif_count;
+    if (sys_status.cpu_count == 0 || sys_status.ram_mb == 0 ||
+        sys_status.frame_budget_ms == 0 || sys_status.avg_interval_ms == 0 ||
+        sys_status.frames != 8U || sys_status.health > 3U || status_free > 100U)
+        return fail("status readout", (int64_t)sys_status.health);
+    if (sys_status.p95_interval_ms < sys_status.avg_interval_ms)
+        return fail("status readout spread",
+                    (int64_t)sys_status.p95_interval_ms);
+    say("ZEROOS: session system status passed.");
+
+    /* 21. Update payload verification with a provisioned key. Nothing
      * here is a fixture: the key is provisioned through the filesystem
      * (written, read back, and only then used), the bundle is sealed with
      * the RFC 8439 AEAD core, and the update engine verifies it with the
@@ -2567,7 +2658,7 @@ int session_main(void) {
         return fail("update slot removed", 0);
     say("ZEROOS: session update verification passed.");
 
-    /* 21. Sandbox decisions enforced by the kernel, not only by Ring-3
+    /* 22. Sandbox decisions enforced by the kernel, not only by Ring-3
      * policy. The confined profile denies writes, so the session really
      * drops its identity: after SETCRED the VFS itself refuses the
      * owner-only file with EACCES while a world-readable file still
