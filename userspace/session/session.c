@@ -26,6 +26,7 @@
 #include <zeroos/desktop/a11y.h>
 #include <zeroos/desktop/i18n.h>
 #include <zeroos/desktop/media.h>
+#include <zeroos/desktop/snapshot.h>
 #include <zeroos/desktop/capability.h>
 #include <zeroos/desktop/update.h>
 #include "crypto.h"
@@ -525,6 +526,81 @@ static struct zd_perf_center session_perf;
 static struct zd_perf_center session_perf_cold;
 static struct zd_bar session_bar;
 static struct zd_metrics session_metrics;
+static struct zd_snapshots session_snapshots;
+static struct zd_update_ops session_snap_update_ops;
+static uint8_t session_snap_buffer[64];
+static int session_snap_fail;
+
+/* Snapshot hooks over the real filesystem: capture copies the live
+ * user-data file into a per-snapshot file, restore copies it back, discard
+ * removes it. A hook failure becomes a FAILED snapshot point, never a
+ * half-registered one. */
+static int session_snap_path(const char *name, char *out, uint32_t cap) {
+    static const char prefix[] = "/ram/shell/snap-";
+    uint32_t n = 0;
+    uint32_t i;
+    if (!name || !out || !cap)
+        return -1;
+    for (i = 0; prefix[i]; ++i) {
+        if (n + 1 >= cap)
+            return -1;
+        out[n++] = prefix[i];
+    }
+    for (i = 0; name[i]; ++i) {
+        if (n + 1 >= cap)
+            return -1;
+        out[n++] = name[i];
+    }
+    out[n] = 0;
+    return 0;
+}
+
+static int session_snap_capture(void *ctx, const char *name) {
+    char path[64];
+    uint64_t len = 0;
+    (void)ctx;
+    if (session_snap_fail)
+        return -ZD_ENOSPC;
+    if (session_snap_path(name, path, (uint32_t)sizeof(path)) != 0)
+        return -ZD_EINVAL;
+    if (session_read_buffer("/ram/shell/userdata.txt", session_snap_buffer,
+                            sizeof(session_snap_buffer), &len) != 0)
+        return -ZD_ENOENT;
+    if (session_write_buffer(path, session_snap_buffer, len, 0644) != 0)
+        return -ZD_ENOSPC;
+    return 0;
+}
+
+static int session_snap_restore(void *ctx, const char *name) {
+    char path[64];
+    uint64_t len = 0;
+    (void)ctx;
+    if (session_snap_path(name, path, (uint32_t)sizeof(path)) != 0)
+        return -ZD_EINVAL;
+    if (session_read_buffer(path, session_snap_buffer,
+                            sizeof(session_snap_buffer), &len) != 0)
+        return -ZD_ENOENT;
+    if (session_write_buffer("/ram/shell/userdata.txt", session_snap_buffer,
+                             len, 0644) != 0)
+        return -ZD_ENOSPC;
+    return 0;
+}
+
+static int session_snap_discard(void *ctx, const char *name) {
+    char path[64];
+    (void)ctx;
+    if (session_snap_path(name, path, (uint32_t)sizeof(path)) != 0)
+        return -ZD_EINVAL;
+    if (zeroos_unlink(path) != 0)
+        return -ZD_ENOENT;
+    return 0;
+}
+
+static const struct zd_snapshot_ops session_snap_ops = {
+    session_snap_capture, session_snap_restore, session_snap_discard,
+    (void *)0
+};
+
 static struct zd_media session_media;
 static struct zd_a11y session_a11y;
 static struct zd_i18n session_i18n;
@@ -986,7 +1062,9 @@ int session_main(void) {
     int a11y_i;
     int a11y_urgency;
     enum zd_notify_a11y a11y_policy;
-    static const char media_origin[] = "file:/ram/shell/inbox/";
+    /* Filesystem prefix for the listing; the media library itself is
+     * keyed by origin label, not by path. */
+    static const char media_dir[] = "/ram/shell/inbox/";
     const struct zd_fm_entry *media_entry;
     char media_path[96];
     char media_first[48];
@@ -994,6 +1072,7 @@ int session_main(void) {
     uint32_t media_len;
     int media_i;
     int media_j;
+    struct zd_snapshot *snap;
     uint32_t study_entries;
     uint32_t study_cards;
     int study_i;
@@ -3398,8 +3477,8 @@ int session_main(void) {
         if (!media_entry)
             return fail("media entry", (int64_t)media_i);
         media_len = 0;
-        for (media_j = 0; media_origin[media_j]; ++media_j)
-            media_path[media_len++] = media_origin[media_j];
+        for (media_j = 0; media_dir[media_j]; ++media_j)
+            media_path[media_len++] = media_dir[media_j];
         for (media_j = 0; media_entry->name[media_j] &&
                  media_len + 1 < (uint32_t)sizeof(media_path); ++media_j)
             media_path[media_len++] = media_entry->name[media_j];
@@ -3465,7 +3544,88 @@ int session_main(void) {
         return fail("media revoked play", 0);
     say("ZEROOS: session media rights passed.");
 
-    /* 27. Update payload verification with a provisioned key. Nothing
+    /* 27. Recovery snapshots over the real filesystem, wired into the update
+     * pipeline. Capture copies live user data into a per-snapshot file and
+     * restore copies it back; every step is verified through the filesystem
+     * rather than trusted, and a capture the hook cannot honour leaves a
+     * FAILED point instead of a half-registered one. */
+    if (session_write_file("/ram/shell/userdata.txt", 32) != 0)
+        return fail("snapshot user data", 0);
+    zd_snapshots_init(&session_snapshots, &session_snap_ops);
+    if (zd_snapshots_create(&session_snapshots, "before-update") != 0)
+        return fail("snapshot create", 0);
+    snap = zd_snapshots_find(&session_snapshots, "before-update");
+    if (!snap || snap->state != ZD_SNAP_CREATING)
+        return fail("snapshot creating state", 0);
+    if (zd_snapshots_create_finish(&session_snapshots, 0) != 0)
+        return fail("snapshot finish", 0);
+    snap = zd_snapshots_find(&session_snapshots, "before-update");
+    if (!snap || snap->state != ZD_SNAP_READY ||
+        zd_snapshots_ready_count(&session_snapshots) != 1 ||
+        session_snapshots.stats.created != 1)
+        return fail("snapshot ready state", 0);
+    if (zeroos_stat("/ram/shell/snap-before-update", &file_stat) != 0 ||
+        file_stat.size != 32)
+        return fail("snapshot file", (int64_t)file_stat.size);
+    /* Mutate the user data, restore, and read the size back from the
+     * filesystem. */
+    if (session_write_file("/ram/shell/userdata.txt", 48) != 0)
+        return fail("snapshot mutate", 0);
+    if (zd_snapshots_restore(&session_snapshots, (const char *)0) != 0 ||
+        session_snapshots.stats.restored != 1)
+        return fail("snapshot restore",
+                    (int64_t)session_snapshots.stats.restored);
+    if (zeroos_stat("/ram/shell/userdata.txt", &file_stat) != 0 ||
+        file_stat.size != 32)
+        return fail("snapshot restored size", (int64_t)file_stat.size);
+    /* A capture the hook refuses leaves a FAILED point with the hook's own
+     * error, and it is not counted as a restorable snapshot. */
+    session_snap_fail = 1;
+    if (zd_snapshots_create(&session_snapshots, "bad") != 0)
+        return fail("snapshot failed create", 0);
+    if (zd_snapshots_create_finish(&session_snapshots, 0) != 0)
+        return fail("snapshot failed finish", 0);
+    snap = zd_snapshots_find(&session_snapshots, "bad");
+    if (!snap || snap->state != ZD_SNAP_FAILED ||
+        snap->last_error != ZD_ENOSPC ||
+        session_snapshots.stats.create_failed != 1 ||
+        zd_snapshots_ready_count(&session_snapshots) != 1)
+        return fail("snapshot failed state", 0);
+    session_snap_fail = 0;
+    /* The update pipeline's recovery hooks come from this manager: staging
+     * captures a snapshot and rollback restores the newest ready one. Slot
+     * activation and commit belong to the block layer, so they stay unset. */
+    if (zd_snapshots_bind_update(&session_snapshots,
+                                 &session_snap_update_ops) != 0)
+        return fail("snapshot bind", 0);
+    if (!session_snap_update_ops.stage_apply ||
+        !session_snap_update_ops.rollback ||
+        session_snap_update_ops.activate ||
+        session_snap_update_ops.commit)
+        return fail("snapshot update hooks", 0);
+    if (session_snap_update_ops.stage_apply(
+            session_snap_update_ops.ctx) != 0)
+        return fail("snapshot stage capture", 0);
+    snap = zd_snapshots_latest_ready(&session_snapshots);
+    if (!snap)
+        return fail("snapshot latest ready", 0);
+    if (session_write_file("/ram/shell/userdata.txt", 64) != 0)
+        return fail("snapshot second mutate", 0);
+    if (session_snap_update_ops.rollback(session_snap_update_ops.ctx) != 0)
+        return fail("snapshot rollback", 0);
+    if (zeroos_stat("/ram/shell/userdata.txt", &file_stat) != 0 ||
+        file_stat.size != 32)
+        return fail("snapshot rolled back size", (int64_t)file_stat.size);
+    /* Discarding removes the snapshot's own file, not just its slot. */
+    if (zd_snapshots_discard(&session_snapshots, "before-update") != 0 ||
+        session_snapshots.stats.discarded != 1 ||
+        zeroos_stat("/ram/shell/snap-before-update",
+                    &file_stat) != -ZEROOS_ENOENT)
+        return fail("snapshot discard",
+                    (int64_t)session_snapshots.stats.discarded);
+    say("ZEROOS: session recovery snapshots passed.");
+
+    /* 28. Update payload verification with a provisioned key. Nothing
      * here is a fixture: the key is provisioned through the filesystem
      * (written, read back, and only then used), the bundle is sealed with
      * the RFC 8439 AEAD core, and the update engine verifies it with the
@@ -3585,7 +3745,7 @@ int session_main(void) {
         return fail("update slot removed", 0);
     say("ZEROOS: session update verification passed.");
 
-    /* 28. Sandbox decisions enforced by the kernel, not only by Ring-3
+    /* 29. Sandbox decisions enforced by the kernel, not only by Ring-3
      * policy. The confined profile denies writes, so the session really
      * drops its identity: after SETCRED the VFS itself refuses the
      * owner-only file with EACCES while a world-readable file still
