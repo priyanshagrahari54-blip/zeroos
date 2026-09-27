@@ -29,6 +29,7 @@
 #include <zeroos/desktop/snapshot.h>
 #include <zeroos/desktop/vault.h>
 #include <zeroos/desktop/firewall.h>
+#include <zeroos/desktop/url.h>
 #include <zeroos/desktop/capability.h>
 #include <zeroos/desktop/update.h>
 #include "crypto.h"
@@ -529,6 +530,33 @@ static struct zd_perf_center session_perf_cold;
 static struct zd_bar session_bar;
 static struct zd_metrics session_metrics;
 static struct zd_fw session_fw;
+static struct zd_url session_nav_url;
+
+/* Navigation fixtures: two URLs the shell will really open, and four it must
+ * refuse -- a script scheme, a data scheme, a local file the shell does have,
+ * a hostless URL and an out-of-range port. */
+#define ZD_NAV_URL_COUNT 6u
+static const char *const nav_urls[ZD_NAV_URL_COUNT] = {
+    "https://example.invalid/docs",
+    "http://example.invalid:8080/x",
+    "javascript:alert(1)",
+    "data:text/html;base64,PHN2Zz4=",
+    "file:/ram/shell/inbox/copy.txt",
+    "https://example.invalid:99999/"
+};
+static const uint32_t nav_reasons[ZD_NAV_URL_COUNT] = {
+    ZD_URL_OK_REJECT, ZD_URL_OK_REJECT, ZD_URL_R_BAD_SCHEME,
+    ZD_URL_R_BAD_SCHEME, ZD_URL_R_BAD_SCHEME, ZD_URL_R_BAD_PORT
+};
+static const int nav_schemes[ZD_NAV_URL_COUNT] = {
+    ZD_URL_SCHEME_HTTPS, ZD_URL_SCHEME_HTTP, ZD_URL_SCHEME_NONE,
+    ZD_URL_SCHEME_NONE, ZD_URL_SCHEME_NONE, ZD_URL_SCHEME_NONE
+};
+static const uint16_t nav_ports[ZD_NAV_URL_COUNT] = { 0, 8080, 0, 0, 0, 0 };
+static const uint8_t nav_secure[ZD_NAV_URL_COUNT] = { 1, 0, 0, 0, 0, 0 };
+static const char *const nav_paths[ZD_NAV_URL_COUNT] = {
+    "/docs", "/x", "", "", "", ""
+};
 static struct zd_vault session_vault;
 static struct zd_snapshots session_snapshots;
 static struct zd_update_ops session_snap_update_ops;
@@ -1091,6 +1119,10 @@ int session_main(void) {
     uint32_t fw_downgrades = 0;
     uint32_t fw_rule_id = 0;
     int fw_i;
+    uint32_t nav_tab = 0;
+    uint32_t nav_opened = 0;
+    int nav_i;
+    int nav_rc;
     uint32_t study_entries;
     uint32_t study_cards;
     int study_i;
@@ -3846,8 +3878,56 @@ int session_main(void) {
     zd_ai_revoke(&session_ai, ZD_AI_GRANT_REMOTE_EGRESS);
     say("ZEROOS: session egress policy passed.");
 
+    /* 30. Navigation is gated by URL validation before the browser sees a
+     * single byte of it. What the parser accepts is opened as a real tab;
+     * what it refuses never reaches the browser at all, and the reason is
+     * kept so the shell can say why. */
+    for (nav_i = 0; nav_i < (int)ZD_NAV_URL_COUNT; ++nav_i) {
+        nav_rc = zd_url_parse(nav_urls[nav_i], &session_nav_url);
+        if (session_nav_url.reject_reason != nav_reasons[nav_i])
+            return fail("url reject reason",
+                        (int64_t)session_nav_url.reject_reason);
+        if (nav_reasons[nav_i] != ZD_URL_OK_REJECT) {
+            if (nav_rc != -22)
+                return fail("url refused parse", (int64_t)nav_rc);
+            /* The shell shows a reason, never a blank refusal. */
+            if (!zd_url_reject_str(session_nav_url.reject_reason) ||
+                !zd_url_reject_str(session_nav_url.reject_reason)[0])
+                return fail("url reject reason text", (int64_t)nav_i);
+            /* A smuggled scheme is not even recorded as a scheme. */
+            if (nav_reasons[nav_i] == ZD_URL_R_BAD_SCHEME &&
+                (session_nav_url.scheme != ZD_URL_SCHEME_NONE ||
+                 zd_url_scheme_allowed(session_nav_url.scheme)))
+                return fail("url smuggled scheme", (int64_t)nav_i);
+            continue;
+        }
+        if (nav_rc != 0 ||
+            session_nav_url.scheme != nav_schemes[nav_i] ||
+            session_nav_url.port != nav_ports[nav_i] ||
+            session_nav_url.is_secure != nav_secure[nav_i] ||
+            !session_streq(session_nav_url.path, nav_paths[nav_i]))
+            return fail("url parse", (int64_t)nav_i);
+        if (!zd_url_scheme_allowed(session_nav_url.scheme))
+            return fail("url scheme allowed", (int64_t)nav_i);
+        /* Only an accepted URL becomes a tab. */
+        if (zd_browser_open(&session_browser, 4096, &nav_tab) != 0 ||
+            nav_tab == 0)
+            return fail("url open tab", (int64_t)nav_i);
+        ++nav_opened;
+    }
+    if (nav_opened != 2 || session_browser.tab_count != nav_opened)
+        return fail("url opened tabs",
+                    (int64_t)session_browser.tab_count);
+    for (nav_i = 0; nav_i < (int)nav_opened; ++nav_i) {
+        if (zd_browser_close(&session_browser, (uint32_t)nav_i + 1) != 0)
+            return fail("url close tab", (int64_t)nav_i);
+    }
+    if (session_browser.tab_count != 0)
+        return fail("url tabs closed",
+                    (int64_t)session_browser.tab_count);
+    say("ZEROOS: session navigation policy passed.");
 
-    /* 30. Update payload verification with a provisioned key. Nothing
+    /* 31. Update payload verification with a provisioned key. Nothing
      * here is a fixture: the key is provisioned through the filesystem
      * (written, read back, and only then used), the bundle is sealed with
      * the RFC 8439 AEAD core, and the update engine verifies it with the
@@ -3967,7 +4047,7 @@ int session_main(void) {
         return fail("update slot removed", 0);
     say("ZEROOS: session update verification passed.");
 
-    /* 31. Sandbox decisions enforced by the kernel, not only by Ring-3
+    /* 32. Sandbox decisions enforced by the kernel, not only by Ring-3
      * policy. The confined profile denies writes, so the session really
      * drops its identity: after SETCRED the VFS itself refuses the
      * owner-only file with EACCES while a world-readable file still
