@@ -51,8 +51,7 @@ Cross-cutting systems:
 - package/update
 - recovery
 - telemetry
-- AI bridge
-- Forge integration
+- optional isolated AI service
 
 ## 4. Kernel
 
@@ -310,7 +309,6 @@ Original visual language:
 Main shell:
 - bottom launcher/taskbar
 - centered universal search
-- Forge AI entry
 - app launcher
 - system tray
 - notifications

@@ -65,11 +65,10 @@ The detailed product plan remains in ZEROOS_MASTER_ROADMAP.md.
     (pairing grants nothing, offline queue, per-bit permissions)
     host-tested in Stage 5 batch 10; transports and hardware bindings
     follow.
-13. Forge AI bridge: sandboxed local kernel/user API and external-service boundary.
+13. AI remains optional and isolated; no external development-agent bridge is part of ZEROOS.
     Note: the ZEROOS AI platform broker (permission grants, backend
     selection with remote downgrade, wipe-on-drain, dormant-until-
-    submit) is separate from Forge AI and already host-tested; this
-    bridge item remains the future external boundary only.
+    submit) is already host-tested and follows this rule.
 14. SMP/per-CPU scheduling, high-resolution timers, advanced memory management.
 15. Release engineering: reproducible builds, compatibility matrix, recovery media, long-duration stress and performance certification.
 
