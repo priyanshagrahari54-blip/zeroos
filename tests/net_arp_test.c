@@ -52,11 +52,39 @@ int main(void) {
     CHECK(net_arp_cache_lookup(&cache, peer_ip, 80, found_mac) == -2);
     CHECK(cache.count == 0 && cache.expired == 1);
 
+    /* Unsolicited and misdirected ARP replies cannot poison the cache. */
+    CHECK(net_arp_build_reply(peer_mac, peer_ip, local_mac, local_ip, frame) == 42);
+    CHECK(net_arp_cache_accept_reply(&cache, frame, sizeof(frame), local_ip,
+                                     local_mac, 90, 200) == -2);
+    CHECK(net_arp_cache_lookup(&cache, peer_ip, 90, found_mac) == -2);
+    CHECK(net_arp_cache_begin_resolution(&cache, local_ip, local_mac,
+                                         peer_ip, 90, 110) == 0);
+    CHECK(net_arp_build_reply(peer_mac, peer_ip, local_mac,
+                              local_ip + 1U, frame) == 42);
+    CHECK(net_arp_cache_accept_reply(&cache, frame, sizeof(frame), local_ip,
+                                     local_mac, 91, 200) == -2);
+    CHECK(net_arp_build_reply(peer_mac, peer_ip, refreshed_mac, local_ip,
+                              frame) == 42);
+    CHECK(net_arp_cache_accept_reply(&cache, frame, sizeof(frame), local_ip,
+                                     local_mac, 92, 200) == -2);
+    CHECK(net_arp_build_reply(peer_mac, peer_ip, local_mac, local_ip, frame) == 42);
+    CHECK(net_arp_cache_accept_reply(&cache, frame, sizeof(frame), local_ip,
+                                     local_mac, 93, 200) == 0);
+    CHECK(net_arp_cache_lookup(&cache, peer_ip, 93, found_mac) == 0);
+    CHECK(memcmp(found_mac, peer_mac, 6) == 0);
+    CHECK(net_arp_cache_begin_resolution(&cache, local_ip, local_mac,
+                                         peer_ip, 100, 110) == 0);
+    CHECK(net_arp_cache_accept_reply(&cache, frame, sizeof(frame), local_ip,
+                                     local_mac, 110, 200) == -2);
+    CHECK(cache.pending_started == 2 && cache.pending_expired == 1);
+    CHECK(cache.unsolicited_replies == 4);
+
     CHECK(net_arp_cache_learn(&cache, 0, peer_mac, 1, 10) < 0);
     CHECK(net_arp_cache_learn(&cache, 0xe0000001U, peer_mac, 1, 10) < 0);
     const uint8_t multicast_mac[6] = {0x01, 0, 0, 0, 0, 1};
     CHECK(net_arp_cache_learn(&cache, peer_ip, multicast_mac, 1, 10) < 0);
-    CHECK(cache.rejected == 3);
+    CHECK(cache.rejected == 7);
+    CHECK(net_arp_cache_remove(&cache, peer_ip) == 0);
     CHECK(net_arp_cache_remove(&cache, peer_ip) == -2);
 
     for (uint32_t i = 0; i < NET_ARP_CACHE_CAPACITY; ++i)

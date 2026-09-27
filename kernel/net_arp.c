@@ -41,6 +41,13 @@ static int ipv4_sender_is_valid(uint32_t address, uint8_t operation) {
     return ipv4_is_unicast(address);
 }
 
+static int mac_equal(const uint8_t a[6], const uint8_t b[6]) {
+    uint8_t difference = 0;
+    for (uint32_t i = 0; i < 6; ++i)
+        difference |= (uint8_t)(a[i] ^ b[i]);
+    return difference == 0;
+}
+
 int net_arp_parse_ipv4(const uint8_t *frame, uint32_t length,
                        struct net_arp_ipv4 *out) {
     struct net_eth_view eth;
@@ -145,12 +152,17 @@ void net_arp_cache_init(struct net_arp_cache *cache) {
     if (cache) {
         for (uint32_t i = 0; i < NET_ARP_CACHE_CAPACITY; ++i)
             cache->entries[i].active = 0;
+        for (uint32_t i = 0; i < NET_ARP_PENDING_CAPACITY; ++i)
+            cache->pending[i].active = 0;
         cache->count = 0;
         cache->learned = 0;
         cache->refreshed = 0;
         cache->expired = 0;
         cache->rejected = 0;
         cache->full = 0;
+        cache->pending_started = 0;
+        cache->pending_expired = 0;
+        cache->unsolicited_replies = 0;
     }
 }
 
@@ -164,6 +176,13 @@ void net_arp_cache_expire(struct net_arp_cache *cache, uint64_t now) {
             if (cache->count)
                 --cache->count;
             ++cache->expired;
+        }
+    }
+    for (uint32_t i = 0; i < NET_ARP_PENDING_CAPACITY; ++i) {
+        struct net_arp_pending *pending = &cache->pending[i];
+        if (pending->active && pending->expires_at <= now) {
+            pending->active = 0;
+            ++cache->pending_expired;
         }
     }
 }
@@ -234,5 +253,86 @@ int net_arp_cache_remove(struct net_arp_cache *cache, uint32_t ipv4) {
             return 0;
         }
     }
+    return -2;
+}
+
+int net_arp_cache_begin_resolution(struct net_arp_cache *cache,
+                                   uint32_t local_ipv4,
+                                   const uint8_t local_mac[6],
+                                   uint32_t target_ipv4, uint64_t now,
+                                   uint64_t timeout_at) {
+    uint32_t free_slot = NET_ARP_PENDING_CAPACITY;
+    if (!cache || !local_mac || !ipv4_is_unicast(local_ipv4) ||
+        !mac_is_unicast(local_mac) || !ipv4_is_unicast(target_ipv4) ||
+        target_ipv4 == local_ipv4 || timeout_at <= now) {
+        if (cache)
+            ++cache->rejected;
+        return -1;
+    }
+    net_arp_cache_expire(cache, now);
+    for (uint32_t i = 0; i < NET_ARP_PENDING_CAPACITY; ++i) {
+        struct net_arp_pending *pending = &cache->pending[i];
+        if (pending->active && pending->target_ipv4 == target_ipv4 &&
+            pending->local_ipv4 == local_ipv4 &&
+            mac_equal(pending->local_mac, local_mac)) {
+            pending->expires_at = timeout_at;
+            return 0;
+        }
+        if (!pending->active && free_slot == NET_ARP_PENDING_CAPACITY)
+            free_slot = i;
+    }
+    if (free_slot == NET_ARP_PENDING_CAPACITY) {
+        ++cache->full;
+        return -2;
+    }
+    struct net_arp_pending *pending = &cache->pending[free_slot];
+    pending->target_ipv4 = target_ipv4;
+    pending->local_ipv4 = local_ipv4;
+    for (uint32_t j = 0; j < 6; ++j)
+        pending->local_mac[j] = local_mac[j];
+    pending->expires_at = timeout_at;
+    pending->active = 1;
+    ++cache->pending_started;
+    return 0;
+}
+
+int net_arp_cache_accept_reply(struct net_arp_cache *cache,
+                               const uint8_t *frame, uint32_t length,
+                               uint32_t local_ipv4,
+                               const uint8_t local_mac[6], uint64_t now,
+                               uint64_t lease_until) {
+    struct net_arp_ipv4 reply;
+    struct net_eth_view eth;
+    if (!cache || !frame || !local_mac || !ipv4_is_unicast(local_ipv4) ||
+        !mac_is_unicast(local_mac) || lease_until <= now ||
+        net_arp_parse_ipv4(frame, length, &reply) != 0 ||
+        reply.operation != NET_ARP_REPLY) {
+        if (cache)
+            ++cache->rejected;
+        return -1;
+    }
+    if (net_ethernet_parse(frame, length, &eth) != 0 ||
+        reply.target_ipv4 != local_ipv4 ||
+        !mac_equal(reply.target_mac, local_mac) ||
+        !mac_equal(eth.destination, local_mac)) {
+        ++cache->rejected;
+        ++cache->unsolicited_replies;
+        return -2;
+    }
+    net_arp_cache_expire(cache, now);
+    for (uint32_t i = 0; i < NET_ARP_PENDING_CAPACITY; ++i) {
+        struct net_arp_pending *pending = &cache->pending[i];
+        if (!pending->active || pending->target_ipv4 != reply.sender_ipv4 ||
+            pending->local_ipv4 != local_ipv4 ||
+            !mac_equal(pending->local_mac, local_mac))
+            continue;
+        if (net_arp_cache_learn(cache, reply.sender_ipv4, reply.sender_mac,
+                                now, lease_until) != 0)
+            return -1;
+        pending->active = 0;
+        return 0;
+    }
+    ++cache->rejected;
+    ++cache->unsolicited_replies;
     return -2;
 }
