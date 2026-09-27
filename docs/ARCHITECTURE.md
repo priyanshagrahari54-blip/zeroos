@@ -454,7 +454,14 @@ Implemented (this stage):
 - Update payload verification (`zd_update_verify_payload`): AEAD
   with producer nonce, injected update key and the version bound as
   AAD — tamper, cross-version replay and wrong-key all return the
-  explicit failure (section 20).
+  explicit failure (section 20). The shell exercises the full pipeline
+  in the guest: it provisions the key through the filesystem (write,
+  read back, then use), seals a bundle with the same RFC 8439 core the
+  kernel crypto self-test validates, and drives
+  download→verify→stage→preflight→activate→health→commit with hooks
+  that really write `/ram/shell/update.staged`, `.active` and `.good`;
+  a second run failed at the health check proves the rollback hook
+  removes the activated slot (`-ENOENT` afterwards).
 
 Not yet implemented (contracts defined, explicit in PHASES.md):
 - Shell UI chrome (ZERO Bar, launcher, overview surfaces) on top of the
@@ -507,7 +514,7 @@ claim:
 | Cloud/device sync | offline queue + permission suites | transport over kernel sockets; real device pairing |
 | Firewall engine | first-match/default-deny suites | kernel packet-path hook (userspace policy today) |
 | Sandbox profiles | fail-closed gates + audit suites, and the session enforces a denial in the kernel: the confined profile denies writes, the shell drops its identity with `SETCRED`, and the VFS then refuses the owner-only file with `EACCES` while a world-readable file still opens — with `SETCRED` proven one-way for an unprivileged caller | namespaces/cgroups-style isolation and per-mount profiles |
-| Update payload verification | AEAD vectors + tamper/replay suites | key provisioning (OS-injected key; no PKI yet) |
+| Update payload verification | AEAD vectors + tamper/replay suites, and the session runs the whole pipeline live: the key is provisioned through the filesystem (written, read back, then used), the bundle is sealed with the RFC 8439 AEAD core and verified with the version bound as AAD, and the stage/activate/commit/rollback hooks perform real VFS writes that the step reads back | platform/PKI key injection (the key is provisioned by the filesystem path, not sealed by hardware) |
 | OCR | capability gate + pluggable-engine path (fixture only) | licensed engine; until then `-95`, no accuracy claims |
 | PDF subset | hand-authored fixtures (plain streams) | filtered/encrypted docs stay `-95` (explicit) |
 | Media/gaming/ecosystem policy | gate/yield/permission suites | decoder backends, controller hardware, transports |

@@ -273,7 +273,8 @@ $(BUILD)/ksync.o $(BUILD)/crc.o $(BUILD)/kstring.o $(BUILD)/pci.o: $(BUILD)/%.o:
 # modules linked freestanding and embedded into the kernel image.
 SESSION_CFLAGS := -std=c11 -m64 -ffreestanding -fno-builtin -fno-stack-protector \
 	-fno-pic -fno-pie -nostdlib -mno-red-zone -mgeneral-regs-only -mcmodel=large \
-	-Wall -Wextra -Werror -O2 -Iuserspace/include -Iuserspace/desktop/include
+	-Wall -Wextra -Werror -O2 -Iuserspace/include -Iuserspace/desktop/include \
+	-Ikernel
 SESSION_DESKTOP_SRCS := userspace/desktop/src/common.c \
 	userspace/desktop/src/window.c userspace/desktop/src/compositor.c \
 	userspace/desktop/src/input.c userspace/desktop/src/display.c \
@@ -284,20 +285,25 @@ SESSION_DESKTOP_SRCS := userspace/desktop/src/common.c \
 	userspace/desktop/src/governor.c userspace/desktop/src/lifecycle.c \
 	userspace/desktop/src/watchdog.c \
 	userspace/desktop/src/automation.c userspace/desktop/src/term.c \
-	userspace/desktop/src/sandbox.c userspace/desktop/src/privacy.c
+	userspace/desktop/src/sandbox.c userspace/desktop/src/privacy.c \
+	userspace/desktop/src/update.c
 SESSION_DESKTOP_OBJS := $(patsubst userspace/desktop/src/%.c,$(BUILD)/session_desktop_%.o,$(SESSION_DESKTOP_SRCS))
 SESSION_DEPS := userspace/session/session.c userspace/session/session_start.S \
 	userspace/session/session.ld userspace/include/zeroos/syscall.h \
 	$(wildcard userspace/desktop/include/zeroos/desktop/*.h) \
 	$(SESSION_DESKTOP_SRCS)
-$(BUILD)/session_probe.elf: $(SESSION_DEPS) | $(BUILD)
+$(BUILD)/session_probe.elf: $(SESSION_DEPS) $(BUILD)/session_crypto.o | $(BUILD)
 	$(CC) $(SESSION_CFLAGS) -c userspace/session/session_start.S -o $(BUILD)/session_start.o
 	$(CC) $(SESSION_CFLAGS) -c userspace/session/session.c -o $(BUILD)/session_probe_user.o
 	@set -e; for src in $(SESSION_DESKTOP_SRCS); do \
 		$(CC) $(SESSION_CFLAGS) -c $$src -o $(BUILD)/session_desktop_$$(basename $$src .c).o; \
 	done
 	$(LD) -m elf_x86_64 -T userspace/session/session.ld -nostdlib -o $@ \
-		$(BUILD)/session_start.o $(BUILD)/session_probe_user.o $(SESSION_DESKTOP_OBJS)
+		$(BUILD)/session_start.o $(BUILD)/session_probe_user.o \
+		$(SESSION_DESKTOP_OBJS) $(BUILD)/session_crypto.o
+
+$(BUILD)/session_crypto.o: kernel/crypto.c kernel/crypto.h | $(BUILD)
+	$(CC) $(SESSION_CFLAGS) -c kernel/crypto.c -o $@
 
 $(BUILD)/session_probe_image.o: kernel/session_probe_image.S $(BUILD)/session_probe.elf | $(BUILD)
 	$(AS) $(ASFLAGS) -DPROBE_PATH='"$(BUILD)/session_probe.elf"' -c $< -o $@

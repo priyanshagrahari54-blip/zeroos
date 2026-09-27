@@ -10,6 +10,8 @@
  */
 #include <zeroos/desktop/desktop.h>
 #include <zeroos/storage.h>
+#include <zeroos/desktop/update.h>
+#include "crypto.h"
 
 #define SESSION_TARGET_W 320
 #define SESSION_TARGET_H 200
@@ -412,6 +414,114 @@ static int64_t session_write_file(const char *path, uint64_t length) {
     return session_write_file_mode(path, length, 0644);
 }
 
+/* Raw buffer file I/O: the update key and bundle are byte images, not
+ * text, so they must not go through the filler-based writer. */
+static int64_t session_write_buffer(const char *path, const uint8_t *data,
+                                    uint64_t length, uint32_t mode) {
+    int64_t fd = zeroos_open(path, ZEROOS_O_WRONLY | ZEROOS_O_CREAT |
+                                       ZEROOS_O_TRUNC,
+                             mode);
+    int64_t written;
+    if (fd < 0)
+        return fd;
+    written = zeroos_file_write(fd, data, length);
+    if (written != (int64_t)length) {
+        (void)zeroos_close(fd);
+        return written < 0 ? written : -ZEROOS_EIO;
+    }
+    if (zeroos_close(fd) != 0)
+        return -ZEROOS_EIO;
+    return 0;
+}
+
+static int64_t session_read_buffer(const char *path, uint8_t *out,
+                                   uint64_t capacity, uint64_t *read_len) {
+    int64_t fd = zeroos_open(path, ZEROOS_O_RDONLY, 0);
+    int64_t n;
+    if (fd < 0)
+        return fd;
+    n = zeroos_read(fd, out, capacity);
+    (void)zeroos_close(fd);
+    if (n < 0)
+        return n;
+    *read_len = (uint64_t)n;
+    return 0;
+}
+
+/* Certification key material.  What is under test is the provisioning
+ * path -- the key travels through the filesystem and is used only after
+ * it has been read back -- not the secrecy of these arrays. */
+static const uint8_t update_key[32] = {
+    0x5a, 0xe4, 0x11, 0x9c, 0x73, 0x08, 0xbd, 0x2f,
+    0x66, 0xa1, 0xd5, 0x40, 0x1e, 0x8b, 0xc7, 0x52,
+    0x09, 0xf3, 0x6a, 0xb8, 0x2d, 0x74, 0xe0, 0x35,
+    0xc1, 0x48, 0x9f, 0x06, 0xba, 0xd2, 0x57, 0x8e
+};
+static const uint8_t update_nonce[12] = {
+    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+    0x09, 0x0a, 0x0b, 0x0c
+};
+static const uint8_t update_payload[] = "ZEROOS update bundle 1.1.0\n";
+#define UPDATE_PAYLOAD_LEN (sizeof(update_payload) - 1)
+static const char update_version[] = "1.1.0";
+static uint8_t update_key_file[32];
+static uint8_t update_ct[UPDATE_PAYLOAD_LEN];
+static uint8_t update_tag[16];
+static struct zd_update session_update;
+
+struct session_update_ctx {
+    const uint8_t *ciphertext;
+    uint32_t ciphertext_len;
+    const char *version;
+    uint32_t version_len;
+};
+static struct session_update_ctx session_update_ctx;
+
+/* Pipeline hooks with real side effects: staging writes the sealed
+ * bundle, activation writes the version into the active slot, commit
+ * records the good marker, and rollback removes the active slot. */
+static int session_update_stage(void *ctx) {
+    const struct session_update_ctx *c =
+        (const struct session_update_ctx *)ctx;
+    if (!c || !c->ciphertext || c->ciphertext_len == 0)
+        return -1;
+    return session_write_buffer("/ram/shell/update.staged", c->ciphertext,
+                                c->ciphertext_len, 0600) == 0 ? 0 : -1;
+}
+
+static int session_update_activate(void *ctx) {
+    const struct session_update_ctx *c =
+        (const struct session_update_ctx *)ctx;
+    if (!c || !c->version || c->version_len == 0)
+        return -1;
+    return session_write_buffer("/ram/shell/update.active",
+                                (const uint8_t *)c->version, c->version_len,
+                                0644) == 0 ? 0 : -1;
+}
+
+static int session_update_rollback(void *ctx) {
+    int64_t rc;
+    (void)ctx;
+    rc = zeroos_unlink("/ram/shell/update.active");
+    /* Rollback must be idempotent: an already-absent slot is success. */
+    return (rc == 0 || rc == -ZEROOS_ENOENT) ? 0 : -1;
+}
+
+static int session_update_commit(void *ctx) {
+    const struct session_update_ctx *c =
+        (const struct session_update_ctx *)ctx;
+    if (!c || !c->version || c->version_len == 0)
+        return -1;
+    return session_write_buffer("/ram/shell/update.good",
+                                (const uint8_t *)c->version, c->version_len,
+                                0644) == 0 ? 0 : -1;
+}
+
+static const struct zd_update_ops session_update_ops = {
+    session_update_stage, session_update_activate, session_update_rollback,
+    session_update_commit, &session_update_ctx
+};
+
 static int session_streq(const char *a, const char *b) {
     uint32_t i = 0;
     while (a[i] && a[i] == b[i])
@@ -515,6 +625,9 @@ int session_main(void) {
     uint64_t child_size;
     uint64_t child_argv[2];
     uint64_t child_envp[1];
+    uint64_t key_len;
+    uint32_t key_index;
+    int event_index;
     uint32_t echo_total;
     uint32_t echo_index;
     uint32_t typed_index;
@@ -1424,7 +1537,127 @@ int session_main(void) {
         return fail("child double reap", sys_result);
     say("ZEROOS: session child process reaped cleanly.");
 
-    /* 13. Sandbox decisions enforced by the kernel, not only by Ring-3
+    /* 13. Update payload verification with a provisioned key. Nothing
+     * here is a fixture: the key is provisioned through the filesystem
+     * (written, read back, and only then used), the bundle is sealed with
+     * the RFC 8439 AEAD core, and the update engine verifies it with the
+     * version bound as AAD. The pipeline hooks perform real VFS writes, so
+     * staging, activation and commit leave files this step reads back --
+     * and a failed health check really removes the activated slot. */
+    sys_result = session_write_buffer("/ram/shell/update.key", update_key,
+                                      sizeof(update_key), 0600);
+    if (sys_result != 0)
+        return fail("update key provision", sys_result);
+    key_len = 0;
+    if (session_read_buffer("/ram/shell/update.key", update_key_file,
+                            sizeof(update_key_file), &key_len) != 0 ||
+        key_len != sizeof(update_key))
+        return fail("update key readback", (int64_t)key_len);
+    for (key_index = 0; key_index < sizeof(update_key); ++key_index) {
+        if (update_key_file[key_index] != update_key[key_index])
+            return fail("update key mismatch", (int64_t)key_index);
+    }
+    if (zeroos_aead_encrypt(update_key_file, update_nonce,
+                            (const uint8_t *)update_version,
+                            (uint32_t)(sizeof(update_version) - 1),
+                            update_payload, UPDATE_PAYLOAD_LEN,
+                            update_ct, update_tag) != ZCRYPTO_OK)
+        return fail("update seal", 0);
+    if (zd_update_verify_payload(update_key_file, update_nonce,
+                                 update_version, update_ct,
+                                 UPDATE_PAYLOAD_LEN, update_tag) != 0)
+        return fail("update verify", 0);
+    /* A flipped byte, a different version and a different key must each be
+     * refused: the tag covers the payload and the AAD. */
+    update_ct[0] ^= 0x01;
+    if (zd_update_verify_payload(update_key_file, update_nonce,
+                                 update_version, update_ct,
+                                 UPDATE_PAYLOAD_LEN, update_tag) != -3)
+        return fail("update tamper", 0);
+    update_ct[0] ^= 0x01;
+    if (zd_update_verify_payload(update_key_file, update_nonce, "9.9.9",
+                                 update_ct, UPDATE_PAYLOAD_LEN,
+                                 update_tag) != -3)
+        return fail("update version binding", 0);
+    update_key_file[0] ^= 0x01;
+    if (zd_update_verify_payload(update_key_file, update_nonce,
+                                 update_version, update_ct,
+                                 UPDATE_PAYLOAD_LEN, update_tag) != -3)
+        return fail("update wrong key", 0);
+    update_key_file[0] ^= 0x01;
+    session_update_ctx.ciphertext = update_ct;
+    session_update_ctx.ciphertext_len = (uint32_t)UPDATE_PAYLOAD_LEN;
+    session_update_ctx.version = update_version;
+    session_update_ctx.version_len = (uint32_t)(sizeof(update_version) - 1);
+    zd_update_init(&session_update, &session_update_ops);
+    if (zd_update_begin(&session_update, update_version) != 0)
+        return fail("update begin", 0);
+    {
+        static const int update_events[] = {
+            ZD_UPD_EV_DOWNLOAD_OK, ZD_UPD_EV_VERIFY_OK, ZD_UPD_EV_STAGE_OK,
+            ZD_UPD_EV_PREFLIGHT_OK, ZD_UPD_EV_ACTIVATE_OK,
+            ZD_UPD_EV_HEALTH_OK, ZD_UPD_EV_COMMIT_OK
+        };
+        for (event_index = 0;
+             event_index < (int)ZD_ARRAY_COUNT(update_events);
+             ++event_index) {
+            sys_result = zd_update_event(&session_update,
+                                         update_events[event_index]);
+            if (sys_result != 0)
+                return fail("update pipeline", sys_result);
+        }
+    }
+    if (zd_update_state(&session_update) != ZD_UPD_DONE)
+        return fail("update state", (int64_t)zd_update_state(&session_update));
+    if (session_update.stats.committed != 1)
+        return fail("update commit count",
+                    (int64_t)session_update.stats.committed);
+    /* The hooks really wrote: the staged bundle has the sealed size and
+     * the active slot holds the version string. */
+    if (zeroos_stat("/ram/shell/update.staged", &file_stat) != 0 ||
+        file_stat.size != UPDATE_PAYLOAD_LEN)
+        return fail("update staged size", (int64_t)file_stat.size);
+    key_len = 0;
+    if (session_read_buffer("/ram/shell/update.active", update_key_file,
+                            sizeof(update_key_file), &key_len) != 0 ||
+        key_len != sizeof(update_version) - 1)
+        return fail("update active slot", (int64_t)key_len);
+    update_key_file[key_len] = 0;
+    if (!session_streq((const char *)update_key_file, update_version))
+        return fail("update active version", 0);
+    /* A failed health check must roll back for real: the activated slot is
+     * removed, not merely marked. */
+    zd_update_init(&session_update, &session_update_ops);
+    if (zd_update_begin(&session_update, update_version) != 0)
+        return fail("update rollback begin", 0);
+    {
+        static const int rollback_events[] = {
+            ZD_UPD_EV_DOWNLOAD_OK, ZD_UPD_EV_VERIFY_OK, ZD_UPD_EV_STAGE_OK,
+            ZD_UPD_EV_PREFLIGHT_OK, ZD_UPD_EV_ACTIVATE_OK,
+            ZD_UPD_EV_HEALTH_FAIL, ZD_UPD_EV_ROLLBACK_DONE
+        };
+        for (event_index = 0;
+             event_index < (int)ZD_ARRAY_COUNT(rollback_events);
+             ++event_index) {
+            sys_result = zd_update_event(&session_update,
+                                         rollback_events[event_index]);
+            if (sys_result != 0)
+                return fail("update rollback pipeline", sys_result);
+        }
+    }
+    if (zd_update_state(&session_update) != ZD_UPD_FAILED)
+        return fail("update rollback state",
+                    (int64_t)zd_update_state(&session_update));
+    if (session_update.stats.rollbacks != 1 ||
+        session_update.stats.health_failures != 1)
+        return fail("update rollback stats",
+                    (int64_t)session_update.stats.rollbacks);
+    if (zeroos_stat("/ram/shell/update.active", &file_stat) !=
+        -ZEROOS_ENOENT)
+        return fail("update slot removed", 0);
+    say("ZEROOS: session update verification passed.");
+
+    /* 14. Sandbox decisions enforced by the kernel, not only by Ring-3
      * policy. The confined profile denies writes, so the session really
      * drops its identity: after SETCRED the VFS itself refuses the
      * owner-only file with EACCES while a world-readable file still
