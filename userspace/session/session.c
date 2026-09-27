@@ -30,6 +30,7 @@
 #include <zeroos/desktop/vault.h>
 #include <zeroos/desktop/firewall.h>
 #include <zeroos/desktop/url.h>
+#include <zeroos/desktop/pdf.h>
 #include <zeroos/desktop/capability.h>
 #include <zeroos/desktop/update.h>
 #include "crypto.h"
@@ -531,6 +532,51 @@ static struct zd_bar session_bar;
 static struct zd_metrics session_metrics;
 static struct zd_fw session_fw;
 static struct zd_url session_nav_url;
+static struct zd_pdf session_pdf;
+static uint8_t session_pdf_bytes[512];
+
+/* Hand-authored minimal PDF images, written to a real file
+ * by the shell and read back through the kernel. */
+static const char session_pdf_two_pages[] =
+    "%PDF-1.7\n"
+    "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n"
+    "2 0 obj << /Type /Pages /Kids [3 0 R 5 0 R] /Count 2 >> endobj\n"
+    "3 0 obj << /Type /Page /Parent 2 0 R /Contents 4 0 R >> endobj\n"
+    "4 0 obj << /Length 20 >> stream\n"
+    "(ZEROOS page one) Tj\n"
+    "endstream endobj\n"
+    "5 0 obj << /Type /Page /Parent 2 0 R /Contents 6 0 R >> endobj\n"
+    "6 0 obj << /Length 20 >> stream\n"
+    "[ (Hel) 3 (lo) ] TJ\n"
+    "endstream endobj\n"
+    "trailer << /Size 7 /Root 1 0 R >>\n"
+    "startxref\n0\n%%EOF\n";
+static const char session_pdf_filtered[] =
+    "%PDF-1.7\n"
+    "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n"
+    "2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n"
+    "3 0 obj << /Type /Page /Parent 2 0 R /Contents 4 0 R >> endobj\n"
+    "4 0 obj << /Length 10 /Filter /FlateDecode >> stream\n"
+    "xxxxxxxxxx\n"
+    "endstream endobj\n"
+    "trailer << /Size 5 /Root 1 0 R /Encrypt 9 0 R >>\n"
+    "%%EOF\n";
+static const char session_pdf_encrypted[] =
+    "%PDF-1.7\n"
+    "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n"
+    "2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n"
+    "3 0 obj << /Type /Page /Parent 2 0 R /Contents 4 0 R >> endobj\n"
+    "4 0 obj << /Length 10 >> stream\n"
+    "(locked!!!!) Tj\n"
+    "endstream endobj\n"
+    "trailer << /Size 6 /Root 1 0 R /Encrypt 5 0 R >>\n"
+    "%%EOF\n";
+static const char session_pdf_no_pages[] =
+    "%PDF-1.7\n"
+    "1 0 obj << /Type /Catalog >> endobj\n"
+    "trailer << /Size 2 /Root 1 0 R >>\n"
+    "%%EOF\n";
+
 
 /* Navigation fixtures: two URLs the shell will really open, and four it must
  * refuse -- a script scheme, a data scheme, a local file the shell does have,
@@ -1123,6 +1169,8 @@ int session_main(void) {
     uint32_t nav_opened = 0;
     int nav_i;
     int nav_rc;
+    uint64_t pdf_len = 0;
+    uint32_t pdf_cards;
     uint32_t study_entries;
     uint32_t study_cards;
     int study_i;
@@ -3927,7 +3975,71 @@ int session_main(void) {
                     (int64_t)session_browser.tab_count);
     say("ZEROOS: session navigation policy passed.");
 
-    /* 31. Update payload verification with a provisioned key. Nothing
+    /* 31. Study attachments. The shell writes a real PDF, reads it back
+     * through the kernel, and the extracted page text becomes a card in the
+     * live deck. Inputs the parser cannot honestly handle are refused with a
+     * reason the shell can show, never guessed at. */
+    if (session_write_buffer("/ram/shell/study.pdf",
+                             (const uint8_t *)session_pdf_two_pages,
+                             sizeof(session_pdf_two_pages) - 1, 0644) != 0)
+        return fail("pdf write", 0);
+    if (session_read_buffer("/ram/shell/study.pdf", session_pdf_bytes,
+                            sizeof(session_pdf_bytes), &pdf_len) != 0 ||
+        pdf_len != sizeof(session_pdf_two_pages) - 1)
+        return fail("pdf read back", (int64_t)pdf_len);
+    if (zd_pdf_open(session_pdf_bytes, (uint32_t)pdf_len,
+                    &session_pdf) != 0)
+        return fail("pdf open", 0);
+    if (session_pdf.page_count != 2 || session_pdf.encrypted != 0 ||
+        session_pdf.filtered_streams != 0 ||
+        !session_streq(session_pdf.version, "1.7"))
+        return fail("pdf structure", (int64_t)session_pdf.page_count);
+    if (zd_pdf_extract(&session_pdf) != 0)
+        return fail("pdf extract", 0);
+    if (session_pdf.pages[0].obj_num != 3 ||
+        session_pdf.pages[0].text_len != 16 ||
+        !session_streq(session_pdf.pages[0].text, "ZEROOS page one\n"))
+        return fail("pdf page one",
+                    (int64_t)session_pdf.pages[0].text_len);
+    if (session_pdf.pages[1].obj_num != 5 ||
+        !session_streq(session_pdf.pages[1].text, "Hello"))
+        return fail("pdf page two",
+                    (int64_t)session_pdf.pages[1].text_len);
+    /* What was extracted becomes a card in the deck the study centre is
+     * already running. */
+    pdf_cards = session_study.card_count;
+    if (zd_study_add_card(&session_study, session_pdf.pages[0].text,
+                          session_pdf.pages[1].text) != 0 ||
+        session_study.card_count != pdf_cards + 1)
+        return fail("pdf card", (int64_t)session_study.card_count);
+    /* A filtered content stream is refused, and the reason is a real
+     * sentence rather than a blank error. */
+    if (zd_pdf_open((const uint8_t *)session_pdf_filtered,
+                    (uint32_t)sizeof(session_pdf_filtered) - 1,
+                    &session_pdf) != ZD_PDF_UNSUPPORTED_FILTER)
+        return fail("pdf filter refusal", 0);
+    if (!zd_pdf_status_name(ZD_PDF_UNSUPPORTED_FILTER) ||
+        !zd_pdf_status_name(ZD_PDF_UNSUPPORTED_FILTER)[0])
+        return fail("pdf filter reason", 0);
+    /* So is an encrypted document, and one with no page tree at all. */
+    if (zd_pdf_open((const uint8_t *)session_pdf_encrypted,
+                    (uint32_t)sizeof(session_pdf_encrypted) - 1,
+                    &session_pdf) != ZD_PDF_UNSUPPORTED_FILTER ||
+        session_pdf.encrypted != 1)
+        return fail("pdf encryption refusal",
+                    (int64_t)session_pdf.encrypted);
+    if (zd_pdf_open((const uint8_t *)session_pdf_no_pages,
+                    (uint32_t)sizeof(session_pdf_no_pages) - 1,
+                    &session_pdf) != ZD_PDF_MALFORMED)
+        return fail("pdf page tree refusal", 0);
+    /* Truncating a document the shell really wrote is refused rather than
+     * partially trusted. */
+    if (zd_pdf_open(session_pdf_bytes, 24,
+                    &session_pdf) != ZD_PDF_MALFORMED)
+        return fail("pdf truncated", 0);
+    say("ZEROOS: session study attachments passed.");
+
+    /* 32. Update payload verification with a provisioned key. Nothing
      * here is a fixture: the key is provisioned through the filesystem
      * (written, read back, and only then used), the bundle is sealed with
      * the RFC 8439 AEAD core, and the update engine verifies it with the
@@ -4047,7 +4159,7 @@ int session_main(void) {
         return fail("update slot removed", 0);
     say("ZEROOS: session update verification passed.");
 
-    /* 32. Sandbox decisions enforced by the kernel, not only by Ring-3
+    /* 33. Sandbox decisions enforced by the kernel, not only by Ring-3
      * policy. The confined profile denies writes, so the session really
      * drops its identity: after SETCRED the VFS itself refuses the
      * owner-only file with EACCES while a world-readable file still
