@@ -96,10 +96,13 @@ after producing the boot ISO, then adds QEMU boot, SMP, and AHCI/NVMe
 persistence certification. A green
 `make check` is not a substitute for the guest or real-hardware gates.
 
-## 3. CI/QEMU evidence by commit (branch `arena/01a0d3b0-zeroos`)
+## 3. CI/QEMU evidence by commit (branch `arena/01a0e0ce-zeroos`)
 
 | Commit | Evidence | Result |
 |---|---|---|
+| `4c7b102` | Push-context CI SUCCESS (run 36307969255): both boots now also grep `shell child process alive.`, `shell child argv1=certify.`, `session child process reaped cleanly.` and `session credential enforcement passed.` | A real child process is spawned from the embedded ELF, echoes the argument vector the parent passed to `SPAWN`, exits 7 and is reaped exactly once; the sandbox denial is enforced by the VFS after `SETCRED` (`EACCES` on an owner-only file, `-EPERM` on a second `SETCRED`) |
+| `4c7b102` | `tools/check_child_elf.py`, run by the `build/shell_child.elf` rule in `make elf` | The child image is ELF64 `ET_EXEC` x86-64, every `PT_LOAD` is inside the user window and below the user stack page, no segment is W+X, and the entry point is inside an executable `PT_LOAD`; three deliberately corrupted images are each rejected with the matching diagnostic |
+| `c9d3733` | Push-context boot FAILURE (run 36307608597): `session FAILED: child spawn (-22)` | `child.ld` placed the data segment with `ADDR(.text) + 0x2000` while the text section was named `.text.child`, so `ADDR(.text)` resolved to 0 and the linker emitted a `PT_LOAD` at virtual address zero, which the kernel's ELF validator rejects with `EINVAL`. The guest caught what the host build could not; the linker fix plus the new host gate are the response |
 | `995360a` | Push-context CI SUCCESS (run 36306258291, 7m50s): boots also grep `session privacy aggregation passed.` — the privacy centre reads a live sandbox profile's real allow/deny decisions (denied spawn, denied device, unknown profile failing closed) and asserts the counts, the risk band and a non-empty audit ring | SUCCESS |
 | `19552e8` | Push-context CI SUCCESS (run 36305670794, 8m15s): boots also grep `session file manager batch operations passed.` — a batch copy of three real files verified through STAT, then a batch delete over a selection that includes a real subdirectory, which STAT proves survived the delete | SUCCESS |
 | `a96d2c1` | Push-context CI SUCCESS (run 36304642934, 8m07s): boots now also grep `session terminal pipe binding passed.` — shell output travels through a real `PIPE_CREATE`/`PIPE_WRITE`/`PIPE_READ` pair before the VT parser, with the SGR colour asserted on the parsed cell and an empty-pipe `-EAGAIN` check, on both the 2-vCPU and the SMP4 boot | SUCCESS |
