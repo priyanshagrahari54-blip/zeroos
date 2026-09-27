@@ -10,6 +10,7 @@
  */
 #include <zeroos/desktop/desktop.h>
 #include <zeroos/storage.h>
+#include <zeroos/desktop/clipboard.h>
 #include <zeroos/desktop/update.h>
 #include "crypto.h"
 
@@ -468,6 +469,8 @@ static uint8_t update_key_file[32];
 static uint8_t update_ct[UPDATE_PAYLOAD_LEN];
 static uint8_t update_tag[16];
 static struct zd_update session_update;
+static struct zd_clipboard session_clipboard;
+static char clip_overlong[ZD_CLIP_TEXT + 8];
 
 struct session_update_ctx {
     const uint8_t *ciphertext;
@@ -628,6 +631,8 @@ int session_main(void) {
     uint64_t key_len;
     uint32_t key_index;
     int event_index;
+    int64_t clip_result;
+    char clip_text[ZD_CLIP_TEXT];
     uint32_t echo_total;
     uint32_t echo_index;
     uint32_t typed_index;
@@ -1471,9 +1476,61 @@ int session_main(void) {
     if (zd_sandbox_check(&session_sandbox, "no-such-profile",
                          ZD_SB_FS_READ) != -1)
         return fail("privacy unknown profile", 0);
+    /* The clipboard is the second live privacy source. A sensitive
+     * clipping is delivered to the current slot but never enters history,
+     * the cycle can never return it, and the counters behind the report
+     * are the service's own. */
+    zd_clipboard_init(&session_clipboard);
+    if (zd_clipboard_copy(&session_clipboard, "", "zeroos release notes",
+                          ZD_CLIP_FMT_TEXT, 0) != 0)
+        return fail("clipboard copy", 0);
+    if (zd_clipboard_history_count(&session_clipboard) != 1)
+        return fail("clipboard history",
+                    (int64_t)zd_clipboard_history_count(&session_clipboard));
+    if (zd_clipboard_copy(&session_clipboard, "vault", "vault-master-key",
+                          ZD_CLIP_FMT_TEXT, 1) != 0)
+        return fail("clipboard sensitive copy", 0);
+    /* Sensitive content is current but must not grow the history. */
+    if (zd_clipboard_history_count(&session_clipboard) != 1)
+        return fail("clipboard sensitive history",
+                    (int64_t)zd_clipboard_history_count(&session_clipboard));
+    if (session_clipboard.stats.sensitive_kept != 1)
+        return fail("clipboard sensitive count",
+                    (int64_t)session_clipboard.stats.sensitive_kept);
+    clip_result = zd_clipboard_paste(&session_clipboard, clip_text,
+                                     sizeof(clip_text));
+    if (clip_result != 0 || !session_streq(clip_text, "vault-master-key"))
+        return fail("clipboard paste", clip_result);
+    /* Cycling skips the sensitive entry and yields the older clip. */
+    clip_result = zd_clipboard_cycle(&session_clipboard, 1, clip_text,
+                                     sizeof(clip_text));
+    if (clip_result != 0 ||
+        !session_streq(clip_text, "zeroos release notes"))
+        return fail("clipboard cycle", clip_result);
+    /* Overlong input is refused and counted, never truncated. */
+    for (key_index = 0; key_index < sizeof(clip_overlong) - 1; ++key_index)
+        clip_overlong[key_index] = 'x';
+    clip_overlong[sizeof(clip_overlong) - 1] = 0;
+    if (zd_clipboard_copy(&session_clipboard, "", clip_overlong,
+                          ZD_CLIP_FMT_TEXT, 0) != -22)
+        return fail("clipboard overlong", 0);
+    if (session_clipboard.stats.rejected != 1)
+        return fail("clipboard rejection count",
+                    (int64_t)session_clipboard.stats.rejected);
+    /* The privacy action really empties the clipboard; the counter that
+     * fed the report survives, because it records what was protected. */
+    zd_clipboard_clear(&session_clipboard);
+    if (zd_clipboard_history_count(&session_clipboard) != 0)
+        return fail("clipboard clear", 0);
+    clip_result = zd_clipboard_paste(&session_clipboard, clip_text,
+                                     sizeof(clip_text));
+    if (clip_result != -1 || clip_text[0] != 0)
+        return fail("clipboard empty paste", clip_result);
+    say("ZEROOS: session clipboard privacy passed.");
+
     sources.sb = &session_sandbox;
+    sources.clip = &session_clipboard;
     sources.fw = 0;      /* no live packet path in this build */
-    sources.clip = 0;    /* no clipboard engine in the session yet */
     sources.media = 0;   /* decoder backends pending */
     sources.eco = 0;     /* transports pending */
     if (zd_privacy_assess(&sources, &report) != 0)
@@ -1481,6 +1538,11 @@ int session_main(void) {
     if (report.denials_total != 3 || report.bd.filesystem != 3)
         return fail("privacy denial count",
                     (int64_t)report.denials_total);
+    /* One sensitive clipping was kept out of history: the centre reports
+     * it as a protected event, sourced from the live clipboard. */
+    if (report.protected_events != 1)
+        return fail("privacy protected events",
+                    (int64_t)report.protected_events);
     /* Three denials, no domain at the review threshold: "watch". */
     if (report.risk != ZD_PRIV_RISK_WATCH)
         return fail("privacy risk band", (int64_t)report.risk);
