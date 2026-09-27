@@ -15,6 +15,7 @@
 #include <zeroos/desktop/notify.h>
 #include <zeroos/desktop/launcher.h>
 #include <zeroos/desktop/perfcenter.h>
+#include <zeroos/desktop/overview.h>
 #include <zeroos/desktop/capability.h>
 #include <zeroos/desktop/update.h>
 #include "crypto.h"
@@ -480,6 +481,7 @@ static uint8_t update_tag[16];
 static struct zd_update session_update;
 static struct zd_clipboard session_clipboard;
 static char clip_overlong[ZD_CLIP_TEXT + 8];
+static struct zd_overview session_overview;
 static struct zd_perf_center session_perf;
 static struct zd_perf_center session_perf_cold;
 static struct zd_launcher session_launcher;
@@ -790,6 +792,16 @@ int session_main(void) {
     struct zd_app *launch_results[4];
     struct zd_app *launch_app;
     int launch_count;
+    zd_window_id window_side;
+    const struct zd_window *win_view;
+    const struct zd_window *side_view;
+    struct zd_rect snap_left;
+    struct zd_rect snap_right;
+    struct zd_rect overview_area;
+    uint32_t overview_ids[2];
+    uint32_t overview_first;
+    uint32_t overview_second;
+    uint32_t switches_before;
     struct zd_pc_input perf_in;
     struct zd_pc_report perf_report;
     uint64_t perf_cycle_ns;
@@ -2186,7 +2198,89 @@ int session_main(void) {
         return fail("perf insufficient samples", 0);
     say("ZEROOS: session performance centre passed.");
 
-    /* 18. Update payload verification with a provisioned key. Nothing
+    /* 18. Workspaces, snapping and the overview on the live window manager.
+     * Snapping is geometry rather than a flag: both halves must equal the
+     * rectangles derived from the monitor the kernel reported. Moving a
+     * window between workspaces changes which one the shell is looking at,
+     * and the overview is driven by the live window ids. */
+    window_info.title = "session-side";
+    window_info.logical_rect.x = 200;
+    window_info.logical_rect.y = 60;
+    if (zd_wm_create_window(&wm, &window_info, &window_side) != 0)
+        return fail("workspace window create", 0);
+    if (zd_wm_snap(&wm, window, ZD_SNAP_LEFT) != 0 ||
+        zd_wm_snap(&wm, window_side, ZD_SNAP_RIGHT) != 0)
+        return fail("window snap", 0);
+    snap_left = zd_wm_snap_geometry(&monitor, ZD_SNAP_LEFT);
+    snap_right = zd_wm_snap_geometry(&monitor, ZD_SNAP_RIGHT);
+    win_view = zd_wm_window_const(&wm, window);
+    side_view = zd_wm_window_const(&wm, window_side);
+    if (!win_view || !side_view)
+        return fail("window views", 0);
+    if (win_view->snap != ZD_SNAP_LEFT ||
+        win_view->logical.x != snap_left.x ||
+        win_view->logical.y != snap_left.y ||
+        win_view->logical.w != snap_left.w ||
+        win_view->logical.h != snap_left.h)
+        return fail("snap left geometry", (int64_t)win_view->logical.w);
+    if (side_view->snap != ZD_SNAP_RIGHT ||
+        side_view->logical.x != snap_right.x ||
+        side_view->logical.y != snap_right.y ||
+        side_view->logical.w != snap_right.w ||
+        side_view->logical.h != snap_right.h)
+        return fail("snap right geometry", (int64_t)side_view->logical.w);
+    /* Two halves of one monitor: side by side, and together no wider than
+     * the monitor itself. */
+    if (snap_left.w <= 0 || snap_right.w <= 0 ||
+        snap_right.x <= snap_left.x ||
+        snap_left.w + snap_right.w > monitor.bounds.w)
+        return fail("snap halves", (int64_t)snap_right.x);
+    /* Workspaces: send the side window away, then follow it. */
+    if (zd_wm_set_workspace(&wm, window_side, 1) != 0)
+        return fail("window workspace move", 0);
+    side_view = zd_wm_window_const(&wm, window_side);
+    if (!side_view || side_view->workspace != 1)
+        return fail("window workspace", 0);
+    switches_before = wm.stats.workspace_switches;
+    if (zd_wm_switch_workspace(&wm, 1) != 0)
+        return fail("workspace switch", 0);
+    if (wm.active_workspace != 1 ||
+        wm.stats.workspace_switches != switches_before + 1)
+        return fail("workspace switch count",
+                    (int64_t)wm.stats.workspace_switches);
+    /* The overview lists the live windows and cycles between them. */
+    overview_ids[0] = window;
+    overview_ids[1] = window_side;
+    overview_area.x = 0;
+    overview_area.y = 0;
+    overview_area.w = SESSION_TARGET_W;
+    overview_area.h = SESSION_TARGET_H;
+    if (zd_overview_open(&session_overview, overview_area, 4) != 0)
+        return fail("overview open", 0);
+    if (zd_overview_set_windows(&session_overview, overview_ids, 2) != 0)
+        return fail("overview windows", 0);
+    if (session_overview.count != 2)
+        return fail("overview count", (int64_t)session_overview.count);
+    overview_first = zd_overview_focused_id(&session_overview);
+    if (zd_overview_focus_next(&session_overview) != 0)
+        return fail("overview focus next", 0);
+    overview_second = zd_overview_focused_id(&session_overview);
+    if (overview_second == 0 || overview_second == overview_first)
+        return fail("overview focus moved", (int64_t)overview_second);
+    /* Cycling wraps back to where it started. */
+    if (zd_overview_focus_next(&session_overview) != 0 ||
+        zd_overview_focused_id(&session_overview) != overview_first)
+        return fail("overview focus wrap", 0);
+    /* Removing a window relayouts the rest. */
+    if (zd_overview_remove(&session_overview, window_side) != 0 ||
+        session_overview.count != 1)
+        return fail("overview remove", (int64_t)session_overview.count);
+    zd_overview_close(&session_overview);
+    if (zd_wm_switch_workspace(&wm, 0) != 0)
+        return fail("workspace restore", 0);
+    say("ZEROOS: session workspaces and snapping passed.");
+
+    /* 19. Update payload verification with a provisioned key. Nothing
      * here is a fixture: the key is provisioned through the filesystem
      * (written, read back, and only then used), the bundle is sealed with
      * the RFC 8439 AEAD core, and the update engine verifies it with the
@@ -2306,7 +2400,7 @@ int session_main(void) {
         return fail("update slot removed", 0);
     say("ZEROOS: session update verification passed.");
 
-    /* 19. Sandbox decisions enforced by the kernel, not only by Ring-3
+    /* 20. Sandbox decisions enforced by the kernel, not only by Ring-3
      * policy. The confined profile denies writes, so the session really
      * drops its identity: after SETCRED the VFS itself refuses the
      * owner-only file with EACCES while a world-readable file still
