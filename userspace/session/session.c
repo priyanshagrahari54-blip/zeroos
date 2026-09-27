@@ -485,6 +485,26 @@ struct session_dl_ctx {
 };
 static struct session_dl_ctx session_dl_ctx;
 
+/* zd_downloads_add reports success with 0 and keeps the id in the item,
+ * so the shell looks the item up by the url it enqueued. */
+static int64_t session_dl_find_url(const struct zd_downloads *d,
+                                   const char *url) {
+    uint32_t i;
+    if (!d || !url)
+        return -ZEROOS_EINVAL;
+    for (i = 0; i < ZD_DL_MAX; ++i) {
+        const struct zd_dl_item *it = &d->items[i];
+        uint32_t k = 0;
+        if (!it->id)
+            continue;
+        while (it->url[k] && it->url[k] == url[k])
+            ++k;
+        if (it->url[k] == 0 && url[k] == 0)
+            return (int64_t)it->id;
+    }
+    return -ZEROOS_ENOENT;
+}
+
 static int session_dl_start(void *ctx, uint32_t id, const char *url) {
     struct session_dl_ctx *c = (struct session_dl_ctx *)ctx;
     uint8_t buffer[64];
@@ -1681,15 +1701,18 @@ int session_main(void) {
         session_dl_ctx.dest[dl_pos] = 0;
     }
     zd_downloads_init(&session_downloads, session_dl_start, &session_dl_ctx);
-    dl_id = zd_downloads_add(&session_downloads, "/ram/shell/release.bin",
-                             "incoming.bin", (uint32_t)sizeof(dl_src_buf));
-    if (dl_id <= 0)
-        return fail("download enqueue", dl_id);
+    if (zd_downloads_add(&session_downloads, "/ram/shell/release.bin",
+                         "incoming.bin", (uint32_t)sizeof(dl_src_buf)) != 0)
+        return fail("download enqueue", 0);
     /* Single-active policy: a second transfer is refused while one runs. */
     if (zd_downloads_start_next(&session_downloads) != 0)
         return fail("download start", 0);
     if (zd_downloads_start_next(&session_downloads) != -16)
         return fail("download single active", 0);
+    dl_id = session_dl_find_url(&session_downloads,
+                                "/ram/shell/release.bin");
+    if (dl_id <= 0)
+        return fail("download item id", dl_id);
     dl_item = zd_downloads_find(&session_downloads, (uint32_t)dl_id);
     if (!dl_item || dl_item->state != ZD_DL_RUNNING)
         return fail("download running state", 0);
@@ -1732,12 +1755,14 @@ int session_main(void) {
             return fail("download content", (int64_t)dl_index);
     }
     /* A source that does not exist must fail the transfer, not fake it. */
-    dl_id = zd_downloads_add(&session_downloads, "/ram/shell/missing.bin",
-                             "missing.bin", 16);
-    if (dl_id <= 0)
-        return fail("download missing enqueue", dl_id);
+    if (zd_downloads_add(&session_downloads, "/ram/shell/missing.bin",
+                         "missing.bin", 16) != 0)
+        return fail("download missing enqueue", 0);
     if (zd_downloads_start_next(&session_downloads) != -ZEROOS_ENOENT)
         return fail("download missing start", 0);
+    dl_id = session_dl_find_url(&session_downloads, "/ram/shell/missing.bin");
+    if (dl_id <= 0)
+        return fail("download missing id", dl_id);
     dl_item = zd_downloads_find(&session_downloads, (uint32_t)dl_id);
     if (!dl_item || dl_item->state != ZD_DL_FAILED ||
         dl_item->fail_errno != ZEROOS_ENOENT)
