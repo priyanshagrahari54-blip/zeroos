@@ -3605,7 +3605,9 @@ int session_main(void) {
     session_snap_fail = 1;
     if (zd_snapshots_create(&session_snapshots, "bad") != 0)
         return fail("snapshot failed create", 0);
-    if (zd_snapshots_create_finish(&session_snapshots, 0) != 0)
+    /* The hook's own error is returned to the caller, and the slot is left
+     * FAILED rather than half-registered. */
+    if (zd_snapshots_create_finish(&session_snapshots, 0) != -ZD_ENOSPC)
         return fail("snapshot failed finish", 0);
     snap = zd_snapshots_find(&session_snapshots, "bad");
     if (!snap || snap->state != ZD_SNAP_FAILED ||
