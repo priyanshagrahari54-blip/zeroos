@@ -16,6 +16,7 @@
 #include <zeroos/desktop/launcher.h>
 #include <zeroos/desktop/perfcenter.h>
 #include <zeroos/desktop/overview.h>
+#include <zeroos/desktop/bar.h>
 #include <zeroos/desktop/capability.h>
 #include <zeroos/desktop/update.h>
 #include "crypto.h"
@@ -484,6 +485,23 @@ static char clip_overlong[ZD_CLIP_TEXT + 8];
 static struct zd_overview session_overview;
 static struct zd_perf_center session_perf;
 static struct zd_perf_center session_perf_cold;
+static struct zd_bar session_bar;
+static uint8_t session_toggle_applied[ZD_BAR_TOGGLE_COUNT];
+static int session_bar_toggle_seen = -1;
+
+/* The bar never applies a quick control itself: it asks the shell, and the
+ * shell refuses the ones this image cannot honour. */
+static int session_bar_toggle(void *ctx, int toggle_id, int on) {
+    (void)ctx;
+    session_bar_toggle_seen = toggle_id;
+    if (toggle_id == ZD_BAR_TOGGLE_BLUETOOTH)
+        return -38; /* no radio in the image */
+    session_toggle_applied[toggle_id] = (uint8_t)on;
+    return 0;
+}
+
+static const struct zd_bar_ops session_bar_ops = { session_bar_toggle,
+                                                   (void *)0 };
 static struct zd_launcher session_launcher;
 static struct zd_caps session_caps;
 
@@ -788,6 +806,12 @@ int session_main(void) {
     zd_notification_id note_ids[4];
     struct zd_notify_group note_groups[4];
     uint64_t notify_now;
+    zd_notification_id bar_note_ids[4];
+    uint32_t bar_notes;
+    int bar_action;
+    int bar_arg;
+    int bar_i;
+    const struct zd_window *bar_target;
     uint64_t notify_due;
     struct zd_app *launch_results[4];
     struct zd_app *launch_app;
@@ -2303,7 +2327,127 @@ int session_main(void) {
         return fail("workspace restore", 0);
     say("ZEROOS: session workspaces and snapping passed.");
 
-    /* 19. Update payload verification with a provisioned key. Nothing
+    /* 19. ZERO bar over live shell state. The strip is sized from the
+     * monitor the kernel reported, its quick controls pass through the real
+     * capability gate and a shell hook that can refuse, its workspace
+     * indicator follows the manager, and its title and notification badge
+     * come from the focused window and the notification engine. */
+    if (zd_bar_init(&session_bar, (uint32_t)monitor.bounds.w,
+                    (uint32_t)(monitor.scale_percent / 100)) != 0)
+        return fail("bar init", 0);
+    if (zd_bar_layout(&session_bar) != 0)
+        return fail("bar layout", 0);
+    /* The layout tiles the strip exactly: the flexible title takes whatever
+     * is left and the last applet ends where the monitor does. */
+    if (session_bar.applets[ZD_BAR_APPLET_TITLE].w == 0 ||
+        session_bar.applets[ZD_BAR_APPLET_QUICK].x +
+                session_bar.applets[ZD_BAR_APPLET_QUICK].w !=
+            (uint32_t)monitor.bounds.w)
+        return fail("bar layout span", 0);
+    if (zd_bar_physical_width(&session_bar) !=
+        (uint32_t)monitor.bounds.w * (uint32_t)(monitor.scale_percent / 100))
+        return fail("bar physical width",
+                    (int64_t)zd_bar_physical_width(&session_bar));
+    /* Quick controls: the privilege gate runs before anything is applied, so
+     * without settings-write the toggle is refused (EPERM) and the shell hook
+     * is never reached. */
+    session_bar_toggle_seen = -1;
+    zd_bar_set_ops(&session_bar, &session_bar_ops);
+    zd_bar_set_caps(&session_bar, &session_caps);
+    if (zd_bar_toggle_set(&session_bar, ZD_BAR_TOGGLE_WIFI, 1) != -1)
+        return fail("bar toggle gate", 0);
+    if (session_bar.toggle_denied[ZD_BAR_TOGGLE_WIFI] != 1 ||
+        session_bar.stats.denied_toggles != 1)
+        return fail("bar toggle denial",
+                    (int64_t)session_bar.stats.denied_toggles);
+    if (session_bar_toggle_seen >= 0)
+        return fail("bar toggle ran without privilege", 0);
+    if (zd_caps_activate(&session_caps, ZD_SVC_BAR,
+                         1ULL << ZD_CAP_SETTINGS_WRITE) != 0)
+        return fail("bar capability grant", 0);
+    if (zd_bar_toggle_set(&session_bar, ZD_BAR_TOGGLE_WIFI, 1) != 0)
+        return fail("bar toggle", 0);
+    if (session_bar.toggle_on[ZD_BAR_TOGGLE_WIFI] != 1 ||
+        session_toggle_applied[ZD_BAR_TOGGLE_WIFI] != 1)
+        return fail("bar toggle state", 0);
+    /* A control this image cannot honour is refused by the shell, and the bar
+     * records the refusal instead of showing a radio that never came up. */
+    if (zd_bar_toggle_set(&session_bar, ZD_BAR_TOGGLE_BLUETOOTH, 1) != -38)
+        return fail("bar toggle refusal", 0);
+    if (session_bar.toggle_denied[ZD_BAR_TOGGLE_BLUETOOTH] != 1 ||
+        session_toggle_applied[ZD_BAR_TOGGLE_BLUETOOTH] != 0)
+        return fail("bar toggle refusal state", 0);
+    /* Do-not-disturb mirrors into the bar's own state. */
+    if (zd_bar_toggle_set(&session_bar, ZD_BAR_TOGGLE_DND, 1) != 0)
+        return fail("bar dnd", 0);
+    if (session_bar.dnd_active != 1)
+        return fail("bar dnd state", 0);
+    /* The workspace indicator follows the manager and refuses indices it
+     * cannot show. */
+    session_bar.workspace_count = wm.workspace_count;
+    if (zd_bar_set_workspace(&session_bar, wm.workspace_count) != -22)
+        return fail("bar workspace range", 0);
+    if (zd_bar_set_workspace(&session_bar, wm.active_workspace) != 0)
+        return fail("bar workspace sync", 0);
+    if (zd_wm_set_title(&wm, window, "ZERO bar") != 0)
+        return fail("bar window title", 0);
+    bar_target = zd_wm_window_const(&wm, window);
+    if (!bar_target)
+        return fail("bar window read", 0);
+    zd_bar_set_title(&session_bar, bar_target->title);
+    for (bar_i = 0; session_bar.title[bar_i]; ++bar_i) {
+        if (session_bar.title[bar_i] != bar_target->title[bar_i])
+            return fail("bar title", (int64_t)bar_i);
+    }
+    if (bar_target->title[bar_i])
+        return fail("bar title truncated", (int64_t)bar_i);
+    /* The badge is the notification engine's own visible count. */
+    bar_notes = zd_notify_visible(&session_notify, notify_now, bar_note_ids,
+                                  ZD_ARRAY_COUNT(bar_note_ids));
+    zd_bar_set_notif_count(&session_bar, bar_notes);
+    if (session_bar.notif_count != bar_notes)
+        return fail("bar badge", (int64_t)session_bar.notif_count);
+    /* Click routing resolves to real applets, and the workspace click is
+     * honoured on the manager rather than only reported. */
+    if (zd_bar_click(&session_bar,
+                     session_bar.applets[ZD_BAR_APPLET_MENU].x + 2,
+                     &bar_action, &bar_arg) != 0)
+        return fail("bar menu click", 0);
+    if (bar_action != ZD_BAR_ACT_OPEN_LAUNCHER || session_bar.stats.opens != 1)
+        return fail("bar menu action", (int64_t)bar_action);
+    if (zd_bar_click(&session_bar,
+                     session_bar.applets[ZD_BAR_APPLET_WORKSPACES].x + 2,
+                     &bar_action, &bar_arg) != 0)
+        return fail("bar workspace click", 0);
+    if (bar_action != ZD_BAR_ACT_SWITCH_WORKSPACE ||
+        bar_arg != (int)((wm.active_workspace + 1) % wm.workspace_count))
+        return fail("bar workspace action", (int64_t)bar_arg);
+    if (zd_wm_switch_workspace(&wm, (uint32_t)bar_arg) != 0)
+        return fail("bar workspace switch", 0);
+    if (zd_bar_set_workspace(&session_bar, wm.active_workspace) != 0 ||
+        session_bar.workspace != wm.active_workspace)
+        return fail("bar workspace follow", (int64_t)session_bar.workspace);
+    /* Off the end of the strip is a miss, not a spurious action. */
+    if (zd_bar_click(&session_bar, (uint32_t)monitor.bounds.w + 8,
+                     &bar_action, &bar_arg) != -2 ||
+        bar_action != ZD_BAR_ACT_NONE)
+        return fail("bar click miss", (int64_t)bar_action);
+    /* Keyboard focus walks the ring and wraps, and activating the focused
+     * applet resolves to the same action a click would. */
+    for (bar_i = 0; bar_i < ZD_BAR_APPLET_COUNT; ++bar_i) {
+        if (zd_bar_focus_next(&session_bar) != 0)
+            return fail("bar focus", 0);
+    }
+    if (session_bar.focus_idx != 0 ||
+        session_bar.stats.focus_moves != (uint32_t)ZD_BAR_APPLET_COUNT)
+        return fail("bar focus wrap", (int64_t)session_bar.focus_idx);
+    if (zd_bar_activate_focused(&session_bar, &bar_action, &bar_arg) != 0)
+        return fail("bar activate", 0);
+    if (bar_action != ZD_BAR_ACT_OPEN_LAUNCHER)
+        return fail("bar activate action", (int64_t)bar_action);
+    say("ZEROOS: session bar and quick controls passed.");
+
+    /* 20. Update payload verification with a provisioned key. Nothing
      * here is a fixture: the key is provisioned through the filesystem
      * (written, read back, and only then used), the bundle is sealed with
      * the RFC 8439 AEAD core, and the update engine verifies it with the
@@ -2423,7 +2567,7 @@ int session_main(void) {
         return fail("update slot removed", 0);
     say("ZEROOS: session update verification passed.");
 
-    /* 20. Sandbox decisions enforced by the kernel, not only by Ring-3
+    /* 21. Sandbox decisions enforced by the kernel, not only by Ring-3
      * policy. The confined profile denies writes, so the session really
      * drops its identity: after SETCRED the VFS itself refuses the
      * owner-only file with EACCES while a world-readable file still
