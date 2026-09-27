@@ -158,6 +158,7 @@ jobs:
             grep -q "ZEROOS: session terminal pipe binding passed." build/serial.log
             grep -q "ZEROOS: session privacy aggregation passed." build/serial.log
             grep -q "ZEROOS: shell child process alive." build/serial.log
+            grep -q "ZEROOS: shell child argv1=certify." build/serial.log
             grep -q "ZEROOS: session child process reaped cleanly." build/serial.log
             grep -q "ZEROOS: session credential enforcement passed." build/serial.log
             grep -q "ZEROOS: session shell process complete." build/serial.log
@@ -234,6 +235,7 @@ jobs:
           grep -q "ZEROOS: session terminal pipe binding passed." build/serial-smp4.log
           grep -q "ZEROOS: session privacy aggregation passed." build/serial-smp4.log
           grep -q "ZEROOS: shell child process alive." build/serial-smp4.log
+          grep -q "ZEROOS: shell child argv1=certify." build/serial-smp4.log
           grep -q "ZEROOS: session child process reaped cleanly." build/serial-smp4.log
           grep -q "ZEROOS: session credential enforcement passed." build/serial-smp4.log
           grep -q "ZEROOS: session shell process complete." build/serial-smp4.log

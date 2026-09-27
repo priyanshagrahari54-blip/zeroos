@@ -37,6 +37,8 @@ static struct zd_sandbox session_sandbox;
  * 163 bytes today; ZEROOS_EXEC_MAX_IMAGE keeps the buffer valid for any
  * image the kernel will accept. */
 static uint8_t child_image[ZEROOS_EXEC_MAX_IMAGE];
+static const char child_arg0[] = "shell";
+static const char child_arg1[] = "certify";
 static struct zd_term session_term;
 /* One line of shell output: SGR colour, text, CRLF. It travels through a
  * real kernel pipe before the VT parser sees a single byte. */
@@ -504,6 +506,7 @@ int session_main(void) {
     int audit_entries;
     int64_t cred;
     uint64_t child_size;
+    uint64_t child_argv[2];
     uint64_t child_pid;
     uint64_t status;
     int64_t sys_result;
@@ -1314,7 +1317,11 @@ int session_main(void) {
     if (sys_result <= 0)
         return fail("child image refetch", sys_result);
     child_size = (uint64_t)sys_result;
-    sys_result = zeroos_spawn(child_image, child_size, 0, 0, 0, 0);
+    /* argv really crosses the exec boundary: the child echoes argv[1] and
+     * CI greps for it, so a broken argument vector cannot pass. */
+    child_argv[0] = (uint64_t)(uintptr_t)child_arg0;
+    child_argv[1] = (uint64_t)(uintptr_t)child_arg1;
+    sys_result = zeroos_spawn(child_image, child_size, child_argv, 2, 0, 0);
     if (sys_result <= 0)
         return fail("child spawn", sys_result);
     child_pid = (uint64_t)sys_result;

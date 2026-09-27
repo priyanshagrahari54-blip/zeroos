@@ -3,6 +3,8 @@
     .section .text.start, "ax"
     .globl _start
 _start:
+    movq (%rsp), %rdi          /* argc */
+    leaq 8(%rsp), %rsi         /* argv */
     andq $-16, %rsp
     call child_main
     movq %rax, %rdi

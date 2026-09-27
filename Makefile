@@ -310,6 +310,7 @@ $(BUILD)/shell_child.elf: $(CHILD_DEPS) | $(BUILD)
 	$(CC) $(SESSION_CFLAGS) -c userspace/session/child.c -o $(BUILD)/child.o
 	$(LD) -m elf_x86_64 -T userspace/session/child.ld -nostdlib -o $@ \
 		$(BUILD)/child_start.o $(BUILD)/child.o
+	@python3 tools/check_child_elf.py $@
 
 $(BUILD)/shell_child_image.o: kernel/shell_child_image.S $(BUILD)/shell_child.elf | $(BUILD)
 	$(AS) $(ASFLAGS) -DPROBE_PATH='"$(BUILD)/shell_child.elf"' -c $< -o $@
