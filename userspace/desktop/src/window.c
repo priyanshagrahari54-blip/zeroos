@@ -564,10 +564,17 @@ int zd_wm_focus(struct zd_wm *wm, zd_window_id id) {
     struct zd_window *previous = (struct zd_window *)0;
     uint32_t index;
 
-    if (!window)
+    if (!window) {
+        /* Asked to route input somewhere that does not exist. */
+        ++wm->stats.invalid_route_attempts;
         return -ZD_ENOENT;
-    if (!window_visible_on_workspace(window, wm->active_workspace))
+    }
+    if (!window_visible_on_workspace(window, wm->active_workspace)) {
+        /* Asked to route input to a window that cannot take it: minimized or
+         * on another workspace. */
+        ++wm->stats.invalid_route_attempts;
         return -ZD_ESTATE;
+    }
     for (index = 0; index < ZD_MAX_WINDOWS; ++index)
         if (wm->windows[index].in_use && wm->windows[index].keyboard_focused) {
             previous = &wm->windows[index];

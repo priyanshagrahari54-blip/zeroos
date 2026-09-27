@@ -576,6 +576,7 @@ int zd_search_query(struct zd_search *search, const char *input,
     uint32_t total = 0;
     uint32_t provider_index;
     uint32_t query_generation;
+    uint32_t query_canceled;
     int parse_result;
 
     if (!search || !results_out || capacity == 0)
@@ -586,6 +587,7 @@ int zd_search_query(struct zd_search *search, const char *input,
 
     ++search->stats.queries;
     ++search->index_stats.queries;
+    query_canceled = 0;
     ++search->index_stats.query_generation; /* cancels older in-flight work */
     query_generation = search->index_stats.query_generation;
     /* Arm the cancel token to this query's generation: providers treat a
@@ -619,6 +621,12 @@ int zd_search_query(struct zd_search *search, const char *input,
                                    query_generation);
         if (produced == -ZD_ECANCELED) {
             ++search->stats.stale_drops;
+            if (!query_canceled) {
+                /* One cancellation per query, however many providers saw the
+                 * generation move. */
+                ++search->index_stats.queries_canceled;
+                query_canceled = 1;
+            }
             continue;
         }
         if (produced < 0)

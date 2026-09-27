@@ -140,6 +140,75 @@ static void test_index_incremental(void) {
                  ZD_EINVAL);
 }
 
+/* --- cancellation -------------------------------------------------- */
+
+/* A provider that observes the generation move mid-query and stops, exactly
+ * as in-flight work must when a newer query supersedes it. */
+static int provider_stale(void *context, const struct zd_intent *intent,
+                          struct zd_search_result *results, uint32_t capacity,
+                          volatile uint32_t *cancel_token,
+                          uint32_t query_generation) {
+    (void)context;
+    (void)intent;
+    (void)results;
+    (void)capacity;
+    if (cancel_token && *cancel_token != query_generation)
+        return -ZD_ECANCELED;
+    return 0;
+}
+
+/* Runs first and moves the generation, the way a concurrent re-query would,
+ * so every provider after it in the same query is stale. */
+static int provider_generation_bump(void *context,
+                                    const struct zd_intent *intent,
+                                    struct zd_search_result *results,
+                                    uint32_t capacity,
+                                    volatile uint32_t *cancel_token,
+                                    uint32_t query_generation) {
+    struct zd_search *s = (struct zd_search *)context;
+    (void)intent;
+    (void)results;
+    (void)capacity;
+    (void)cancel_token;
+    (void)query_generation;
+    ++s->index_stats.cancel_generation;
+    return 0;
+}
+
+static void test_query_cancellation(void) {
+    struct zd_search_result results[ZD_SEARCH_MAX_RESULTS];
+    struct zd_search_provider bumper;
+    struct zd_search_provider stale;
+    uint64_t canceled_before;
+    uint64_t drops_before;
+    uint32_t count = 0;
+
+    zd_search_init(&search);
+    ZD_CHECK_OK(zd_search_index_upsert(&search, ZD_INDEX_APP, "terminal",
+                                       "Terminal"));
+    memset(&bumper, 0, sizeof(bumper));
+    bumper.name = "bumper";
+    bumper.available = provider_available_yes;
+    bumper.query = provider_generation_bump;
+    bumper.context = &search;
+    ZD_CHECK_OK(zd_search_add_provider(&search, &bumper));
+    memset(&stale, 0, sizeof(stale));
+    stale.name = "stale";
+    stale.available = provider_available_yes;
+    stale.query = provider_stale;
+    ZD_CHECK_OK(zd_search_add_provider(&search, &stale));
+
+    canceled_before = search.index_stats.queries_canceled;
+    drops_before = search.stats.stale_drops;
+    /* The superseded provider stops, and the query still completes. */
+    ZD_CHECK_OK(zd_search_query(&search, "terminal", results, 16, &count));
+    ZD_CHECK(search.stats.stale_drops > drops_before);
+    /* One cancellation is counted for the query, not one per provider. */
+    ZD_CHECK_EQ(search.index_stats.queries_canceled, canceled_before + 1);
+    ZD_CHECK_OK(zd_search_query(&search, "terminal", results, 16, &count));
+    ZD_CHECK_EQ(search.index_stats.queries_canceled, canceled_before + 2);
+}
+
 static void test_query_pipeline(void) {
     struct zd_search_result results[ZD_SEARCH_MAX_RESULTS];
     uint32_t count = 0;
@@ -352,6 +421,7 @@ void zd_test_search_suite(void) {
     ZD_RUN(test_parser);
     ZD_RUN(test_index_incremental);
     ZD_RUN(test_query_pipeline);
+    ZD_RUN(test_query_cancellation);
     ZD_RUN(test_ranking_semantics);
     ZD_RUN(test_provider_registry_limits);
     ZD_RUN(test_live_app_provider);

@@ -231,6 +231,24 @@ static void test_workspaces(void) {
     ZD_CHECK_EQ(zd_wm_window(&wm, on_ws0)->workspace, 0U);
     ZD_CHECK_EQ(wm.active_workspace, 0U);
     ZD_CHECK_EQ(zd_wm_hit_test(&wm, 50, 50), on_ws0);
+
+    /* Focus requests the manager cannot honour are counted as invalid route
+     * attempts, and honourable ones are not. */
+    setup();
+    ZD_CHECK_OK(zd_wm_set_workspace_count(&wm, 2));
+    info = make_info(client_a, 10, 10, 200, 120);
+    ZD_CHECK_OK(zd_wm_create_window(&wm, &info, &on_ws0));
+    ZD_CHECK_ERR(zd_wm_focus(&wm, 4242), ZD_ENOENT);
+    ZD_CHECK_OK(zd_wm_set_workspace(&wm, on_ws0, 1));
+    ZD_CHECK_ERR(zd_wm_focus(&wm, on_ws0), ZD_ESTATE);
+    ZD_CHECK_EQ(wm.stats.invalid_route_attempts, 2U);
+    ZD_CHECK_OK(zd_wm_switch_workspace(&wm, 1));
+    ZD_CHECK_OK(zd_wm_focus(&wm, on_ws0));
+    ZD_CHECK_EQ(wm.stats.invalid_route_attempts, 2U);
+    /* A minimized window cannot be routed to either. */
+    ZD_CHECK_OK(zd_wm_minimize(&wm, on_ws0));
+    ZD_CHECK_ERR(zd_wm_focus(&wm, on_ws0), ZD_ESTATE);
+    ZD_CHECK_EQ(wm.stats.invalid_route_attempts, 3U);
 }
 
 static void test_input_routing(void) {

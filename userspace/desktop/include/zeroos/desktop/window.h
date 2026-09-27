@@ -119,7 +119,8 @@ struct zd_wm_stats {
     uint32_t workspace_switches;
     uint32_t client_crashes_handled;
     uint32_t buffer_rejects;
-    uint32_t invalid_route_attempts;
+    uint32_t invalid_route_attempts; /* focus requests the manager refused:
+                                      * unknown, minimized or off-workspace */
 };
 
 struct zd_wm_listener_context;
