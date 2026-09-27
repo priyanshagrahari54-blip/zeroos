@@ -28,6 +28,7 @@
 #include <zeroos/desktop/media.h>
 #include <zeroos/desktop/snapshot.h>
 #include <zeroos/desktop/vault.h>
+#include <zeroos/desktop/firewall.h>
 #include <zeroos/desktop/capability.h>
 #include <zeroos/desktop/update.h>
 #include "crypto.h"
@@ -527,6 +528,7 @@ static struct zd_perf_center session_perf;
 static struct zd_perf_center session_perf_cold;
 static struct zd_bar session_bar;
 static struct zd_metrics session_metrics;
+static struct zd_fw session_fw;
 static struct zd_vault session_vault;
 static struct zd_snapshots session_snapshots;
 static struct zd_update_ops session_snap_update_ops;
@@ -1067,6 +1069,7 @@ int session_main(void) {
     /* Filesystem prefix for the listing; the media library itself is
      * keyed by origin label, not by path. */
     static const char media_dir[] = "/ram/shell/inbox/";
+    static const char fw_app[] = "ai.broker";
     const struct zd_fm_entry *media_entry;
     char media_path[96];
     char media_first[48];
@@ -1082,6 +1085,12 @@ int session_main(void) {
     int vault_i;
     int vault_j;
     int vault_match;
+    struct zd_fw_flow fw_flow;
+    struct zd_fw_rule fw_rule;
+    struct zd_ai_request fw_request;
+    uint32_t fw_downgrades = 0;
+    uint32_t fw_rule_id = 0;
+    int fw_i;
     uint32_t study_entries;
     uint32_t study_cards;
     int study_i;
@@ -3730,7 +3739,113 @@ int session_main(void) {
         return fail("vault forgotten get", 0);
     say("ZEROOS: session secret vault passed.");
 
-    /* 29. Update payload verification with a provisioned key. Nothing
+    /* 29. Egress policy. The firewall is the authority on whether the AI
+     * broker may leave this machine: nothing is allowed until a rule says so,
+     * the first matching rule decides, and the shell turns the verdict into a
+     * capability. Denied means the egress grant is withheld, so a
+     * remote-preferring request is answered here and counted as a downgrade;
+     * allowed means the same request keeps its remote backend. */
+    zd_fw_init(&session_fw);
+    fw_flow.dir = ZD_FW_OUT;
+    fw_flow.proto = ZD_FW_TCP;
+    fw_flow.src_ip = 0;
+    fw_flow.dst_ip = 0;
+    fw_flow.src_port = 0;
+    fw_flow.dst_port = 443;
+    fw_flow.conn_known = 0;
+    fw_flow.app_id = "ai.broker";
+    /* An outbound L4 flow with no port is not something the policy can judge,
+     * and it is counted rather than guessed at. */
+    fw_flow.dst_port = 0;
+    if (zd_fw_decide(&session_fw, &fw_flow) != -22 ||
+        session_fw.stats.invalid_flows != 1)
+        return fail("firewall invalid flow",
+                    (int64_t)session_fw.stats.invalid_flows);
+    fw_flow.dst_port = 443;
+    if (zd_fw_decide(&session_fw, &fw_flow) != ZD_FW_DENY ||
+        session_fw.stats.flows != 1 || session_fw.stats.denied != 1)
+        return fail("firewall default deny",
+                    (int64_t)session_fw.stats.denied);
+    /* That verdict reaches the broker. */
+    zd_ai_revoke(&session_ai, ZD_AI_GRANT_REMOTE_EGRESS);
+    fw_downgrades = session_ai.stats.backend_downgrades;
+    fw_request = session_ai_request("/ram/shell/inbox/moved.txt",
+                                    ZD_AI_GRANT_CONTEXT_SELECTION, 1);
+    if (zd_ai_submit(&session_ai, &fw_request) != 0)
+        return fail("firewall broker submit", 0);
+    if (zd_ai_drain(&session_ai, 4, &ai_done) != 0 || ai_done != 1)
+        return fail("firewall broker drain", (int64_t)ai_done);
+    if (session_ai.stats.backend_downgrades != fw_downgrades + 1)
+        return fail("firewall downgrade",
+                    (int64_t)session_ai.stats.backend_downgrades);
+    /* A template with an inverted port range is refused and counted. */
+    fw_rule.id = 0;
+    fw_rule.enabled = 1;
+    fw_rule.dir = ZD_FW_OUT;
+    fw_rule.proto = ZD_FW_TCP;
+    fw_rule.action = ZD_FW_ALLOW;
+    fw_rule.established_only = 0;
+    fw_rule.port_lo = 444;
+    fw_rule.port_hi = 443;
+    fw_rule.ip_lo = 0;
+    fw_rule.ip_hi = 0;
+    for (fw_i = 0; fw_app[fw_i] && fw_i + 1 < (int)sizeof(fw_rule.app); ++fw_i)
+        fw_rule.app[fw_i] = fw_app[fw_i];
+    fw_rule.app[fw_i] = 0;
+    if (zd_fw_add(&session_fw, &fw_rule, 1) != -22 ||
+        session_fw.stats.rules_rejected != 1)
+        return fail("firewall rule range",
+                    (int64_t)session_fw.stats.rules_rejected);
+    fw_rule.port_lo = 443;
+    if (zd_fw_add(&session_fw, &fw_rule, 1) != 0 ||
+        session_fw.stats.rules_added != 1 ||
+        session_fw.rule_count != 1)
+        return fail("firewall rule add",
+                    (int64_t)session_fw.stats.rules_added);
+    fw_rule_id = session_fw.rules[0].id;
+    /* A catch-all denial sits behind it, so the broker is allowed while
+     * anything else is still stopped. */
+    fw_rule.action = ZD_FW_DENY;
+    fw_rule.port_lo = 0;
+    fw_rule.port_hi = 0;
+    fw_rule.app[0] = 0;
+    if (zd_fw_add(&session_fw, &fw_rule, 0) != 0 ||
+        session_fw.stats.rules_added != 2)
+        return fail("firewall catch all",
+                    (int64_t)session_fw.stats.rules_added);
+    if (zd_fw_decide(&session_fw, &fw_flow) != ZD_FW_ALLOW ||
+        session_fw.stats.allowed != 1)
+        return fail("firewall allow", (int64_t)session_fw.stats.allowed);
+    /* Both rules match this flow; only the first one decides it. */
+    if (zd_fw_matching(&session_fw, &fw_flow) != 2)
+        return fail("firewall matching",
+                    (int64_t)zd_fw_matching(&session_fw, &fw_flow));
+    /* Egress is granted on the strength of that verdict, and the same request
+     * keeps its remote backend instead of being downgraded. */
+    zd_ai_grant(&session_ai, ZD_AI_GRANT_REMOTE_EGRESS);
+    fw_request = session_ai_request("/ram/shell/inbox/moved.txt",
+                                    ZD_AI_GRANT_CONTEXT_SELECTION, 1);
+    if (zd_ai_submit(&session_ai, &fw_request) != 0)
+        return fail("firewall granted submit", 0);
+    if (zd_ai_drain(&session_ai, 4, &ai_done) != 0 || ai_done != 1)
+        return fail("firewall granted drain", (int64_t)ai_done);
+    if (session_ai.stats.backend_downgrades != fw_downgrades + 1)
+        return fail("firewall granted downgrade",
+                    (int64_t)session_ai.stats.backend_downgrades);
+    /* Removing the rule takes the allowance away with it. */
+    if (zd_fw_remove(&session_fw, fw_rule_id) != 0 ||
+        session_fw.stats.rules_removed != 1)
+        return fail("firewall rule remove",
+                    (int64_t)session_fw.stats.rules_removed);
+    if (zd_fw_remove(&session_fw, 999) != -2)
+        return fail("firewall unknown rule", 0);
+    if (zd_fw_decide(&session_fw, &fw_flow) != ZD_FW_DENY)
+        return fail("firewall revoked allow", 0);
+    zd_ai_revoke(&session_ai, ZD_AI_GRANT_REMOTE_EGRESS);
+    say("ZEROOS: session egress policy passed.");
+
+
+    /* 30. Update payload verification with a provisioned key. Nothing
      * here is a fixture: the key is provisioned through the filesystem
      * (written, read back, and only then used), the bundle is sealed with
      * the RFC 8439 AEAD core, and the update engine verifies it with the
@@ -3850,7 +3965,7 @@ int session_main(void) {
         return fail("update slot removed", 0);
     say("ZEROOS: session update verification passed.");
 
-    /* 30. Sandbox decisions enforced by the kernel, not only by Ring-3
+    /* 31. Sandbox decisions enforced by the kernel, not only by Ring-3
      * policy. The confined profile denies writes, so the session really
      * drops its identity: after SETCRED the VFS itself refuses the
      * owner-only file with EACCES while a world-readable file still
