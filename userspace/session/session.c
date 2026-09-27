@@ -30,6 +30,12 @@ static struct zd_settings_provider session_settings_provider;
 static struct zd_cmd_provider session_commands;
 static struct zd_diag_provider session_diagnostics;
 static struct zd_search_result session_results[8];
+/* Terminal screen buffer (~476 KiB): must stay in .bss, never on the
+ * 64 KiB user stack. */
+static struct zd_term session_term;
+/* One line of shell output: SGR colour, text, CRLF. It travels through a
+ * real kernel pipe before the VT parser sees a single byte. */
+static const char term_source[] = "\033[32mzeroos shell\r\n";
 static struct zd_automation session_automation;
 static struct zd_lifecycle session_lifecycle;
 static struct zd_governor session_governor;
@@ -456,6 +462,13 @@ int session_main(void) {
     struct zd_bitmap target;
     struct zeroos_stat file_stat;
     char preview[24];
+    struct zeroos_ipc_pair pipe_pair;
+    const struct zd_term_cell *cell;
+    uint8_t term_buffer[64]; /* VT parser takes uint8_t */
+    char term_row[96];
+    uint64_t term_len;
+    uint32_t term_line_len;
+    uint32_t row_len;
     uint32_t preview_len;
     int64_t sys_result;
     int attach_result;
@@ -1117,6 +1130,50 @@ int session_main(void) {
     if (audit_count == 0 || consumed != audit_count)
         return fail("automation audit drain", (int64_t)audit_count);
     say("ZEROOS: session automation live events passed.");
+
+    /* 10. Terminal over a real kernel pipe. The shell's output transport
+     * is a pipe pair (syscalls 13-15): bytes are written into one end,
+     * read back from the other, and only then parsed by the VT core, so
+     * nothing here is a canned string. Child spawn remains pending — Ring
+     * 3 has no way to reach a second ELF image yet. */
+    if (zeroos_pipe_create(&pipe_pair) != 0)
+        return fail("terminal pipe create", 0);
+    term_len = 0;
+    sys_result = zeroos_pipe_read(pipe_pair.local, term_buffer,
+                                  sizeof(term_buffer),
+                                  ZEROOS_IPC_FLAG_NONBLOCK, &term_len, 0);
+    if (sys_result != -ZEROOS_EAGAIN)
+        return fail("terminal pipe empty", sys_result);
+    term_line_len = 0;
+    while (term_source[term_line_len])
+        ++term_line_len;
+    sys_result = zeroos_pipe_write(pipe_pair.peer, term_source,
+                                   term_line_len, 0, 0);
+    if (sys_result != (int64_t)term_line_len)
+        return fail("terminal pipe write", sys_result);
+    term_len = 0;
+    sys_result = zeroos_pipe_read(pipe_pair.local, term_buffer,
+                                  sizeof(term_buffer),
+                                  ZEROOS_IPC_FLAG_NONBLOCK, &term_len, 0);
+    /* The pipe read returns the byte count (ipc_pipe_read_timeout), and
+     * *length must agree with it. */
+    if (sys_result != (int64_t)term_line_len || term_len != term_line_len)
+        return fail("terminal pipe read", sys_result);
+    zd_term_init(&session_term, 24, 80);
+    if (zd_term_write(&session_term, term_buffer, term_len) != 0)
+        return fail("terminal parse", 0);
+    row_len = zd_term_row_text(&session_term, 0, term_row, sizeof(term_row));
+    if (row_len == 0 || !session_streq(term_row, "zeroos shell"))
+        return fail("terminal row text", (int64_t)row_len);
+    /* The SGR sequence survived the transport: cell 0 is green (SGR 32 ->
+     * palette 2), which a plain-text pipe would not produce. */
+    cell = zd_term_cell(&session_term, 0, 0);
+    if (!cell || cell->fg != 2)
+        return fail("terminal sgr colour", cell ? (int64_t)cell->fg : -1);
+    if (session_term.stats.bytes != term_len)
+        return fail("terminal byte count",
+                    (int64_t)session_term.stats.bytes);
+    say("ZEROOS: session terminal pipe binding passed.");
 
     say("ZEROOS: session shell process complete.");
     return 0;

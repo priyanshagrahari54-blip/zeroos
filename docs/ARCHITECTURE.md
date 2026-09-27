@@ -502,7 +502,7 @@ claim:
 | --- | --- | --- |
 | Display service + compositor + input router | session process wired to `DISPLAY_PRESENT`/`INPUT_*` + boot certification | multi-GPU beyond the single present path |
 | File manager | source-injected listing/sort/select/ops suites + live VFS binding in the session (`OPEN`/`READDIR`/`STAT`/`UNLINK`/`MKDIR`/`RENAME`/`READ`/`WRITE`) with boot milestones and a host replay of the same sequence; preview, copy, rename and move are certified against real files (a copy larger than `ZD_FM_COPY_MAX` is refused, never truncated) | batch operations across the multi-selection |
-| Terminal | parser/scrollback/SGR suites | PTY or pipe + child spawn for shell output |
+| Terminal | parser/scrollback/SGR suites + live pipe binding in the session: output bytes travel through a real kernel pipe pair (`PIPE_CREATE`/`PIPE_WRITE`/`PIPE_READ`) before the VT parser sees them, with the SGR colour asserted on the resulting cell and an empty-pipe `-EAGAIN` check | child spawn — Ring 3 cannot reach a second ELF image yet |
 | Cloud/device sync | offline queue + permission suites | transport over kernel sockets; real device pairing |
 | Firewall engine | first-match/default-deny suites | kernel packet-path hook (userspace policy today) |
 | Sandbox profiles | fail-closed gates + audit suites | OS enforcement (seccomp/namespace) hooks |

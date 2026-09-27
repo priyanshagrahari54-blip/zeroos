@@ -280,7 +280,8 @@ SESSION_DESKTOP_SRCS := userspace/desktop/src/common.c \
 	userspace/desktop/src/settings.c userspace/desktop/src/providers.c \
 	userspace/desktop/src/ui.c userspace/desktop/src/i18n.c \
 	userspace/desktop/src/governor.c userspace/desktop/src/lifecycle.c \
-	userspace/desktop/src/watchdog.c userspace/desktop/src/automation.c
+	userspace/desktop/src/watchdog.c \
+	userspace/desktop/src/automation.c userspace/desktop/src/term.c
 SESSION_DESKTOP_OBJS := $(patsubst userspace/desktop/src/%.c,$(BUILD)/session_desktop_%.o,$(SESSION_DESKTOP_SRCS))
 SESSION_DEPS := userspace/session/session.c userspace/session/session_start.S \
 	userspace/session/session.ld userspace/include/zeroos/syscall.h \
