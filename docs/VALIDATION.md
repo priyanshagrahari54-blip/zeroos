@@ -139,6 +139,30 @@ Fixed in the same change: an idle AP could acknowledge CPU-offline from
 its idle loop before withdrawing TLB/cpu-local/SMP online state, which
 is the `98ba0ca` `evacuation failed (stage=7)` row.
 
+Local A/B stress evidence for these fixes (2026-09-27; harness in
+`tools/stress/`, QEMU 11.0.2 TCG on a 2-core host, Limine BIOS ISO,
+sequential boots, one QEMU at a time):
+
+| Build | q35 `-smp 4` AHCI+NVMe storage boot | plain `-smp 4` boot (all Boot-test patterns) | Total |
+|---|---|---|---|
+| `e5fdc31` (before `ac5ed3d`/`2731c7c`) | 1 fail / 100 (`task owned by multiple CPUs`) | 5 fail / 100 (4× `task owned by multiple CPUs`, 1× `recursive kmutex acquisition`) | **6 / 200 failed** |
+| `2855b2a` (with both fixes) | 0 fail / 100 | 0 fail / 100 | **0 / 200 failed** |
+
+One-sided Fisher exact test that the 0-vs-6 split is chance: p ≈ 0.015.
+This is strong evidence that the fixes remove the dominant race. It is
+not proof that no rarer SMP race remains, and it is not a hardware claim.
+`e5fdc31` smp2 with two concurrent QEMUs also passed 100/100.
+Oversubscribing the host hides the race, so the harness boots sequentially.
+CI since the fixes: `ac5ed3d`, `2731c7c`, `6b84ec1` (push+PR) and
+`2855b2a` (push+PR), 6/6 green.
+
+Reproduce:
+
+    make build/zeroos.elf
+    LIMINE_DIR=/path/to/limine-v8-binary python3 tools/stress/mkiso-limine.py build/zeroos.elf build/zeroos-limine.iso
+    tools/stress/boot-loop.sh smp4 build/zeroos-limine.iso 100
+    tools/stress/boot-loop.sh storage build/zeroos-limine.iso 100
+
 ## 4. Stage 5 part support matrix
 
 | Part | Capability | Evidence | Support status |
