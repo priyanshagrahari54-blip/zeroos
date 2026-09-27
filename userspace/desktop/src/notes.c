@@ -1,5 +1,5 @@
 /* Study notes.  See notes.h. */
-#include <string.h>
+#include <zeroos/desktop/common.h>
 #include <zeroos/desktop/notes.h>
 
 static char nt_lower(char c) {
@@ -9,7 +9,7 @@ static char nt_lower(char c) {
 }
 
 static int nt_contains_ci(const char *hay, const char *needle) {
-    size_t nl = strlen(needle);
+    size_t nl = zd_str_length(needle);
     size_t i;
     if (!nl)
         return 1;
@@ -26,7 +26,7 @@ static int nt_contains_ci(const char *hay, const char *needle) {
 
 /* Index of the first case-insensitive occurrence, or -1. */
 static long nt_find_ci(const char *hay, const char *needle) {
-    size_t nl = strlen(needle);
+    size_t nl = zd_str_length(needle);
     size_t i;
     if (!nl)
         return 0;
@@ -52,7 +52,7 @@ static struct zd_note *nt_find(struct zd_notes *n, uint32_t id) {
 void zd_notes_init(struct zd_notes *n) {
     if (!n)
         return;
-    memset(n, 0, sizeof(*n));
+    zd_memset(n, 0, sizeof(*n));
     n->next_id = 1;
 }
 
@@ -61,20 +61,20 @@ int zd_notes_create(struct zd_notes *n, const char *title,
     struct zd_note *note;
     if (!n || !title || !body || !out_id)
         return -22;
-    if (!title[0] || strlen(title) >= ZD_NOTES_TITLE ||
-        strlen(body) >= ZD_NOTES_BODY) {
+    if (!title[0] || zd_str_length(title) >= ZD_NOTES_TITLE ||
+        zd_str_length(body) >= ZD_NOTES_BODY) {
         n->stats.rejected++;
         return -22;
     }
     if (n->count >= ZD_NOTES_MAX)
         return -28;
     note = &n->items[n->count++];
-    memset(note, 0, sizeof(*note));
+    zd_memset(note, 0, sizeof(*note));
     note->id = n->next_id++;
     note->mtime = mtime;
-    memcpy(note->title, title, strlen(title) + 1);
-    memcpy(note->body, body, strlen(body) + 1);
-    note->body_len = (uint32_t)strlen(body);
+    zd_memcpy(note->title, title, zd_str_length(title) + 1);
+    zd_memcpy(note->body, body, zd_str_length(body) + 1);
+    note->body_len = (uint32_t)zd_str_length(body);
     n->stats.created++;
     *out_id = note->id;
     return 0;
@@ -88,15 +88,15 @@ int zd_notes_update(struct zd_notes *n, uint32_t id, const char *title,
     note = nt_find(n, id);
     if (!note)
         return -2;
-    if (strlen(body) >= ZD_NOTES_BODY ||
-        (title && (!title[0] || strlen(title) >= ZD_NOTES_TITLE))) {
+    if (zd_str_length(body) >= ZD_NOTES_BODY ||
+        (title && (!title[0] || zd_str_length(title) >= ZD_NOTES_TITLE))) {
         n->stats.rejected++;
         return -22;
     }
     if (title)
-        memcpy(note->title, title, strlen(title) + 1);
-    memcpy(note->body, body, strlen(body) + 1);
-    note->body_len = (uint32_t)strlen(body);
+        zd_memcpy(note->title, title, zd_str_length(title) + 1);
+    zd_memcpy(note->body, body, zd_str_length(body) + 1);
+    note->body_len = (uint32_t)zd_str_length(body);
     note->mtime = mtime;
     n->stats.updated++;
     return 0;
@@ -110,7 +110,7 @@ int zd_notes_delete(struct zd_notes *n, uint32_t id) {
         if (n->items[i].id != id)
             continue;
         if (i + 1 < n->count)
-            memmove(&n->items[i], &n->items[i + 1],
+            zd_memmove(&n->items[i], &n->items[i + 1],
                     (n->count - i - 1) * sizeof(n->items[0]));
         n->count--;
         n->stats.deleted++;

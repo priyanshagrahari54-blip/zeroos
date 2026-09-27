@@ -1,5 +1,5 @@
 /* Study dictionary.  See dict.h. */
-#include <string.h>
+#include <zeroos/desktop/common.h>
 #include <zeroos/desktop/dict.h>
 
 static char dc_lower(char c) {
@@ -26,12 +26,12 @@ static void dc_insert_sort(char w[][ZD_DICT_WORD], uint32_t n) {
     for (i = 1; i < n; ++i) {
         char tmp[ZD_DICT_WORD];
         uint32_t j = i;
-        memcpy(tmp, w[i], ZD_DICT_WORD);
+        zd_memcpy(tmp, w[i], ZD_DICT_WORD);
         while (j > 0 && dc_cmp(tmp, w[j - 1]) < 0) {
-            memcpy(w[j], w[j - 1], ZD_DICT_WORD);
+            zd_memcpy(w[j], w[j - 1], ZD_DICT_WORD);
             j--;
         }
-        memcpy(w[j], tmp, ZD_DICT_WORD);
+        zd_memcpy(w[j], tmp, ZD_DICT_WORD);
     }
 }
 
@@ -67,7 +67,7 @@ int zd_dict_load(struct zd_dict *d, zd_dict_source_fn src, void *ctx) {
             if (k > 0 && dc_cmp(d->words[k - 1], d->words[i]) == 0)
                 continue;
             if (k != i)
-                memcpy(d->words[k], d->words[i], ZD_DICT_WORD);
+                zd_memcpy(d->words[k], d->words[i], ZD_DICT_WORD);
             k++;
         }
         d->count = k;
@@ -115,7 +115,7 @@ int zd_dict_prefix(struct zd_dict *d, const char *prefix,
         if (!dc_has_prefix(d->words[i], prefix))
             continue;
         if (out && written < cap) {
-            memcpy(out[written], d->words[i], ZD_DICT_WORD);
+            zd_memcpy(out[written], d->words[i], ZD_DICT_WORD);
             written++;
         }
         total++;

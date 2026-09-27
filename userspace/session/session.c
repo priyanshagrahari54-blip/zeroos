@@ -31,6 +31,8 @@
 #include <zeroos/desktop/firewall.h>
 #include <zeroos/desktop/url.h>
 #include <zeroos/desktop/pdf.h>
+#include <zeroos/desktop/notes.h>
+#include <zeroos/desktop/ocr.h>
 #include <zeroos/desktop/capability.h>
 #include <zeroos/desktop/update.h>
 #include "crypto.h"
@@ -533,6 +535,10 @@ static struct zd_metrics session_metrics;
 static struct zd_fw session_fw;
 static struct zd_url session_nav_url;
 static struct zd_pdf session_pdf;
+static struct zd_notes session_notes;
+/* A title one byte over the notebook's limit. */
+static const char note_long_title[] =
+    "0123456789012345678901234567890123";
 static uint8_t session_pdf_bytes[512];
 
 /* Hand-authored minimal PDF images, written to a real file
@@ -1171,6 +1177,17 @@ int session_main(void) {
     int nav_rc;
     uint64_t pdf_len = 0;
     uint32_t pdf_cards;
+    const struct zd_note *nt_body;
+    uint8_t nt_buffer[256];
+    char nt_snippet[64];
+    uint64_t nt_len = 0;
+    uint32_t nt_id = 0;
+    uint32_t note_id2 = 0;
+    uint32_t note_id3 = 0;
+    uint32_t nt_found = 0;
+    int nt_hits;
+    int nt_snip_len;
+    int nt_i;
     uint32_t study_entries;
     uint32_t study_cards;
     int study_i;
@@ -4039,7 +4056,104 @@ int session_main(void) {
         return fail("pdf truncated", 0);
     say("ZEROOS: session study attachments passed.");
 
-    /* 32. Update payload verification with a provisioned key. Nothing
+    /* 32. Study notes, with the shell as their storage. The notebook keeps no
+     * files of its own, so every body is written to a real file under
+     * /ram/shell and read back through the kernel, and the bytes are compared
+     * rather than assumed. Search, snippets, pinning and deletion are all
+     * exercised against what was really stored. */
+    zd_notes_init(&session_notes);
+    if (zd_notes_create(&session_notes, "Release", update_version, 1,
+                        &nt_id) != 0 ||
+        session_notes.stats.created != 1)
+        return fail("notes create", (int64_t)session_notes.stats.created);
+    if (zd_notes_create(&session_notes, "Locale", i18n_text_hi, 2,
+                        &note_id2) != 0)
+        return fail("notes create locale", 0);
+    if (zd_notes_create(&session_notes, note_long_title, "x", 3,
+                        &note_id3) != -22 ||
+        session_notes.stats.rejected != 1)
+        return fail("notes long title",
+                    (int64_t)session_notes.stats.rejected);
+    if (zd_notes_create(&session_notes, "Media", media_first, 4,
+                        &note_id3) != 0 ||
+        session_notes.count != 3)
+        return fail("notes create media", (int64_t)session_notes.count);
+    /* Search runs over what was really stored, case-insensitively, and the
+     * caller-sized form hands back the id. */
+    nt_hits = zd_notes_search(&session_notes, "release", (uint32_t *)0, 0);
+    if (nt_hits != 1)
+        return fail("notes search", (int64_t)nt_hits);
+    if (zd_notes_search(&session_notes, "release", &nt_found, 1) != 1 ||
+        nt_found != nt_id ||
+        session_notes.stats.searches != 2 ||
+        session_notes.stats.search_hits != 2)
+        return fail("notes search id", (int64_t)nt_found);
+    /* A snippet starts at the match, which is what a result label shows. */
+    nt_snip_len = zd_notes_snippet(zd_notes_get(&session_notes, nt_id),
+                                   "1.1", nt_snippet,
+                                   (uint32_t)sizeof(nt_snippet));
+    if (nt_snip_len <= 0 || nt_snippet[0] != '1' || nt_snippet[1] != '.' ||
+        nt_snippet[2] != '1')
+        return fail("notes snippet", (int64_t)nt_snip_len);
+    /* Persistence: the body goes to a real file and comes back byte for
+     * byte. */
+    nt_body = zd_notes_get(&session_notes, nt_id);
+    if (!nt_body || nt_body->body_len != 5)
+        return fail("notes body length",
+                    nt_body ? (int64_t)nt_body->body_len : -1);
+    if (session_write_buffer("/ram/shell/note-release.txt",
+                             (const uint8_t *)nt_body->body,
+                             nt_body->body_len, 0644) != 0)
+        return fail("notes write", 0);
+    if (session_read_buffer("/ram/shell/note-release.txt", nt_buffer,
+                            sizeof(nt_buffer), &nt_len) != 0 ||
+        nt_len != 5)
+        return fail("notes read back", (int64_t)nt_len);
+    for (nt_i = 0; nt_i < (int)nt_len; ++nt_i)
+        if (nt_buffer[nt_i] != (uint8_t)update_version[nt_i])
+            return fail("notes bytes", (int64_t)nt_i);
+    /* Reading it back into another note is what a restore looks like. */
+    if (zd_notes_update(&session_notes, note_id2, (const char *)0,
+                        (const char *)nt_buffer, 6) != 0 ||
+        session_notes.stats.updated != 1)
+        return fail("notes update", (int64_t)session_notes.stats.updated);
+    nt_body = zd_notes_get(&session_notes, note_id2);
+    if (!nt_body || !session_streq(nt_body->body, "1.1.0"))
+        return fail("notes updated body", 0);
+    /* Pinning is reflected in the note, an unknown id is refused, and
+     * deleting shrinks the notebook. */
+    if (zd_notes_set_pinned(&session_notes, nt_id, 1) != 0 ||
+        session_notes.stats.pinned != 1 ||
+        !zd_notes_get(&session_notes, nt_id)->pinned)
+        return fail("notes pin", (int64_t)session_notes.stats.pinned);
+    if (zd_notes_delete(&session_notes, 999) != -2)
+        return fail("notes unknown", 0);
+    if (zd_notes_delete(&session_notes, note_id3) != 0 ||
+        session_notes.stats.deleted != 1 ||
+        session_notes.count != 2)
+        return fail("notes delete", (int64_t)session_notes.count);
+    /* The study centre's OCR path reports what this build can honestly do:
+     * no engine is linked, arguments are still validated, and nothing
+     * fabricates text. */
+    if (zd_ocr_available() != 0)
+        return fail("ocr availability", 1);
+    if (zd_ocr_recognize((const uint8_t *)0, 8, 8, "en", nt_snippet,
+                         (uint32_t)sizeof(nt_snippet)) != -22)
+        return fail("ocr null image", 0);
+    if (zd_ocr_recognize(session_pdf_bytes, 0, 8, "en", nt_snippet,
+                         (uint32_t)sizeof(nt_snippet)) != -22)
+        return fail("ocr zero width", 0);
+    if (zd_ocr_recognize(session_pdf_bytes, 8, 8, "en", nt_snippet,
+                         (uint32_t)sizeof(nt_snippet)) != -95)
+        return fail("ocr no engine", 0);
+    if (!zd_ocr_status_name(-95) || !zd_ocr_status_name(-95)[0])
+        return fail("ocr status name", 0);
+    if (zd_ocr_set_engine((struct zd_ocr_engine *)0) !=
+        (struct zd_ocr_engine *)0)
+        return fail("ocr engine unlink", 0);
+    say("ZEROOS: session study notes passed.");
+
+    /* 33. Update payload verification with a provisioned key. Nothing
      * here is a fixture: the key is provisioned through the filesystem
      * (written, read back, and only then used), the bundle is sealed with
      * the RFC 8439 AEAD core, and the update engine verifies it with the
@@ -4159,7 +4273,7 @@ int session_main(void) {
         return fail("update slot removed", 0);
     say("ZEROOS: session update verification passed.");
 
-    /* 33. Sandbox decisions enforced by the kernel, not only by Ring-3
+    /* 34. Sandbox decisions enforced by the kernel, not only by Ring-3
      * policy. The confined profile denies writes, so the session really
      * drops its identity: after SETCRED the VFS itself refuses the
      * owner-only file with EACCES while a world-readable file still
