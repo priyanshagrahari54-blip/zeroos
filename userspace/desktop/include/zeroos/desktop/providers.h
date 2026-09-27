@@ -12,6 +12,7 @@
 #include <zeroos/desktop/search.h>
 #include <zeroos/desktop/filemgr.h>
 #include <zeroos/desktop/settings.h>
+#include <zeroos/desktop/notes.h>
 
 #define ZD_CMD_MAX 16
 #define ZD_CMD_NAME 24
@@ -101,5 +102,43 @@ struct zd_settings_provider {
 
 void zd_settings_provider_init(struct zd_settings_provider *sp,
                                const struct zd_settings *settings);
+
+/* ---- notes content provider (DOCUMENT results from the note store) ---- */
+
+#define ZD_NOTES_P_WINDOW 32   /* note ids examined per query token */
+
+/* The note-store operations are injected, exactly like the files
+ * provider's directory source: the provider decides *what to ask* and the
+ * binding decides *where notes live*.  A missing binding means
+ * unavailable -- it is never faked -- and it keeps this module free of a
+ * link-time dependency on any particular notes implementation. */
+typedef int (*zd_notes_search_fn)(const struct zd_notes *n, const char *sub,
+                                  uint32_t *out, uint32_t cap);
+typedef const struct zd_note *(*zd_notes_get_fn)(const struct zd_notes *n,
+                                                 uint32_t id);
+typedef int (*zd_notes_snippet_fn)(const struct zd_note *note,
+                                   const char *needle, char *out,
+                                   uint32_t cap);
+
+struct zd_notes_provider {
+    struct zd_search_provider provider; /* embeds as a provider */
+    const struct zd_notes *notes;       /* NULL => unavailable, never faked */
+    zd_notes_search_fn search;          /* NULL => unavailable */
+    zd_notes_get_fn get;                /* NULL => unavailable */
+    zd_notes_snippet_fn snippet;        /* NULL => title-only labels */
+    struct {
+        uint64_t queries;
+        uint64_t matches;
+        uint64_t unavailable;           /* absent/empty/unbound note store */
+        uint64_t canceled;
+        uint64_t truncated;             /* results dropped by capacity */
+        uint64_t capped_hits;           /* a token filled the id window */
+    } stats;
+};
+
+void zd_notes_provider_init(struct zd_notes_provider *np,
+                            const struct zd_notes *notes,
+                            zd_notes_search_fn search, zd_notes_get_fn get,
+                            zd_notes_snippet_fn snippet);
 
 #endif /* ZEROOS_DESKTOP_PROVIDERS_H */

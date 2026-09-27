@@ -77,6 +77,39 @@ void zd_test_notes_dict_suite(void) {
     ZD_CHECK_EQ(ids[0], id1);
     ZD_CHECK_EQ(zd_notes_search(&notes, 0, 0, 0), -22);
 
+    /* note snippets: the matched context search results carry */
+    {
+        const struct zd_note *note = zd_notes_get(&notes, id1);
+        char snip[ZD_NOTES_BODY];
+        ZD_CHECK(note != 0);
+        if (note) {
+            /* Bad arguments are rejected. */
+            ZD_CHECK_EQ(zd_notes_snippet(0, "q", snip, sizeof(snip)), -22);
+            ZD_CHECK_EQ(zd_notes_snippet(note, 0, snip, sizeof(snip)), -22);
+            ZD_CHECK_EQ(zd_notes_snippet(note, "q", 0, sizeof(snip)), -22);
+            ZD_CHECK_EQ(zd_notes_snippet(note, "q", snip, 0), -22);
+            /* The window starts at the match, case-insensitively: the body
+             * of note 1 was updated to "Quantum advanced" above. */
+            ZD_CHECK(zd_notes_snippet(note, "QUANTUM", snip,
+                                      sizeof(snip)) > 0);
+            ZD_CHECK_EQ(snip[0], 'Q');
+            ZD_CHECK(strcmp(snip, "Quantum advanced") == 0);
+            /* A title-only match falls back to the title. */
+            ZD_CHECK(zd_notes_snippet(note, "lecture", snip,
+                                      sizeof(snip)) > 0);
+            ZD_CHECK_EQ(snip[0], 'L');
+            /* An absent needle is reported, never approximated. */
+            ZD_CHECK_EQ(zd_notes_snippet(note, "zzzz", snip, sizeof(snip)),
+                        -2);
+            ZD_CHECK_EQ(snip[0], 0);
+            /* Truncation still starts at the match, so the needle survives
+             * even a two-byte window. */
+            ZD_CHECK_EQ(zd_notes_snippet(note, "quantum", snip, 2), 1);
+            ZD_CHECK_EQ(snip[0], 'Q');
+            ZD_CHECK_EQ(snip[1], 0);
+        }
+    }
+
     /* pin */
     ZD_CHECK_OK(zd_notes_set_pinned(&notes, id2, 1));
     ZD_CHECK_EQ(zd_notes_get(&notes, id2)->pinned, 1);

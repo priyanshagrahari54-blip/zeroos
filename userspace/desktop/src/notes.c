@@ -24,6 +24,23 @@ static int nt_contains_ci(const char *hay, const char *needle) {
     return 0;
 }
 
+/* Index of the first case-insensitive occurrence, or -1. */
+static long nt_find_ci(const char *hay, const char *needle) {
+    size_t nl = strlen(needle);
+    size_t i;
+    if (!nl)
+        return 0;
+    for (i = 0; hay[i]; ++i) {
+        size_t k = 0;
+        while (k < nl && hay[i + k] &&
+               nt_lower(hay[i + k]) == nt_lower(needle[k]))
+            k++;
+        if (k == nl)
+            return (long)i;
+    }
+    return -1;
+}
+
 static struct zd_note *nt_find(struct zd_notes *n, uint32_t id) {
     uint32_t i;
     for (i = 0; i < n->count; ++i)
@@ -155,4 +172,30 @@ int zd_notes_search(const struct zd_notes *n, const char *sub,
     if (out && total > (int)cap)
         return (int)cap;
     return total;
+}
+
+int zd_notes_snippet(const struct zd_note *note, const char *needle,
+                     char *out, uint32_t cap) {
+    const char *field;
+    long at;
+    uint32_t n = 0;
+    if (!note || !needle || !out || cap == 0)
+        return -22;
+    out[0] = 0;
+    field = note->body;
+    at = nt_find_ci(note->body, needle);
+    if (at < 0) {
+        field = note->title;
+        at = nt_find_ci(note->title, needle);
+    }
+    if (at < 0)
+        return -2;
+    /* The window starts at the match so the caller can rely on the needle
+     * being present in the copy, even after truncation. */
+    while (field[at + n] && n + 1 < cap) {
+        out[n] = field[at + n];
+        ++n;
+    }
+    out[n] = 0;
+    return (int)n;
 }

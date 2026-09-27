@@ -571,3 +571,191 @@ void zd_settings_provider_init(struct zd_settings_provider *sp,
     sp->provider.context = sp;
     sp->provider.registered = 0;
 }
+
+/* ---- notes content provider ------------------------------------------ */
+
+static uint32_t p_notes_available(void *context) {
+    const struct zd_notes_provider *np = context;
+    return np && np->notes && np->search && np->get && np->notes->count > 0;
+}
+
+static int p_contains_ci(const char *hay, const char *needle) {
+    uint32_t i, k, nl = 0;
+    if (!hay || !needle || !needle[0])
+        return 0;
+    while (needle[nl])
+        ++nl;
+    for (i = 0; hay[i]; ++i) {
+        for (k = 0; k < nl; ++k) {
+            char a = hay[i + k];
+            char b = needle[k];
+            if (a >= 'A' && a <= 'Z')
+                a = (char)(a - 'A' + 'a');
+            if (b >= 'A' && b <= 'Z')
+                b = (char)(b - 'A' + 'a');
+            if (a != b || !a)
+                break;
+        }
+        if (k == nl)
+            return 1;
+    }
+    return 0;
+}
+
+static void p_utoa(uint64_t value, char *out, uint32_t cap) {
+    char scratch[24];
+    uint32_t n = 0, i;
+    if (!out || !cap)
+        return;
+    if (value == 0)
+        scratch[n++] = '0';
+    while (value && n < sizeof(scratch)) {
+        scratch[n++] = (char)('0' + (value % 10U));
+        value /= 10U;
+    }
+    for (i = 0; i < n && i + 1 < cap; ++i)
+        out[i] = scratch[n - 1U - i];
+    out[i < cap ? i : cap - 1U] = 0;
+}
+
+static int p_notes_query(void *context, const struct zd_intent *intent,
+                         struct zd_search_result *results, uint32_t capacity,
+                         volatile uint32_t *cancel_token,
+                         uint32_t query_generation) {
+    struct zd_notes_provider *np = context;
+    uint32_t ids[ZD_NOTES_P_WINDOW];
+    uint32_t emitted[ZD_NOTES_P_WINDOW];
+    uint32_t emitted_count = 0;
+    uint32_t token_count, t, n = 0;
+    char path[ZD_SEARCH_PATH_CAP];
+
+    if (!np || !intent || !results)
+        return -ZD_EINVAL;
+    if (intent->kind != ZD_SEARCH_ANY && intent->kind != ZD_SEARCH_DOCUMENT)
+        return 0;
+    if (!np->notes || !np->search || !np->get || np->notes->count == 0 ||
+        capacity == 0) {
+        ++np->stats.unavailable;
+        return 0;
+    }
+    if (cancel_token && *cancel_token != query_generation) {
+        ++np->stats.canceled;
+        return 0;
+    }
+    token_count = intent->token_count ? intent->token_count : 1U;
+    if (token_count == 1 && !intent->raw[0])
+        return 0;
+    ++np->stats.queries;
+    for (t = 0; t < token_count; ++t) {
+        const char *needle =
+            intent->token_count ? intent->tokens[t] : intent->raw;
+        uint32_t found, i;
+        int hits;
+        if (!needle[0])
+            continue;
+        if (cancel_token && *cancel_token != query_generation) {
+            ++np->stats.canceled;
+            break;
+        }
+        /* The note store's own case-insensitive matcher decides what
+         * matches; this provider only turns hits into search results. */
+        hits = np->search(np->notes, needle, ids, ZD_NOTES_P_WINDOW);
+        if (hits < 0)
+            continue;
+        found = (uint32_t)hits;
+        if (found >= ZD_NOTES_P_WINDOW)
+            ++np->stats.capped_hits;
+        for (i = 0; i < found; ++i) {
+            const struct zd_note *note = np->get(np->notes, ids[i]);
+            uint32_t k, already = 0;
+            if (!note)
+                continue;
+            for (k = 0; k < emitted_count; ++k) {
+                if (emitted[k] != ids[i])
+                    continue;
+                already = 1;
+                break;
+            }
+            if (already) {
+                /* A second matching token strengthens the existing result
+                 * instead of duplicating it. */
+                for (k = 0; k < n; ++k) {
+                    if (results[k].document_id == note->id) {
+                        results[k].score += 15U;
+                        break;
+                    }
+                }
+                continue;
+            }
+            if (n >= capacity) {
+                ++np->stats.truncated;
+                continue;
+            }
+            if (emitted_count < ZD_NOTES_P_WINDOW)
+                emitted[emitted_count++] = ids[i];
+            results[n].document_id = note->id;
+            results[n].kind = ZD_SEARCH_DOCUMENT;
+            /* The ranking core scores the label and the path, so a
+             * body-only match has to carry the matched text into the
+             * label or it would be dropped as unscored: bounded title,
+             * then the body window that actually matched. */
+            if (p_contains_ci(note->title, needle)) {
+                p_copy_capped(results[n].label, ZD_SEARCH_LABEL_CAP,
+                              note->title);
+            } else {
+                uint32_t k = 0;
+                while (k < 12U && note->title[k]) {
+                    results[n].label[k] = note->title[k];
+                    ++k;
+                }
+                if (k < ZD_SEARCH_LABEL_CAP - 1U)
+                    results[n].label[k++] = ' ';
+                results[n].label[k] = 0;
+                if (!np->snippet ||
+                    np->snippet(note, needle, results[n].label + k,
+                                ZD_SEARCH_LABEL_CAP - k) < 0)
+                    p_copy_capped(results[n].label, ZD_SEARCH_LABEL_CAP,
+                                  note->title);
+            }
+            p_copy_capped(path, ZD_SEARCH_PATH_CAP, "note:");
+            p_utoa(note->id, path + 5, ZD_SEARCH_PATH_CAP - 5U);
+            p_copy_capped(results[n].path, ZD_SEARCH_PATH_CAP, path);
+            /* Pinned notes rank first; that is a product rule, not a
+             * guess about relevance. */
+            results[n].score = note->pinned ? 90U : 70U;
+            results[n].provider_priority = 0;
+            results[n].recency_score =
+                note->mtime > 0 ? (uint64_t)note->mtime : 0U;
+            results[n].use_count = 0;
+            results[n].available = 1U;
+            ++n;
+        }
+    }
+    np->stats.matches += n;
+    return (int)n;
+}
+
+void zd_notes_provider_init(struct zd_notes_provider *np,
+                            const struct zd_notes *notes,
+                            zd_notes_search_fn search, zd_notes_get_fn get,
+                            zd_notes_snippet_fn snippet) {
+    if (!np)
+        return;
+    np->notes = notes;
+    np->search = search;
+    np->get = get;
+    np->snippet = snippet;
+    np->stats.queries = 0;
+    np->stats.matches = 0;
+    np->stats.unavailable = 0;
+    np->stats.canceled = 0;
+    np->stats.truncated = 0;
+    np->stats.capped_hits = 0;
+    np->provider.name = "notes";
+    np->provider.kind_mask = 1u << ZD_SEARCH_DOCUMENT;
+    np->provider.priority = 55;
+    np->provider.available = p_notes_available;
+    np->provider.query = p_notes_query;
+    np->provider.context = np;
+    np->provider.registered = 0;
+}

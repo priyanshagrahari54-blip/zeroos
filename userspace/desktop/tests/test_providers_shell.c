@@ -930,12 +930,165 @@ static void test_session_platform_activation_sequence(void) {
     ZD_CHECK_EQ(consumed, audit_count);
 }
 
+static void test_notes_provider(void) {
+    struct zd_notes notes;
+    struct zd_notes_provider np;
+    struct zd_search_result results[8];
+    struct zd_intent intent;
+    uint32_t id_a = 0, id_b = 0, id_c = 0, got, cancel;
+    char expect[32];
+
+    zd_notes_init(&notes);
+    zd_notes_provider_init(0, &notes, 0, 0, 0);          /* must not crash */
+    zd_notes_provider_init(&np, 0, 0, 0, 0);
+    ZD_CHECK(np.provider.name && strcmp(np.provider.name, "notes") == 0);
+    ZD_CHECK_EQ(np.provider.kind_mask, 1u << ZD_SEARCH_DOCUMENT);
+    ZD_CHECK_EQ(np.provider.available(&np), 0u);  /* no store bound */
+
+    memset(&intent, 0, sizeof(intent));
+    intent.kind = ZD_SEARCH_ANY;
+    strcpy(intent.raw, "kernel");
+    intent.token_count = 1;
+    strcpy(intent.tokens[0], "kernel");
+
+    /* No store: unavailable is counted, nothing is fabricated. */
+    ZD_CHECK_EQ(np.provider.query(&np, &intent, results, 8, 0, 1), 0);
+    ZD_CHECK_EQ(np.stats.unavailable, 1u);
+    ZD_CHECK_EQ(np.stats.queries, 0u);
+
+    /* Bad arguments are rejected. */
+    ZD_CHECK_ERR(np.provider.query(0, &intent, results, 8, 0, 1), ZD_EINVAL);
+    ZD_CHECK_ERR(np.provider.query(&np, 0, results, 8, 0, 1), ZD_EINVAL);
+    ZD_CHECK_ERR(np.provider.query(&np, &intent, 0, 8, 0, 1), ZD_EINVAL);
+
+    ZD_CHECK_OK(zd_notes_create(&notes, "kernel notes", "scheduler and vmm",
+                                100, &id_a));
+    ZD_CHECK_OK(zd_notes_create(&notes, "study plan",
+                                "revise kernel scheduling", 200, &id_b));
+    ZD_CHECK_OK(zd_notes_create(&notes, "shopping", "milk and bread",
+                                300, &id_c));
+    ZD_CHECK_OK(zd_notes_set_pinned(&notes, id_b, 1));
+    zd_notes_provider_init(&np, &notes, zd_notes_search,
+                           zd_notes_get, zd_notes_snippet);
+    ZD_CHECK_EQ(np.provider.available(&np), 1u);
+
+    /* Title and body both match, case-insensitively, via the note store's
+     * own matcher; emission order is note order and ranking is by score. */
+    got = (uint32_t)np.provider.query(&np, &intent, results, 8, 0, 1);
+    ZD_CHECK_EQ(got, 2u);
+    ZD_CHECK_EQ(np.stats.queries, 1u);
+    ZD_CHECK_EQ(np.stats.matches, 2u);
+    ZD_CHECK_EQ(results[0].document_id, (uint64_t)id_a);
+    ZD_CHECK_EQ(results[0].kind, ZD_SEARCH_DOCUMENT);
+    /* Title match: the label is the title itself. */
+    ZD_CHECK(strcmp(results[0].label, "kernel notes") == 0);
+    ZD_CHECK_EQ(results[0].score, 70u);
+    ZD_CHECK_EQ(results[0].recency_score, 100u);
+    ZD_CHECK_EQ(results[0].available, 1u);
+    snprintf(expect, sizeof(expect), "note:%u", id_a);
+    ZD_CHECK(strcmp(results[0].path, expect) == 0);
+    /* A pinned note scores higher: that is a product rule, not a guess. */
+    ZD_CHECK_EQ(results[1].document_id, (uint64_t)id_b);
+    ZD_CHECK_EQ(results[1].score, 90u);
+    ZD_CHECK(results[1].score > results[0].score);
+
+    /* A second matching token strengthens the existing result instead of
+     * duplicating it. */
+    intent.token_count = 2;
+    strcpy(intent.tokens[1], "study");
+    got = (uint32_t)np.provider.query(&np, &intent, results, 8, 0, 1);
+    ZD_CHECK_EQ(got, 2u);
+    ZD_CHECK_EQ(results[0].document_id, (uint64_t)id_a);
+    ZD_CHECK_EQ(results[0].score, 70u);
+    ZD_CHECK_EQ(results[1].document_id, (uint64_t)id_b);
+    ZD_CHECK_EQ(results[1].score, 105u);
+    intent.token_count = 1;
+
+    /* A kind filter that excludes documents yields nothing and does not
+     * touch the counters. */
+    {
+        uint64_t before = np.stats.queries;
+        intent.kind = ZD_SEARCH_FILE;
+        ZD_CHECK_EQ(np.provider.query(&np, &intent, results, 8, 0, 1), 0);
+        intent.kind = ZD_SEARCH_ANY;
+        ZD_CHECK_EQ(np.stats.queries, before);
+    }
+
+    /* Capacity is respected and the drop is counted, not hidden. */
+    got = (uint32_t)np.provider.query(&np, &intent, results, 1, 0, 1);
+    ZD_CHECK_EQ(got, 1u);
+    ZD_CHECK_EQ(np.stats.truncated, 1u);
+
+    /* An empty query is not a query. */
+    memset(&intent, 0, sizeof(intent));
+    intent.kind = ZD_SEARCH_ANY;
+    ZD_CHECK_EQ(np.provider.query(&np, &intent, results, 8, 0, 1), 0);
+
+    /* A stale cancel token stops the provider before it reads the store. */
+    intent.token_count = 1;
+    strcpy(intent.tokens[0], "kernel");
+    cancel = 99;
+    ZD_CHECK_EQ(np.provider.query(&np, &intent, results, 8, &cancel, 1), 0);
+    ZD_CHECK_EQ(np.stats.canceled, 1u);
+    (void)id_c;
+}
+
+static void test_notes_provider_in_pipeline(void) {
+    struct zd_search search;
+    struct zd_notes notes;
+    struct zd_notes_provider np;
+    struct zd_search_result results[16];
+    uint32_t count = 0, i, saw_doc = 0, id = 0;
+
+    zd_notes_init(&notes);
+    ZD_CHECK_OK(zd_notes_create(&notes, "kernel notes", "scheduler and vmm",
+                                100, &id));
+    zd_search_init(&search);
+    zd_notes_provider_init(&np, &notes, zd_notes_search,
+                           zd_notes_get, zd_notes_snippet);
+    ZD_CHECK_OK(zd_search_add_provider(&search, &np.provider));
+
+    /* doc: restricts the intent to documents. */
+    ZD_CHECK_OK(zd_search_query(&search, "doc:kernel", results, 16, &count));
+    for (i = 0; i < count; ++i)
+        if (results[i].kind == ZD_SEARCH_DOCUMENT)
+            ++saw_doc;
+    ZD_CHECK_EQ(saw_doc, 1u);
+    ZD_CHECK_EQ(results[0].document_id, (uint64_t)id);
+
+    /* An unprefixed query reaches the same provider through ANY. The match
+     * is in the body only, so the label carries the matched window -- the
+     * ranking core scores label and path, and would drop it otherwise. */
+    count = 0;
+    saw_doc = 0;
+    ZD_CHECK_OK(zd_search_query(&search, "vmm", results, 16, &count));
+    for (i = 0; i < count; ++i)
+        if (results[i].kind == ZD_SEARCH_DOCUMENT)
+            ++saw_doc;
+    ZD_CHECK_EQ(saw_doc, 1u);
+    ZD_CHECK(results[0].score > 0u);
+    ZD_CHECK(strstr(results[0].label, "vmm") != 0);
+    ZD_CHECK(strncmp(results[0].label, "kernel notes ", 13) == 0);
+
+    /* A miss produces no document results and no invented match. */
+    count = 0;
+    saw_doc = 0;
+    ZD_CHECK_OK(zd_search_query(&search, "nothingmatchesthis", results, 16,
+                                &count));
+    for (i = 0; i < count; ++i)
+        if (results[i].kind == ZD_SEARCH_DOCUMENT)
+            ++saw_doc;
+    ZD_CHECK_EQ(saw_doc, 0u);
+}
+
 void zd_test_providers_shell_suite(void) {
     printf(" suite: shell search providers\n");
     ZD_RUN(test_files_provider_roots);
     ZD_RUN(test_files_provider_query);
     ZD_RUN(test_files_provider_bounds);
     ZD_RUN(test_settings_provider);
+    ZD_RUN(test_notes_provider);
+    ZD_RUN(test_notes_provider_in_pipeline);
     ZD_RUN(test_shell_providers_in_pipeline);
     ZD_RUN(test_session_binding_sequence);
     ZD_RUN(test_session_platform_activation_sequence);
