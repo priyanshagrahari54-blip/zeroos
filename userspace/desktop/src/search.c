@@ -123,6 +123,7 @@ void zd_search_init(struct zd_search *search) {
         return;
     zd_memset(search, 0, sizeof(*search));
     zd_search_register_index_provider(search);
+    zd_search_register_app_provider(search);
 }
 
 static int doc_slot(struct zd_search *search, const char *key) {
@@ -491,6 +492,58 @@ static int index_provider_query(void *context, const struct zd_intent *intent,
         ++count;
     }
     return (int)count;
+}
+
+/* Live-window provider (Stage 5 shell chrome). The window list is
+ * supplied by the shell through zd_search_set_live_apps; this provider
+ * turns it into ZD_SEARCH_APP rows so running windows are searchable
+ * without a canned application table. Rows are scored by the shared
+ * ranker like every other provider, so a window only surfaces when its
+ * title or accessibility label actually matches the query token. */
+static int app_provider_query(void *context, const struct zd_intent *intent,
+                              struct zd_search_result *results,
+                              uint32_t capacity,
+                              volatile uint32_t *cancel_token,
+                              uint32_t query_generation) {
+    struct zd_search *search = (struct zd_search *)context;
+    uint32_t index;
+    uint32_t count = 0;
+
+    if (!search || !intent || !results || capacity == 0)
+        return -ZD_EINVAL;
+    if (!search->app_windows)
+        return 0;
+    for (index = 0; index < search->app_window_count && count < capacity;
+         ++index) {
+        const struct zd_window *window = search->app_windows[index];
+        struct zd_search_result *row;
+        if (!window || !window->in_use)
+            continue;
+        if (cancel_token && *cancel_token != query_generation)
+            return -ZD_ECANCELED;
+        row = &results[count];
+        zd_memset(row, 0, sizeof(*row));
+        row->kind = ZD_SEARCH_APP;
+        row->document_id = window->id;
+        zd_str_copy(row->label, sizeof(row->label), window->title);
+        zd_str_copy(row->path, sizeof(row->path), window->a11y_label);
+        row->available = 1;
+        ++count;
+    }
+    return (int)count;
+}
+
+void zd_search_register_app_provider(struct zd_search *search) {
+    struct zd_search_provider provider;
+    if (!search)
+        return;
+    zd_memset(&provider, 0, sizeof(provider));
+    provider.name = "apps";
+    provider.kind_mask = 1U << (uint32_t)ZD_SEARCH_APP;
+    provider.priority = 4;
+    provider.query = app_provider_query;
+    provider.context = search;
+    (void)zd_search_add_provider(search, &provider);
 }
 
 void zd_search_register_index_provider(struct zd_search *search) {

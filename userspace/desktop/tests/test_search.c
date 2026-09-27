@@ -295,10 +295,56 @@ static void test_provider_registry_limits(void) {
         else
             break;
     }
-    /* init already registered "index", so capacity-1 more fit. */
-    ZD_CHECK_EQ(registered, ZD_SEARCH_MAX_PROVIDERS - 1U);
+    /* init already registered "index" and "apps", so capacity-2 more fit. */
+    ZD_CHECK_EQ(registered, ZD_SEARCH_MAX_PROVIDERS - 2U);
     ZD_CHECK_ERR(zd_search_add_provider(&search, &provider), ZD_ENOSPC);
     ZD_CHECK_ERR(zd_search_add_provider(&search, 0), ZD_EINVAL);
+}
+
+static void test_live_app_provider(void) {
+    struct zd_window windows[2];
+    const struct zd_window *live[2];
+    struct zd_search_result results[4];
+    uint32_t count = 0;
+    uint32_t index;
+    int found_app = 0;
+
+    zd_search_init(&search);
+
+    /* No window list attached: the built-in provider stays silent. */
+    ZD_CHECK_EQ(zd_search_query(&search, "app:editor", results, 4, &count), 0);
+    ZD_CHECK_EQ(count, 0U);
+
+    memset(windows, 0, sizeof(windows));
+    windows[0].in_use = 1;
+    windows[0].id = 7;
+    snprintf(windows[0].title, sizeof(windows[0].title), "editor-window");
+    snprintf(windows[0].a11y_label, sizeof(windows[0].a11y_label),
+             "text editor");
+    windows[1].in_use = 0; /* free slot: must be skipped, never emitted */
+    live[0] = &windows[0];
+    live[1] = &windows[1];
+    zd_search_set_live_apps(&search, live, 2);
+
+    ZD_CHECK_EQ(zd_search_query(&search, "app:editor", results, 4, &count), 0);
+    ZD_CHECK(count >= 1U);
+    for (index = 0; index < count; ++index)
+        if (results[index].kind == ZD_SEARCH_APP &&
+            strcmp(results[index].label, "editor-window") == 0 &&
+            results[index].document_id == 7U)
+            found_app = 1;
+    ZD_CHECK_EQ(found_app, 1);
+
+    /* A token no window carries yields nothing: rows are scored, not
+     * canned, so the provider cannot manufacture a match. */
+    ZD_CHECK_EQ(zd_search_query(&search, "app:zzzmissing", results, 4,
+                                &count), 0);
+    ZD_CHECK_EQ(count, 0U);
+
+    /* Detaching the list removes the rows again. */
+    zd_search_set_live_apps(&search, 0, 0);
+    ZD_CHECK_EQ(zd_search_query(&search, "app:editor", results, 4, &count), 0);
+    ZD_CHECK_EQ(count, 0U);
 }
 
 void zd_test_search_suite(void) {
@@ -308,4 +354,5 @@ void zd_test_search_suite(void) {
     ZD_RUN(test_query_pipeline);
     ZD_RUN(test_ranking_semantics);
     ZD_RUN(test_provider_registry_limits);
+    ZD_RUN(test_live_app_provider);
 }
