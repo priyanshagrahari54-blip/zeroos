@@ -17,7 +17,7 @@ does not exist yet, the row says so — no claim is made without it.
 | SECURITY | Permission gates (AI grants, automation permission-first ordering), crypto AEAD/ChaCha20 vectors, constant-time MAC compare, denied counters | crypto tests + desktop suites | Green |
 | MEMORY-SAFETY | Every host suite (24 core suites, desktop, compat) rebuilt under AddressSanitizer + UndefinedBehaviorSanitizer with `-fno-sanitize-recover=all`; leak detection on | `make sanitizer-check` (part of `make check`) | Green; this gate is what caught the PS/2 extended-key down-state overrun, and it was verified to fail (exit 2 + OOB trace) when that bug is reintroduced |
 | RECOVERY | Browser crash recovery, service watchdog, display attach/detach, init recovery in guest, rollback contracts | desktop suites + CI boot milestones | Green (host), guest init recovery in CI |
-| QEMU | Boot certification block in CI: panic detection, session milestones, storage certification | `build.yml` on every push/PR | Green on every push context since the `dedb23f` revert (`c27ad12`, `56a009f`, `c24c6b2`, `69f053c`, `c8b75ae`, `92e5729`, `fecd7a3`, `19ce0fa`, `eaac99c`, `d0bfc0c`, `d294b66`, `ef384d7`, …); PR context green except the documented `78ef9b5`/`0b2b480`/`98ba0ca` boot-flake rows below |
+| QEMU | Boot certification block in CI: panic detection, session milestones, storage certification | `build.yml` on every push/PR | Green on every push context since the `dedb23f` revert (`c27ad12`, `56a009f`, `c24c6b2`, `69f053c`, `c8b75ae`, `92e5729`, `fecd7a3`, `19ce0fa`, `eaac99c`, `d0bfc0c`, `d294b66`, `ef384d7`, `1b13654`, …); PR context green except the documented `78ef9b5`/`0b2b480`/`98ba0ca` boot-flake rows below |
 | REAL-HARDWARE | Physical run of the certified ISO on bare metal | Not available in this environment | **Not run — no claim** |
 
 | PERFORMANCE | Frame pacing/vsync accounting (display tests), governor tier/pressure/effects (governor tests), metrics recorder with interval histogram + percentiles wired into `zd_display_service_present`, FPS monitor frame-time percentiles and budget breaches | desktop suite + session link | Green (host); on-device percentiles pending |
@@ -100,6 +100,7 @@ persistence certification. A green
 
 | Commit | Evidence | Result |
 |---|---|---|
+| `1b13654` | Push-context CI SUCCESS (run 36291979793, 7m57s): `make check` incl. the new ASan/UBSan gate, three sequential QEMU boot certifications grepping the file-manager VFS binding and Universal Search live-provider milestones, SMP4 boot, and the q35 AHCI+NVMe persistence certification | SUCCESS |
 | `2123c14` | Push-context boot: the new file-manager VFS binding milestone printed, then the session failed on the folder search result — `zeroos_dirent.type` is the mode nibble (`mode >> 12`, 4 = dir), not the raw `S_IF*` bits, so no entry was ever marked `ZD_FM_DIR`. Fixed by `ZEROOS_DT_*` constants in both ABI headers, the storage probe certifying the encoding in the guest, and a host pin. This is exactly what the grepped milestone is for. | FAILURE (found the dirent type defect) |
 | `599b262` | PR-context full boot with 7 session milestones (service attached, shell rounds, probe pattern, clean reap) | SUCCESS |
 | `ccfa30d` | PR-context full boot with CI diagnostics | SUCCESS |
