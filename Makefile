@@ -289,7 +289,9 @@ SESSION_DESKTOP_SRCS := userspace/desktop/src/common.c \
 	userspace/desktop/src/update.c \
 	userspace/desktop/src/clipboard.c \
 	userspace/desktop/src/downloads.c \
-	userspace/desktop/src/notify.c
+	userspace/desktop/src/notify.c \
+	userspace/desktop/src/launcher.c \
+	userspace/desktop/src/capability.c
 SESSION_DESKTOP_OBJS := $(patsubst userspace/desktop/src/%.c,$(BUILD)/session_desktop_%.o,$(SESSION_DESKTOP_SRCS))
 SESSION_DEPS := userspace/session/session.c userspace/session/session_start.S \
 	userspace/session/session.ld userspace/include/zeroos/syscall.h \

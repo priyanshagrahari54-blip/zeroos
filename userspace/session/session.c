@@ -13,6 +13,8 @@
 #include <zeroos/desktop/clipboard.h>
 #include <zeroos/desktop/downloads.h>
 #include <zeroos/desktop/notify.h>
+#include <zeroos/desktop/launcher.h>
+#include <zeroos/desktop/capability.h>
 #include <zeroos/desktop/update.h>
 #include "crypto.h"
 
@@ -473,6 +475,30 @@ static uint8_t update_tag[16];
 static struct zd_update session_update;
 static struct zd_clipboard session_clipboard;
 static char clip_overlong[ZD_CLIP_TEXT + 8];
+static struct zd_launcher session_launcher;
+static struct zd_caps session_caps;
+
+/* The launcher's hook really creates a process: it spawns the embedded
+ * child image with SPAWN and hands the pid back to the shell, which waits
+ * for it. A refusal is an errno, never a pretend launch. */
+struct session_launch_ctx {
+    const uint8_t *image;
+    uint64_t image_size;
+    int64_t pid;
+};
+static struct session_launch_ctx session_launch_ctx;
+
+static int session_launch_hook(void *ctx, const char *name) {
+    struct session_launch_ctx *c = (struct session_launch_ctx *)ctx;
+    (void)name;
+    if (!c || !c->image || c->image_size == 0)
+        return -ZEROOS_EINVAL;
+    c->pid = zeroos_spawn(c->image, c->image_size, 0, 0, 0, 0);
+    if (c->pid <= 0)
+        return c->pid < 0 ? (int)c->pid : -ZEROOS_EAGAIN;
+    return 0;
+}
+
 static struct zd_notify session_notify;
 
 /* Listener counters: the shell observes posts and rate limits through the
@@ -754,6 +780,9 @@ int session_main(void) {
     struct zd_notify_group note_groups[4];
     uint64_t notify_now;
     uint64_t notify_due;
+    struct zd_app *launch_results[4];
+    struct zd_app *launch_app;
+    int launch_count;
     uint32_t note_visible;
     uint32_t note_group_count;
     int64_t clip_result;
@@ -1925,7 +1954,76 @@ int session_main(void) {
         return fail("notify groups", (int64_t)note_group_count);
     say("ZEROOS: session notification lifecycle passed.");
 
-    /* 15. Update payload verification with a provisioned key. Nothing
+    /* 15. Launcher bound to real process creation and the capability gate.
+     * Launching an app is not a state change on a list: the hook spawns the
+     * embedded child image, the shell waits for it, and the capability gate
+     * decides whether the launcher may launch at all. */
+    zd_caps_init(&session_caps);
+    zd_launcher_init(&session_launcher, session_launch_hook,
+                     &session_launch_ctx);
+    zd_launcher_set_caps(&session_launcher, &session_caps);
+    if (zd_launcher_add(&session_launcher, "child", "process demo", 1) != 0)
+        return fail("launcher register", 0);
+    /* Without the capability the request is refused before the hook runs. */
+    if (zd_launcher_launch(&session_launcher, "child") != -1)
+        return fail("launcher capability denial", 0);
+    if (session_launcher.stats.cap_denied != 1)
+        return fail("launcher denial count",
+                    (int64_t)session_launcher.stats.cap_denied);
+    if (zd_caps_activate(&session_caps, ZD_SVC_LAUNCHER,
+                         1ULL << ZD_CAP_LAUNCH_APPS) != 0)
+        return fail("launcher capability grant", 0);
+    session_launch_ctx.image = child_image;
+    session_launch_ctx.image_size = child_size;
+    session_launch_ctx.pid = 0;
+    if (zd_launcher_launch(&session_launcher, "child") != 0)
+        return fail("launcher launch", 0);
+    if (session_launch_ctx.pid <= 0)
+        return fail("launcher spawn pid", session_launch_ctx.pid);
+    launch_app = zd_launcher_find(&session_launcher, "child");
+    if (!launch_app || launch_app->state != ZD_LAUNCH_PENDING)
+        return fail("launcher pending state", 0);
+    /* A second request while one is in flight is deduplicated. */
+    if (zd_launcher_launch(&session_launcher, "child") != -16)
+        return fail("launcher busy dedup", 0);
+    if (session_launcher.stats.launch_rejected != 1)
+        return fail("launcher rejection count",
+                    (int64_t)session_launcher.stats.launch_rejected);
+    /* The launched process really ran: wait for it and check its status. */
+    status = 0;
+    sys_result = zeroos_wait((uint64_t)session_launch_ctx.pid, &status, 0,
+                             (uint64_t)sysinfo.timer_hz * 10U);
+    if (sys_result != session_launch_ctx.pid)
+        return fail("launcher child wait", sys_result);
+    if (status != 7)
+        return fail("launcher child status", (int64_t)status);
+    zd_launcher_report(&session_launcher, "child", 1, 0);
+    launch_app = zd_launcher_find(&session_launcher, "child");
+    if (!launch_app || launch_app->state != ZD_LAUNCH_RUNNING ||
+        launch_app->in_recents == 0)
+        return fail("launcher recents", 0);
+    if (session_launcher.stats.launches != 1)
+        return fail("launcher launch count",
+                    (int64_t)session_launcher.stats.launches);
+    /* An empty query is the recents view: the app just used comes first. */
+    launch_count = zd_launcher_query(&session_launcher, "", launch_results,
+                                     (int)ZD_ARRAY_COUNT(launch_results));
+    if (launch_count < 1 || launch_results[0] != launch_app)
+        return fail("launcher recents query", (int64_t)launch_count);
+    /* Keyword search finds it; a miss invents nothing. */
+    launch_count = zd_launcher_query(&session_launcher, "proc",
+                                     launch_results,
+                                     (int)ZD_ARRAY_COUNT(launch_results));
+    if (launch_count != 1 || launch_results[0] != launch_app)
+        return fail("launcher keyword query", (int64_t)launch_count);
+    launch_count = zd_launcher_query(&session_launcher, "zzzz",
+                                     launch_results,
+                                     (int)ZD_ARRAY_COUNT(launch_results));
+    if (launch_count != 0)
+        return fail("launcher empty result", (int64_t)launch_count);
+    say("ZEROOS: session launcher process binding passed.");
+
+    /* 16. Update payload verification with a provisioned key. Nothing
      * here is a fixture: the key is provisioned through the filesystem
      * (written, read back, and only then used), the bundle is sealed with
      * the RFC 8439 AEAD core, and the update engine verifies it with the
@@ -2045,7 +2143,7 @@ int session_main(void) {
         return fail("update slot removed", 0);
     say("ZEROOS: session update verification passed.");
 
-    /* 16. Sandbox decisions enforced by the kernel, not only by Ring-3
+    /* 17. Sandbox decisions enforced by the kernel, not only by Ring-3
      * policy. The confined profile denies writes, so the session really
      * drops its identity: after SETCRED the VFS itself refuses the
      * owner-only file with EACCES while a world-readable file still
