@@ -1,6 +1,8 @@
 /* Canonical UI condition contract.  See ui.h. */
 #include <zeroos/desktop/ui.h>
 #include <zeroos/desktop/i18n.h>
+/* Symbolic ZEROOS_E* values for the VFS-error mapper at the bottom. */
+#include <zeroos/syscall.h>
 
 void zd_ui_init(struct zd_ui_surface *u) {
     if (!u)
@@ -88,6 +90,54 @@ enum zd_ui_condition zd_ui_condition_from_rc(int rc) {
         return ZD_UI_OFFLINE;
     case 7: /* ZD_ECANCELED */
         return ZD_UI_NORMAL;
+    default:
+        return ZD_UI_ERROR;
+    }
+}
+
+/*
+ * VFS/POSIX error namespace -> UI condition.
+ *
+ * The desktop core's own returns use ZD_E* (see common.h), but the cores
+ * that bind to the file syscalls — the file manager and the files search
+ * provider — propagate the kernel's ZEROOS_E* values, which are the POSIX
+ * numbers.  Feeding those straight into zd_ui_condition_from_rc misreads
+ * them (-ZEROOS_ENOENT == -2 would land on the ZD_ENOSPC/LOW_RESOURCE
+ * branch), so this mapper exists and is the only supported path from a VFS
+ * error to a rendered condition.
+ */
+enum zd_ui_condition zd_ui_condition_from_vfs_rc(int64_t rc) {
+    if (rc >= 0)
+        return ZD_UI_NORMAL;
+    switch (-rc) {
+    case ZEROOS_EPERM:
+    case ZEROOS_EACCES:
+        return ZD_UI_PERMISSION_DENIED;
+    case ZEROOS_ENOENT:
+        return ZD_UI_EMPTY;
+    case ZEROOS_ENOMEM:
+    case ZEROOS_ENOSPC:
+    case ZEROOS_ENFILE:
+    case ZEROOS_EMFILE:
+    case ZEROOS_EOVERFLOW:
+        return ZD_UI_LOW_RESOURCE;
+    case ZEROOS_EBUSY:
+        return ZD_UI_LOADING;
+    case ZEROOS_EAGAIN:
+    case ZEROOS_ETIMEDOUT:
+    case ZEROOS_EPIPE:
+        return ZD_UI_OFFLINE;
+    case ZEROOS_EIO:
+    case ZEROOS_ENXIO:
+    case ZEROOS_ENODEV:
+    case ZEROOS_ENOSYS:
+    case ZEROOS_EFAULT:
+    case ZEROOS_EBADF:
+    case ZEROOS_EINVAL:
+    case ZEROOS_ENOTDIR:
+    case ZEROOS_EISDIR:
+    case ZEROOS_EEXIST:
+    case ZEROOS_EXDEV:
     default:
         return ZD_UI_ERROR;
     }

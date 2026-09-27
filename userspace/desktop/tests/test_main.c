@@ -35,6 +35,7 @@ void zd_test_sandbox_suite(void);
 void zd_test_clipboard_suite(void);
 void zd_test_downloads_suite(void);
 void zd_test_providers_suite(void);
+void zd_test_providers_shell_suite(void);
 void zd_test_perfcenter_suite(void);
 void zd_test_fault_suite(void);
 void zd_test_soak_suite(void);
@@ -84,6 +85,7 @@ int main(void) {
     zd_test_clipboard_suite();
     zd_test_downloads_suite();
     zd_test_providers_suite();
+    zd_test_providers_shell_suite();
     zd_test_perfcenter_suite();
     zd_test_fault_suite();
     zd_test_soak_suite();

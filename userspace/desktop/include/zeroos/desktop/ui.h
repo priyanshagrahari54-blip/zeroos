@@ -61,5 +61,10 @@ const char *zd_ui_condition_name(struct zd_i18n *i18n,
  * ECANCELED->NORMAL (back to idle), everything else -> ERROR.
  * Non-negative input maps to NORMAL. */
 enum zd_ui_condition zd_ui_condition_from_rc(int rc);
+/* Same mapping for the VFS error namespace (ZEROOS_E*, the POSIX numbers)
+ * propagated by the file-manager and files-provider cores.  Required: the
+ * two namespaces are not the same integers, so a VFS -ENOENT fed to the
+ * ZD_* mapper above would render as LOW_RESOURCE instead of EMPTY. */
+enum zd_ui_condition zd_ui_condition_from_vfs_rc(int64_t rc);
 
 #endif /* ZEROOS_DESKTOP_UI_H */
