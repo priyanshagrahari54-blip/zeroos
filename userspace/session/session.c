@@ -2176,9 +2176,11 @@ int session_main(void) {
     perf_label = zd_perf_center_health_label(perf_report.health);
     if (!perf_label || !perf_label[0])
         return fail("perf health label", 0);
-    /* The pressure ladder is explicit: critical memory pressure dominates
-     * the verdict and carries its documented suggestions. */
+    /* Precedence is explicit in the assessment, so both sides of it are
+     * pinned. With throughput above the floor, critical memory pressure
+     * owns the verdict and carries its documented suggestions. */
     perf_in.mem_pressure = 100U;
+    perf_in.fps_milli = 60000U;
     if (zd_perf_center_assess(&session_perf, &perf_in, &perf_report) != 0)
         return fail("perf pressure assess", 0);
     if (perf_report.issue != ZD_PC_ISSUE_MEMORY ||
@@ -2187,6 +2189,19 @@ int session_main(void) {
          (ZD_PC_SUGGEST_CLOSE_BG | ZD_PC_SUGGEST_CHECK_MEMORY)) !=
             (ZD_PC_SUGGEST_CLOSE_BG | ZD_PC_SUGGEST_CHECK_MEMORY))
         return fail("perf pressure verdict", (int64_t)perf_report.issue);
+    /* At the throughput this machine actually runs at -- the tier budget
+     * is 50 ms, i.e. 20 fps against the centre's 30 fps floor -- the
+     * throughput issue outranks memory by design, while the memory
+     * suggestions are still carried. */
+    perf_in.fps_milli = (uint32_t)(1000000000000ULL / perf_cycle_ns);
+    if (zd_perf_center_assess(&session_perf, &perf_in, &perf_report) != 0)
+        return fail("perf throughput assess", 0);
+    if (perf_report.issue != ZD_PC_ISSUE_LOW_FPS ||
+        perf_report.health != ZD_PC_HEALTH_CRITICAL ||
+        (perf_report.suggestions &
+         (ZD_PC_SUGGEST_CLOSE_BG | ZD_PC_SUGGEST_CHECK_MEMORY)) !=
+            (ZD_PC_SUGGEST_CLOSE_BG | ZD_PC_SUGGEST_CHECK_MEMORY))
+        return fail("perf throughput verdict", (int64_t)perf_report.issue);
     /* Bounds: a zero frame duration is refused, and fewer than four
      * samples cannot produce percentiles at all. */
     if (zd_perf_center_record(&session_perf, 0) >= 0)
