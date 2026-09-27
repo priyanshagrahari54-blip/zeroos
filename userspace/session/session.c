@@ -353,8 +353,12 @@ static int session_fs_mkdir(void *context, const char *path) {
 }
 
 /* Writes `length` bytes of `pattern` to `path`; 0 or -ZEROOS_E*. */
+/* One line of filler; shared by the writer below and the preview
+ * assertion in step 7 so the two can never disagree about the content. */
+static const char session_filler[] = "zeroos shell binding\n";
+
 static int64_t session_write_file(const char *path, uint64_t length) {
-    static const char filler[] = "zeroos shell binding\n";
+    const char *filler = session_filler;
     int64_t fd = zeroos_open(path, ZEROOS_O_WRONLY | ZEROOS_O_CREAT |
                                        ZEROOS_O_TRUNC,
                              0644);
@@ -675,7 +679,9 @@ int session_main(void) {
     if (zd_fm_peek(&session_fm, ZD_FM_PERM_READ, "notes.txt", preview,
                    sizeof(preview), &preview_len) != 0 ||
         preview_len != sizeof(preview) - 1 ||
-        !session_streq(preview, "zeroos shell binding"))
+        /* The writer repeats the filler plus its terminator, so the
+         * preview starts with exactly one full line. */
+        !session_streq(preview, session_filler))
         return fail("file manager preview", (int64_t)preview_len);
     if (zd_fm_peek(&session_fm, 0, "notes.txt", preview, sizeof(preview),
                    &preview_len) != -1)
