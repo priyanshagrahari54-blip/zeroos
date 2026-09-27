@@ -32,6 +32,10 @@ static uint32_t window_pixels[SESSION_WINDOW_W * SESSION_WINDOW_H];
 static struct zd_fm session_fm;
 static struct zd_search session_search;
 static struct zd_settings session_settings;
+static struct zd_settings session_settings_restored;
+static struct zd_settings session_settings_tampered;
+static char settings_blob[ZD_SETTINGS_BLOB_CAP];
+static char settings_blob_read[ZD_SETTINGS_BLOB_CAP + 1];
 static struct zd_files_provider session_files;
 static struct zd_settings_provider session_settings_provider;
 static struct zd_cmd_provider session_commands;
@@ -783,6 +787,10 @@ int session_main(void) {
     struct zd_app *launch_results[4];
     struct zd_app *launch_app;
     int launch_count;
+    uint32_t blob_len;
+    uint32_t blob_version;
+    uint32_t blob_index;
+    uint32_t setting_changed;
     uint32_t note_visible;
     uint32_t note_group_count;
     int64_t clip_result;
@@ -2023,7 +2031,70 @@ int session_main(void) {
         return fail("launcher empty result", (int64_t)launch_count);
     say("ZEROOS: session launcher process binding passed.");
 
-    /* 16. Update payload verification with a provisioned key. Nothing
+    /* 16. Settings persistence through the filesystem. The registry is
+     * exported to its versioned blob, written to the ramdisk, read back and
+     * imported into a fresh registry, so a restart really recovers the
+     * stored value. A corrupted blob is refused wholesale and leaves the
+     * live store at its defaults -- the import stages before it commits. */
+    setting_changed = 0;
+    if (zd_settings_set_number(&session_settings, "shell.scale_percent", 175,
+                               ZD_PERM_SETTINGS_USER,
+                               &setting_changed) != 0 ||
+        setting_changed != 1)
+        return fail("settings change", (int64_t)setting_changed);
+    blob_len = 0;
+    blob_version = 0;
+    if (zd_settings_export(&session_settings, settings_blob,
+                           sizeof(settings_blob), &blob_len,
+                           &blob_version) != 0 || blob_len == 0)
+        return fail("settings export", (int64_t)blob_len);
+    if (session_write_buffer("/ram/shell/settings.blob",
+                             (const uint8_t *)settings_blob, blob_len,
+                             0600) != 0)
+        return fail("settings blob write", 0);
+    key_len = 0;
+    if (session_read_buffer("/ram/shell/settings.blob",
+                            (uint8_t *)settings_blob_read,
+                            sizeof(settings_blob_read) - 1,
+                            &key_len) != 0 || key_len != blob_len)
+        return fail("settings blob readback", (int64_t)key_len);
+    settings_blob_read[key_len] = 0;
+    zd_settings_init(&session_settings_restored);
+    if (zd_settings_register(&session_settings_restored,
+                             &session_scale_setting) != 0)
+        return fail("settings restore schema", 0);
+    if (zd_settings_import(&session_settings_restored, settings_blob_read,
+                           ZD_PERM_SETTINGS_USER) != 0)
+        return fail("settings import", 0);
+    setting_value = 0;
+    if (zd_settings_get(&session_settings_restored, "shell.scale_percent",
+                        &setting_value, 0, 0) != 0 || setting_value != 175)
+        return fail("settings restored value", setting_value);
+    /* Corrupt the stored value in the blob: 975 is outside the schema's
+     * 50..300 range, so the import must fail and change nothing. */
+    for (blob_index = 0; blob_index + 2 < blob_len; ++blob_index) {
+        if (settings_blob_read[blob_index] == '1' &&
+            settings_blob_read[blob_index + 1] == '7' &&
+            settings_blob_read[blob_index + 2] == '5')
+            break;
+    }
+    if (blob_index + 2 >= blob_len)
+        return fail("settings blob content", 0);
+    settings_blob_read[blob_index] = '9';
+    zd_settings_init(&session_settings_tampered);
+    if (zd_settings_register(&session_settings_tampered,
+                             &session_scale_setting) != 0)
+        return fail("settings tamper schema", 0);
+    if (zd_settings_import(&session_settings_tampered, settings_blob_read,
+                           ZD_PERM_SETTINGS_USER) != -ZD_EINVAL)
+        return fail("settings tamper rejection", 0);
+    setting_value = -1;
+    if (zd_settings_get(&session_settings_tampered, "shell.scale_percent",
+                        &setting_value, 0, 0) != 0 || setting_value != 100)
+        return fail("settings tamper isolation", setting_value);
+    say("ZEROOS: session settings persistence passed.");
+
+    /* 17. Update payload verification with a provisioned key. Nothing
      * here is a fixture: the key is provisioned through the filesystem
      * (written, read back, and only then used), the bundle is sealed with
      * the RFC 8439 AEAD core, and the update engine verifies it with the
@@ -2143,7 +2214,7 @@ int session_main(void) {
         return fail("update slot removed", 0);
     say("ZEROOS: session update verification passed.");
 
-    /* 17. Sandbox decisions enforced by the kernel, not only by Ring-3
+    /* 18. Sandbox decisions enforced by the kernel, not only by Ring-3
      * policy. The confined profile denies writes, so the session really
      * drops its identity: after SETCRED the VFS itself refuses the
      * owner-only file with EACCES while a world-readable file still
