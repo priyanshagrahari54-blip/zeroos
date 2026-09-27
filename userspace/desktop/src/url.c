@@ -77,6 +77,10 @@ int zd_url_parse(const char *input, struct zd_url *out) {
 
     if (!input)
         return -22;
+    /* From here the input exists: a URL that parses must not carry a
+     * rejection diagnostic, or every UI that shows the reason would call a
+     * perfectly good URL "null input". */
+    out->reject_reason = ZD_URL_OK_REJECT;
     n = u_len(input);
     if (n == 0) {
         out->reject_reason = ZD_URL_R_MALFORMED;

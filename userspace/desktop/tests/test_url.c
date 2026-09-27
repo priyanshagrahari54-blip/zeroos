@@ -14,6 +14,8 @@ void zd_test_url_suite(void) {
     ZD_CHECK(strcmp(u.host, "example.com") == 0);
     ZD_CHECK(strcmp(u.path, "/path?x=1") == 0);
     ZD_CHECK(u.port == 0);
+    /* success leaves no rejection reason behind for the UI to show */
+    ZD_CHECK(u.reject_reason == ZD_URL_OK_REJECT);
 
     /* http with explicit port */
     rc = zd_url_parse("http://localhost:8080/x", &u);
