@@ -11,6 +11,7 @@
 #include <zeroos/desktop/desktop.h>
 #include <zeroos/storage.h>
 #include <zeroos/desktop/clipboard.h>
+#include <zeroos/desktop/downloads.h>
 #include <zeroos/desktop/update.h>
 #include "crypto.h"
 
@@ -470,6 +471,63 @@ static uint8_t update_ct[UPDATE_PAYLOAD_LEN];
 static uint8_t update_tag[16];
 static struct zd_update session_update;
 static struct zd_clipboard session_clipboard;
+static struct zd_downloads session_downloads;
+static uint8_t dl_src_buf[128];
+static uint8_t dl_dst_buf[128];
+
+/* The download start hook really moves bytes: it opens the source path
+ * the item was enqueued with, streams it through the VFS into the
+ * destination, and reports progress as it goes. Nothing is simulated --
+ * a missing source fails the transfer with the errno the VFS returned. */
+struct session_dl_ctx {
+    char dest[96];
+    uint32_t copied;
+};
+static struct session_dl_ctx session_dl_ctx;
+
+static int session_dl_start(void *ctx, uint32_t id, const char *url) {
+    struct session_dl_ctx *c = (struct session_dl_ctx *)ctx;
+    uint8_t buffer[64];
+    int64_t src, dst, n, written;
+    if (!c || !url)
+        return -ZEROOS_EINVAL;
+    c->copied = 0;
+    src = zeroos_open(url, ZEROOS_O_RDONLY, 0);
+    if (src < 0)
+        return (int)src;
+    dst = zeroos_open(c->dest, ZEROOS_O_WRONLY | ZEROOS_O_CREAT |
+                                    ZEROOS_O_TRUNC,
+                      0644);
+    if (dst < 0) {
+        (void)zeroos_close(src);
+        return (int)dst;
+    }
+    for (;;) {
+        n = zeroos_read(src, buffer, sizeof(buffer));
+        if (n < 0) {
+            (void)zeroos_close(src);
+            (void)zeroos_close(dst);
+            return (int)n;
+        }
+        if (n == 0)
+            break;
+        written = zeroos_file_write(dst, buffer, (uint64_t)n);
+        if (written != n) {
+            (void)zeroos_close(src);
+            (void)zeroos_close(dst);
+            return written < 0 ? (int)written : -ZEROOS_EIO;
+        }
+        c->copied += (uint32_t)n;
+        if (zd_downloads_progress(&session_downloads, id, c->copied, 0) != 0) {
+            (void)zeroos_close(src);
+            (void)zeroos_close(dst);
+            return -ZEROOS_EIO;
+        }
+    }
+    if (zeroos_close(src) != 0 || zeroos_close(dst) != 0)
+        return -ZEROOS_EIO;
+    return 0;
+}
 static char clip_overlong[ZD_CLIP_TEXT + 8];
 
 struct session_update_ctx {
@@ -631,6 +689,9 @@ int session_main(void) {
     uint64_t key_len;
     uint32_t key_index;
     int event_index;
+    int64_t dl_id;
+    struct zd_dl_item *dl_item;
+    uint32_t dl_index;
     int64_t clip_result;
     char clip_text[ZD_CLIP_TEXT];
     uint32_t echo_total;
@@ -1599,7 +1660,95 @@ int session_main(void) {
         return fail("child double reap", sys_result);
     say("ZEROOS: session child process reaped cleanly.");
 
-    /* 13. Update payload verification with a provisioned key. Nothing
+    /* 13. Downloads over the real filesystem. The queue's start hook is
+     * bound to the VFS: it opens the enqueued source path, streams it into
+     * the destination in bounded chunks and reports progress, so the
+     * lifecycle counters describe bytes that actually moved. A missing
+     * source fails the transfer with the VFS errno instead of being
+     * reported as a successful download. */
+    sys_result = session_write_file("/ram/shell/release.bin",
+                                    sizeof(dl_src_buf));
+    if (sys_result != 0)
+        return fail("download source create", sys_result);
+    session_dl_ctx.dest[0] = 0;
+    {
+        static const char dl_dest[] = "/ram/shell/incoming.bin";
+        uint32_t dl_pos = 0;
+        while (dl_dest[dl_pos] && dl_pos < sizeof(session_dl_ctx.dest) - 1) {
+            session_dl_ctx.dest[dl_pos] = dl_dest[dl_pos];
+            ++dl_pos;
+        }
+        session_dl_ctx.dest[dl_pos] = 0;
+    }
+    zd_downloads_init(&session_downloads, session_dl_start, &session_dl_ctx);
+    dl_id = zd_downloads_add(&session_downloads, "/ram/shell/release.bin",
+                             "incoming.bin", (uint32_t)sizeof(dl_src_buf));
+    if (dl_id <= 0)
+        return fail("download enqueue", dl_id);
+    /* Single-active policy: a second transfer is refused while one runs. */
+    if (zd_downloads_start_next(&session_downloads) != 0)
+        return fail("download start", 0);
+    if (zd_downloads_start_next(&session_downloads) != -16)
+        return fail("download single active", 0);
+    dl_item = zd_downloads_find(&session_downloads, (uint32_t)dl_id);
+    if (!dl_item || dl_item->state != ZD_DL_RUNNING)
+        return fail("download running state", 0);
+    if (dl_item->received != sizeof(dl_src_buf) ||
+        dl_item->total != sizeof(dl_src_buf))
+        return fail("download progress", (int64_t)dl_item->received);
+    if (zd_downloads_active(&session_downloads) != (uint32_t)dl_id)
+        return fail("download active id", 0);
+    /* Progress must never go backwards. */
+    if (zd_downloads_progress(&session_downloads, (uint32_t)dl_id, 1, 0) !=
+        -22)
+        return fail("download progress regression", 0);
+    if (session_downloads.stats.progress_regressions != 1)
+        return fail("download regression count",
+                    (int64_t)session_downloads.stats.progress_regressions);
+    if (zd_downloads_finish(&session_downloads, (uint32_t)dl_id, 0) != 0)
+        return fail("download finish", 0);
+    dl_item = zd_downloads_find(&session_downloads, (uint32_t)dl_id);
+    if (!dl_item || dl_item->state != ZD_DL_DONE)
+        return fail("download done state", 0);
+    if (session_downloads.stats.completed != 1)
+        return fail("download completed count",
+                    (int64_t)session_downloads.stats.completed);
+    /* The bytes are really on the ramdisk, and they are the source bytes. */
+    if (zeroos_stat("/ram/shell/incoming.bin", &file_stat) != 0 ||
+        file_stat.size != sizeof(dl_dst_buf))
+        return fail("download dest size", (int64_t)file_stat.size);
+    key_len = 0;
+    if (session_read_buffer("/ram/shell/release.bin", dl_src_buf,
+                            sizeof(dl_src_buf), &key_len) != 0 ||
+        key_len != sizeof(dl_src_buf))
+        return fail("download source readback", (int64_t)key_len);
+    key_len = 0;
+    if (session_read_buffer("/ram/shell/incoming.bin", dl_dst_buf,
+                            sizeof(dl_dst_buf), &key_len) != 0 ||
+        key_len != sizeof(dl_dst_buf))
+        return fail("download dest readback", (int64_t)key_len);
+    for (dl_index = 0; dl_index < sizeof(dl_dst_buf); ++dl_index) {
+        if (dl_src_buf[dl_index] != dl_dst_buf[dl_index])
+            return fail("download content", (int64_t)dl_index);
+    }
+    /* A source that does not exist must fail the transfer, not fake it. */
+    dl_id = zd_downloads_add(&session_downloads, "/ram/shell/missing.bin",
+                             "missing.bin", 16);
+    if (dl_id <= 0)
+        return fail("download missing enqueue", dl_id);
+    if (zd_downloads_start_next(&session_downloads) != -ZEROOS_ENOENT)
+        return fail("download missing start", 0);
+    dl_item = zd_downloads_find(&session_downloads, (uint32_t)dl_id);
+    if (!dl_item || dl_item->state != ZD_DL_FAILED ||
+        dl_item->fail_errno != ZEROOS_ENOENT)
+        return fail("download failure errno",
+                    dl_item ? (int64_t)dl_item->fail_errno : -1);
+    if (session_downloads.stats.failed != 1)
+        return fail("download failed count",
+                    (int64_t)session_downloads.stats.failed);
+    say("ZEROOS: session downloads pipeline passed.");
+
+    /* 14. Update payload verification with a provisioned key. Nothing
      * here is a fixture: the key is provisioned through the filesystem
      * (written, read back, and only then used), the bundle is sealed with
      * the RFC 8439 AEAD core, and the update engine verifies it with the
@@ -1719,7 +1868,7 @@ int session_main(void) {
         return fail("update slot removed", 0);
     say("ZEROOS: session update verification passed.");
 
-    /* 14. Sandbox decisions enforced by the kernel, not only by Ring-3
+    /* 15. Sandbox decisions enforced by the kernel, not only by Ring-3
      * policy. The confined profile denies writes, so the session really
      * drops its identity: after SETCRED the VFS itself refuses the
      * owner-only file with EACCES while a world-readable file still
