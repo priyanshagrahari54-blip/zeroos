@@ -3315,11 +3315,25 @@ int session_main(void) {
     if (zd_i18n_locale_from_name(zd_i18n_locale_name(ZD_LOCALE_HI)) !=
         ZD_LOCALE_HI)
         return fail("i18n locale round trip", 0);
-    /* What the shell announces carries that verdict, and its text is the
-     * focused window's real title. */
+    /* With no screen reader there is no consumer, so the shell accepts the
+     * announcement and queues nothing rather than announcing into the void. */
+    if (zd_a11y_announce(&session_a11y, a11y_found->id, a11y_win->title,
+                         ZD_A11Y_URGENCY_HIGH) != 0)
+        return fail("a11y announce without reader", 0);
+    if (zd_a11y_next_announcement(&session_a11y, &a11y_msg) != -ZD_ENOENT)
+        return fail("a11y dead announcement queued", 0);
+    if (session_a11y.stats.announcements != 0)
+        return fail("a11y announcement count",
+                    (int64_t)session_a11y.stats.announcements);
+    /* The shell's screen reader is on, so what it announces carries that
+     * verdict, and its text is the focused window's real title. */
+    session_a11y.profile.screen_reader_enabled = 1;
     if (zd_a11y_announce(&session_a11y, a11y_found->id, a11y_win->title,
                          (enum zd_a11y_urgency)a11y_urgency) != 0)
         return fail("a11y announce", 0);
+    if (session_a11y.stats.announcements != 1)
+        return fail("a11y announcement queued",
+                    (int64_t)session_a11y.stats.announcements);
     if (zd_a11y_next_announcement(&session_a11y, &a11y_msg) != 0)
         return fail("a11y announcement read", 0);
     if ((int)a11y_msg.urgency != a11y_urgency)
