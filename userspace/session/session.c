@@ -21,6 +21,8 @@
 #include <zeroos/desktop/ai.h>
 #include <zeroos/desktop/browser.h>
 #include <zeroos/desktop/study.h>
+#include <zeroos/desktop/fps.h>
+#include <zeroos/desktop/gaming.h>
 #include <zeroos/desktop/capability.h>
 #include <zeroos/desktop/update.h>
 #include "crypto.h"
@@ -520,6 +522,8 @@ static struct zd_perf_center session_perf;
 static struct zd_perf_center session_perf_cold;
 static struct zd_bar session_bar;
 static struct zd_metrics session_metrics;
+static struct zd_fps session_fps;
+static struct zd_gaming session_gaming;
 static struct zd_study session_study;
 static struct zd_browser session_browser;
 static struct zd_ai_broker session_ai;
@@ -943,11 +947,25 @@ int session_main(void) {
     const struct zd_fm_entry *study_entry;
     struct zd_study_card *study_card;
     char study_back[24];
+    uint64_t fps_start;
+    uint64_t fps_now;
+    uint64_t fps_frame_ms;
+    uint32_t fps_live;
+    uint32_t game_pressure;
+    uint32_t game_fps_milli;
+    uint32_t game_budget;
+    uint32_t game_effects;
+    int game_yield;
+    uint32_t fps_index;
     uint32_t study_entries;
     uint32_t study_cards;
     int study_i;
     uint8_t browser_doc[128];
     uint64_t browser_origin;
+    uint64_t browser_step;
+    uint64_t browser_base;
+    uint64_t browser_now_ms;
+    uint64_t browser_guard;
     uint64_t doc_len;
     uint32_t tab_id;
     uint32_t ai_done;
@@ -2762,13 +2780,31 @@ int session_main(void) {
 
     /* 22. Browser tab lifecycle on the kernel clock over a real document.
      * The tick is the kernel's own monotonic time in milliseconds measured
-     * from the moment the browser is initialised, the resident document is a
-     * file the shell really wrote, and every rung of the ladder is reached
-     * only because that much real time has passed. */
+     * from the moment the browser is initialised, and the ladder thresholds
+     * are multiples of the clock's own granularity -- measured first -- so a
+     * coarse tick cannot skip a rung. The resident document is a file the
+     * shell really wrote, and each rung is reached only because that much
+     * real time has passed. */
     browser_origin = session_uptime_ns();
     if (browser_origin == 0)
         return fail("browser clock", 0);
-    zd_browser_init(&session_browser, 20, 40, 60);
+    browser_step = 0;
+    browser_base = session_elapsed_ms(browser_origin);
+    browser_guard = 0;
+    while (browser_step == 0) {
+        browser_now_ms = session_elapsed_ms(browser_origin);
+        if (browser_now_ms > browser_base) {
+            browser_step = browser_now_ms - browser_base;
+            break;
+        }
+        if (++browser_guard > 20000000ULL)
+            return fail("browser clock step", 0);
+    }
+    if (browser_step == 0 || browser_step > 20)
+        return fail("browser clock granularity", (int64_t)browser_step);
+    zd_browser_init(&session_browser, (uint32_t)(browser_step * 3),
+                    (uint32_t)(browser_step * 5),
+                    (uint32_t)(browser_step * 7));
     /* The resident document is the file the file-manager step copied,
      * renamed and moved into the inbox, STAT-verified at 64 bytes. */
     if (session_read_buffer("/ram/shell/inbox/moved.txt", browser_doc,
@@ -2788,53 +2824,65 @@ int session_main(void) {
         session_browser.active_id != tab_id ||
         session_browser.stats.opened != 1)
         return fail("browser open state", (int64_t)tab->state);
+    /* One granularity has really passed; that is far short of the first
+     * rung, so the tab is still active. */
     if (zd_browser_event(&session_browser, tab_id, ZD_TAB_EV_TICK,
-                         session_elapsed_ms(browser_origin)) != 0)
+                         browser_step) != 0)
         return fail("browser first tick", 0);
     tab = session_browser_tab(&session_browser, tab_id);
-    if (!tab || tab->state != ZD_TAB_ACTIVE)
-        return fail("browser premature idle", 0);
+    if (!tab)
+        return fail("browser tab lost", 0);
+    if (tab->state != ZD_TAB_ACTIVE)
+        return fail("browser premature idle", (int64_t)tab->state);
     /* IDLE: the clock really advanced, and the document is still resident. */
-    if (session_wait_ms(browser_origin, 25) != 0)
+    if (session_wait_ms(browser_origin, browser_step * 4) != 0)
         return fail("browser idle wait", 0);
     if (zd_browser_event(&session_browser, tab_id, ZD_TAB_EV_TICK,
-                         session_elapsed_ms(browser_origin)) != 0)
+                         browser_step * 4) != 0)
         return fail("browser idle tick", 0);
     tab = session_browser_tab(&session_browser, tab_id);
-    if (!tab || tab->state != ZD_TAB_IDLE ||
+    if (!tab)
+        return fail("browser tab lost", 0);
+    if (tab->state != ZD_TAB_IDLE ||
         tab->content_bytes != (uint32_t)doc_len)
-        return fail("browser idle state", 0);
+        return fail("browser idle state", (int64_t)tab->state);
     /* FROZEN: still resident, scripts suspended. */
-    if (session_wait_ms(browser_origin, 45) != 0)
+    if (session_wait_ms(browser_origin, browser_step * 6) != 0)
         return fail("browser freeze wait", 0);
     if (zd_browser_event(&session_browser, tab_id, ZD_TAB_EV_TICK,
-                         session_elapsed_ms(browser_origin)) != 0)
+                         browser_step * 6) != 0)
         return fail("browser freeze tick", 0);
     tab = session_browser_tab(&session_browser, tab_id);
-    if (!tab || tab->state != ZD_TAB_FROZEN ||
+    if (!tab)
+        return fail("browser tab lost", 0);
+    if (tab->state != ZD_TAB_FROZEN ||
         session_browser.stats.freezes != 1 ||
         tab->content_bytes != (uint32_t)doc_len)
-        return fail("browser frozen state", 0);
+        return fail("browser frozen state", (int64_t)tab->state);
     /* DISCARDED: the resident document's bytes are released. */
-    if (session_wait_ms(browser_origin, 65) != 0)
+    if (session_wait_ms(browser_origin, browser_step * 8) != 0)
         return fail("browser discard wait", 0);
     if (zd_browser_event(&session_browser, tab_id, ZD_TAB_EV_TICK,
-                         session_elapsed_ms(browser_origin)) != 0)
+                         browser_step * 8) != 0)
         return fail("browser discard tick", 0);
     tab = session_browser_tab(&session_browser, tab_id);
-    if (!tab || tab->state != ZD_TAB_DISCARDED ||
+    if (!tab)
+        return fail("browser tab lost", 0);
+    if (tab->state != ZD_TAB_DISCARDED ||
         session_browser.stats.discards != 1 || tab->has_document != 0 ||
         tab->content_bytes != 0)
-        return fail("browser discarded state", 0);
+        return fail("browser discarded state", (int64_t)tab->state);
     /* Reopening a discarded tab reloads it. */
     if (zd_browser_event(&session_browser, tab_id, ZD_TAB_EV_RELOAD,
                          session_elapsed_ms(browser_origin)) != 0)
         return fail("browser reload", 0);
     tab = session_browser_tab(&session_browser, tab_id);
-    if (!tab || tab->state != ZD_TAB_ACTIVE || tab->has_document != 1 ||
+    if (!tab)
+        return fail("browser tab lost", 0);
+    if (tab->state != ZD_TAB_ACTIVE || tab->has_document != 1 ||
         tab->content_bytes == 0 || tab->reloads != 1 ||
         session_browser.stats.reloads != 1)
-        return fail("browser reload state", 0);
+        return fail("browser reload state", (int64_t)tab->state);
     /* A healthy tab must not "recover", and the clock must not rewind: both
      * are refused and both refusals are counted. */
     if (zd_browser_event(&session_browser, tab_id, ZD_TAB_EV_RELOAD,
@@ -2852,9 +2900,11 @@ int session_main(void) {
                          session_elapsed_ms(browser_origin)) != 0)
         return fail("browser crash", 0);
     tab = session_browser_tab(&session_browser, tab_id);
-    if (!tab || tab->state != ZD_TAB_CRASHED || tab->crashes != 1 ||
+    if (!tab)
+        return fail("browser tab lost", 0);
+    if (tab->state != ZD_TAB_CRASHED || tab->crashes != 1 ||
         session_browser.stats.crashes != 1)
-        return fail("browser crashed state", 0);
+        return fail("browser crashed state", (int64_t)tab->state);
     if (zd_browser_event(&session_browser, tab_id, ZD_TAB_EV_FOCUS,
                          session_elapsed_ms(browser_origin)) != -ZD_ESTATE ||
         zd_browser_event(&session_browser, tab_id, ZD_TAB_EV_DISCARD_NOW,
@@ -2982,7 +3032,118 @@ int session_main(void) {
                     (int64_t)session_ai.last_output_len);
     say("ZEROOS: session study center passed.");
 
-    /* 24. Update payload verification with a provisioned key. Nothing
+    /* 24. Gaming mode and the FPS monitor over measured frames, cooperating
+     * with the resource governor. Every frame recorded here is a real
+     * present-and-pace cycle on the kernel clock, and the cooperative
+     * decision is taken from those measurements together with the governor's
+     * own memory pressure. */
+    if (zd_fps_init(&session_fps, 1000, ZD_PERF_QUALITY) != 0)
+        return fail("fps init", 0);
+    if (zd_fps_budget_ms(ZD_PERF_QUALITY) == 0 || zd_fps_budget_ms(99) != 0)
+        return fail("fps budget", (int64_t)zd_fps_budget_ms(ZD_PERF_QUALITY));
+    for (fps_index = 0; fps_index < 3U; ++fps_index) {
+        fps_start = session_uptime_ns();
+        if (fps_start == 0)
+            return fail("fps clock", 0);
+        if (session_present(0, 0, 0, SESSION_WINDOW_W, SESSION_WINDOW_H,
+                            SESSION_WINDOW_W * 4U, window_pixels) != 0)
+            return fail("fps present", 0);
+        do {
+            fps_now = session_uptime_ns();
+            if (fps_now == 0)
+                return fail("fps clock", 0);
+        } while (fps_now - fps_start <
+                 (uint64_t)frame_budget * 1000000ULL);
+        fps_frame_ms = (fps_now - fps_start) / 1000000ULL;
+        if (zd_fps_record(&session_fps, fps_start / 1000000ULL,
+                          fps_frame_ms) != 0)
+            return fail("fps record", (int64_t)fps_frame_ms);
+    }
+    if (session_fps.frames_total != 3 || session_fps.count != 3)
+        return fail("fps samples", (int64_t)session_fps.frames_total);
+    if (zd_fps_avg_frame_ms(&session_fps) == 0)
+        return fail("fps average", 0);
+    /* This machine's tier budget sits above the quality profile's budget, so
+     * every measured frame breaches it; the monitor reports that instead of
+     * hiding it. */
+    if (frame_budget > zd_fps_budget_ms(ZD_PERF_QUALITY)) {
+        if (session_fps.budget_breaches != 3)
+            return fail("fps breaches",
+                        (int64_t)session_fps.budget_breaches);
+    } else if (session_fps.budget_breaches > 3) {
+        return fail("fps breaches", (int64_t)session_fps.budget_breaches);
+    }
+    if (zd_fps_percentile(&session_fps, 100) <
+        zd_fps_avg_frame_ms(&session_fps))
+        return fail("fps percentile", 0);
+    fps_live = zd_fps_current(&session_fps, session_uptime_ns() / 1000000ULL);
+    if (fps_live == 0)
+        return fail("fps current", 0);
+    zd_gaming_init(&session_gaming);
+    if (zd_gaming_profile_set(&session_gaming, "child", 99, 60, 0) != -22 ||
+        zd_gaming_profile_set(&session_gaming, "child", ZD_GAME_PERF, 0,
+                              0) != -22 ||
+        zd_gaming_profile_set(&session_gaming, "child", ZD_GAME_PERF, 241,
+                              0) != -22 ||
+        zd_gaming_profile_set(&session_gaming, "", ZD_GAME_PERF, 60,
+                              0) != -22)
+        return fail("gaming profile validation", 0);
+    if (session_gaming.stats.rejected != 4)
+        return fail("gaming rejections",
+                    (int64_t)session_gaming.stats.rejected);
+    if (zd_gaming_profile_set(&session_gaming, "child", ZD_GAME_PERF, 60,
+                              ZD_GAME_FLAG_OVERLAY |
+                                  ZD_GAME_FLAG_LOW_LATENCY) != 0 ||
+        session_gaming.count != 1 || session_gaming.stats.sets != 1)
+        return fail("gaming profile", (int64_t)session_gaming.count);
+    if (zd_gaming_remap(&session_gaming, "child", 0, 3) != 0 ||
+        zd_gaming_lookup(&session_gaming, "child", 0) != 3)
+        return fail("gaming remap", 0);
+    if (zd_gaming_lookup(&session_gaming, "child", 1) != -2 ||
+        session_gaming.stats.unknown_buttons != 1)
+        return fail("gaming unmapped button", 0);
+    if (zd_gaming_remap(&session_gaming, "child", 32, 0) != -22)
+        return fail("gaming remap range", 0);
+    /* The cooperative decision comes from this machine's own numbers. */
+    game_pressure = 100U - free_percent;
+    game_fps_milli = fps_live * 1000U;
+    game_yield = zd_gaming_cooperative(&session_gaming, "child",
+                                       game_fps_milli, game_pressure);
+    if (game_yield < 0)
+        return fail("gaming cooperative", (int64_t)game_yield);
+    /* A budget of this size is under the 30 fps floor, so with the overlay on
+     * the policy must at least drop the overlay. */
+    if (game_fps_milli < 30000U && game_yield < ZD_GAME_YIELD_OVERLAY_OFF)
+        return fail("gaming yield", (int64_t)game_yield);
+    if (session_gaming.stats.yields !=
+        (game_yield == ZD_GAME_YIELD_NONE ? 0U : 1U))
+        return fail("gaming yield count",
+                    (int64_t)session_gaming.stats.yields);
+    /* Both ends of the policy ladder are pinned. */
+    if (zd_gaming_cooperative(&session_gaming, "child", 60000U, 0U) !=
+        ZD_GAME_YIELD_NONE)
+        return fail("gaming policy none", 0);
+    if (zd_gaming_cooperative(&session_gaming, "child", 60000U, 90U) !=
+        ZD_GAME_YIELD_TARGET_FLOOR)
+        return fail("gaming policy floor", 0);
+    if (zd_gaming_cooperative(&session_gaming, "child", 20000U, 90U) !=
+        ZD_GAME_YIELD_DEGRADE)
+        return fail("gaming policy degrade", 0);
+    if (zd_gaming_cooperative(&session_gaming, "no-such-app", 60000U, 0U) != -2)
+        return fail("gaming unknown app", 0);
+    /* Gaming mode must not bypass the governor: the budget in force is still
+     * the one the governor assigned to this tier. */
+    zd_governor_effects_for_tier(session_governor.tier, &game_budget,
+                                 &game_effects);
+    if (game_budget != frame_budget)
+        return fail("gaming bypassed the governor", (int64_t)game_budget);
+    if (zd_gaming_profile_remove(&session_gaming, "child") != 0 ||
+        session_gaming.count != 0 ||
+        zd_gaming_profile_remove(&session_gaming, "child") != -2)
+        return fail("gaming remove", (int64_t)session_gaming.count);
+    say("ZEROOS: session gaming and fps passed.");
+
+    /* 25. Update payload verification with a provisioned key. Nothing
      * here is a fixture: the key is provisioned through the filesystem
      * (written, read back, and only then used), the bundle is sealed with
      * the RFC 8439 AEAD core, and the update engine verifies it with the
@@ -3102,7 +3263,7 @@ int session_main(void) {
         return fail("update slot removed", 0);
     say("ZEROOS: session update verification passed.");
 
-    /* 25. Sandbox decisions enforced by the kernel, not only by Ring-3
+    /* 26. Sandbox decisions enforced by the kernel, not only by Ring-3
      * policy. The confined profile denies writes, so the session really
      * drops its identity: after SETCRED the VFS itself refuses the
      * owner-only file with EACCES while a world-readable file still
