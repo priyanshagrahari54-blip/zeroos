@@ -292,7 +292,7 @@ SESSION_DESKTOP_SRCS := userspace/desktop/src/common.c \
 	userspace/desktop/src/notify.c \
 	userspace/desktop/src/launcher.c \
 	userspace/desktop/src/capability.c \
-	userspace/desktop/src/perfcenter.c userspace/desktop/src/bar.c \
+	userspace/desktop/src/perfcenter.c userspace/desktop/src/bar.c userspace/desktop/src/ai.c \
 	userspace/desktop/src/overview.c
 SESSION_DESKTOP_OBJS := $(patsubst userspace/desktop/src/%.c,$(BUILD)/session_desktop_%.o,$(SESSION_DESKTOP_SRCS))
 SESSION_DEPS := userspace/session/session.c userspace/session/session_start.S \

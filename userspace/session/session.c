@@ -18,6 +18,7 @@
 #include <zeroos/desktop/overview.h>
 #include <zeroos/desktop/bar.h>
 #include <zeroos/desktop/metrics.h>
+#include <zeroos/desktop/ai.h>
 #include <zeroos/desktop/capability.h>
 #include <zeroos/desktop/update.h>
 #include "crypto.h"
@@ -488,6 +489,74 @@ static struct zd_perf_center session_perf;
 static struct zd_perf_center session_perf_cold;
 static struct zd_bar session_bar;
 static struct zd_metrics session_metrics;
+static struct zd_ai_broker session_ai;
+static uint32_t session_ai_reads;
+static uint64_t session_ai_bytes;
+
+static struct zd_ai_request session_ai_request(const char *path,
+                                               uint32_t context_mask,
+                                               uint8_t want_remote) {
+    struct zd_ai_request r;
+    uint32_t i = 0;
+    for (i = 0; i < sizeof(r); ++i)
+        ((uint8_t *)&r)[i] = 0;
+    r.id = 1;
+    r.kind = ZD_AI_REQ_SUMMARIZE;
+    r.context_mask = context_mask;
+    r.want_remote = want_remote;
+    i = 0;
+    while (path[i] && i + 1 < sizeof(r.payload)) {
+        r.payload[i] = path[i];
+        ++i;
+    }
+    r.payload[i] = 0;
+    return r;
+}
+
+static int session_ai_select(void *ctx, const struct zd_ai_request *req,
+                             uint32_t grants, enum zd_ai_backend *out) {
+    (void)ctx;
+    (void)grants;
+    *out = req->want_remote ? ZD_AI_BACKEND_REMOTE : ZD_AI_BACKEND_LOCAL;
+    return 0;
+}
+
+/* The shell's own backend: a summarize request carries a path, and the
+ * answer is that document's size as the kernel reports it. A missing grant,
+ * a missing file or a fabricated answer all come out as a wrong number. */
+static int session_ai_run(void *ctx, enum zd_ai_backend backend,
+                          const struct zd_ai_request *req, char *out,
+                          uint32_t out_cap, uint32_t *out_len) {
+    uint8_t buf[128];
+    char digits[24];
+    uint64_t len = 0;
+    uint64_t value;
+    uint32_t n = 0;
+    uint32_t written = 0;
+    (void)ctx;
+    if (backend == ZD_AI_BACKEND_NONE || !out || !out_len)
+        return -ZD_EINVAL;
+    if (session_read_buffer(req->payload, buf, sizeof(buf), &len) != 0)
+        return -ZD_ENOENT;
+    ++session_ai_reads;
+    session_ai_bytes = len;
+    value = len;
+    if (value == 0)
+        digits[n++] = '0';
+    while (value != 0 && n < (uint32_t)sizeof(digits)) {
+        digits[n++] = (char)('0' + (int)(value % 10U));
+        value /= 10U;
+    }
+    while (n != 0 && written + 1 < out_cap)
+        out[written++] = digits[--n];
+    if (written < out_cap)
+        out[written] = 0;
+    *out_len = written;
+    return 0;
+}
+
+static const struct zd_ai_ops session_ai_ops = { session_ai_select,
+                                                 session_ai_run, (void *)0 };
 static uint8_t session_toggle_applied[ZD_BAR_TOGGLE_COUNT];
 static int session_bar_toggle_seen = -1;
 
@@ -810,6 +879,9 @@ int session_main(void) {
     uint64_t notify_now;
     zd_notification_id bar_note_ids[4];
     struct zeroos_system_info status_info;
+    struct zd_ai_request ai_request;
+    uint32_t ai_done;
+    int ai_i;
     uint32_t status_free;
     struct session_status {
         uint64_t uptime_ns;
@@ -2538,7 +2610,80 @@ int session_main(void) {
                     (int64_t)sys_status.p95_interval_ms);
     say("ZEROOS: session system status passed.");
 
-    /* 21. Update payload verification with a provisioned key. Nothing
+    /* 21. AI platform broker over live shell data. The backend the broker
+     * calls is the shell's own: a summarize request carries a path, the hook
+     * reads that file through the kernel and answers with its size, so the
+     * permission gate, the remote downgrade and the queue bound are all
+     * exercised against a real document rather than a canned reply. */
+    zd_ai_broker_init(&session_ai, &session_ai_ops, 0);
+    ai_request = session_ai_request("/ram/shell/notes.txt",
+                                    ZD_AI_GRANT_CONTEXT_SELECTION, 0);
+    if (zd_ai_submit(&session_ai, &ai_request) != -ZD_EPERM)
+        return fail("ai permission gate", 0);
+    if (session_ai.stats.denied_permission != 1)
+        return fail("ai denial count",
+                    (int64_t)session_ai.stats.denied_permission);
+    if (session_ai_reads != 0)
+        return fail("ai backend ran without grant", 0);
+    /* PERSIST is granted as well, so the retained answer can be read back
+     * instead of only counted. */
+    zd_ai_grant(&session_ai, ZD_AI_GRANT_CONTEXT_SELECTION |
+                               ZD_AI_GRANT_PERSIST);
+    if (zd_ai_submit(&session_ai, &ai_request) != 0)
+        return fail("ai submit", 0);
+    if (session_ai.queued != 1 || session_ai.active != 1 ||
+        session_ai.stats.submitted != 1 || session_ai.stats.wakeups != 1)
+        return fail("ai queue state", (int64_t)session_ai.queued);
+    if (zd_ai_drain(&session_ai, 4, &ai_done) != 0 || ai_done != 1)
+        return fail("ai drain", (int64_t)ai_done);
+    if (session_ai.stats.completed != 1 || session_ai_reads != 1)
+        return fail("ai completion", (int64_t)session_ai_reads);
+    /* The answer is the size of the document the file-manager step really
+     * wrote, read back through the kernel by the backend. */
+    if (session_ai_bytes != 64)
+        return fail("ai document size", (int64_t)session_ai_bytes);
+    if (session_ai.last_output_len != 2 || session_ai.last_output[0] != '6' ||
+        session_ai.last_output[1] != '4')
+        return fail("ai answer", (int64_t)session_ai.last_output_len);
+    for (ai_i = 0; ai_i < (int)session_ai.last_payload_len; ++ai_i) {
+        if (session_ai.last_payload[ai_i] != ai_request.payload[ai_i])
+            return fail("ai retained payload", (int64_t)ai_i);
+    }
+    if (session_ai.stats.resident_bytes_after_drain !=
+        session_ai.last_output_len + session_ai.last_payload_len)
+        return fail("ai resident bytes",
+                    (int64_t)session_ai.stats.resident_bytes_after_drain);
+    /* Remote egress was never granted, so a remote-preferring request is
+     * downgraded and still answered locally. */
+    ai_request = session_ai_request("/ram/shell/notes.txt",
+                                    ZD_AI_GRANT_CONTEXT_SELECTION, 1);
+    if (zd_ai_submit(&session_ai, &ai_request) != 0)
+        return fail("ai remote submit", 0);
+    if (zd_ai_drain(&session_ai, 4, &ai_done) != 0 || ai_done != 1)
+        return fail("ai remote drain", (int64_t)ai_done);
+    if (session_ai.stats.backend_downgrades != 1 || session_ai_reads != 2)
+        return fail("ai downgrade",
+                    (int64_t)session_ai.stats.backend_downgrades);
+    /* The queue is bounded: the ninth request is dropped, not queued. */
+    for (ai_i = 0; ai_i < (int)ZD_AI_QUEUE_DEPTH; ++ai_i) {
+        if (zd_ai_submit(&session_ai, &ai_request) != 0)
+            return fail("ai queue fill", (int64_t)ai_i);
+    }
+    if (zd_ai_submit(&session_ai, &ai_request) != -ZD_ENOSPC)
+        return fail("ai queue bound", 0);
+    if (session_ai.stats.queue_dropped != 1)
+        return fail("ai drop count",
+                    (int64_t)session_ai.stats.queue_dropped);
+    if (zd_ai_drain(&session_ai, ZD_AI_QUEUE_DEPTH, &ai_done) != 0 ||
+        ai_done != ZD_AI_QUEUE_DEPTH)
+        return fail("ai queue drain", (int64_t)ai_done);
+    /* Demand-driven: with nothing resident the broker is dormant again. */
+    if (session_ai.queued != 0 || session_ai.active != 0 ||
+        session_ai.stats.wakeups != 3)
+        return fail("ai dormant", (int64_t)session_ai.stats.wakeups);
+    say("ZEROOS: session ai platform passed.");
+
+    /* 22. Update payload verification with a provisioned key. Nothing
      * here is a fixture: the key is provisioned through the filesystem
      * (written, read back, and only then used), the bundle is sealed with
      * the RFC 8439 AEAD core, and the update engine verifies it with the
@@ -2658,7 +2803,7 @@ int session_main(void) {
         return fail("update slot removed", 0);
     say("ZEROOS: session update verification passed.");
 
-    /* 22. Sandbox decisions enforced by the kernel, not only by Ring-3
+    /* 23. Sandbox decisions enforced by the kernel, not only by Ring-3
      * policy. The confined profile denies writes, so the session really
      * drops its identity: after SETCRED the VFS itself refuses the
      * owner-only file with EACCES while a world-readable file still

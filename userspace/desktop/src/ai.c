@@ -12,6 +12,33 @@ static void wipe_request(struct zd_ai_request *req) {
     req->active = 0;
 }
 
+/* Copy at most src_len bytes into a NUL-terminated store; returns the
+ * number of bytes retained. */
+static uint32_t ai_retain(char *dst, uint32_t dst_cap, const char *src,
+                          uint32_t src_len) {
+    uint32_t n = 0;
+
+    if (!dst || !dst_cap)
+        return 0;
+    while (n < src_len && n + 1 < dst_cap) {
+        dst[n] = src[n];
+        ++n;
+    }
+    dst[n] = 0;
+    return n;
+}
+
+/* Length of a NUL-terminated payload, bounded by its buffer. */
+static uint32_t ai_text_len(const char *s, uint32_t cap) {
+    uint32_t n = 0;
+
+    if (!s)
+        return 0;
+    while (n < cap && s[n])
+        ++n;
+    return n;
+}
+
 void zd_ai_broker_init(struct zd_ai_broker *broker,
                        const struct zd_ai_ops *ops, uint32_t grants) {
     uint32_t i;
@@ -79,10 +106,16 @@ int zd_ai_drain(struct zd_ai_broker *broker, uint32_t max_out,
     if (!broker || !completed_out)
         return -ZD_EINVAL;
     *completed_out = 0;
+    /* Accounting and retention describe this drain only. */
+    broker->stats.resident_bytes_after_drain = 0;
+    broker->last_payload_len = 0;
+    broker->last_output_len = 0;
+    broker->last_payload[0] = 0;
+    broker->last_output[0] = 0;
     while (broker->queued && done < max_out && guard < ZD_AI_QUEUE_DEPTH) {
         struct zd_ai_request *req = 0;
         enum zd_ai_backend backend = ZD_AI_BACKEND_NONE;
-        char out[128];
+        char out[ZD_AI_OUTPUT_CAP];
         uint32_t out_len = 0;
         uint32_t i;
         int rc;
@@ -121,6 +154,21 @@ int zd_ai_drain(struct zd_ai_broker *broker, uint32_t max_out,
 
         rc = broker->ops.run(broker->ops.context, backend, req, out,
                              (uint32_t)sizeof(out), &out_len);
+        if (out_len > (uint32_t)sizeof(out))
+            out_len = (uint32_t)sizeof(out);
+        if (rc == 0 && (broker->grants & ZD_AI_GRANT_PERSIST)) {
+            /* The caller asked for the result to survive the drain, so the
+             * payload and the output are kept in the broker's store and
+             * accounted for.  The queue slot is still freed. */
+            broker->last_output_len =
+                ai_retain(broker->last_output,
+                          (uint32_t)sizeof(broker->last_output), out, out_len);
+            broker->last_payload_len =
+                ai_retain(broker->last_payload,
+                          (uint32_t)sizeof(broker->last_payload), req->payload,
+                          ai_text_len(req->payload,
+                                      (uint32_t)sizeof(req->payload)));
+        }
         wipe_request(req); /* minimal resident state: payload gone */
         broker->queued--;
         if (rc != 0) {
@@ -130,7 +178,10 @@ int zd_ai_drain(struct zd_ai_broker *broker, uint32_t max_out,
         broker->stats.completed++;
         done++;
 
-        if (!(broker->grants & ZD_AI_GRANT_PERSIST)) {
+        if (broker->grants & ZD_AI_GRANT_PERSIST) {
+            broker->stats.resident_bytes_after_drain +=
+                broker->last_output_len + broker->last_payload_len;
+        } else {
             uint32_t k;
             for (k = 0; k < sizeof(out); ++k)
                 out[k] = 0;
@@ -139,7 +190,6 @@ int zd_ai_drain(struct zd_ai_broker *broker, uint32_t max_out,
 
     if (broker->queued == 0)
         broker->active = 0; /* demand-driven: dormant again */
-    broker->stats.resident_bytes_after_drain = 0;
     *completed_out = done;
     return 0;
 }
