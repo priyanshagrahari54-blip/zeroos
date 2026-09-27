@@ -100,6 +100,7 @@ persistence certification. A green
 
 | Commit | Evidence | Result |
 |---|---|---|
+| `a96d2c1` | Push-context CI SUCCESS (run 36304642934, 8m07s): boots now also grep `session terminal pipe binding passed.` — shell output travels through a real `PIPE_CREATE`/`PIPE_WRITE`/`PIPE_READ` pair before the VT parser, with the SGR colour asserted on the parsed cell and an empty-pipe `-EAGAIN` check, on both the 2-vCPU and the SMP4 boot | SUCCESS |
 | `6d8857c` | Push-context CI SUCCESS (run 36303960987): `make check` plus the boot certifications, now also grepping `session file manager transfer ops passed.` — preview, copy, rename and move verified through STAT on real files on both the 2-vCPU and the SMP4 boot | SUCCESS |
 | `deabf6a` | Push-context boot FAILURE: `session FAILED: file manager preview (23)`. Hoisting the filler left `const char *filler = session_filler`, so `sizeof(filler)` clamped the write chunk to 8 instead of 22; the loop restarts at the beginning of the filler, producing 64 bytes of the right size and the wrong content. Fixed by writing from the array and pinning the layout with `_Static_assert`. | FAILURE (found a sizeof-on-pointer write bug) |
 | `fbb5417` | Push-context boot FAILURE: `session FAILED: file manager preview (23)`. The length was right but the assertion compared against the filler text without its trailing newline, which the writer really stores. | FAILURE (found a wrong expectation, not a wrong read) |
