@@ -2070,8 +2070,9 @@ int session_main(void) {
     if (zd_settings_get(&session_settings_restored, "shell.scale_percent",
                         &setting_value, 0, 0) != 0 || setting_value != 175)
         return fail("settings restored value", setting_value);
-    /* Corrupt the stored value in the blob: 975 is outside the schema's
-     * 50..300 range, so the import must fail and change nothing. */
+    /* Two distinct corruptions, because the import treats them
+     * differently. A value that is not a number is a parse failure: the
+     * whole transaction aborts and the store is never touched. */
     for (blob_index = 0; blob_index + 2 < blob_len; ++blob_index) {
         if (settings_blob_read[blob_index] == '1' &&
             settings_blob_read[blob_index + 1] == '7' &&
@@ -2080,7 +2081,7 @@ int session_main(void) {
     }
     if (blob_index + 2 >= blob_len)
         return fail("settings blob content", 0);
-    settings_blob_read[blob_index] = '9';
+    settings_blob_read[blob_index + 1] = 'x';   /* 175 -> 1x5 */
     zd_settings_init(&session_settings_tampered);
     if (zd_settings_register(&session_settings_tampered,
                              &session_scale_setting) != 0)
@@ -2088,10 +2089,29 @@ int session_main(void) {
     if (zd_settings_import(&session_settings_tampered, settings_blob_read,
                            ZD_PERM_SETTINGS_USER) != -ZD_EINVAL)
         return fail("settings tamper rejection", 0);
+    if (session_settings_tampered.stats.import_failures != 1)
+        return fail("settings import failure count",
+                    (int64_t)session_settings_tampered.stats.import_failures);
     setting_value = -1;
     if (zd_settings_get(&session_settings_tampered, "shell.scale_percent",
                         &setting_value, 0, 0) != 0 || setting_value != 100)
         return fail("settings tamper isolation", setting_value);
+    /* A value that parses but falls outside the schema range is refused
+     * when the staged write is applied: the import itself succeeds and the
+     * stored value does not move off the default. */
+    settings_blob_read[blob_index] = '9';
+    settings_blob_read[blob_index + 1] = '7';   /* 1x5 -> 975 */
+    zd_settings_init(&session_settings_tampered);
+    if (zd_settings_register(&session_settings_tampered,
+                             &session_scale_setting) != 0)
+        return fail("settings range schema", 0);
+    if (zd_settings_import(&session_settings_tampered, settings_blob_read,
+                           ZD_PERM_SETTINGS_USER) != 0)
+        return fail("settings range import", 0);
+    setting_value = -1;
+    if (zd_settings_get(&session_settings_tampered, "shell.scale_percent",
+                        &setting_value, 0, 0) != 0 || setting_value != 100)
+        return fail("settings range refusal", setting_value);
     say("ZEROOS: session settings persistence passed.");
 
     /* 17. Update payload verification with a provisioned key. Nothing
