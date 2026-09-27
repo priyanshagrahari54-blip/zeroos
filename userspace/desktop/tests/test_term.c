@@ -206,4 +206,89 @@ void zd_test_term_suite(void) {
     /* stats + byte accounting */
     ZD_CHECK(t.stats.writes >= 5); /* since the last init */
     ZD_CHECK(t.stats.bytes > 0);
+
+    /* ---- line discipline ---- */
+    {
+        struct zd_term_line l;
+        struct zd_term lt;
+        const uint8_t typed[] = { 'z', 'e', 'r', 'o', 0x08, 0x08,
+                                  'o', 's', 0x0d };
+        char row[64];
+        uint32_t i;
+        int done = 0;
+        zd_term_line_init(&l);
+        zd_term_init(&lt, 24, 80);
+        ZD_CHECK_EQ(l.len, 0);
+        ZD_CHECK_EQ(l.completions, 0);
+        for (i = 0; i < sizeof(typed); ++i) {
+            const char *echo;
+            uint32_t echo_len;
+            int rc = zd_term_line_input(&l, typed[i], &echo, &echo_len);
+            ZD_CHECK(rc == 0 || rc == 1);
+            if (rc == 1)
+                done = 1;
+            if (echo_len) {
+                ZD_CHECK(echo != 0);
+                /* The echo goes through the same parser that renders
+                 * program output, so BS is interpreted, not displayed. */
+                /* zd_term_write returns 0 on success. */
+                ZD_CHECK_EQ(zd_term_write(&lt, (const uint8_t *)echo,
+                                          echo_len), 0);
+            }
+        }
+        ZD_CHECK_EQ(done, 1);
+        ZD_CHECK_EQ(l.completions, 1);
+        ZD_CHECK_EQ(l.erased, 2);
+        ZD_CHECK_EQ(l.overflow, 0);
+        ZD_CHECK_EQ(l.ignored, 0);
+        {
+            char line[64];
+            ZD_CHECK_EQ(zd_term_line_copy(&l, line, sizeof(line)), 4);
+            ZD_CHECK(strcmp(line, "zeos") == 0);
+            /* The rendered row matches the edited line exactly. */
+            ZD_CHECK_EQ(zd_term_row_text(&lt, 0, row, sizeof(row)), 4);
+            ZD_CHECK(strcmp(row, "zeos") == 0);
+        }
+        /* DEL (0x7f) erases like BS; other control bytes are ignored and
+         * never echoed. */
+        zd_term_line_init(&l);
+        {
+            const char *echo;
+            uint32_t echo_len;
+            ZD_CHECK_EQ(zd_term_line_input(&l, 'a', &echo, &echo_len), 0);
+            ZD_CHECK_EQ(echo_len, 1);
+            ZD_CHECK_EQ(zd_term_line_input(&l, 0x7f, &echo, &echo_len), 0);
+            ZD_CHECK_EQ(echo_len, 3);
+            ZD_CHECK_EQ(l.erased, 1);
+            ZD_CHECK_EQ(l.len, 0);
+            /* Erasing an empty line is a no-op with no echo. */
+            ZD_CHECK_EQ(zd_term_line_input(&l, 0x08, &echo, &echo_len), 0);
+            ZD_CHECK_EQ(echo_len, 0);
+            ZD_CHECK_EQ(l.erased, 1);
+            ZD_CHECK_EQ(zd_term_line_input(&l, 0x01, &echo, &echo_len), 0);
+            ZD_CHECK_EQ(echo_len, 0);
+            ZD_CHECK_EQ(l.ignored, 1);
+            /* LF completes a line exactly like CR. */
+            ZD_CHECK_EQ(zd_term_line_input(&l, 0x0a, &echo, &echo_len), 1);
+            ZD_CHECK_EQ(l.completions, 1);
+        }
+        /* A full line refuses further bytes instead of truncating them. */
+        zd_term_line_init(&l);
+        for (i = 0; i < ZD_TERM_LINE_MAX + 1; ++i) {
+            const char *echo;
+            uint32_t echo_len;
+            ZD_CHECK_EQ(zd_term_line_input(&l, 'x', &echo, &echo_len), 0);
+        }
+        ZD_CHECK_EQ(l.len, ZD_TERM_LINE_MAX);
+        ZD_CHECK_EQ(l.overflow, 1);
+        {
+            char small[8];
+            ZD_CHECK_EQ(zd_term_line_copy(&l, small, sizeof(small)),
+                        ZD_TERM_LINE_MAX);
+            ZD_CHECK(strlen(small) == sizeof(small) - 1);
+        }
+        /* Bad arguments are rejected. */
+        ZD_CHECK_EQ(zd_term_line_input(0, 'a', 0, 0), -22);
+        ZD_CHECK_EQ(zd_term_line_copy(0, row, sizeof(row)), 0);
+    }
 }

@@ -39,6 +39,13 @@ static struct zd_sandbox session_sandbox;
 static uint8_t child_image[ZEROOS_EXEC_MAX_IMAGE];
 static const char child_arg0[] = "shell";
 static const char child_arg1[] = "certify";
+static const char child_env0[] = "ZEROOS_CHILD=certified";
+/* Keystrokes for the line-discipline step: type "zero", erase two bytes,
+ * type "os", then Enter.  The edited line must be "zeos". */
+static const uint8_t session_typed[] = { 'z', 'e', 'r', 'o', 0x08, 0x08,
+                                         'o', 's', 0x0d };
+static uint8_t echo_buffer[64];
+static struct zd_term_line session_line;
 static struct zd_term session_term;
 /* One line of shell output: SGR colour, text, CRLF. It travels through a
  * real kernel pipe before the VT parser sees a single byte. */
@@ -507,6 +514,11 @@ int session_main(void) {
     int64_t cred;
     uint64_t child_size;
     uint64_t child_argv[2];
+    uint64_t child_envp[1];
+    uint32_t echo_total;
+    uint32_t echo_index;
+    uint32_t typed_index;
+    int line_done;
     uint64_t child_pid;
     uint64_t status;
     int64_t sys_result;
@@ -1255,6 +1267,73 @@ int session_main(void) {
                     (int64_t)session_term.stats.bytes);
     say("ZEROOS: session terminal pipe binding passed.");
 
+    /* 10b. Interactive line editing over the same pipe. Keystrokes are fed
+     * one byte at a time through the line discipline; every echo it asks
+     * for is written into the kernel pipe, read back, and only then handed
+     * to the VT parser, so the screen contents come from the same code path
+     * as program output. Backspace really erases: the edited line and the
+     * rendered row must both read "zeos". */
+    zd_term_line_init(&session_line);
+    echo_total = 0;
+    line_done = 0;
+    for (typed_index = 0; typed_index < ZD_ARRAY_COUNT(session_typed);
+         ++typed_index) {
+        const char *echo_bytes;
+        uint32_t echo_bytes_len;
+        int line_state;
+        line_state = zd_term_line_input(&session_line,
+                                        session_typed[typed_index],
+                                        &echo_bytes, &echo_bytes_len);
+        if (line_state < 0)
+            return fail("terminal line input", line_state);
+        if (line_state == 1)
+            line_done = 1;
+        if (echo_bytes_len == 0)
+            continue;
+        if (echo_total + echo_bytes_len > sizeof(echo_buffer))
+            return fail("terminal echo buffer", (int64_t)echo_total);
+        for (echo_index = 0; echo_index < echo_bytes_len; ++echo_index)
+            echo_buffer[echo_total + echo_index] =
+                (uint8_t)echo_bytes[echo_index];
+        echo_total += echo_bytes_len;
+    }
+    if (line_done != 1)
+        return fail("terminal line completion", line_done);
+    sys_result = zeroos_pipe_write(pipe_pair.peer, echo_buffer, echo_total,
+                                   0, 0);
+    if (sys_result != (int64_t)echo_total)
+        return fail("terminal echo write", sys_result);
+    term_len = 0;
+    sys_result = zeroos_pipe_read(pipe_pair.local, term_buffer,
+                                  sizeof(term_buffer),
+                                  ZEROOS_IPC_FLAG_NONBLOCK, &term_len, 0);
+    if (sys_result != (int64_t)echo_total || term_len != echo_total)
+        return fail("terminal echo read", sys_result);
+    if (zd_term_write(&session_term, term_buffer, term_len) != 0)
+        return fail("terminal echo parse", 0);
+    if (zd_term_line_copy(&session_line, term_row, sizeof(term_row)) != 4 ||
+        !session_streq(term_row, "zeos"))
+        return fail("terminal edited line", 0);
+    row_len = zd_term_row_text(&session_term, 1, term_row, sizeof(term_row));
+    if (row_len != 4 || !session_streq(term_row, "zeos"))
+        return fail("terminal echo row", (int64_t)row_len);
+    if (session_line.erased != 2 || session_line.completions != 1 ||
+        session_line.overflow != 0)
+        return fail("terminal line stats", (int64_t)session_line.erased);
+    /* A full line refuses further bytes instead of silently truncating. */
+    zd_term_line_init(&session_line);
+    for (typed_index = 0; typed_index < ZD_TERM_LINE_MAX + 1U;
+         ++typed_index) {
+        const char *echo_bytes;
+        uint32_t echo_bytes_len;
+        if (zd_term_line_input(&session_line, 'x', &echo_bytes,
+                               &echo_bytes_len) != 0)
+            return fail("terminal line fill", 0);
+    }
+    if (session_line.len != ZD_TERM_LINE_MAX || session_line.overflow != 1)
+        return fail("terminal line overflow", (int64_t)session_line.len);
+    say("ZEROOS: session terminal line editing passed.");
+
     /* 11. Privacy centre over live refusal counters. The filesystem domain
      * is real: the shell defines a sandbox profile and the denials counted
      * here are actual policy decisions taken during this boot, not a
@@ -1321,7 +1400,11 @@ int session_main(void) {
      * CI greps for it, so a broken argument vector cannot pass. */
     child_argv[0] = (uint64_t)(uintptr_t)child_arg0;
     child_argv[1] = (uint64_t)(uintptr_t)child_arg1;
-    sys_result = zeroos_spawn(child_image, child_size, child_argv, 2, 0, 0);
+    /* The environment vector crosses the same boundary; the child echoes
+     * envp[0] back on the console. */
+    child_envp[0] = (uint64_t)(uintptr_t)child_env0;
+    sys_result = zeroos_spawn(child_image, child_size, child_argv, 2,
+                              child_envp, 1);
     if (sys_result <= 0)
         return fail("child spawn", sys_result);
     child_pid = (uint64_t)sys_result;
@@ -1341,7 +1424,7 @@ int session_main(void) {
         return fail("child double reap", sys_result);
     say("ZEROOS: session child process reaped cleanly.");
 
-    /* 12. Sandbox decisions enforced by the kernel, not only by Ring-3
+    /* 13. Sandbox decisions enforced by the kernel, not only by Ring-3
      * policy. The confined profile denies writes, so the session really
      * drops its identity: after SETCRED the VFS itself refuses the
      * owner-only file with EACCES while a world-readable file still

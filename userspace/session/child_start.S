@@ -5,6 +5,11 @@
 _start:
     movq (%rsp), %rdi          /* argc */
     leaq 8(%rsp), %rsi         /* argv */
+    leaq 8(%rsp), %rdx
+    movq %rdi, %rcx
+    incq %rcx
+    shlq $3, %rcx              /* (argc + 1) * 8 = bytes past argv[] */
+    addq %rcx, %rdx            /* envp */
     andq $-16, %rsp
     call child_main
     movq %rax, %rdi

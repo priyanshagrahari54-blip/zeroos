@@ -484,3 +484,72 @@ uint32_t zd_term_row_text(const struct zd_term *t, uint32_t y,
     out[n] = 0;
     return n;
 }
+
+/* ---- line discipline -------------------------------------------------- */
+
+static const char line_echo_erase[] = "\b \b";
+static const char line_echo_newline[] = "\r\n";
+
+void zd_term_line_init(struct zd_term_line *l) {
+    if (!l)
+        return;
+    l->buf[0] = 0;
+    l->len = 0;
+    l->completions = 0;
+    l->erased = 0;
+    l->overflow = 0;
+    l->ignored = 0;
+}
+
+int zd_term_line_input(struct zd_term_line *l, uint8_t byte,
+                       const char **echo, uint32_t *echo_len) {
+    static char printable[1];
+    if (!l || !echo || !echo_len)
+        return -22;
+    *echo = 0;
+    *echo_len = 0;
+    if (byte == 0x08 || byte == 0x7f) {
+        if (l->len == 0)
+            return 0;
+        l->len--;
+        l->buf[l->len] = 0;
+        l->erased++;
+        *echo = line_echo_erase;
+        *echo_len = (uint32_t)(sizeof(line_echo_erase) - 1);
+        return 0;
+    }
+    if (byte == 0x0d || byte == 0x0a) {
+        l->completions++;
+        *echo = line_echo_newline;
+        *echo_len = (uint32_t)(sizeof(line_echo_newline) - 1);
+        return 1;
+    }
+    if (byte < 0x20 || byte > 0x7e) {
+        l->ignored++;
+        return 0;
+    }
+    if (l->len >= ZD_TERM_LINE_MAX) {
+        l->overflow++;
+        return 0;
+    }
+    printable[0] = (char)byte;
+    l->buf[l->len++] = (char)byte;
+    l->buf[l->len] = 0;
+    *echo = printable;
+    *echo_len = 1;
+    return 0;
+}
+
+uint32_t zd_term_line_copy(const struct zd_term_line *l, char *out,
+                           uint32_t cap) {
+    uint32_t n;
+    if (!l || !out || !cap)
+        return 0;
+    n = l->len;
+    if (n > cap - 1)
+        n = cap - 1;
+    for (uint32_t i = 0; i < n; ++i)
+        out[i] = l->buf[i];
+    out[n] = 0;
+    return l->len;
+}
