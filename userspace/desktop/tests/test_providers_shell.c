@@ -651,6 +651,285 @@ static void test_session_binding_sequence(void) {
     ZD_CHECK_EQ(zd_fm_visible_count(&fm), 2u);
 }
 
+/* ---- step-9 platform activation replay ---------------------------------
+ * The session activates the shell platform services on real kernel state
+ * (monotonic clock, topology, live scanout).  This replays the same call
+ * sequence against the real cores with injected fakes so a mis-ordered or
+ * mis-stamped call fails here instead of only in guest CI. */
+
+#define PA_PACING_NS 20000000ULL
+
+struct pa_display {
+    struct zeroos_display_info info;
+    uint32_t presents;
+};
+
+static uint64_t pa_clock;
+
+static int pa_query_info(void *context, struct zeroos_display_info *info) {
+    struct pa_display *display = (struct pa_display *)context;
+    *info = display->info;
+    return 0;
+}
+
+static int pa_present(void *context, uint32_t x, uint32_t y, uint32_t width,
+                      uint32_t height, uint32_t stride, const void *pixels) {
+    struct pa_display *display = (struct pa_display *)context;
+    (void)x;
+    (void)y;
+    (void)width;
+    (void)height;
+    (void)stride;
+    (void)pixels;
+    ++display->presents;
+    return 0;
+}
+
+static uint64_t pa_ticks(void *context) {
+    (void)context;
+    return pa_clock;
+}
+
+static struct zd_settings pa_settings;
+static const struct zd_setting_def pa_scale_setting = {
+    .key = "shell.scale_percent",
+    .type = ZD_SETTING_INT,
+    .scope = ZD_SCOPE_USER,
+    .permissions_required = ZD_PERM_SETTINGS_USER,
+    .default_value = 100,
+    .min_value = 50,
+    .max_value = 300,
+    .group = "shell",
+    .description = "Shell interface scaling"
+};
+
+static uint32_t pa_notify_posts;
+static uint32_t pa_restarts;
+static uint32_t pa_transitions;
+
+static int pa_notify(void *context, const char *target) {
+    (void)context;
+    if (!target || !target[0])
+        return -ZD_EINVAL;
+    ++pa_notify_posts;
+    return 0;
+}
+
+static int pa_set_setting(void *context, const char *target, int32_t value) {
+    uint32_t changed = 0;
+    (void)context;
+    if (!target)
+        return -ZD_EINVAL;
+    return zd_settings_set_number(&pa_settings, target, (int64_t)value,
+                                  ZD_PERM_SETTINGS_USER, &changed);
+}
+
+static const struct zd_automation_ops pa_auto_ops = {
+    .notify = pa_notify,
+    .set_setting = pa_set_setting,
+    .callback = 0,
+    .log = 0,
+    .context = 0
+};
+
+static void pa_on_change(void *context, enum zd_lifecycle_state previous,
+                         enum zd_lifecycle_state next,
+                         enum zd_lifecycle_event cause) {
+    (void)context;
+    (void)previous;
+    (void)next;
+    (void)cause;
+    ++pa_transitions;
+}
+
+static void pa_on_decision(void *context, uint32_t service_id,
+                           enum zd_watchdog_decision decision,
+                           uint64_t delay_ns) {
+    (void)context;
+    (void)service_id;
+    (void)delay_ns;
+    if (decision == ZD_WD_RESTART)
+        ++pa_restarts;
+}
+
+static void pa_on_degraded(void *context) {
+    (void)context;
+}
+
+static void test_session_platform_activation_sequence(void) {
+    struct pa_display fake;
+    struct zd_display_ops ops;
+    struct zd_display_service service;
+    struct zd_capabilities caps;
+    struct zd_governor governor;
+    struct zd_lifecycle lifecycle;
+    struct zd_watchdog watchdog;
+    struct zd_watchdog_result result;
+    struct zd_automation automation;
+    struct zd_automation_rule rule;
+    struct zd_automation_audit_entry audit[4];
+    uint8_t frame[16];
+    uint32_t frame_budget = 0;
+    uint32_t effects = 0;
+    uint32_t free_percent;
+    uint32_t consumed = 0;
+    uint32_t audit_count;
+    uint32_t fired;
+    uint32_t rule_id = 0;
+    uint32_t service_id = 0;
+    int64_t setting_value = 0;
+    enum zd_pressure_level pressure;
+
+    /* 1. Present pacing on a stamped baseline: the session must stamp the
+     * baseline present with the same clock it later compares against. */
+    memset(&fake, 0, sizeof(fake));
+    fake.info.width = 1024;
+    fake.info.height = 768;
+    fake.info.pitch = 4096;
+    fake.info.bpp = 32;
+    fake.info.byte_size = 4096ULL * 768ULL;
+    fake.info.flags = ZEROOS_DISPLAY_FLAG_PRESENT;
+    ops.query_info = pa_query_info;
+    ops.present = pa_present;
+    ops.ticks = pa_ticks;
+    ops.context = &fake;
+    pa_clock = 1000000000ULL;
+    ZD_CHECK_EQ(zd_display_service_init(&service, &ops, 0), 0);
+    ZD_CHECK_EQ(zd_display_service_attach(&service), 0);
+    service.min_present_interval_ticks = PA_PACING_NS;
+    ZD_CHECK_EQ(zd_display_service_damage(&service,
+                                          (struct zd_rect){10, 10, 4, 4}), 0);
+    ZD_CHECK_EQ(zd_display_service_present(&service, frame, 4096, pa_clock),
+                0);
+    ZD_CHECK_EQ(zd_display_service_damage(&service,
+                                          (struct zd_rect){10, 10, 4, 4}), 0);
+    ZD_CHECK_EQ(zd_display_service_present(&service, frame, 4096,
+                                           pa_clock + 1000ULL),
+                -ZD_EAGAIN);
+    ZD_CHECK_EQ(service.stats.presents_refused_paced, 1U);
+    ZD_CHECK_EQ(fake.presents, 1U);
+    /* A zero-stamped baseline would look already elapsed: pin the guard. */
+    ZD_CHECK(pa_clock + 1000ULL - service.last_present_tick <
+             PA_PACING_NS);
+    ZD_CHECK_EQ(zd_display_service_present(&service, frame, 4096,
+                                           pa_clock + PA_PACING_NS + 1ULL),
+                0);
+    ZD_CHECK_EQ(fake.presents, 2U);
+
+    /* 2. Governor over the same topology the guest reports (2 CPUs, 128 MB,
+     * software compositing): tier floor, real budget, measured pressure. */
+    memset(&caps, 0, sizeof(caps));
+    caps.cpu_count = 2;
+    caps.ram_mb = 128;
+    caps.display_width = 1024;
+    caps.display_height = 768;
+    zd_governor_init(&governor, &caps);
+    ZD_CHECK_EQ((int)governor.tier, (int)ZD_TIER_MINIMAL);
+    zd_governor_effects_for_tier(governor.tier, &frame_budget, &effects);
+    ZD_CHECK(frame_budget != 0U);
+    free_percent = 90U; /* 90% of managed memory free, as the guest reports */
+    pressure = free_percent < 10U ? ZD_PRESSURE_CRITICAL :
+               free_percent < 25U ? ZD_PRESSURE_HIGH :
+               free_percent < 50U ? ZD_PRESSURE_MODERATE :
+               free_percent < 75U ? ZD_PRESSURE_LOW : ZD_PRESSURE_NONE;
+    ZD_CHECK_EQ((int)pressure, (int)ZD_PRESSURE_NONE);
+    ZD_CHECK_EQ(zd_governor_set_pressure(&governor, pressure, 0), 0);
+    ZD_CHECK(governor.active_actions ==
+             zd_governor_actions_for_level(pressure, 0));
+
+    /* 3. Lifecycle: the session's transition order, the illegal event and
+     * the heavy-work gate. */
+    zd_lifecycle_init(&lifecycle);
+    ZD_CHECK_EQ(zd_lifecycle_add_listener(&lifecycle, pa_on_change, 0), 0);
+    ZD_CHECK_EQ(zd_lifecycle_dispatch(&lifecycle, ZD_LIFECYCLE_START, 1), 0);
+    ZD_CHECK_EQ(zd_lifecycle_dispatch(&lifecycle,
+                                      ZD_LIFECYCLE_CONTROLLERS_UP, 2), 0);
+    ZD_CHECK_EQ(zd_lifecycle_dispatch(&lifecycle, ZD_LIFECYCLE_ACTIVATE, 3),
+                0);
+    ZD_CHECK_EQ(zd_lifecycle_state(&lifecycle), (int)ZD_LIFECYCLE_ACTIVE);
+    ZD_CHECK(zd_lifecycle_allows_heavy_work(&lifecycle));
+    ZD_CHECK_ERR(zd_lifecycle_dispatch(&lifecycle, ZD_LIFECYCLE_START, 4),
+                 ZD_EINVAL);
+    ZD_CHECK_EQ(zd_lifecycle_dispatch(&lifecycle, ZD_LIFECYCLE_PRESSURE, 5),
+                0);
+    ZD_CHECK(!zd_lifecycle_allows_heavy_work(&lifecycle));
+    ZD_CHECK_EQ(zd_lifecycle_dispatch(&lifecycle,
+                                      ZD_LIFECYCLE_PRESSURE_RELEASED, 6), 0);
+    ZD_CHECK_EQ(zd_lifecycle_state(&lifecycle), (int)ZD_LIFECYCLE_ACTIVE);
+    ZD_CHECK_EQ(pa_transitions, 5U);
+
+    /* 4. Watchdog: healthy evaluation, failure -> restart decision,
+     * recovery, healthy again. */
+    zd_watchdog_init(&watchdog);
+    ZD_CHECK_EQ(zd_watchdog_set_listener(&watchdog, pa_on_decision,
+                                         pa_on_degraded, 0), 0);
+    ZD_CHECK_EQ(zd_watchdog_register(&watchdog, "search", ZD_WD_ON_FAILURE,
+                                     3, 0, PA_PACING_NS,
+                                     PA_PACING_NS * 8, &service_id), 0);
+    ZD_CHECK_EQ(zd_watchdog_set_heartbeat(&watchdog, service_id,
+                                          PA_PACING_NS * 4), 0);
+    ZD_CHECK_EQ(zd_watchdog_note_start(&watchdog, service_id, 100), 0);
+    ZD_CHECK_EQ(zd_watchdog_note_heartbeat(&watchdog, service_id, 100), 0);
+    ZD_CHECK_EQ(zd_watchdog_evaluate(&watchdog, service_id, 100, &result), 0);
+    ZD_CHECK_EQ((int)result.decision, (int)ZD_WD_CONTINUE);
+    ZD_CHECK_EQ(zd_watchdog_note_exit(&watchdog, service_id, 101, 1,
+                                      &result), 0);
+    ZD_CHECK_EQ((int)result.decision, (int)ZD_WD_RESTART);
+    ZD_CHECK_EQ(pa_restarts, 1U);
+    ZD_CHECK_EQ(zd_watchdog_note_start(&watchdog, service_id, 102), 0);
+    ZD_CHECK_EQ(zd_watchdog_evaluate(&watchdog, service_id, 102, &result), 0);
+    ZD_CHECK_EQ((int)result.decision, (int)ZD_WD_CONTINUE);
+
+    /* 5. Automation: permission gate, real settings write, cooldown and
+     * the audit trail the privacy centre reads. */
+    zd_settings_init(&pa_settings);
+    ZD_CHECK_EQ(zd_settings_register(&pa_settings, &pa_scale_setting), 0);
+    pa_notify_posts = 0;
+    ZD_CHECK_EQ(zd_automation_init(&automation, &pa_auto_ops), 0);
+    memset(&rule, 0, sizeof(rule));
+    rule.enabled = 1;
+    rule.event = ZD_AUTO_EV_SERVICE_FAILED;
+    rule.action = ZD_AUTO_ACT_NOTIFY;
+    snprintf(rule.target, sizeof(rule.target), "shell");
+    rule.permission = 0;
+    ZD_CHECK_EQ(zd_automation_add(&automation, &rule, &rule_id), 0);
+    ZD_CHECK_EQ(zd_automation_fire(&automation, ZD_AUTO_EV_SERVICE_FAILED,
+                                   200), 0U);
+    ZD_CHECK_EQ(pa_notify_posts, 0U);
+    ZD_CHECK_EQ(automation.stats.denied_permission, 1U);
+    ZD_CHECK_EQ(zd_automation_set_permission(&automation, rule_id, 1), 0);
+    ZD_CHECK_EQ(zd_automation_fire(&automation, ZD_AUTO_EV_SERVICE_FAILED,
+                                   201), 1U);
+    ZD_CHECK_EQ(pa_notify_posts, 1U);
+
+    rule.event = ZD_AUTO_EV_CALLER_TICK;
+    rule.action = ZD_AUTO_ACT_SETTING;
+    snprintf(rule.target, sizeof(rule.target), "shell.scale_percent");
+    rule.setting_value = 150;
+    rule.cooldown_ticks = PA_PACING_NS;
+    rule.permission = 1;
+    ZD_CHECK_EQ(zd_automation_add(&automation, &rule, &rule_id), 0);
+    fired = zd_automation_fire(&automation, ZD_AUTO_EV_CALLER_TICK,
+                               1000000000ULL);
+    ZD_CHECK_EQ(fired, 1U);
+    ZD_CHECK_EQ(zd_settings_get(&pa_settings, "shell.scale_percent",
+                                &setting_value, 0, 0), 0);
+    ZD_CHECK_EQ(setting_value, 150);
+    fired = zd_automation_fire(&automation, ZD_AUTO_EV_CALLER_TICK,
+                               1000000001ULL);
+    ZD_CHECK_EQ(fired, 0U);
+    ZD_CHECK_EQ(automation.stats.rate_limited, 1U);
+    fired = zd_automation_fire(&automation, ZD_AUTO_EV_CALLER_TICK,
+                               1000000000ULL + PA_PACING_NS + 1ULL);
+    ZD_CHECK_EQ(fired, 1U);
+    ZD_CHECK_EQ(automation.stats.fires, 3U);
+    audit_count = zd_automation_drain_audit(&automation, audit,
+                                            ZD_ARRAY_COUNT(audit),
+                                            &consumed);
+    ZD_CHECK(audit_count != 0U);
+    ZD_CHECK_EQ(consumed, audit_count);
+}
+
 void zd_test_providers_shell_suite(void) {
     printf(" suite: shell search providers\n");
     ZD_RUN(test_files_provider_roots);
@@ -659,4 +938,5 @@ void zd_test_providers_shell_suite(void) {
     ZD_RUN(test_settings_provider);
     ZD_RUN(test_shell_providers_in_pipeline);
     ZD_RUN(test_session_binding_sequence);
+    ZD_RUN(test_session_platform_activation_sequence);
 }

@@ -782,11 +782,26 @@ int session_main(void) {
      * accepted again. */
     if (live) {
         display.min_present_interval_ticks = SESSION_PACING_NS;
+        /* Baseline present stamped with the real clock: the pacer compares
+         * against the last present's own tick, so an unstamped (zero)
+         * baseline would look like an interval that already elapsed. */
         if (zd_display_service_damage(
                 &display,
                 (struct zd_rect){10, 10, SESSION_WINDOW_W,
                                  SESSION_WINDOW_H}) != 0)
             return fail("pacing damage", 0);
+        sys_result = zd_display_service_present(&display, staging,
+                                                SESSION_TARGET_W * 4,
+                                                session_uptime_ns());
+        if (sys_result != 0)
+            return fail("pacing baseline present", sys_result);
+        /* The very next frame is inside the interval: refused and counted,
+         * with the damage kept for the retry. */
+        if (zd_display_service_damage(
+                &display,
+                (struct zd_rect){10, 10, SESSION_WINDOW_W,
+                                 SESSION_WINDOW_H}) != 0)
+            return fail("pacing damage refused", 0);
         sys_result = zd_display_service_present(&display, staging,
                                                 SESSION_TARGET_W * 4,
                                                 session_uptime_ns());
