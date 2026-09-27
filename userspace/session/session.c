@@ -25,6 +25,7 @@
 #include <zeroos/desktop/gaming.h>
 #include <zeroos/desktop/a11y.h>
 #include <zeroos/desktop/i18n.h>
+#include <zeroos/desktop/media.h>
 #include <zeroos/desktop/capability.h>
 #include <zeroos/desktop/update.h>
 #include "crypto.h"
@@ -524,6 +525,7 @@ static struct zd_perf_center session_perf;
 static struct zd_perf_center session_perf_cold;
 static struct zd_bar session_bar;
 static struct zd_metrics session_metrics;
+static struct zd_media session_media;
 static struct zd_a11y session_a11y;
 static struct zd_i18n session_i18n;
 static struct zd_fps session_fps;
@@ -982,6 +984,16 @@ int session_main(void) {
     uint32_t i18n_total;
     uint32_t i18n_hi_present;
     int a11y_i;
+    int a11y_urgency;
+    enum zd_notify_a11y a11y_policy;
+    static const char media_origin[] = "file:/ram/shell/inbox/";
+    const struct zd_fm_entry *media_entry;
+    char media_path[96];
+    char media_first[48];
+    uint32_t media_count;
+    uint32_t media_len;
+    int media_i;
+    int media_j;
     uint32_t study_entries;
     uint32_t study_cards;
     int study_i;
@@ -3258,9 +3270,24 @@ int session_main(void) {
     a11y_note = zd_notify_get(&session_notify, a11y_note_ids[0]);
     if (!a11y_note)
         return fail("a11y notification read", 0);
-    if (zd_notify_a11y_policy(a11y_note->priority) != ZD_NOTIFY_A11Y_ASSERTIVE)
-        return fail("a11y policy",
-                    (int64_t)zd_notify_a11y_policy(a11y_note->priority));
+    a11y_policy = zd_notify_a11y_policy(a11y_note->priority);
+    /* The engine's own mapping, checked against this notification's real
+     * priority: critical interrupts, low stays quiet, the rest is announced
+     * when idle. */
+    if (a11y_note->priority == ZD_NOTIFY_CRITICAL) {
+        if (a11y_policy != ZD_NOTIFY_A11Y_ASSERTIVE)
+            return fail("a11y policy", (int64_t)a11y_policy);
+    } else if (a11y_note->priority == ZD_NOTIFY_LOW) {
+        if (a11y_policy != ZD_NOTIFY_A11Y_QUIET)
+            return fail("a11y policy", (int64_t)a11y_policy);
+    } else if (a11y_policy != ZD_NOTIFY_A11Y_POLITE) {
+        return fail("a11y policy", (int64_t)a11y_policy);
+    }
+    a11y_urgency = a11y_policy == ZD_NOTIFY_A11Y_ASSERTIVE
+                       ? (int)ZD_A11Y_URGENCY_HIGH
+                   : a11y_policy == ZD_NOTIFY_A11Y_QUIET
+                       ? (int)ZD_A11Y_URGENCY_LOW
+                       : (int)ZD_A11Y_URGENCY_NORMAL;
     /* Localization: the shell's own labels come from the catalog, both
      * locales are present for every key, and the two really differ. */
     zd_i18n_init(&session_i18n, ZD_LOCALE_EN);
@@ -3288,26 +3315,143 @@ int session_main(void) {
     if (zd_i18n_locale_from_name(zd_i18n_locale_name(ZD_LOCALE_HI)) !=
         ZD_LOCALE_HI)
         return fail("i18n locale round trip", 0);
-    /* A low-urgency announcement is pending; the localized high-urgency one
-     * must preempt it, because that is what the policy just decided. */
+    /* What the shell announces carries that verdict, and its text is the
+     * focused window's real title. */
+    if (zd_a11y_announce(&session_a11y, a11y_found->id, a11y_win->title,
+                         (enum zd_a11y_urgency)a11y_urgency) != 0)
+        return fail("a11y announce", 0);
+    if (zd_a11y_next_announcement(&session_a11y, &a11y_msg) != 0)
+        return fail("a11y announcement read", 0);
+    if ((int)a11y_msg.urgency != a11y_urgency)
+        return fail("a11y announcement urgency", (int64_t)a11y_msg.urgency);
+    for (a11y_i = 0; a11y_msg.text[a11y_i] || a11y_win->title[a11y_i];
+         ++a11y_i) {
+        if (a11y_msg.text[a11y_i] != a11y_win->title[a11y_i])
+            return fail("a11y announcement text", (int64_t)a11y_i);
+    }
+    /* A low-urgency announcement is pending; a high-urgency one carrying the
+     * shell's localized label must preempt it. */
     if (zd_a11y_announce(&session_a11y, a11y_found->id, a11y_win->title,
                          ZD_A11Y_URGENCY_LOW) != 0)
         return fail("a11y announce low", 0);
     if (zd_a11y_announce(&session_a11y, a11y_found->id, i18n_text_hi,
                          ZD_A11Y_URGENCY_HIGH) != 0)
-        return fail("a11y announce", 0);
+        return fail("a11y announce high", 0);
     if (zd_a11y_next_announcement(&session_a11y, &a11y_msg) != 0)
-        return fail("a11y announcement read", 0);
+        return fail("a11y preemption read", 0);
     if (a11y_msg.urgency != ZD_A11Y_URGENCY_HIGH)
         return fail("a11y preemption", (int64_t)a11y_msg.urgency);
     for (a11y_i = 0; a11y_msg.text[a11y_i] || i18n_text_hi[a11y_i];
          ++a11y_i) {
         if (a11y_msg.text[a11y_i] != i18n_text_hi[a11y_i])
-            return fail("a11y announcement text", (int64_t)a11y_i);
+            return fail("a11y preemption text", (int64_t)a11y_i);
     }
     say("ZEROOS: session accessibility and localization passed.");
 
-    /* 26. Update payload verification with a provisioned key. Nothing
+    /* 26. Media library over the live filesystem with explicit rights. The
+     * origins are real directories, every item is a real file verified
+     * through STAT before it is listed, and the rights, origin and DRM gates
+     * are each shown to refuse rather than to be worked around. */
+    zd_media_init(&session_media);
+    if (zd_media_register_source(&session_media, "",
+                                 ZD_MEDIA_RIGHT_ALL) != -22 ||
+        zd_media_register_source(&session_media, "file:/ram/shell/inbox",
+                                 ZD_MEDIA_RIGHT_ALL << 1) != -22)
+        return fail("media source validation", 0);
+    if (session_media.stats.rejected != 2)
+        return fail("media rejections",
+                    (int64_t)session_media.stats.rejected);
+    /* Two real origins: the inbox granted play and cache, its parent listed
+     * with no rights at all -- listing is not playing. */
+    if (zd_media_register_source(&session_media, "file:/ram/shell/inbox",
+                                 ZD_MEDIA_RIGHT_PLAY |
+                                     ZD_MEDIA_RIGHT_CACHE) != 0 ||
+        zd_media_register_source(&session_media, "file:/ram/shell", 0) != 0)
+        return fail("media source grant", 0);
+    if (session_media.source_count != 2 ||
+        session_media.stats.registered != 2)
+        return fail("media source count",
+                    (int64_t)session_media.source_count);
+    if (zd_fm_open(&session_fm, "/ram/shell/inbox") != 0)
+        return fail("media listing", 0);
+    media_count = zd_fm_visible_count(&session_fm);
+    if (media_count == 0)
+        return fail("media listing empty", 0);
+    if (media_count > 3)
+        media_count = 3;
+    for (media_i = 0; media_i < (int)media_count; ++media_i) {
+        media_entry = zd_fm_visible(&session_fm, (uint32_t)media_i);
+        if (!media_entry)
+            return fail("media entry", (int64_t)media_i);
+        media_len = 0;
+        for (media_j = 0; media_origin[media_j]; ++media_j)
+            media_path[media_len++] = media_origin[media_j];
+        for (media_j = 0; media_entry->name[media_j] &&
+                 media_len + 1 < (uint32_t)sizeof(media_path); ++media_j)
+            media_path[media_len++] = media_entry->name[media_j];
+        media_path[media_len] = 0;
+        /* The file must really be there before the library lists it. */
+        if (zeroos_stat(media_path, &file_stat) != 0)
+            return fail("media item stat", (int64_t)media_i);
+        if (zd_media_add_item(&session_media, "file:/ram/shell/inbox",
+                              media_entry->name, 0) != 0)
+            return fail("media add item", (int64_t)media_i);
+        if (media_i == 0) {
+            for (media_j = 0; media_entry->name[media_j] &&
+                 media_j + 1 < (int)sizeof(media_first); ++media_j)
+                media_first[media_j] = media_entry->name[media_j];
+            media_first[media_j] = 0;
+        }
+    }
+    if (session_media.item_count != media_count ||
+        session_media.stats.items_added != media_count)
+        return fail("media item count",
+                    (int64_t)session_media.item_count);
+    /* The first item sits under a granted origin and plays; cache is granted
+     * for that origin and export is not. */
+    if (zd_media_play(&session_media, 1) != 0 ||
+        session_media.stats.plays != 1)
+        return fail("media play", (int64_t)session_media.stats.plays);
+    if (zd_media_request(&session_media, 1, ZD_MEDIA_RIGHT_CACHE) != 0)
+        return fail("media cache right", 0);
+    if (zd_media_request(&session_media, 1, ZD_MEDIA_RIGHT_EXPORT) != -1)
+        return fail("media export gate", 0);
+    /* The same title under the origin that holds no rights is refused. */
+    if (zd_media_add_item(&session_media, "file:/ram/shell", media_first,
+                          0) != 0)
+        return fail("media ungranted add", 0);
+    if (zd_media_play(&session_media, media_count + 1) != -1 ||
+        session_media.stats.refusals_rights != 1)
+        return fail("media rights refusal",
+                    (int64_t)session_media.stats.refusals_rights);
+    /* Protected content is listed but never played, and the refusal is
+     * counted rather than quietly bypassed. */
+    if (zd_media_add_item(&session_media, "file:/ram/shell/inbox",
+                          media_first, 1) != 0)
+        return fail("media drm add", 0);
+    if (zd_media_play(&session_media, media_count + 2) != -1 ||
+        session_media.stats.refusals_drm != 1)
+        return fail("media drm refusal",
+                    (int64_t)session_media.stats.refusals_drm);
+    /* An origin that was never registered is refused before rights matter. */
+    if (zd_media_add_item(&session_media, "file:/ram/unregistered",
+                          media_first, 0) != 0)
+        return fail("media unregistered add", 0);
+    if (zd_media_play(&session_media, media_count + 3) != -1 ||
+        session_media.stats.refusals_origin != 1)
+        return fail("media origin refusal",
+                    (int64_t)session_media.stats.refusals_origin);
+    if (zd_media_play(&session_media, 999) != -2)
+        return fail("media unknown item", 0);
+    /* Unregistering an origin takes its rights away with it. */
+    if (zd_media_unregister_source(&session_media,
+                                   "file:/ram/shell/inbox") != 0)
+        return fail("media unregister", 0);
+    if (zd_media_play(&session_media, 1) != -1)
+        return fail("media revoked play", 0);
+    say("ZEROOS: session media rights passed.");
+
+    /* 27. Update payload verification with a provisioned key. Nothing
      * here is a fixture: the key is provisioned through the filesystem
      * (written, read back, and only then used), the bundle is sealed with
      * the RFC 8439 AEAD core, and the update engine verifies it with the
@@ -3427,7 +3571,7 @@ int session_main(void) {
         return fail("update slot removed", 0);
     say("ZEROOS: session update verification passed.");
 
-    /* 27. Sandbox decisions enforced by the kernel, not only by Ring-3
+    /* 28. Sandbox decisions enforced by the kernel, not only by Ring-3
      * policy. The confined profile denies writes, so the session really
      * drops its identity: after SETCRED the VFS itself refuses the
      * owner-only file with EACCES while a world-readable file still
