@@ -196,6 +196,11 @@ struct zeroos_display_info {
 #define ZEROOS_S_IFMT 0xf000U
 #define ZEROOS_S_IFREG 0x8000U
 #define ZEROOS_S_IFDIR 0x4000U
+/* struct zeroos_dirent.type carries the file-type nibble of the mode
+ * (mode >> 12), not the raw S_IF* bits: 4 = directory, 8 = regular. */
+#define ZEROOS_DT_UNKNOWN 0U
+#define ZEROOS_DT_DIR (ZEROOS_S_IFDIR >> 12)
+#define ZEROOS_DT_REG (ZEROOS_S_IFREG >> 12)
 
 /* Input event kinds; values mirror kernel/input_core.h enum input_kind
  * (gated by abi_consistency.py). */
@@ -304,7 +309,7 @@ struct zeroos_statfs {
 
 struct zeroos_dirent {
     uint64_t ino;
-    uint32_t type;
+    uint32_t type; /* ZEROOS_DT_*: mode >> 12 (4 = dir, 8 = regular) */
     uint32_t name_len;
     char name[256];
 };

@@ -80,7 +80,7 @@ The authoritative per-core binding inventory (host-tested vs pending live integr
 
 | Suite | Command | Assertions | Failures |
 |---|---|---|---|
-| Desktop modules (display, compositor, window, input, a11y, i18n, search, settings, notify, lifecycle, watchdog, governor, automation, browser, AI, bar, launcher, capability, metrics, update, url, study, fps, snapshot, vault, nav, firewall, sandbox, clipboard, downloads, providers, shell providers + session-binding replay, perfcenter, fault, soak, pdf, media, gaming, eco, snapshot-bind, privacy, term, filemgr, formula, ocr, overview, notes, dict, assist, ui, stress, integration) | `make desktop-check` | 121375 | 0 |
+| Desktop modules (display, compositor, window, input, a11y, i18n, search, settings, notify, lifecycle, watchdog, governor, automation, browser, AI, bar, launcher, capability, metrics, update, url, study, fps, snapshot, vault, nav, firewall, sandbox, clipboard, downloads, providers, shell providers + session-binding replay, perfcenter, fault, soak, pdf, media, gaming, eco, snapshot-bind, privacy, term, filemgr, formula, ocr, overview, notes, dict, assist, ui, stress, integration) | `make desktop-check` | 121380 | 0 |
 | Windows compatibility core (lifecycle/paths/registry/DLL + PE validator) | `make compat-check` | 107 | 0 |
 | Hardware/driver cores (incl. crypto RFC vectors) | `make hardware-core-test` | per-suite PASS | 0 |
 | IPv4 ARP parser/builders + solicited-only expiring neighbor cache | `make hardware-core-test` | 85 | 0 |
@@ -100,6 +100,7 @@ persistence certification. A green
 
 | Commit | Evidence | Result |
 |---|---|---|
+| `2123c14` | Push-context boot: the new file-manager VFS binding milestone printed, then the session failed on the folder search result — `zeroos_dirent.type` is the mode nibble (`mode >> 12`, 4 = dir), not the raw `S_IF*` bits, so no entry was ever marked `ZD_FM_DIR`. Fixed by `ZEROOS_DT_*` constants in both ABI headers, the storage probe certifying the encoding in the guest, and a host pin. This is exactly what the grepped milestone is for. | FAILURE (found the dirent type defect) |
 | `599b262` | PR-context full boot with 7 session milestones (service attached, shell rounds, probe pattern, clean reap) | SUCCESS |
 | `ccfa30d` | PR-context full boot with CI diagnostics | SUCCESS |
 | `f18c857` | PR-context full boot (network/DHCP core) | SUCCESS |

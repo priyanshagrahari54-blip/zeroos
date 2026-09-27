@@ -122,16 +122,22 @@ int probe_main(void) {
     CHECK(zeroos_unlink("/ram/probe/h")==0,"unlink",0);
     int64_t dfd=zeroos_open("/ram/probe",ZEROOS_O_RDONLY|ZEROOS_O_DIRECTORY,0);
     CHECK(dfd>=0,"open dir",dfd);
-    int dots=0, seen_g=0, others=0;
+    int dots=0, seen_g=0, others=0, dir_types=0, reg_types=0, bad_types=0;
     while ((rc=zeroos_readdir(dfd,&entry))==1) {
-        if (streq(entry.name,".",1) || streq(entry.name,"..",2))
+        /* dirent.type is the mode's file-type nibble (mode >> 12): the
+         * two dot entries are directories, "g" is a regular file. */
+        if (streq(entry.name,".",1) || streq(entry.name,"..",2)) {
             ++dots;
-        else if (streq(entry.name,"g",1))
+            if (entry.type==ZEROOS_DT_DIR) ++dir_types; else ++bad_types;
+        } else if (streq(entry.name,"g",1)) {
             ++seen_g;
-        else
+            if (entry.type==ZEROOS_DT_REG) ++reg_types; else ++bad_types;
+        } else {
             ++others;
+        }
     }
     CHECK(rc==0 && dots==2 && seen_g==1 && others==0,"readdir",rc);
+    CHECK(dir_types==2 && reg_types==1 && bad_types==0,"readdir type encoding",bad_types);
     CHECK(zeroos_close(dfd)==0,"close dir",0);
     CHECK(zeroos_close(dfd)==-ZEROOS_EBADF,"double close",0);
     int64_t dup=zeroos_dup(fd);

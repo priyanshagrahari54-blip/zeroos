@@ -71,8 +71,8 @@ if public_errors != kernel_errors:
     raise SystemExit("syscall error drift between public and kernel headers")
 
 # Feature bits and the file/VFS ABI (additive to v1) must match exactly.
-FILE_MACROS = sorted(set(re.findall(r"^#define\s+(ZEROOS_(?:ABI_FEATURE_|O_|SEEK_|S_IF|FSYNC_|MMAP_|FILE_|PATH_MAX|NAME_MAX|MAX_FDS)[A-Z0-9_]*)\s", PUBLIC, re.MULTILINE)))
-if len(FILE_MACROS) < 20:
+FILE_MACROS = sorted(set(re.findall(r"^#define\s+(ZEROOS_(?:ABI_FEATURE_|O_|SEEK_|S_IF|DT_|FSYNC_|MMAP_|FILE_|PATH_MAX|NAME_MAX|MAX_FDS)[A-Z0-9_]*)\s", PUBLIC, re.MULTILINE)))
+if len(FILE_MACROS) < 23:
     raise SystemExit("file ABI macros missing from public header")
 for name in FILE_MACROS:
     if macro(PUBLIC, name) != macro(KERNEL, name):

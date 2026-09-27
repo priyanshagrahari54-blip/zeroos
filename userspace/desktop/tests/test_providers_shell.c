@@ -4,6 +4,7 @@
  * `zeroos_readdir`, so these suites cover the contract that binding uses. */
 #include "test_harness.h"
 #include <zeroos/desktop/desktop.h>
+#include <zeroos/syscall.h>
 #include <string.h>
 
 /* ---- in-memory directory fixture -------------------------------------- */
@@ -594,6 +595,15 @@ static int sb_mkdir(void *ctx, const char *path) {
 static void test_session_binding_sequence(void) {
     struct zd_fm fm;
     int rc;
+
+    /* The session derives ZD_FM_DIR from the readdir type nibble; pin the
+     * encoding so a header change cannot silently make every directory a
+     * regular file (it did: folder search then found nothing). */
+    ZD_CHECK_EQ(ZEROOS_DT_DIR, ZEROOS_S_IFDIR >> 12);
+    ZD_CHECK_EQ(ZEROOS_DT_REG, ZEROOS_S_IFREG >> 12);
+    ZD_CHECK_EQ(ZEROOS_DT_DIR, 4u);
+    ZD_CHECK_EQ(ZEROOS_DT_REG, 8u);
+    ZD_CHECK_NE(ZEROOS_DT_DIR, ZEROOS_DT_REG);
 
     sb_reset();
     sb_add("notes.txt", 64, 0);

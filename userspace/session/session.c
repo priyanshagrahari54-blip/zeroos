@@ -183,7 +183,9 @@ static int session_dir_source(void *context, const char *path,
             out[n].name[i] = entry.name[i];
         out[n].name[i] = 0;
         out[n].flags = 0;
-        if ((entry.type & ZEROOS_S_IFMT) == ZEROOS_S_IFDIR)
+        /* dirent.type is the mode's file-type nibble (mode >> 12), not the
+         * raw S_IF* bits: ZEROOS_DT_DIR == 4. */
+        if (entry.type == ZEROOS_DT_DIR)
             out[n].flags |= ZD_FM_DIR;
         if (out[n].name[0] == '.')
             out[n].flags |= ZD_FM_HIDDEN;
