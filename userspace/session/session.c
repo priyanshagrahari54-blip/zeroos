@@ -356,9 +356,11 @@ static int session_fs_mkdir(void *context, const char *path) {
 /* One line of filler; shared by the writer below and the preview
  * assertion in step 7 so the two can never disagree about the content. */
 static const char session_filler[] = "zeroos shell binding\n";
+/* Pins the array/pointer distinction the write loop depends on: a
+ * pointer-sized chunk would rewrite the same leading bytes forever. */
+_Static_assert(sizeof(session_filler) == 22U, "session filler layout");
 
 static int64_t session_write_file(const char *path, uint64_t length) {
-    const char *filler = session_filler;
     int64_t fd = zeroos_open(path, ZEROOS_O_WRONLY | ZEROOS_O_CREAT |
                                        ZEROOS_O_TRUNC,
                              0644);
@@ -368,9 +370,12 @@ static int64_t session_write_file(const char *path, uint64_t length) {
     while ((uint64_t)total < length) {
         uint64_t chunk = length - (uint64_t)total;
         int64_t written;
-        if (chunk > sizeof(filler))
-            chunk = sizeof(filler);
-        written = zeroos_file_write(fd, filler, chunk);
+        /* sizeof of the ARRAY, not of a pointer: the loop restarts at the
+         * beginning of the filler every iteration, so a pointer-sized
+         * chunk would write the same leading bytes over and over. */
+        if (chunk > sizeof(session_filler))
+            chunk = sizeof(session_filler);
+        written = zeroos_file_write(fd, session_filler, chunk);
         if (written <= 0) {
             (void)zeroos_close(fd);
             return written < 0 ? written : -ZEROOS_EIO;
