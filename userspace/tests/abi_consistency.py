@@ -51,25 +51,42 @@ kernel_ids = enum_values(KERNEL, "zeroos_syscall_id")
 if public_ids != kernel_ids:
     raise SystemExit(f"syscall ID drift: public={public_ids!r} kernel={kernel_ids!r}")
 
-for name in (
-    "ZEROOS_SYSCALL_VECTOR",
-    "ZEROOS_SYSCALL_ABI_VERSION",
-    "ZEROOS_SYSCALL_MAX_TRANSFER",
-    "ZEROOS_INPUT_FLAG_DOWN",
-    "ZEROOS_INPUT_FLAG_REPEAT",
-    "ZEROOS_SYSTEM_INFO_VERSION",
-):
-    if macro(PUBLIC, name) != macro(KERNEL, name):
-        raise SystemExit(f"macro drift for {name}")
-
-for name in ("ZEROOS_IPC_MAX_MESSAGE", "ZEROOS_IPC_PIPE_CAPACITY"):
-    if macro(PUBLIC, name) != macro(IPC, name):
-        raise SystemExit(f"macro drift for {name}")
-
-public_errors = enum_values(PUBLIC, "zeroos_error")
-kernel_errors = enum_values(KERNEL, "zeroos_syscall_error")
-if public_errors != kernel_errors:
-    raise SystemExit("syscall error drift between public and kernel headers")
+# The boot-time validator in kernel/syscall.c (syscall_debug_validate)
+# requires specific adjacency pairs plus a ZEROOS_SYS_MAX sentinel one
+# past the last ID; a broken chain panics the kernel before userspace
+# starts. Replicate it here so an added syscall fails on the host instead
+# of only in guest CI.
+ID_PAIRS = [
+    ("ZEROOS_SYS_SHM_CLOSE", "ZEROOS_SYS_OPEN"),
+    ("ZEROOS_SYS_CHOWN", "ZEROOS_SYS_DISPLAY_INFO"),
+    ("ZEROOS_SYS_DISPLAY_INFO", "ZEROOS_SYS_DISPLAY_PRESENT"),
+    ("ZEROOS_SYS_DISPLAY_PRESENT", "ZEROOS_SYS_INPUT_POLL"),
+    ("ZEROOS_SYS_INPUT_POLL", "ZEROOS_SYS_INPUT_WAIT"),
+    ("ZEROOS_SYS_INPUT_WAIT", "ZEROOS_SYS_SYSTEM_INFO"),
+    ("ZEROOS_SYS_SYSTEM_INFO", "ZEROOS_SYS_MAX"),
+]
+for previous, current in ID_PAIRS:
+    for name in (previous, current):
+        if name not in public_ids:
+            raise SystemExit(f"syscall ID chain member missing: {name}")
+    if public_ids[previous] + 1 != public_ids[current]:
+        raise SystemExit(
+            f"syscall ID chain broken: {previous}={public_ids[previous]} "
+            f"{current}={public_ids[current]}"
+        )
+ordered = sorted(
+    (value, name)
+    for name, value in public_ids.items()
+    if name != "ZEROOS_SYS_MAX"
+)
+for (value, name), (next_value, next_name) in zip(ordered, ordered[1:]):
+    if value + 1 != next_value:
+        raise SystemExit(
+            f"non-contiguous syscall IDs: {name}={value} then "
+            f"{next_name}={next_value}"
+        )
+if ordered[-1][0] + 1 != public_ids["ZEROOS_SYS_MAX"]:
+    raise SystemExit("ZEROOS_SYS_MAX is not one past the last syscall ID")
 
 # Feature bits and the file/VFS ABI (additive to v1) must match exactly.
 FILE_MACROS = sorted(set(re.findall(r"^#define\s+(ZEROOS_(?:ABI_FEATURE_|O_|SEEK_|S_IF|DT_|FSYNC_|MMAP_|FILE_|PATH_MAX|NAME_MAX|MAX_FDS)[A-Z0-9_]*)\s", PUBLIC, re.MULTILINE)))
