@@ -64,8 +64,15 @@ enum zeroos_syscall_id {
     ZEROOS_SYS_INPUT_POLL = 53,
     ZEROOS_SYS_INPUT_WAIT = 54,
     ZEROOS_SYS_SYSTEM_INFO = 55,
+    ZEROOS_SYS_CHILD_IMAGE = 56,
     ZEROOS_SYS_MAX
 };
+
+/* Shell child image (ZEROOS_SYS_CHILD_IMAGE): a minimal Ring-3 ELF the
+ * shell can spawn to exercise the SPAWN/WAIT lifecycle. The kernel copies
+ * the embedded image unchanged; the caller must supply a buffer at least
+ * as large as the image, otherwise -EFAULT (the kernel never writes a
+ * partial image). The returned value is the byte count. */
 
 #define ZEROOS_WAIT_FLAG_NONBLOCK (1ULL << 0)
 #define ZEROOS_WAIT_VALID_FLAGS ZEROOS_WAIT_FLAG_NONBLOCK
@@ -121,6 +128,8 @@ enum zeroos_syscall_error {
 #define ZEROOS_ABI_FEATURE_INPUT    (1ULL << 10)
 /* System topology plus a monotonic uptime clock (syscall 55). */
 #define ZEROOS_ABI_FEATURE_SYSINFO  (1ULL << 11)
+/* Embedded shell-child image for SPAWN/WAIT (syscall 56). */
+#define ZEROOS_ABI_FEATURE_CHILD    (1ULL << 12)
 
 /* Display geometry: ABI copy of kernel/fb.h (abi_consistency.py gates the
  * struct body against the public header). */

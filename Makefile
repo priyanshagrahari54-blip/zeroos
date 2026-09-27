@@ -254,7 +254,9 @@ STORAGE_OBJS := $(patsubst kernel/storage/%.c,$(BUILD)/storage/%.o,$(STORAGE_SRC
 INFRA_OBJS := $(BUILD)/ksync.o $(BUILD)/crc.o $(BUILD)/kstring.o $(BUILD)/pci.o
 PROBE_OBJ := $(BUILD)/storage_probe_image.o
 SESSION_OBJ := $(BUILD)/session_probe_image.o
-EXTRA_OBJS := $(STORAGE_OBJS) $(INFRA_OBJS) $(PROBE_OBJ) $(SESSION_OBJ)
+CHILD_OBJ := $(BUILD)/shell_child_image.o
+EXTRA_OBJS := $(STORAGE_OBJS) $(INFRA_OBJS) $(PROBE_OBJ) $(SESSION_OBJ) \
+	$(CHILD_OBJ)
 
 $(BUILD)/storage:
 	mkdir -p $(BUILD)/storage
@@ -299,6 +301,18 @@ $(BUILD)/session_probe.elf: $(SESSION_DEPS) | $(BUILD)
 
 $(BUILD)/session_probe_image.o: kernel/session_probe_image.S $(BUILD)/session_probe.elf | $(BUILD)
 	$(AS) $(ASFLAGS) -DPROBE_PATH='"$(BUILD)/session_probe.elf"' -c $< -o $@
+
+# Minimal Ring-3 child the shell spawns to certify the SPAWN/WAIT lifecycle.
+CHILD_DEPS := userspace/session/child.c userspace/session/child_start.S \
+	userspace/session/child.ld userspace/include/zeroos/syscall.h
+$(BUILD)/shell_child.elf: $(CHILD_DEPS) | $(BUILD)
+	$(CC) $(SESSION_CFLAGS) -c userspace/session/child_start.S -o $(BUILD)/child_start.o
+	$(CC) $(SESSION_CFLAGS) -c userspace/session/child.c -o $(BUILD)/child.o
+	$(LD) -m elf_x86_64 -T userspace/session/child.ld -nostdlib -o $@ \
+		$(BUILD)/child_start.o $(BUILD)/child.o
+
+$(BUILD)/shell_child_image.o: kernel/shell_child_image.S $(BUILD)/shell_child.elf | $(BUILD)
+	$(AS) $(ASFLAGS) -DPROBE_PATH='"$(BUILD)/shell_child.elf"' -c $< -o $@
 
 $(BUILD)/session_launch.o: kernel/session.c kernel/session.h kernel/types.h kernel/kstring.h kernel/memory.h kernel/vmm.h kernel/timer.h kernel/task.h kernel/process.h kernel/thread.h kernel/elf.h kernel/user.h kernel/syscall.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c kernel/session.c -o $@

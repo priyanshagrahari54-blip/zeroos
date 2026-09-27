@@ -69,8 +69,15 @@ enum zeroos_syscall_id {
     ZEROOS_SYS_INPUT_POLL = 53,
     ZEROOS_SYS_INPUT_WAIT = 54,
     ZEROOS_SYS_SYSTEM_INFO = 55,
+    ZEROOS_SYS_CHILD_IMAGE = 56,
     ZEROOS_SYS_MAX
 };
+
+/* Shell child image (ZEROOS_SYS_CHILD_IMAGE): a minimal Ring-3 ELF the
+ * shell can spawn to exercise the SPAWN/WAIT lifecycle. The kernel copies
+ * the embedded image unchanged; the caller must supply a buffer at least
+ * as large as the image, otherwise -EFAULT (the kernel never writes a
+ * partial image). The returned value is the byte count. */
 
 #define ZEROOS_WAIT_VALID_FLAGS ZEROOS_WAIT_FLAG_NONBLOCK
 #define ZEROOS_IPC_VALID_FLAGS (ZEROOS_IPC_FLAG_NONBLOCK | ZEROOS_IPC_FLAG_PEEK)
@@ -152,6 +159,8 @@ enum zeroos_error {
 #define ZEROOS_ABI_FEATURE_INPUT (1ULL << 10)
 /* System topology plus a monotonic uptime clock (syscall 55). */
 #define ZEROOS_ABI_FEATURE_SYSINFO (1ULL << 11)
+/* Embedded shell-child image for SPAWN/WAIT (syscall 56). */
+#define ZEROOS_ABI_FEATURE_CHILD (1ULL << 12)
 
 /* Display geometry (ABI): must match kernel/fb.h and kernel/syscall.h. */
 #define ZEROOS_DISPLAY_FORMAT_INDEXED     0U
@@ -569,6 +578,16 @@ static inline int64_t zeroos_system_info(struct zeroos_system_info *out,
         return -ZEROOS_EFAULT;
     return zeroos_syscall_result(zeroos_syscall6(
         ZEROOS_SYS_SYSTEM_INFO,(uint64_t)(uintptr_t)out,size,0,0,0,0));
+}
+
+/* Copy the embedded shell-child ELF into `out`. `size` must be at least
+ * the image size (ZEROOS_EXEC_MAX_IMAGE is always enough); returns the
+ * byte count, or -EFAULT for a NULL or short buffer. */
+static inline int64_t zeroos_child_image(void *out, uint64_t size) {
+    if (!out)
+        return -ZEROOS_EFAULT;
+    return zeroos_syscall_result(zeroos_syscall6(
+        ZEROOS_SYS_CHILD_IMAGE,(uint64_t)(uintptr_t)out,size,0,0,0,0));
 }
 
 #endif

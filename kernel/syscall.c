@@ -16,6 +16,9 @@
 #include "smp.h"
 #include "memory.h"
 
+extern const uint8_t shell_child_image_start[];
+extern const uint8_t shell_child_image_end[];
+
 extern void serial_write_public(const char *text);
 
 static uint64_t syscall_error(uint64_t error) {
@@ -212,7 +215,8 @@ void syscall_dispatch(struct interrupt_frame *frame) {
                       ZEROOS_ABI_FEATURE_DISPLAY |
                       ZEROOS_ABI_FEATURE_PRESENT |
                       ZEROOS_ABI_FEATURE_INPUT |
-                      ZEROOS_ABI_FEATURE_SYSINFO,
+                      ZEROOS_ABI_FEATURE_SYSINFO |
+                      ZEROOS_ABI_FEATURE_CHILD,
             .max_transfer=ZEROOS_SYSCALL_MAX_TRANSFER
         };
         if (frame->rdi==0 || frame->rsi<sizeof(info) ||
@@ -714,6 +718,21 @@ void syscall_dispatch(struct interrupt_frame *frame) {
             frame->rax=0;
         break;
     }
+    case ZEROOS_SYS_CHILD_IMAGE: {
+        uint64_t image_size=(uint64_t)(shell_child_image_end-
+                                       shell_child_image_start);
+        if (frame->rdi==0 || frame->rsi<image_size ||
+            !process_address_space_is_user_range(process,frame->rdi,
+                                                 image_size,1)) {
+            frame->rax=syscall_error(ZEROOS_EFAULT);
+            break;
+        }
+        if (copy_to_user(frame->rdi,shell_child_image_start,image_size)!=0)
+            frame->rax=syscall_error(ZEROOS_EFAULT);
+        else
+            frame->rax=(int64_t)image_size;
+        break;
+    }
     default:
         if (frame->rax>=ZEROOS_SYS_OPEN && frame->rax<=ZEROOS_SYS_CHOWN) {
             fsyscall_dispatch(frame,process);
@@ -743,7 +762,8 @@ int syscall_debug_validate(void) {
         ZEROOS_SYS_DISPLAY_PRESENT+1U!=ZEROOS_SYS_INPUT_POLL ||
         ZEROOS_SYS_INPUT_POLL+1U!=ZEROOS_SYS_INPUT_WAIT ||
         ZEROOS_SYS_INPUT_WAIT+1U!=ZEROOS_SYS_SYSTEM_INFO ||
-        ZEROOS_SYS_SYSTEM_INFO+1U!=ZEROOS_SYS_MAX)
+        ZEROOS_SYS_SYSTEM_INFO+1U!=ZEROOS_SYS_CHILD_IMAGE ||
+        ZEROOS_SYS_CHILD_IMAGE+1U!=ZEROOS_SYS_MAX)
         return -1;
     return 0;
 }

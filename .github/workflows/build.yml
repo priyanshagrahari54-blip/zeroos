@@ -157,6 +157,9 @@ jobs:
             grep -q "ZEROOS: session automation live events passed." build/serial.log
             grep -q "ZEROOS: session terminal pipe binding passed." build/serial.log
             grep -q "ZEROOS: session privacy aggregation passed." build/serial.log
+            grep -q "ZEROOS: shell child process alive." build/serial.log
+            grep -q "ZEROOS: session child process reaped cleanly." build/serial.log
+            grep -q "ZEROOS: session credential enforcement passed." build/serial.log
             grep -q "ZEROOS: session shell process complete." build/serial.log
             grep -q "ZEROOS: session shell process reaped cleanly." build/serial.log
             if grep -q "storage.*FAILED" build/serial.log; then
@@ -230,6 +233,9 @@ jobs:
           grep -q "ZEROOS: session automation live events passed." build/serial-smp4.log
           grep -q "ZEROOS: session terminal pipe binding passed." build/serial-smp4.log
           grep -q "ZEROOS: session privacy aggregation passed." build/serial-smp4.log
+          grep -q "ZEROOS: shell child process alive." build/serial-smp4.log
+          grep -q "ZEROOS: session child process reaped cleanly." build/serial-smp4.log
+          grep -q "ZEROOS: session credential enforcement passed." build/serial-smp4.log
           grep -q "ZEROOS: session shell process complete." build/serial-smp4.log
           grep -q "ZEROOS: session shell process reaped cleanly." build/serial-smp4.log
           grep -q "ZEROOS: shared-memory map/grant/lifecycle self-test passed." build/serial-smp4.log

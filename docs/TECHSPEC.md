@@ -85,9 +85,11 @@ Stage 5 additions: `DISPLAY_INFO` (ID 51) — display geometry read-only query;
 `DISPLAY_PRESENT` (ID 52) — pixel-mapping scanout submit;
 `INPUT_POLL` (ID 53) / `INPUT_WAIT` (ID 54) — keyboard/pointer event drain
 and blocking wait; `SYSTEM_INFO` (ID 55) — CPU topology, memory totals and
-the kernel monotonic clock; ABI feature bits 8
-(`ZEROOS_ABI_FEATURE_DISPLAY`), 9 (`ZEROOS_ABI_FEATURE_PRESENT`),
-10 (`ZEROOS_ABI_FEATURE_INPUT`) and 11 (`ZEROOS_ABI_FEATURE_SYSINFO`). (Before
+the kernel monotonic clock; `CHILD_IMAGE` (ID 56) — bounded copy of the
+embedded shell-child ELF so Ring 3 can spawn a real child; ABI feature bits
+8 (`ZEROOS_ABI_FEATURE_DISPLAY`), 9 (`ZEROOS_ABI_FEATURE_PRESENT`),
+10 (`ZEROOS_ABI_FEATURE_INPUT`), 11 (`ZEROOS_ABI_FEATURE_SYSINFO`) and
+12 (`ZEROOS_ABI_FEATURE_CHILD`). (Before
 the Stage 3/Stage 5 merge the unreleased Stage 5 branch used IDs 25/26 and
 bits 7/8, which collided with the Stage 3 file ABI; they were renumbered
 before reaching main. IDs 25–50 and bit 7 belong to the file ABI, see VFS.md
@@ -196,6 +198,15 @@ Stage 5 implemented contracts:
   clock really advances across a timed wait, that the pacing floor refuses
   and then accepts the same damage, and that both bad-pointer cases fail
   closed.
+- `ZEROOS_SYS_CHILD_IMAGE` (ID 56, feature bit 12) copies the embedded
+  shell-child ELF (`userspace/session/child.c`, linked by
+  `userspace/session/child.ld`) into a caller buffer and returns its byte
+  count. The caller passes its own size; a NULL buffer or one smaller than
+  the image is rejected with -EFAULT, so the kernel never hands back a
+  partial image. The image is only a convenience: `SPAWN` still runs the
+  full ELF validation and W^X mapping on whatever bytes it is given, so
+  this syscall grants no execution rights the caller could not otherwise
+  construct.
   Events come from the PS/2 i8042 driver (`kernel/input.c`): keyboard on
   IRQ1 (set-1 decoding via `scancode_core`) and mouse on IRQ12 (3-byte
   auxiliary packets via `mouse_core`), both host-tested and routed on

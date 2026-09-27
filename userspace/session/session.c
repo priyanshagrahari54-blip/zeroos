@@ -33,6 +33,10 @@ static struct zd_search_result session_results[8];
 /* Terminal screen buffer (~476 KiB): must stay in .bss, never on the
  * 64 KiB user stack. */
 static struct zd_sandbox session_sandbox;
+/* Buffer for the shell-child ELF fetched through syscall 56. The image is
+ * 163 bytes today; ZEROOS_EXEC_MAX_IMAGE keeps the buffer valid for any
+ * image the kernel will accept. */
+static uint8_t child_image[ZEROOS_EXEC_MAX_IMAGE];
 static struct zd_term session_term;
 /* One line of shell output: SGR colour, text, CRLF. It travels through a
  * real kernel pipe before the VT parser sees a single byte. */
@@ -367,10 +371,11 @@ static const char session_filler[] = "zeroos shell binding\n";
  * pointer-sized chunk would rewrite the same leading bytes forever. */
 _Static_assert(sizeof(session_filler) == 22U, "session filler layout");
 
-static int64_t session_write_file(const char *path, uint64_t length) {
+static int64_t session_write_file_mode(const char *path, uint64_t length,
+                                       uint32_t mode) {
     int64_t fd = zeroos_open(path, ZEROOS_O_WRONLY | ZEROOS_O_CREAT |
                                        ZEROOS_O_TRUNC,
-                             0644);
+                             mode);
     int64_t total = 0;
     if (fd < 0)
         return fd;
@@ -392,6 +397,10 @@ static int64_t session_write_file(const char *path, uint64_t length) {
     if (zeroos_close(fd) != 0)
         return -ZEROOS_EIO;
     return 0;
+}
+
+static int64_t session_write_file(const char *path, uint64_t length) {
+    return session_write_file_mode(path, length, 0644);
 }
 
 static int session_streq(const char *a, const char *b) {
@@ -493,6 +502,10 @@ int session_main(void) {
     struct zd_privacy_report report;
     struct zd_sb_audit sb_audit[4];
     int audit_entries;
+    int64_t cred;
+    uint64_t child_size;
+    uint64_t child_pid;
+    uint64_t status;
     int64_t sys_result;
     int attach_result;
     int live = 0;
@@ -1282,6 +1295,84 @@ int session_main(void) {
     if (audit_entries == 0)
         return fail("privacy audit ring", 0);
     say("ZEROOS: session privacy aggregation passed.");
+
+    /* 12. A real child process. The shell fetches the embedded child image
+     * (syscall 56), spawns it, and reaps it: the child writes its own line
+     * to the console and exits with a status the parent asserts, so the
+     * SPAWN/WAIT lifecycle is exercised by a second Ring-3 process rather
+     * than simulated. ELF validation and W^X still apply to the fetched
+     * image — the kernel maps nothing it has not checked. */
+    sys_result = zeroos_child_image(child_image, sizeof(child_image));
+    if (sys_result <= 0)
+        return fail("child image fetch", sys_result);
+    if ((uint64_t)sys_result > sizeof(child_image))
+        return fail("child image size", sys_result);
+    /* A short buffer must be refused, never partially filled. */
+    if (zeroos_child_image(child_image, 16) != -ZEROOS_EFAULT)
+        return fail("child image short buffer", 0);
+    sys_result = zeroos_child_image(child_image, sizeof(child_image));
+    if (sys_result <= 0)
+        return fail("child image refetch", sys_result);
+    child_size = (uint64_t)sys_result;
+    sys_result = zeroos_spawn(child_image, child_size, 0, 0, 0, 0);
+    if (sys_result <= 0)
+        return fail("child spawn", sys_result);
+    child_pid = (uint64_t)sys_result;
+    status = 0;
+    /* Bounded wait: a wedged child must fail the certification, not hang
+     * the boot. */
+    sys_result = zeroos_wait(child_pid, &status, 0,
+                             (uint64_t)sysinfo.timer_hz * 10U);
+    if (sys_result != (int64_t)child_pid)
+        return fail("child wait", sys_result);
+    if (status != 7)
+        return fail("child exit status", (int64_t)status);
+    /* Reaping twice must report no such child: the slot is really gone. */
+    sys_result = zeroos_wait(child_pid, &status, ZEROOS_WAIT_FLAG_NONBLOCK,
+                             0);
+    if (sys_result != -ZEROOS_ECHILD)
+        return fail("child double reap", sys_result);
+    say("ZEROOS: session child process reaped cleanly.");
+
+    /* 12. Sandbox decisions enforced by the kernel, not only by Ring-3
+     * policy. The confined profile denies writes, so the session really
+     * drops its identity: after SETCRED the VFS itself refuses the
+     * owner-only file with EACCES while a world-readable file still
+     * opens. SETCRED is one-way once unprivileged (only root may change
+     * identity), so this step runs last. */
+    if (zd_sandbox_define(&session_sandbox, "confined",
+                          (1U << ZD_SB_FS_READ)) != 0)
+        return fail("credential sandbox profile", 0);
+    if (zd_sandbox_check(&session_sandbox, "confined", ZD_SB_FS_WRITE) != -1)
+        return fail("credential policy denial", 0);
+    if (session_write_file_mode("/ram/shell/locked.txt", 16, 0600) != 0 ||
+        session_write_file("/ram/shell/shared.txt", 16) != 0)
+        return fail("credential fixture", 0);
+    cred = zeroos_getcred();
+    if (cred < 0 || (uint32_t)cred != 0)
+        return fail("credential start", cred);
+    if (zeroos_setcred(1000, 1000) != 0)
+        return fail("credential drop", 0);
+    cred = zeroos_getcred();
+    if ((uint32_t)cred != 1000U || (uint32_t)((uint64_t)cred >> 32) != 1000U)
+        return fail("credential identity", cred);
+    /* The kernel refuses the owner-only file: uid 1000 is neither the
+     * owner nor in the group, and the other bits are zero. */
+    sys_result = zeroos_open("/ram/shell/locked.txt", ZEROOS_O_RDONLY, 0);
+    if (sys_result != -ZEROOS_EACCES)
+        return fail("kernel permission enforcement", sys_result);
+    /* A world-readable file still opens, so this is a permission decision
+     * and not a blanket failure. */
+    sys_result = zeroos_open("/ram/shell/shared.txt", ZEROOS_O_RDONLY, 0);
+    if (sys_result < 0)
+        return fail("world readable open", sys_result);
+    if (zeroos_close(sys_result) != 0)
+        return fail("world readable close", 0);
+    /* And an unprivileged process cannot give root back to itself. */
+    sys_result = zeroos_setcred(0, 0);
+    if (sys_result != -ZEROOS_EPERM)
+        return fail("credential drop is one-way", sys_result);
+    say("ZEROOS: session credential enforcement passed.");
 
     say("ZEROOS: session shell process complete.");
     return 0;
