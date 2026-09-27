@@ -154,6 +154,36 @@ static void test_explicit_discard_and_clock(void) {
     ZD_CHECK_EQ(zd_browser_event(&b, id, (enum zd_tab_event)77, 100),
                 -ZD_EINVAL);
     ZD_CHECK_EQ(zd_browser_event(&b, 0, ZD_TAB_EV_TICK, 100), -ZD_ENOENT);
+    /* Every refusal above is counted, not just reported. */
+    ZD_CHECK_EQ(b.stats.rejected_events, 4u);
+}
+
+/* --- refused events are counted -------------------------------------- */
+
+static void test_rejected_event_counting(void) {
+    struct zd_browser b;
+    uint32_t id = 0;
+
+    zd_browser_init(&b, 100, 300, 900);
+    ZD_CHECK_OK(zd_browser_open(&b, 1024, &id));
+    ZD_CHECK_EQ(b.stats.rejected_events, 0u);
+
+    /* A healthy active tab must not "recover". */
+    ZD_CHECK_EQ(zd_browser_event(&b, id, ZD_TAB_EV_RELOAD, 10), -ZD_EINVAL);
+    ZD_CHECK_EQ(b.stats.rejected_events, 1u);
+
+    /* Crashed: focus and a second crash and an explicit discard all refuse. */
+    ZD_CHECK_OK(zd_browser_event(&b, id, ZD_TAB_EV_RENDERER_CRASH, 20));
+    ZD_CHECK_EQ(zd_browser_event(&b, id, ZD_TAB_EV_FOCUS, 30), -ZD_ESTATE);
+    ZD_CHECK_EQ(zd_browser_event(&b, id, ZD_TAB_EV_RENDERER_CRASH, 40),
+                -ZD_ESTATE);
+    ZD_CHECK_EQ(zd_browser_event(&b, id, ZD_TAB_EV_DISCARD_NOW, 50),
+                -ZD_ESTATE);
+    ZD_CHECK_EQ(b.stats.rejected_events, 4u);
+    /* Accepted events leave the counter alone. */
+    ZD_CHECK_OK(zd_browser_event(&b, id, ZD_TAB_EV_RELOAD, 60));
+    ZD_CHECK_EQ(b.stats.rejected_events, 4u);
+    ZD_CHECK_EQ(b.stats.crash_recoveries, 1u);
 }
 
 static void test_blur_and_focus_single(void) {
@@ -180,4 +210,5 @@ void zd_test_browser_suite(void) {
     ZD_RUN(test_crash_recovery);
     ZD_RUN(test_explicit_discard_and_clock);
     ZD_RUN(test_blur_and_focus_single);
+    ZD_RUN(test_rejected_event_counting);
 }

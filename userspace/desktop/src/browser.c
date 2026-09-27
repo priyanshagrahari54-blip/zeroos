@@ -125,6 +125,13 @@ static void tab_advance(struct zd_browser *b, struct zd_tab *t) {
     }
 }
 
+/* Refused events are counted as well as reported: the stats field exists so
+ * a shell can see how much of its event stream the lifecycle rejected. */
+static int tab_reject(struct zd_browser *b, int err) {
+    b->stats.rejected_events++;
+    return err;
+}
+
 int zd_browser_event(struct zd_browser *browser, uint32_t id,
                      enum zd_tab_event event, uint64_t now) {
     struct zd_tab *t;
@@ -132,11 +139,11 @@ int zd_browser_event(struct zd_browser *browser, uint32_t id,
     if (!browser)
         return -ZD_EINVAL;
     if (now < browser->now)
-        return -ZD_EINVAL; /* clock must be monotonic */
+        return tab_reject(browser, -ZD_EINVAL); /* clock must be monotonic */
     browser->now = now;
     t = tab_find(browser, id);
     if (!t)
-        return -ZD_ENOENT;
+        return tab_reject(browser, -ZD_ENOENT);
 
     switch (event) {
     case ZD_TAB_EV_TICK:
@@ -144,7 +151,7 @@ int zd_browser_event(struct zd_browser *browser, uint32_t id,
         return 0;
     case ZD_TAB_EV_FOCUS:
         if (t->state == ZD_TAB_CRASHED)
-            return -ZD_ESTATE; /* must reload first */
+            return tab_reject(browser, -ZD_ESTATE); /* must reload first */
         /* Reopening a discarded document triggers a reload cycle. */
         if (t->state == ZD_TAB_DISCARDED) {
             t->has_document = 1;
@@ -163,7 +170,7 @@ int zd_browser_event(struct zd_browser *browser, uint32_t id,
         return 0;
     case ZD_TAB_EV_RENDERER_CRASH:
         if (t->state == ZD_TAB_CRASHED)
-            return -ZD_ESTATE; /* double-crash: needs reload */
+            return tab_reject(browser, -ZD_ESTATE); /* double-crash: needs reload */
         t->state = ZD_TAB_CRASHED;
         t->crashes++;
         browser->stats.crashes++;
@@ -172,7 +179,7 @@ int zd_browser_event(struct zd_browser *browser, uint32_t id,
         return 0;
     case ZD_TAB_EV_RELOAD:
         if (t->state != ZD_TAB_CRASHED && t->state != ZD_TAB_DISCARDED)
-            return -ZD_EINVAL; /* healthy tabs must not "recover" */
+            return tab_reject(browser, -ZD_EINVAL); /* healthy tabs must not "recover" */
         t->state = ZD_TAB_ACTIVE;
         t->has_document = 1;
         if (!t->content_bytes)
@@ -186,7 +193,7 @@ int zd_browser_event(struct zd_browser *browser, uint32_t id,
         return 0;
     case ZD_TAB_EV_DISCARD_NOW:
         if (t->state == ZD_TAB_CRASHED)
-            return -ZD_ESTATE;
+            return tab_reject(browser, -ZD_ESTATE);
         if (t->has_document) {
             t->has_document = 0;
             t->content_bytes = 0;
@@ -195,6 +202,6 @@ int zd_browser_event(struct zd_browser *browser, uint32_t id,
         t->state = ZD_TAB_DISCARDED;
         return 0;
     default:
-        return -ZD_EINVAL;
+        return tab_reject(browser, -ZD_EINVAL);
     }
 }

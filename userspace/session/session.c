@@ -19,6 +19,7 @@
 #include <zeroos/desktop/bar.h>
 #include <zeroos/desktop/metrics.h>
 #include <zeroos/desktop/ai.h>
+#include <zeroos/desktop/browser.h>
 #include <zeroos/desktop/capability.h>
 #include <zeroos/desktop/update.h>
 #include "crypto.h"
@@ -222,6 +223,35 @@ static uint64_t session_uptime_ns(void) {
     if (zeroos_system_info(&clock, sizeof(clock)) != 0)
         return 0;
     return clock.uptime_ns;
+}
+
+/* Milliseconds elapsed on the kernel clock since `origin`; 0 if the clock
+ * read failed or went backwards. */
+static uint64_t session_elapsed_ms(uint64_t origin) {
+    uint64_t now = session_uptime_ns();
+    if (now == 0 || now < origin)
+        return 0;
+    return (now - origin) / 1000000ULL;
+}
+
+/* Wait until at least `ms` milliseconds have passed since `origin`. The
+ * guard bound keeps a stalled clock from hanging the boot. */
+static int session_wait_ms(uint64_t origin, uint64_t ms) {
+    uint64_t guard = 0;
+    while (session_elapsed_ms(origin) < ms) {
+        if (++guard > 20000000ULL)
+            return -1;
+    }
+    return 0;
+}
+
+static const struct zd_tab *session_browser_tab(const struct zd_browser *b,
+                                                uint32_t id) {
+    uint32_t i;
+    for (i = 0; i < ZD_BROWSER_MAX_TABS; ++i)
+        if (b->tabs[i].used && b->tabs[i].id == id)
+            return &b->tabs[i];
+    return (const struct zd_tab *)0;
 }
 
 static uint64_t session_ticks(void *context) {
@@ -489,6 +519,7 @@ static struct zd_perf_center session_perf;
 static struct zd_perf_center session_perf_cold;
 static struct zd_bar session_bar;
 static struct zd_metrics session_metrics;
+static struct zd_browser session_browser;
 static struct zd_ai_broker session_ai;
 static uint32_t session_ai_reads;
 static uint64_t session_ai_bytes;
@@ -880,6 +911,11 @@ int session_main(void) {
     zd_notification_id bar_note_ids[4];
     struct zeroos_system_info status_info;
     struct zd_ai_request ai_request;
+    const struct zd_tab *tab;
+    uint8_t browser_doc[128];
+    uint64_t browser_origin;
+    uint64_t doc_len;
+    uint32_t tab_id;
     uint32_t ai_done;
     int ai_i;
     uint32_t status_free;
@@ -2616,7 +2652,9 @@ int session_main(void) {
      * permission gate, the remote downgrade and the queue bound are all
      * exercised against a real document rather than a canned reply. */
     zd_ai_broker_init(&session_ai, &session_ai_ops, 0);
-    ai_request = session_ai_request("/ram/shell/notes.txt",
+    /* The document is the one the file-manager step copied, renamed and
+     * moved, and STAT-verified at 64 bytes on the way. */
+    ai_request = session_ai_request("/ram/shell/inbox/moved.txt",
                                     ZD_AI_GRANT_CONTEXT_SELECTION, 0);
     if (zd_ai_submit(&session_ai, &ai_request) != -ZD_EPERM)
         return fail("ai permission gate", 0);
@@ -2634,12 +2672,17 @@ int session_main(void) {
     if (session_ai.queued != 1 || session_ai.active != 1 ||
         session_ai.stats.submitted != 1 || session_ai.stats.wakeups != 1)
         return fail("ai queue state", (int64_t)session_ai.queued);
-    if (zd_ai_drain(&session_ai, 4, &ai_done) != 0 || ai_done != 1)
+    if (zd_ai_drain(&session_ai, 4, &ai_done) != 0)
+        return fail("ai drain", 0);
+    if (session_ai.stats.run_failures != 0)
+        return fail("ai backend failure",
+                    (int64_t)session_ai.stats.run_failures);
+    if (ai_done != 1)
         return fail("ai drain", (int64_t)ai_done);
     if (session_ai.stats.completed != 1 || session_ai_reads != 1)
         return fail("ai completion", (int64_t)session_ai_reads);
-    /* The answer is the size of the document the file-manager step really
-     * wrote, read back through the kernel by the backend. */
+    /* The answer is the size of that document, read back through the kernel
+     * by the backend. */
     if (session_ai_bytes != 64)
         return fail("ai document size", (int64_t)session_ai_bytes);
     if (session_ai.last_output_len != 2 || session_ai.last_output[0] != '6' ||
@@ -2655,7 +2698,7 @@ int session_main(void) {
                     (int64_t)session_ai.stats.resident_bytes_after_drain);
     /* Remote egress was never granted, so a remote-preferring request is
      * downgraded and still answered locally. */
-    ai_request = session_ai_request("/ram/shell/notes.txt",
+    ai_request = session_ai_request("/ram/shell/inbox/moved.txt",
                                     ZD_AI_GRANT_CONTEXT_SELECTION, 1);
     if (zd_ai_submit(&session_ai, &ai_request) != 0)
         return fail("ai remote submit", 0);
@@ -2683,7 +2726,130 @@ int session_main(void) {
         return fail("ai dormant", (int64_t)session_ai.stats.wakeups);
     say("ZEROOS: session ai platform passed.");
 
-    /* 22. Update payload verification with a provisioned key. Nothing
+    /* 22. Browser tab lifecycle on the kernel clock over a real document.
+     * The tick is the kernel's own monotonic time in milliseconds measured
+     * from the moment the browser is initialised, the resident document is a
+     * file the shell really wrote, and every rung of the ladder is reached
+     * only because that much real time has passed. */
+    browser_origin = session_uptime_ns();
+    if (browser_origin == 0)
+        return fail("browser clock", 0);
+    zd_browser_init(&session_browser, 20, 40, 60);
+    /* The resident document is the file the file-manager step copied,
+     * renamed and moved into the inbox, STAT-verified at 64 bytes. */
+    if (session_read_buffer("/ram/shell/inbox/moved.txt", browser_doc,
+                            sizeof(browser_doc), &doc_len) != 0)
+        return fail("browser document", 0);
+    if (doc_len != 64)
+        return fail("browser document size", (int64_t)doc_len);
+    if (zd_browser_open(&session_browser, (uint32_t)doc_len, &tab_id) != 0 ||
+        tab_id == 0)
+        return fail("browser open", (int64_t)tab_id);
+    tab = session_browser_tab(&session_browser, tab_id);
+    if (!tab)
+        return fail("browser tab lookup", 0);
+    if (tab->state != ZD_TAB_ACTIVE || tab->has_document != 1 ||
+        tab->content_bytes != (uint32_t)doc_len ||
+        session_browser.tab_count != 1 ||
+        session_browser.active_id != tab_id ||
+        session_browser.stats.opened != 1)
+        return fail("browser open state", (int64_t)tab->state);
+    if (zd_browser_event(&session_browser, tab_id, ZD_TAB_EV_TICK,
+                         session_elapsed_ms(browser_origin)) != 0)
+        return fail("browser first tick", 0);
+    tab = session_browser_tab(&session_browser, tab_id);
+    if (!tab || tab->state != ZD_TAB_ACTIVE)
+        return fail("browser premature idle", 0);
+    /* IDLE: the clock really advanced, and the document is still resident. */
+    if (session_wait_ms(browser_origin, 25) != 0)
+        return fail("browser idle wait", 0);
+    if (zd_browser_event(&session_browser, tab_id, ZD_TAB_EV_TICK,
+                         session_elapsed_ms(browser_origin)) != 0)
+        return fail("browser idle tick", 0);
+    tab = session_browser_tab(&session_browser, tab_id);
+    if (!tab || tab->state != ZD_TAB_IDLE ||
+        tab->content_bytes != (uint32_t)doc_len)
+        return fail("browser idle state", 0);
+    /* FROZEN: still resident, scripts suspended. */
+    if (session_wait_ms(browser_origin, 45) != 0)
+        return fail("browser freeze wait", 0);
+    if (zd_browser_event(&session_browser, tab_id, ZD_TAB_EV_TICK,
+                         session_elapsed_ms(browser_origin)) != 0)
+        return fail("browser freeze tick", 0);
+    tab = session_browser_tab(&session_browser, tab_id);
+    if (!tab || tab->state != ZD_TAB_FROZEN ||
+        session_browser.stats.freezes != 1 ||
+        tab->content_bytes != (uint32_t)doc_len)
+        return fail("browser frozen state", 0);
+    /* DISCARDED: the resident document's bytes are released. */
+    if (session_wait_ms(browser_origin, 65) != 0)
+        return fail("browser discard wait", 0);
+    if (zd_browser_event(&session_browser, tab_id, ZD_TAB_EV_TICK,
+                         session_elapsed_ms(browser_origin)) != 0)
+        return fail("browser discard tick", 0);
+    tab = session_browser_tab(&session_browser, tab_id);
+    if (!tab || tab->state != ZD_TAB_DISCARDED ||
+        session_browser.stats.discards != 1 || tab->has_document != 0 ||
+        tab->content_bytes != 0)
+        return fail("browser discarded state", 0);
+    /* Reopening a discarded tab reloads it. */
+    if (zd_browser_event(&session_browser, tab_id, ZD_TAB_EV_RELOAD,
+                         session_elapsed_ms(browser_origin)) != 0)
+        return fail("browser reload", 0);
+    tab = session_browser_tab(&session_browser, tab_id);
+    if (!tab || tab->state != ZD_TAB_ACTIVE || tab->has_document != 1 ||
+        tab->content_bytes == 0 || tab->reloads != 1 ||
+        session_browser.stats.reloads != 1)
+        return fail("browser reload state", 0);
+    /* A healthy tab must not "recover", and the clock must not rewind: both
+     * are refused and both refusals are counted. */
+    if (zd_browser_event(&session_browser, tab_id, ZD_TAB_EV_RELOAD,
+                         session_elapsed_ms(browser_origin)) != -ZD_EINVAL)
+        return fail("browser reload refusal", 0);
+    if (zd_browser_event(&session_browser, tab_id, ZD_TAB_EV_TICK,
+                         session_browser.now - 1) != -ZD_EINVAL)
+        return fail("browser clock rewind", 0);
+    if (session_browser.stats.rejected_events != 2)
+        return fail("browser rejection count",
+                    (int64_t)session_browser.stats.rejected_events);
+    /* Crash isolation: the renderer dies, the state refuses the moves that
+     * need a live renderer, and a reload recovers it. */
+    if (zd_browser_event(&session_browser, tab_id, ZD_TAB_EV_RENDERER_CRASH,
+                         session_elapsed_ms(browser_origin)) != 0)
+        return fail("browser crash", 0);
+    tab = session_browser_tab(&session_browser, tab_id);
+    if (!tab || tab->state != ZD_TAB_CRASHED || tab->crashes != 1 ||
+        session_browser.stats.crashes != 1)
+        return fail("browser crashed state", 0);
+    if (zd_browser_event(&session_browser, tab_id, ZD_TAB_EV_FOCUS,
+                         session_elapsed_ms(browser_origin)) != -ZD_ESTATE ||
+        zd_browser_event(&session_browser, tab_id, ZD_TAB_EV_DISCARD_NOW,
+                         session_elapsed_ms(browser_origin)) != -ZD_ESTATE)
+        return fail("browser crashed refusals", 0);
+    if (zd_browser_event(&session_browser, tab_id, ZD_TAB_EV_RELOAD,
+                         session_elapsed_ms(browser_origin)) != 0)
+        return fail("browser crash recovery", 0);
+    if (session_browser.stats.crash_recoveries != 1 ||
+        session_browser.stats.rejected_events != 4)
+        return fail("browser recovery state",
+                    (int64_t)session_browser.stats.rejected_events);
+    /* An unknown tab is refused, and closing releases the slot for good. */
+    if (zd_browser_event(&session_browser, 4242, ZD_TAB_EV_TICK,
+                         session_elapsed_ms(browser_origin)) != -ZD_ENOENT)
+        return fail("browser unknown tab", 0);
+    if (zd_browser_close(&session_browser, tab_id) != 0 ||
+        session_browser.tab_count != 0 ||
+        session_browser.stats.closed != 1)
+        return fail("browser close", (int64_t)session_browser.tab_count);
+    if (zd_browser_event(&session_browser, tab_id, ZD_TAB_EV_TICK,
+                         session_elapsed_ms(browser_origin)) != -ZD_ENOENT)
+        return fail("browser closed tab", 0);
+    if (session_browser.stats.rejected_events != 6)
+        return fail("browser final rejections",
+                    (int64_t)session_browser.stats.rejected_events);
+    say("ZEROOS: session browser lifecycle passed.");
+
+    /* 23. Update payload verification with a provisioned key. Nothing
      * here is a fixture: the key is provisioned through the filesystem
      * (written, read back, and only then used), the bundle is sealed with
      * the RFC 8439 AEAD core, and the update engine verifies it with the
@@ -2803,7 +2969,7 @@ int session_main(void) {
         return fail("update slot removed", 0);
     say("ZEROOS: session update verification passed.");
 
-    /* 23. Sandbox decisions enforced by the kernel, not only by Ring-3
+    /* 24. Sandbox decisions enforced by the kernel, not only by Ring-3
      * policy. The confined profile denies writes, so the session really
      * drops its identity: after SETCRED the VFS itself refuses the
      * owner-only file with EACCES while a world-readable file still
