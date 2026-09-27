@@ -12,6 +12,7 @@
 #include <zeroos/storage.h>
 #include <zeroos/desktop/clipboard.h>
 #include <zeroos/desktop/downloads.h>
+#include <zeroos/desktop/notify.h>
 #include <zeroos/desktop/update.h>
 #include "crypto.h"
 
@@ -471,19 +472,99 @@ static uint8_t update_ct[UPDATE_PAYLOAD_LEN];
 static uint8_t update_tag[16];
 static struct zd_update session_update;
 static struct zd_clipboard session_clipboard;
+static char clip_overlong[ZD_CLIP_TEXT + 8];
+static struct zd_notify session_notify;
+
+/* Listener counters: the shell observes posts and rate limits through the
+ * same callback contract a UI would use. */
+struct session_notify_ctx {
+    uint32_t posted;
+    uint32_t limited;
+    int last_priority;
+};
+static struct session_notify_ctx session_notify_ctx;
+
+static void session_notify_posted(void *context, zd_notification_id id,
+                                  enum zd_notify_priority priority) {
+    struct session_notify_ctx *c = (struct session_notify_ctx *)context;
+    (void)id;
+    if (!c)
+        return;
+    c->posted++;
+    c->last_priority = (int)priority;
+}
+
+static void session_notify_limited(void *context, const char *app_id) {
+    struct session_notify_ctx *c = (struct session_notify_ctx *)context;
+    (void)app_id;
+    if (c)
+        c->limited++;
+}
+
 static struct zd_downloads session_downloads;
 static uint8_t dl_src_buf[128];
 static uint8_t dl_dst_buf[128];
 
-/* The download start hook really moves bytes: it opens the source path
- * the item was enqueued with, streams it through the VFS into the
- * destination, and reports progress as it goes. Nothing is simulated --
- * a missing source fails the transfer with the errno the VFS returned. */
+/* The download hooks are bound to the VFS. The start hook opens both
+ * ends of the transfer; the bytes are then pumped in bounded chunks while
+ * the item is RUNNING, because that is the only state in which the queue
+ * accepts progress -- reporting from inside the start hook is rejected
+ * with -22, since the queue flips the state only after the hook returns.
+ * A missing source fails the transfer with the errno the VFS returned. */
 struct session_dl_ctx {
     char dest[96];
+    int64_t src_fd;
+    int64_t dst_fd;
     uint32_t copied;
 };
 static struct session_dl_ctx session_dl_ctx;
+
+static int session_dl_start(void *ctx, uint32_t id, const char *url) {
+    struct session_dl_ctx *c = (struct session_dl_ctx *)ctx;
+    (void)id;
+    if (!c || !url)
+        return -ZEROOS_EINVAL;
+    c->copied = 0;
+    c->src_fd = -1;
+    c->dst_fd = -1;
+    c->src_fd = zeroos_open(url, ZEROOS_O_RDONLY, 0);
+    if (c->src_fd < 0)
+        return (int)c->src_fd;
+    c->dst_fd = zeroos_open(c->dest, ZEROOS_O_WRONLY | ZEROOS_O_CREAT |
+                                         ZEROOS_O_TRUNC,
+                            0644);
+    if (c->dst_fd < 0) {
+        (void)zeroos_close(c->src_fd);
+        c->src_fd = -1;
+        return (int)c->dst_fd;
+    }
+    return 0;
+}
+
+static int session_dl_pump(struct session_dl_ctx *c, uint32_t id) {
+    uint8_t buffer[64];
+    int64_t n, written;
+    if (!c || c->src_fd < 0 || c->dst_fd < 0)
+        return -ZEROOS_EINVAL;
+    for (;;) {
+        n = zeroos_read(c->src_fd, buffer, sizeof(buffer));
+        if (n < 0)
+            return (int)n;
+        if (n == 0)
+            break;
+        written = zeroos_file_write(c->dst_fd, buffer, (uint64_t)n);
+        if (written != n)
+            return written < 0 ? (int)written : -ZEROOS_EIO;
+        c->copied += (uint32_t)n;
+        if (zd_downloads_progress(&session_downloads, id, c->copied, 0) != 0)
+            return -ZEROOS_EIO;
+    }
+    if (zeroos_close(c->src_fd) != 0 || zeroos_close(c->dst_fd) != 0)
+        return -ZEROOS_EIO;
+    c->src_fd = -1;
+    c->dst_fd = -1;
+    return 0;
+}
 
 /* zd_downloads_add reports success with 0 and keeps the id in the item,
  * so the shell looks the item up by the url it enqueued. */
@@ -504,51 +585,6 @@ static int64_t session_dl_find_url(const struct zd_downloads *d,
     }
     return -ZEROOS_ENOENT;
 }
-
-static int session_dl_start(void *ctx, uint32_t id, const char *url) {
-    struct session_dl_ctx *c = (struct session_dl_ctx *)ctx;
-    uint8_t buffer[64];
-    int64_t src, dst, n, written;
-    if (!c || !url)
-        return -ZEROOS_EINVAL;
-    c->copied = 0;
-    src = zeroos_open(url, ZEROOS_O_RDONLY, 0);
-    if (src < 0)
-        return (int)src;
-    dst = zeroos_open(c->dest, ZEROOS_O_WRONLY | ZEROOS_O_CREAT |
-                                    ZEROOS_O_TRUNC,
-                      0644);
-    if (dst < 0) {
-        (void)zeroos_close(src);
-        return (int)dst;
-    }
-    for (;;) {
-        n = zeroos_read(src, buffer, sizeof(buffer));
-        if (n < 0) {
-            (void)zeroos_close(src);
-            (void)zeroos_close(dst);
-            return (int)n;
-        }
-        if (n == 0)
-            break;
-        written = zeroos_file_write(dst, buffer, (uint64_t)n);
-        if (written != n) {
-            (void)zeroos_close(src);
-            (void)zeroos_close(dst);
-            return written < 0 ? (int)written : -ZEROOS_EIO;
-        }
-        c->copied += (uint32_t)n;
-        if (zd_downloads_progress(&session_downloads, id, c->copied, 0) != 0) {
-            (void)zeroos_close(src);
-            (void)zeroos_close(dst);
-            return -ZEROOS_EIO;
-        }
-    }
-    if (zeroos_close(src) != 0 || zeroos_close(dst) != 0)
-        return -ZEROOS_EIO;
-    return 0;
-}
-static char clip_overlong[ZD_CLIP_TEXT + 8];
 
 struct session_update_ctx {
     const uint8_t *ciphertext;
@@ -712,6 +748,14 @@ int session_main(void) {
     int64_t dl_id;
     struct zd_dl_item *dl_item;
     uint32_t dl_index;
+    struct zd_notify_post note_post;
+    zd_notification_id note_id;
+    zd_notification_id note_ids[4];
+    struct zd_notify_group note_groups[4];
+    uint64_t notify_now;
+    uint64_t notify_due;
+    uint32_t note_visible;
+    uint32_t note_group_count;
     int64_t clip_result;
     char clip_text[ZD_CLIP_TEXT];
     uint32_t echo_total;
@@ -1704,9 +1748,10 @@ int session_main(void) {
     if (zd_downloads_add(&session_downloads, "/ram/shell/release.bin",
                          "incoming.bin", (uint32_t)sizeof(dl_src_buf)) != 0)
         return fail("download enqueue", 0);
+    sys_result = zd_downloads_start_next(&session_downloads);
+    if (sys_result != 0)
+        return fail("download start", sys_result);
     /* Single-active policy: a second transfer is refused while one runs. */
-    if (zd_downloads_start_next(&session_downloads) != 0)
-        return fail("download start", 0);
     if (zd_downloads_start_next(&session_downloads) != -16)
         return fail("download single active", 0);
     dl_id = session_dl_find_url(&session_downloads,
@@ -1716,11 +1761,18 @@ int session_main(void) {
     dl_item = zd_downloads_find(&session_downloads, (uint32_t)dl_id);
     if (!dl_item || dl_item->state != ZD_DL_RUNNING)
         return fail("download running state", 0);
-    if (dl_item->received != sizeof(dl_src_buf) ||
-        dl_item->total != sizeof(dl_src_buf))
-        return fail("download progress", (int64_t)dl_item->received);
     if (zd_downloads_active(&session_downloads) != (uint32_t)dl_id)
         return fail("download active id", 0);
+    /* The transfer runs while the item is RUNNING, reporting progress in
+     * 64-byte chunks: two reports for a 128-byte source. */
+    sys_result = session_dl_pump(&session_dl_ctx, (uint32_t)dl_id);
+    if (sys_result != 0)
+        return fail("download transfer", sys_result);
+    dl_item = zd_downloads_find(&session_downloads, (uint32_t)dl_id);
+    if (!dl_item || dl_item->received != sizeof(dl_src_buf) ||
+        dl_item->total != sizeof(dl_src_buf))
+        return fail("download progress",
+                    dl_item ? (int64_t)dl_item->received : -1);
     /* Progress must never go backwards. */
     if (zd_downloads_progress(&session_downloads, (uint32_t)dl_id, 1, 0) !=
         -22)
@@ -1758,8 +1810,9 @@ int session_main(void) {
     if (zd_downloads_add(&session_downloads, "/ram/shell/missing.bin",
                          "missing.bin", 16) != 0)
         return fail("download missing enqueue", 0);
-    if (zd_downloads_start_next(&session_downloads) != -ZEROOS_ENOENT)
-        return fail("download missing start", 0);
+    sys_result = zd_downloads_start_next(&session_downloads);
+    if (sys_result != -ZEROOS_ENOENT)
+        return fail("download missing start", sys_result);
     dl_id = session_dl_find_url(&session_downloads, "/ram/shell/missing.bin");
     if (dl_id <= 0)
         return fail("download missing id", dl_id);
@@ -1773,7 +1826,106 @@ int session_main(void) {
                     (int64_t)session_downloads.stats.failed);
     say("ZEROOS: session downloads pipeline passed.");
 
-    /* 14. Update payload verification with a provisioned key. Nothing
+    /* 14. Notification centre on the real monotonic clock. Posting,
+     * deduplication, deferral, expiry and dismissal are all evaluated
+     * against the kernel clock read through SYSTEM_INFO, so the lifecycle
+     * is driven by real time rather than a synthetic timeline. */
+    notify_now = session_uptime_ns();
+    notify_due = notify_now + 5ULL * 1000000000ULL;
+    zd_notify_init(&session_notify);
+    if (zd_notify_add_listener(&session_notify, session_notify_posted,
+                               session_notify_limited,
+                               &session_notify_ctx) != 0)
+        return fail("notify listener", 0);
+    note_post.app_id = "shell";
+    note_post.category = "system";
+    note_post.dedupe_key = 0;
+    note_post.title = "Update verified";
+    note_post.body = "1.1.0 staged";
+    note_post.priority = ZD_NOTIFY_HIGH;
+    note_post.ttl_ns = 0;
+    note_id = 0;
+    if (zd_notify_post(&session_notify, &note_post, notify_now,
+                       &note_id) != 0 || note_id == 0)
+        return fail("notify post", (int64_t)note_id);
+    if (session_notify_ctx.posted != 1 ||
+        session_notify_ctx.last_priority != (int)ZD_NOTIFY_HIGH)
+        return fail("notify listener post",
+                    (int64_t)session_notify_ctx.posted);
+    /* Accessibility semantics are derived from priority, not chosen ad
+     * hoc: critical interrupts, low stays quiet. */
+    if (zd_notify_a11y_policy(ZD_NOTIFY_CRITICAL) !=
+            ZD_NOTIFY_A11Y_ASSERTIVE ||
+        zd_notify_a11y_policy(ZD_NOTIFY_LOW) != ZD_NOTIFY_A11Y_QUIET)
+        return fail("notify a11y policy", 0);
+    /* Deduplication folds a repeat inside the window into the first item. */
+    note_post.priority = ZD_NOTIFY_NORMAL;
+    note_post.title = "Release notes";
+    note_post.body = "1.1.0 changes";
+    note_post.dedupe_key = "release-1.1.0";
+    {
+        zd_notification_id dup_id = 0;
+        if (zd_notify_post(&session_notify, &note_post, notify_now,
+                           &dup_id) != 0 || dup_id == 0)
+            return fail("notify second post", (int64_t)dup_id);
+        note_id = dup_id;
+        if (zd_notify_post(&session_notify, &note_post, notify_now,
+                           &dup_id) != 0 || dup_id != note_id)
+            return fail("notify dedupe", (int64_t)dup_id);
+    }
+    if (session_notify.stats.deduped != 1)
+        return fail("notify dedupe count",
+                    (int64_t)session_notify.stats.deduped);
+    /* A critical alert joins and must sort above the others. */
+    note_post.priority = ZD_NOTIFY_CRITICAL;
+    note_post.title = "Rollback available";
+    note_post.body = "previous slot kept";
+    note_post.dedupe_key = 0;
+    {
+        zd_notification_id crit_id = 0;
+        if (zd_notify_post(&session_notify, &note_post, notify_now,
+                           &crit_id) != 0 || crit_id == 0)
+            return fail("notify critical post", (int64_t)crit_id);
+        note_visible = zd_notify_visible(&session_notify, notify_now,
+                                         note_ids,
+                                         ZD_ARRAY_COUNT(note_ids));
+        if (note_visible != 3 || note_ids[0] != crit_id)
+            return fail("notify priority order", (int64_t)note_visible);
+        /* Deferral hides it until it is due, on the real clock. */
+        if (zd_notify_defer(&session_notify, crit_id, notify_now,
+                            5ULL * 1000000000ULL) != 0)
+            return fail("notify defer", 0);
+        note_visible = zd_notify_visible(&session_notify, notify_now,
+                                         note_ids,
+                                         ZD_ARRAY_COUNT(note_ids));
+        if (note_visible != 2)
+            return fail("notify deferred hidden", (int64_t)note_visible);
+        note_visible = zd_notify_visible(&session_notify, notify_due + 1ULL,
+                                         note_ids,
+                                         ZD_ARRAY_COUNT(note_ids));
+        if (note_visible != 3 || note_ids[0] != crit_id)
+            return fail("notify deferred due", (int64_t)note_visible);
+        /* Dismissal removes one, and the count says so. */
+        if (zd_notify_dismiss(&session_notify, crit_id) != 0)
+            return fail("notify dismiss", 0);
+        if (session_notify.stats.dismissed != 1)
+            return fail("notify dismissed count",
+                        (int64_t)session_notify.stats.dismissed);
+        note_visible = zd_notify_visible(&session_notify, notify_due + 1ULL,
+                                         note_ids,
+                                         ZD_ARRAY_COUNT(note_ids));
+        if (note_visible != 2)
+            return fail("notify visible after dismiss",
+                        (int64_t)note_visible);
+    }
+    note_group_count = zd_notify_groups(&session_notify, notify_now,
+                                        note_groups,
+                                        ZD_ARRAY_COUNT(note_groups));
+    if (note_group_count == 0 || note_groups[0].count == 0)
+        return fail("notify groups", (int64_t)note_group_count);
+    say("ZEROOS: session notification lifecycle passed.");
+
+    /* 15. Update payload verification with a provisioned key. Nothing
      * here is a fixture: the key is provisioned through the filesystem
      * (written, read back, and only then used), the bundle is sealed with
      * the RFC 8439 AEAD core, and the update engine verifies it with the
@@ -1893,7 +2045,7 @@ int session_main(void) {
         return fail("update slot removed", 0);
     say("ZEROOS: session update verification passed.");
 
-    /* 15. Sandbox decisions enforced by the kernel, not only by Ring-3
+    /* 16. Sandbox decisions enforced by the kernel, not only by Ring-3
      * policy. The confined profile denies writes, so the session really
      * drops its identity: after SETCRED the VFS itself refuses the
      * owner-only file with EACCES while a world-readable file still
