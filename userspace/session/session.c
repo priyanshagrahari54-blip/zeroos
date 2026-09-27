@@ -14,6 +14,7 @@
 #include <zeroos/desktop/downloads.h>
 #include <zeroos/desktop/notify.h>
 #include <zeroos/desktop/launcher.h>
+#include <zeroos/desktop/perfcenter.h>
 #include <zeroos/desktop/capability.h>
 #include <zeroos/desktop/update.h>
 #include "crypto.h"
@@ -479,6 +480,8 @@ static uint8_t update_tag[16];
 static struct zd_update session_update;
 static struct zd_clipboard session_clipboard;
 static char clip_overlong[ZD_CLIP_TEXT + 8];
+static struct zd_perf_center session_perf;
+static struct zd_perf_center session_perf_cold;
 static struct zd_launcher session_launcher;
 static struct zd_caps session_caps;
 
@@ -787,6 +790,14 @@ int session_main(void) {
     struct zd_app *launch_results[4];
     struct zd_app *launch_app;
     int launch_count;
+    struct zd_pc_input perf_in;
+    struct zd_pc_report perf_report;
+    uint64_t perf_cycle_ns;
+    uint64_t perf_start;
+    uint64_t perf_now;
+    uint32_t perf_frame_us;
+    uint32_t perf_index;
+    const char *perf_label;
     uint32_t blob_len;
     uint32_t blob_version;
     uint32_t blob_index;
@@ -2114,7 +2125,68 @@ int session_main(void) {
         return fail("settings range refusal", setting_value);
     say("ZEROOS: session settings persistence passed.");
 
-    /* 17. Update payload verification with a provisioned key. Nothing
+    /* 17. Performance centre over measured frame cycles. Every sample is
+     * the kernel-clock duration of a real present-and-pace cycle, so the
+     * percentiles describe this machine instead of a fixture, and the
+     * health verdict is derived from the documented thresholds. */
+    zd_perf_center_init(&session_perf);
+    if (frame_budget == 0)
+        return fail("perf frame budget", 0);
+    perf_cycle_ns = (uint64_t)frame_budget * 1000000ULL;
+    for (perf_index = 0; perf_index < 8U; ++perf_index) {
+        perf_start = session_uptime_ns();
+        if (perf_start == 0)
+            return fail("perf clock", 0);
+        if (session_present(0, 0, 0, SESSION_WINDOW_W, SESSION_WINDOW_H,
+                            SESSION_WINDOW_W * 4U, window_pixels) != 0)
+            return fail("perf present", 0);
+        do {
+            perf_now = session_uptime_ns();
+            if (perf_now == 0)
+                return fail("perf clock", 0);
+        } while (perf_now - perf_start < perf_cycle_ns);
+        perf_frame_us = (uint32_t)((perf_now - perf_start) / 1000ULL);
+        if (zd_perf_center_record(&session_perf, perf_frame_us) != 0)
+            return fail("perf sample", (int64_t)perf_frame_us);
+    }
+    perf_in.budget_us = frame_budget * 1000U;
+    perf_in.fps_milli = (uint32_t)(1000000000000ULL / perf_cycle_ns);
+    perf_in.mem_pressure = 100U - free_percent;
+    perf_in.throttled = 0;
+    perf_in.governor_eco = 0;
+    perf_in.update_pending = 0;
+    if (zd_perf_center_assess(&session_perf, &perf_in, &perf_report) != 0)
+        return fail("perf assess", 0);
+    if (perf_report.samples != 8U || perf_report.p50_us == 0 ||
+        perf_report.p95_us < perf_report.p50_us ||
+        perf_report.worst_us < perf_report.p95_us)
+        return fail("perf percentiles", (int64_t)perf_report.samples);
+    perf_label = zd_perf_center_health_label(perf_report.health);
+    if (!perf_label || !perf_label[0])
+        return fail("perf health label", 0);
+    /* The pressure ladder is explicit: critical memory pressure dominates
+     * the verdict and carries its documented suggestions. */
+    perf_in.mem_pressure = 100U;
+    if (zd_perf_center_assess(&session_perf, &perf_in, &perf_report) != 0)
+        return fail("perf pressure assess", 0);
+    if (perf_report.issue != ZD_PC_ISSUE_MEMORY ||
+        perf_report.health != ZD_PC_HEALTH_CRITICAL ||
+        (perf_report.suggestions &
+         (ZD_PC_SUGGEST_CLOSE_BG | ZD_PC_SUGGEST_CHECK_MEMORY)) !=
+            (ZD_PC_SUGGEST_CLOSE_BG | ZD_PC_SUGGEST_CHECK_MEMORY))
+        return fail("perf pressure verdict", (int64_t)perf_report.issue);
+    /* Bounds: a zero frame duration is refused, and fewer than four
+     * samples cannot produce percentiles at all. */
+    if (zd_perf_center_record(&session_perf, 0) >= 0)
+        return fail("perf zero sample", 0);
+    zd_perf_center_init(&session_perf_cold);
+    perf_in.mem_pressure = 0;
+    if (zd_perf_center_assess(&session_perf_cold, &perf_in,
+                              &perf_report) != -22)
+        return fail("perf insufficient samples", 0);
+    say("ZEROOS: session performance centre passed.");
+
+    /* 18. Update payload verification with a provisioned key. Nothing
      * here is a fixture: the key is provisioned through the filesystem
      * (written, read back, and only then used), the bundle is sealed with
      * the RFC 8439 AEAD core, and the update engine verifies it with the
@@ -2234,7 +2306,7 @@ int session_main(void) {
         return fail("update slot removed", 0);
     say("ZEROOS: session update verification passed.");
 
-    /* 18. Sandbox decisions enforced by the kernel, not only by Ring-3
+    /* 19. Sandbox decisions enforced by the kernel, not only by Ring-3
      * policy. The confined profile denies writes, so the session really
      * drops its identity: after SETCRED the VFS itself refuses the
      * owner-only file with EACCES while a world-readable file still
