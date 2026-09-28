@@ -87,6 +87,7 @@ The authoritative per-core binding inventory (host-tested vs pending live integr
 | Public userspace ABI | `make userspace-abi-check`, `python3 userspace/tests/abi_consistency.py` | PASS | 0 |
 | Userspace runtime contract | `make userspace-runtime-check` | PASS | 0 |
 | Full guest kernel build | `make elf -j4` | 0 warnings (Werror) | 0 |
+| Session probe image size (45 bound desktop cores + shell) | `readelf -lW build/session_probe.elf`, measured against `ZEROOS_ELF_MAX_TOTAL_PAGES` | 394 PT_LOAD pages of the loader's 4096 | 0 |
 
 Reproduce all host/build checks locally with `make check` (it builds the
 kernel and runs the ABI, runtime, hardware-core, desktop, compatibility,

@@ -215,7 +215,12 @@ uint32_t zd_eco_flush(struct zd_eco *e) {
     if (!e)
         return 0;
     if (e->conn != ZD_ECO_ONLINE) {
-        /* offline: nothing lost, nothing sent early */
+        /* offline: nothing lost, nothing sent early. The work held back is
+         * counted per entry, so a reporting surface can tell "nothing
+         * pending" apart from "pending and held" -- privacy.c sums this. */
+        for (i = 0; i < ZD_ECO_QUEUE; ++i)
+            if (e->queue[i].in_use && !e->queue[i].flushed)
+                e->stats.refused_offline++;
         return 0;
     }
     for (i = 0; i < ZD_ECO_QUEUE; ++i) {

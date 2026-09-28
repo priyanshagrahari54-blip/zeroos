@@ -183,6 +183,9 @@ jobs:
             grep -q "ZEROOS: session navigation policy passed." build/serial.log
             grep -q "ZEROOS: session study attachments passed." build/serial.log
             grep -q "ZEROOS: session study notes passed." build/serial.log
+            grep -q "ZEROOS: session study dictionary passed." build/serial.log
+            grep -q "ZEROOS: session navigation history passed." build/serial.log
+            grep -q "ZEROOS: session device ecosystem passed." build/serial.log
             grep -q "ZEROOS: session child process reaped cleanly." build/serial.log
             grep -q "ZEROOS: session credential enforcement passed." build/serial.log
             grep -q "ZEROOS: session shell process complete." build/serial.log
@@ -284,6 +287,9 @@ jobs:
           grep -q "ZEROOS: session navigation policy passed." build/serial-smp4.log
           grep -q "ZEROOS: session study attachments passed." build/serial-smp4.log
           grep -q "ZEROOS: session study notes passed." build/serial-smp4.log
+          grep -q "ZEROOS: session study dictionary passed." build/serial-smp4.log
+          grep -q "ZEROOS: session navigation history passed." build/serial-smp4.log
+          grep -q "ZEROOS: session device ecosystem passed." build/serial-smp4.log
           grep -q "ZEROOS: session child process reaped cleanly." build/serial-smp4.log
           grep -q "ZEROOS: session credential enforcement passed." build/serial-smp4.log
           grep -q "ZEROOS: session shell process complete." build/serial-smp4.log

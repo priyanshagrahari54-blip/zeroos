@@ -48,6 +48,8 @@ void zd_test_eco_suite(void) {
     ZD_CHECK_EQ(zd_eco_flush(&e), 0); /* offline: 0 sent */
     ZD_CHECK_EQ(e.queued, 2);
     ZD_CHECK_EQ(e.stats.flushed, 0);
+    /* both pending entries were held back, and that is counted */
+    ZD_CHECK_EQ(e.stats.refused_offline, 2);
 
     /* online: flush transmits both */
     zd_eco_set_conn(&e, ZD_ECO_ONLINE);

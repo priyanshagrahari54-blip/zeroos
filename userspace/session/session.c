@@ -33,6 +33,9 @@
 #include <zeroos/desktop/pdf.h>
 #include <zeroos/desktop/notes.h>
 #include <zeroos/desktop/ocr.h>
+#include <zeroos/desktop/dict.h>
+#include <zeroos/desktop/nav.h>
+#include <zeroos/desktop/eco.h>
 #include <zeroos/desktop/capability.h>
 #include <zeroos/desktop/update.h>
 #include "crypto.h"
@@ -536,6 +539,53 @@ static struct zd_fw session_fw;
 static struct zd_url session_nav_url;
 static struct zd_pdf session_pdf;
 static struct zd_notes session_notes;
+static struct zd_dict session_dict;
+static struct zd_nav session_nav;
+static struct zd_eco session_eco;
+/* A device name over the ecosystem's limit. */
+static const char eco_long_name[] =
+    "0123456789012345678901234";
+static int session_dict_fail;
+/* The media item's real name, kept where the dictionary's
+ * source can reach it. */
+static char session_dict_extra[ZD_DICT_WORD];
+
+/* The dictionary's source is the shell's own live vocabulary: the titles the
+ * notebook really holds, the media item's real name, and one duplicate the
+ * loader has to drop. No bundled corpus is claimed. */
+static int session_dict_source(void *ctx, char (*words)[ZD_DICT_WORD],
+                               uint32_t cap, uint32_t *out_n) {
+    uint32_t n = 0;
+    uint32_t i;
+    uint32_t j;
+    (void)ctx;
+    if (session_dict_fail)
+        return -ZD_ENOENT;
+    for (i = 0; i < session_notes.count && n + 1 < cap; ++i) {
+        for (j = 0; session_notes.items[i].title[j] &&
+                    j + 1 < ZD_DICT_WORD; ++j)
+            words[n][j] = session_notes.items[i].title[j];
+        words[n][j] = 0;
+        ++n;
+    }
+    if (n + 2 < cap && session_dict_extra[0]) {
+        for (j = 0; session_dict_extra[j] && j + 1 < ZD_DICT_WORD; ++j)
+            words[n][j] = session_dict_extra[j];
+        words[n][j] = 0;
+        ++n;
+        /* the same word the notebook already gave, in lower case */
+        for (j = 0; session_notes.items[0].title[j] &&
+                    j + 1 < ZD_DICT_WORD; ++j)
+            words[n][j] = (char)(session_notes.items[0].title[j] |
+                                 (session_notes.items[0].title[j] >= 'A' &&
+                                  session_notes.items[0].title[j] <= 'Z'
+                                      ? 0x20 : 0));
+        words[n][j] = 0;
+        ++n;
+    }
+    *out_n = n;
+    return 0;
+}
 /* A title one byte over the notebook's limit. */
 static const char note_long_title[] =
     "0123456789012345678901234567890123";
@@ -1188,6 +1238,11 @@ int session_main(void) {
     int nt_hits;
     int nt_snip_len;
     int nt_i;
+    char dict_out[4][ZD_DICT_WORD];
+    uint32_t dict_n = 0;
+    int dict_total;
+    uint32_t eco_idx = 0;
+    uint32_t eco_idx2 = 0;
     uint32_t study_entries;
     uint32_t study_cards;
     int study_i;
@@ -3609,6 +3664,11 @@ int session_main(void) {
                  media_j + 1 < (int)sizeof(media_first); ++media_j)
                 media_first[media_j] = media_entry->name[media_j];
             media_first[media_j] = 0;
+            for (media_j = 0; media_first[media_j] &&
+                 media_j + 1 < (int)sizeof(session_dict_extra);
+                 ++media_j)
+                session_dict_extra[media_j] = media_first[media_j];
+            session_dict_extra[media_j] = 0;
         }
     }
     if (session_media.item_count != media_count ||
@@ -4153,7 +4213,207 @@ int session_main(void) {
         return fail("ocr engine unlink", 0);
     say("ZEROOS: session study notes passed.");
 
-    /* 33. Update payload verification with a provisioned key. Nothing
+    /* 33. The study dictionary, loaded from the shell's own live vocabulary
+     * rather than a bundled corpus: the notebook's real titles and the media
+     * item's real name, with one duplicate the loader has to drop. A source
+     * that fails leaves the dictionary unreadable instead of half-filled. */
+    if (zd_dict_lookup(&session_dict, "release") != -95)
+        return fail("dict before load", 0);
+    if (zd_dict_load(&session_dict, session_dict_source,
+                     (void *)0) != 0 ||
+        session_dict.loaded != 1 || session_dict.count != 3 ||
+        session_dict.stats.loads != 1)
+        return fail("dict load", (int64_t)session_dict.count);
+    /* Lookup is exact and case-insensitive; a word the shell never
+     * stored is a miss, not an error. */
+    if (zd_dict_lookup(&session_dict, "RELEASE") != 1 ||
+        zd_dict_lookup(&session_dict, "release") != 1 ||
+        session_dict.stats.lookup_hits != 2)
+        return fail("dict lookup",
+                    (int64_t)session_dict.stats.lookup_hits);
+    if (zd_dict_lookup(&session_dict, "missing") != 0 ||
+        session_dict.stats.lookups != 3)
+        return fail("dict miss", (int64_t)session_dict.stats.lookups);
+    /* Suggestions come back in a stable order, and the count is the total
+     * match count rather than what fitted. */
+    dict_total = zd_dict_prefix(&session_dict, "r", dict_out, 4, &dict_n);
+    if (dict_total != 1 || dict_n != 1)
+        return fail("dict prefix", (int64_t)dict_total);
+    /* Whichever case the loader kept, the suggestion is a word the
+     * dictionary really holds. */
+    if (zd_dict_lookup(&session_dict, dict_out[0]) != 1)
+        return fail("dict suggestion", 0);
+    if (zd_dict_prefix(&session_dict, "zz", dict_out, 4, &dict_n) != 0 ||
+        dict_n != 0)
+        return fail("dict prefix none", (int64_t)dict_n);
+    /* A source that fails clears the list: the dictionary reports itself
+     * unreadable rather than serving stale words. */
+    session_dict_fail = 1;
+    if (zd_dict_load(&session_dict, session_dict_source,
+                     (void *)0) != -ZD_ENOENT ||
+        session_dict.stats.load_errors != 1 ||
+        session_dict.loaded != 0 || session_dict.count != 0)
+        return fail("dict failed load",
+                    (int64_t)session_dict.stats.load_errors);
+    if (zd_dict_lookup(&session_dict, "release") != -95)
+        return fail("dict unreadable", 0);
+    session_dict_fail = 0;
+    if (zd_dict_load(&session_dict, session_dict_source,
+                     (void *)0) != 0 ||
+        zd_dict_lookup(&session_dict, "Locale") != 1)
+        return fail("dict reload", (int64_t)session_dict.count);
+    say("ZEROOS: session study dictionary passed.");
+
+    /* 34. Navigation history with a real load state. The engine's report is
+     * what commits a navigation, a failed load keeps its entry so it can be
+     * retried, and a new navigation from the middle of the history drops the
+     * forward entries it invalidates. */
+    zd_nav_init(&session_nav);
+    /* A smuggled scheme is blocked before it can become history. */
+    if (zd_nav_go(&session_nav, "javascript:alert(1)") != -22 ||
+        session_nav.last_reject != ZD_URL_R_BAD_SCHEME ||
+        session_nav.stats.blocked != 1 ||
+        session_nav.state != ZD_NAV_EMPTY ||
+        session_nav.count != 0)
+        return fail("nav blocked", (int64_t)session_nav.stats.blocked);
+    if (!session_streq(zd_nav_current(&session_nav), ""))
+        return fail("nav empty current", 0);
+    if (zd_nav_go(&session_nav, "https://example.invalid/one") != 0 ||
+        session_nav.state != ZD_NAV_LOADING ||
+        session_nav.stats.navigations != 1)
+        return fail("nav go", (int64_t)session_nav.stats.navigations);
+    if (!session_streq(zd_nav_current(&session_nav),
+                       "https://example.invalid/one"))
+        return fail("nav current one", 0);
+    if (zd_nav_finish(&session_nav, 0) != 0 ||
+        session_nav.state != ZD_NAV_COMMITTED)
+        return fail("nav commit", (int64_t)session_nav.state);
+    /* A load the engine reports as failed is a FAILED navigation, and the
+     * entry stays in the history so the retry has somewhere to land. */
+    if (zd_nav_go(&session_nav, "https://example.invalid/two") != 0)
+        return fail("nav go two", 0);
+    if (zd_nav_finish(&session_nav, -ZD_ENOENT) != 0 ||
+        session_nav.state != ZD_NAV_FAILED ||
+        session_nav.stats.load_failures != 1)
+        return fail("nav load failure",
+                    (int64_t)session_nav.stats.load_failures);
+    if (session_nav.count != 2 ||
+        !session_streq(zd_nav_current(&session_nav),
+                       "https://example.invalid/two"))
+        return fail("nav failed entry kept", (int64_t)session_nav.count);
+    /* Retrying commits it. */
+    if (zd_nav_go(&session_nav, "https://example.invalid/two") != 0 ||
+        zd_nav_finish(&session_nav, 0) != 0 ||
+        session_nav.state != ZD_NAV_COMMITTED ||
+        session_nav.count != 3)
+        return fail("nav retry", (int64_t)session_nav.count);
+    /* Back and forward walk the history, and each step is a load the engine
+     * has to finish. */
+    if (zd_nav_back(&session_nav) != 0 ||
+        session_nav.state != ZD_NAV_LOADING ||
+        zd_nav_finish(&session_nav, 0) != 0 ||
+        !session_streq(zd_nav_current(&session_nav),
+                       "https://example.invalid/two"))
+        return fail("nav back", (int64_t)session_nav.stats.backs);
+    if (zd_nav_back(&session_nav) != 0 ||
+        zd_nav_finish(&session_nav, 0) != 0 ||
+        !session_streq(zd_nav_current(&session_nav),
+                       "https://example.invalid/one") ||
+        session_nav.stats.backs != 2)
+        return fail("nav back twice", (int64_t)session_nav.stats.backs);
+    if (zd_nav_back(&session_nav) != -22)
+        return fail("nav back start", 0);
+    if (zd_nav_forward(&session_nav) != 0 ||
+        zd_nav_finish(&session_nav, 0) != 0 ||
+        session_nav.stats.forwards != 1 ||
+        !session_streq(zd_nav_current(&session_nav),
+                       "https://example.invalid/two"))
+        return fail("nav forward", (int64_t)session_nav.stats.forwards);
+    /* Navigating from the middle drops the forward entries it invalidates. */
+    if (zd_nav_go(&session_nav, "https://example.invalid/three") != 0 ||
+        zd_nav_finish(&session_nav, 0) != 0 ||
+        session_nav.stats.history_dropped != 1 ||
+        session_nav.count != 3)
+        return fail("nav drop forward",
+                    (int64_t)session_nav.stats.history_dropped);
+    if (zd_nav_forward(&session_nav) != -22)
+        return fail("nav forward gone", 0);
+    say("ZEROOS: session navigation history passed.");
+
+    /* 35. The device ecosystem, offline-first. This ABI has no networking, so
+     * OFFLINE is the real state rather than a simulated one, and that is the
+     * interesting path: pairing grants nothing, a permission that was never
+     * granted is refused rather than tried anyway, work queued offline stays
+     * queued and is counted as held back, and a permission revoked mid-queue
+     * refuses that entry while the rest still goes. */
+    zd_eco_init(&session_eco);
+    if (zd_eco_pair(&session_eco, eco_long_name, &eco_idx2) != -22 ||
+        session_eco.stats.rejected != 1)
+        return fail("eco pair name", (int64_t)session_eco.stats.rejected);
+    if (zd_eco_pair(&session_eco, "desk-01", &eco_idx) != 0 ||
+        session_eco.stats.paired != 1 ||
+        session_eco.devices[eco_idx].permissions != 0)
+        return fail("eco pair", (int64_t)session_eco.stats.paired);
+    /* Pairing is not permission. */
+    if (zd_eco_enqueue(&session_eco, eco_idx, ZD_ECO_PERM_SYNC_FILES,
+                       "settings.blob") != -1 ||
+        session_eco.stats.refused_perm != 1)
+        return fail("eco ungranted",
+                    (int64_t)session_eco.stats.refused_perm);
+    if (zd_eco_enqueue(&session_eco, eco_idx, ZD_ECO_PERM_ALL,
+                       "settings.blob") != -22 ||
+        session_eco.stats.rejected != 2)
+        return fail("eco multi bit", (int64_t)session_eco.stats.rejected);
+    if (zd_eco_grant(&session_eco, eco_idx,
+                     ZD_ECO_PERM_SYNC_FILES) != 0 ||
+        zd_eco_grant(&session_eco, eco_idx,
+                     ZD_ECO_PERM_SYNC_SETTINGS) != 0 ||
+        session_eco.stats.granted != 2)
+        return fail("eco grant", (int64_t)session_eco.stats.granted);
+    if (zd_eco_enqueue(&session_eco, eco_idx, ZD_ECO_PERM_SYNC_FILES,
+                       "settings.blob") != 0 ||
+        zd_eco_enqueue(&session_eco, eco_idx, ZD_ECO_PERM_SYNC_SETTINGS,
+                       "release.bin") != 0 ||
+        session_eco.queued != 2 || session_eco.queued_ever != 2)
+        return fail("eco queue", (int64_t)session_eco.queued);
+    /* Offline: nothing is sent early, nothing is lost, and what is held back
+     * is counted rather than silently sitting there. */
+    if (zd_eco_flush(&session_eco) != 0 || session_eco.queued != 2 ||
+        session_eco.stats.flushed != 0 ||
+        session_eco.stats.refused_offline != 2)
+        return fail("eco offline flush",
+                    (int64_t)session_eco.stats.refused_offline);
+    /* A permission revoked mid-queue refuses that entry and keeps the rest. */
+    if (zd_eco_revoke(&session_eco, eco_idx,
+                      ZD_ECO_PERM_SYNC_FILES) != 0 ||
+        session_eco.stats.revoked != 1)
+        return fail("eco revoke", (int64_t)session_eco.stats.revoked);
+    zd_eco_set_conn(&session_eco, ZD_ECO_ONLINE);
+    if (zd_eco_flush(&session_eco) != 1 ||
+        session_eco.stats.flushed != 1 ||
+        session_eco.stats.refused_perm != 2 ||
+        session_eco.devices[eco_idx].sent != 1 ||
+        session_eco.queued != 0)
+        return fail("eco partial flush",
+                    (int64_t)session_eco.stats.flushed);
+    /* Work queued for a device that is then unpaired is dropped on the next
+     * flush rather than sent to nowhere. */
+    if (zd_eco_pair(&session_eco, "desk-02", &eco_idx2) != 0 ||
+        zd_eco_grant(&session_eco, eco_idx2,
+                     ZD_ECO_PERM_SYNC_CLIPBOARD) != 0 ||
+        zd_eco_enqueue(&session_eco, eco_idx2, ZD_ECO_PERM_SYNC_CLIPBOARD,
+                       "clipboard") != 0)
+        return fail("eco queue two", 0);
+    if (zd_eco_unpair(&session_eco, eco_idx2) != 0 ||
+        session_eco.stats.unpairs != 1)
+        return fail("eco unpair", (int64_t)session_eco.stats.unpairs);
+    if (zd_eco_flush(&session_eco) != 0 || session_eco.queued != 0 ||
+        session_eco.stats.flushed != 1)
+        return fail("eco unpaired flush", (int64_t)session_eco.queued);
+    zd_eco_set_conn(&session_eco, ZD_ECO_OFFLINE);
+    say("ZEROOS: session device ecosystem passed.");
+
+    /* 36. Update payload verification with a provisioned key. Nothing
      * here is a fixture: the key is provisioned through the filesystem
      * (written, read back, and only then used), the bundle is sealed with
      * the RFC 8439 AEAD core, and the update engine verifies it with the
@@ -4273,7 +4533,7 @@ int session_main(void) {
         return fail("update slot removed", 0);
     say("ZEROOS: session update verification passed.");
 
-    /* 34. Sandbox decisions enforced by the kernel, not only by Ring-3
+    /* 37. Sandbox decisions enforced by the kernel, not only by Ring-3
      * policy. The confined profile denies writes, so the session really
      * drops its identity: after SETCRED the VFS itself refuses the
      * owner-only file with EACCES while a world-readable file still

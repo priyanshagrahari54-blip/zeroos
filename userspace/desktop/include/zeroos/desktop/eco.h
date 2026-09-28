@@ -74,7 +74,9 @@ int zd_eco_enqueue(struct zd_eco *e, uint32_t idx, uint32_t perm,
                    const char *payload);
 /* Flush while ONLINE: each entry still checks pairing+perm (a
  * revoked permission mid-queue refuses that entry, counted, keeps
- * the rest).  Offline -> 0 flushed, entries stay queued. */
+ * the rest).  Offline -> 0 flushed, entries stay queued and every
+ * pending entry is counted in `refused_offline` so a report can tell
+ * "nothing pending" from "pending and held". */
 uint32_t zd_eco_flush(struct zd_eco *e);
 
 #endif /* ZEROOS_DESKTOP_ECO_H */
