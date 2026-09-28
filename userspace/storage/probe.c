@@ -177,7 +177,20 @@ int probe_main(void) {
     int64_t sfd=zeroos_open("/ram/probe/secret",ZEROOS_O_WRONLY|ZEROOS_O_CREAT,0600);
     CHECK(sfd>=0 && zeroos_close(sfd)==0,"create secret",sfd);
     CHECK(zeroos_mkdir("/ram/probe/pub",0777)==0,"mkdir pub",0);
+    /* --- power ABI (never actually powers off here) --- */
+    struct zeroos_abi_info pinfo;
+    CHECK(zeroos_abi_info(&pinfo)==0 && (pinfo.features&ZEROOS_ABI_FEATURE_POWER),
+          "power feature advertised",0);
+    int64_t pc=zeroos_power(ZEROOS_POWER_POWEROFF,ZEROOS_POWER_FLAG_CHECK);
+    CHECK(pc==0 || pc==-ZEROOS_ENOTSUP,"power-off check as root",pc);
+    CHECK(zeroos_power(ZEROOS_POWER_REBOOT,ZEROOS_POWER_FLAG_CHECK)==0,"reboot check as root",0);
+    CHECK(zeroos_power(0,ZEROOS_POWER_FLAG_CHECK)==-ZEROOS_EINVAL,"power bad action",0);
+    CHECK(zeroos_power(ZEROOS_POWER_POWEROFF,0x80)==-ZEROOS_EINVAL,"power bad flags",0);
+    say(pc==0 ? "ZEROOS: storage userspace probe: power ABI checks passed (S5 available).\n"
+              : "ZEROOS: storage userspace probe: power ABI checks passed (S5 unavailable).\n");
     CHECK(zeroos_setcred(1000,1000)==0,"drop to uid 1000",0);
+    CHECK(zeroos_power(ZEROOS_POWER_POWEROFF,0)==-ZEROOS_EPERM,"power-off as uid 1000",0);
+    CHECK(zeroos_power(ZEROOS_POWER_REBOOT,0)==-ZEROOS_EPERM,"reboot as uid 1000",0);
     CHECK(zeroos_getcred()==(int64_t)(1000ULL|(1000ULL<<32)),"getcred after drop",0);
     CHECK(zeroos_open("/ram/probe/secret",ZEROOS_O_RDONLY,0)==-ZEROOS_EACCES,"EACCES",0);
     CHECK(zeroos_chmod("/ram/probe/secret",0666)==-ZEROOS_EPERM,"chmod not owner",0);

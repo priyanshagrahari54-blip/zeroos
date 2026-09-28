@@ -28,6 +28,7 @@
 
 static uint64_t storage_task_id;
 static volatile int storage_done;
+static volatile int storage_certified;
 static volatile int storage_started;
 
 static void storage_fail(const char *what) {
@@ -326,6 +327,7 @@ static void storage_main(void *argument) {
     storage_worker_probe();
     storage_run_user_probe();
     klog("ZEROOS: storage Stage 3 certification complete.");
+    storage_certified=1;
     task_exit();
 }
 
@@ -339,6 +341,29 @@ void storage_start(void) {
 
 int storage_finished(void) {
     return storage_done;
+}
+
+int storage_certification_complete(void) {
+    return storage_certified;
+}
+
+void storage_shutdown(struct storage_shutdown_report *report) {
+    *report=(struct storage_shutdown_report){0};
+    report->mounts=vfs_mount_count();
+    report->sync_result=vfs_sync_all();
+    report->unmount_result=vfs_unmount_all();
+    uint32_t devices=block_device_count();
+    for (uint32_t i=0; i<devices; ++i) {
+        struct block_device *disk=block_device_at(i);
+        if (!disk || disk->parent || (!ahci_is_ahci_device(disk) &&
+                                      !nvme_is_nvme_device(disk)))
+            continue;
+        if (block_flush(disk,BLOCK_PRIO_FOREGROUND)==0)
+            ++report->disks_flushed;
+        else
+            ++report->flush_failures;
+    }
+    report->nvme_timeouts=nvme_shutdown_all();
 }
 
 void storage_service_step(void) {

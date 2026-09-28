@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-"""Build a BIOS-bootable Limine ISO (multiboot2) for local ZEROOS testing."""
+"""Build a BIOS-bootable Limine ISO (multiboot2) for local ZEROOS testing.
+
+Usage: mkiso-limine.py KERNEL.ELF OUT.ISO [KERNEL_CMDLINE]
+"""
 import io, os, sys
 # pycdlib: pip install pycdlib (or put it on PYTHONPATH)
 import pycdlib
 elf, out = sys.argv[1], sys.argv[2]
+cmdline = sys.argv[3] if len(sys.argv) > 3 else ""
 L = os.environ.get('LIMINE_DIR', 'limine').rstrip('/') + '/'
-conf = b"timeout: 0\n\n/ZEROOS\n    protocol: multiboot2\n    path: boot():/boot/zeroos.elf\n"
+conf = ("timeout: 0\n\n/ZEROOS\n    protocol: multiboot2\n    path: boot():/boot/zeroos.elf\n"
+        + (f"    cmdline: {cmdline}\n" if cmdline else "")).encode()
 iso = pycdlib.PyCdlib()
 iso.new(interchange_level=3, rock_ridge='1.09', joliet=3)
 for d in ('/BOOT', '/BOOT/LIMINE'):

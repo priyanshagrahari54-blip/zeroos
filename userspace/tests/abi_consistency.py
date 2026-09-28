@@ -79,6 +79,13 @@ for name in FILE_MACROS:
         raise SystemExit(f"macro drift for {name}")
 
 
+# Power ABI (SYS_POWER) constants must match exactly.
+POWER_MACROS = sorted(set(re.findall(r"^#define\s+(ZEROOS_POWER_[A-Z0-9_]+)\s", PUBLIC, re.MULTILINE)))
+if len(POWER_MACROS) < 4:
+    raise SystemExit("power ABI macros missing from public header")
+for name in POWER_MACROS:
+    if macro(PUBLIC, name) != macro(KERNEL, name):
+        raise SystemExit(f"macro drift for {name}")
 # ABI feature bits must stay in lockstep and must be distinct.
 
 # Keycode and input-kind enums must match across headers.

@@ -1,3 +1,4 @@
+#include "power.h"
 #include "syscall.h"
 #include "interrupts.h"
 #include "process.h"
@@ -209,7 +210,8 @@ void syscall_dispatch(struct interrupt_frame *frame) {
                       ZEROOS_ABI_FEATURE_FILES |
                       ZEROOS_ABI_FEATURE_DISPLAY |
                       ZEROOS_ABI_FEATURE_PRESENT |
-                      ZEROOS_ABI_FEATURE_INPUT,
+                      ZEROOS_ABI_FEATURE_INPUT |
+                      ZEROOS_ABI_FEATURE_POWER,
             .max_transfer=ZEROOS_SYSCALL_MAX_TRANSFER
         };
         if (frame->rdi==0 || frame->rsi<sizeof(info) ||
@@ -685,6 +687,30 @@ void syscall_dispatch(struct interrupt_frame *frame) {
             frame->rax=syscall_result(result);
         break;
     }
+    case ZEROOS_SYS_POWER: {
+        /* Authority first (uid 0), then argument validation, then platform
+         * support. CHECK validates without side effects. A real request
+         * does not return on success (docs/POWER.md). */
+        uint64_t action=frame->rdi;
+        uint64_t flags=frame->rsi;
+        int result;
+        if (process->uid!=0)
+            result=-ZEROOS_EPERM;
+        else if ((flags&~ZEROOS_POWER_VALID_FLAGS) ||
+                 (action!=ZEROOS_POWER_POWEROFF && action!=ZEROOS_POWER_REBOOT))
+            result=-ZEROOS_EINVAL;
+        else if (power_shutdown_in_progress())
+            result=-ZEROOS_EBUSY;
+        else {
+            uint32_t kernel_action=action==ZEROOS_POWER_POWEROFF ?
+                                   POWER_ACTION_POWEROFF : POWER_ACTION_REBOOT;
+            result=power_check(kernel_action);
+            if (result==0 && !(flags&ZEROOS_POWER_FLAG_CHECK))
+                result=power_request(kernel_action,"SYS_POWER from uid 0");
+        }
+        frame->rax=syscall_result(result);
+        break;
+    }
     default:
         if (frame->rax>=ZEROOS_SYS_OPEN && frame->rax<=ZEROOS_SYS_CHOWN) {
             fsyscall_dispatch(frame,process);
@@ -713,7 +739,9 @@ int syscall_debug_validate(void) {
         ZEROOS_SYS_DISPLAY_INFO+1U!=ZEROOS_SYS_DISPLAY_PRESENT ||
         ZEROOS_SYS_DISPLAY_PRESENT+1U!=ZEROOS_SYS_INPUT_POLL ||
         ZEROOS_SYS_INPUT_POLL+1U!=ZEROOS_SYS_INPUT_WAIT ||
-        ZEROOS_SYS_INPUT_WAIT+1U!=ZEROOS_SYS_MAX)
+        ZEROOS_SYS_INPUT_WAIT+1U!=ZEROOS_SYS_RESERVED_55 ||
+        ZEROOS_SYS_RESERVED_56+1U!=ZEROOS_SYS_POWER ||
+        ZEROOS_SYS_POWER+1U!=ZEROOS_SYS_MAX)
         return -1;
     return 0;
 }

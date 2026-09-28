@@ -78,3 +78,12 @@ outcome, whether validated LAPIC/IOAPIC activation succeeds or the legacy PIC
 fallback is retained. Supported-hardware validation must still cover missing
 ACPI, malformed checksums, truncated records, multiple IOAPICs and source
 overrides before broader APIC activation is production-ready.
+
+## Power tables (FADT/DSDT)
+
+When the MADT is found, `acpi_discover` also parses the FADT (`FACP`):
+PM1a/PM1b control blocks, SMI_CMD/ACPI_ENABLE, RESET_REG and the
+HW_REDUCED flag. It then reads the DSDT's `\_S5_` package with a bounded,
+self-tested AML parser (`acpi_parse_s5`). The shutdown path only uses the
+resulting I/O ports and values. See [POWER.md](POWER.md) for the
+contract, S5 entry sequence and limitations.

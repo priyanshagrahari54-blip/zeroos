@@ -63,6 +63,9 @@ enum zeroos_syscall_id {
     ZEROOS_SYS_DISPLAY_PRESENT = 52,
     ZEROOS_SYS_INPUT_POLL = 53,
     ZEROOS_SYS_INPUT_WAIT = 54,
+    ZEROOS_SYS_RESERVED_55 = 55,
+    ZEROOS_SYS_RESERVED_56 = 56,
+    ZEROOS_SYS_POWER = 57,
     ZEROOS_SYS_MAX
 };
 
@@ -118,6 +121,15 @@ enum zeroos_syscall_error {
 #define ZEROOS_ABI_FEATURE_DISPLAY  (1ULL << 8)
 #define ZEROOS_ABI_FEATURE_PRESENT  (1ULL << 9)
 #define ZEROOS_ABI_FEATURE_INPUT    (1ULL << 10)
+#define ZEROOS_ABI_FEATURE_POWER (1ULL << 13)
+
+/* SYS_POWER (57): orderly shutdown. rdi=action, rsi=flags. Root (uid 0) only.
+ * IDs 55/56 and feature bits 11/12 are reserved for SYSTEM_INFO/CHILD_IMAGE
+ * (in review) and return ENOSYS until they land. See docs/POWER.md. */
+#define ZEROOS_POWER_POWEROFF 1U
+#define ZEROOS_POWER_REBOOT 2U
+#define ZEROOS_POWER_FLAG_CHECK (1ULL << 0)
+#define ZEROOS_POWER_VALID_FLAGS ZEROOS_POWER_FLAG_CHECK
 
 /* Display geometry: ABI copy of kernel/fb.h (abi_consistency.py gates the
  * struct body against the public header). */

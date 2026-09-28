@@ -228,6 +228,7 @@ int vfs_init(void);
 int vfs_mount(struct block_device *device, const char *path, uint32_t flags);
 int vfs_unmount(const char *path, int force);
 int vfs_unmount_all(void);
+uint32_t vfs_mount_count(void);
 int vfs_sync_all(void);
 
 /* Path-based operations (absolute paths). */

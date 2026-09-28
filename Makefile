@@ -20,7 +20,7 @@ CFLAGS += $(EXTRA_CFLAGS)
 ASFLAGS := -m64 -ffreestanding -fno-pic -fno-pie -nostdlib
 LDFLAGS := -m elf_x86_64 -T kernel/linker.ld -nostdlib
 
-.PHONY: all clean elf iso run check storage-tools-check kernel-simd-check userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check
+.PHONY: all clean elf iso iso-poweroff run check storage-tools-check kernel-simd-check userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check
 
 all: iso
 
@@ -94,13 +94,13 @@ $(BUILD)/ap_trampoline.o: boot/ap_trampoline.S | $(BUILD)
 $(BUILD)/user_entry.o: kernel/user_entry.S | $(BUILD)
 	$(AS) $(ASFLAGS) -c $< -o $@
 
-$(BUILD)/kernel.o: kernel/kernel.c kernel/storage/storage.h kernel/types.h kernel/cpu.h kernel/apic.h kernel/acpi.h kernel/memory.h kernel/timer.h kernel/vmm.h kernel/gdt.h kernel/sync.h kernel/tlb.h kernel/task.h kernel/thread.h kernel/process.h kernel/scheduler.h kernel/smp.h kernel/wait.h kernel/user.h kernel/ipc.h kernel/shmem.h kernel/fb.h kernel/input.h kernel/session.h | $(BUILD)
+$(BUILD)/kernel.o: kernel/kernel.c kernel/power.h kernel/storage/storage.h kernel/types.h kernel/cpu.h kernel/apic.h kernel/acpi.h kernel/memory.h kernel/timer.h kernel/vmm.h kernel/gdt.h kernel/sync.h kernel/tlb.h kernel/task.h kernel/thread.h kernel/process.h kernel/scheduler.h kernel/smp.h kernel/wait.h kernel/user.h kernel/ipc.h kernel/shmem.h kernel/fb.h kernel/input.h kernel/session.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
 $(BUILD)/interrupts.o: kernel/interrupts.c kernel/interrupts.h kernel/sync.h kernel/types.h kernel/cpu.h kernel/apic.h kernel/pic.h kernel/timer.h kernel/gdt.h kernel/task.h kernel/thread.h kernel/tlb.h kernel/scheduler.h kernel/syscall.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
-$(BUILD)/syscall.o: kernel/syscall.c kernel/syscall.h kernel/interrupts.h kernel/process.h kernel/thread.h kernel/task.h kernel/timer.h kernel/vmm.h kernel/ipc.h kernel/shmem.h kernel/exec.h kernel/fb.h kernel/display_core.h kernel/input.h | $(BUILD)
+$(BUILD)/syscall.o: kernel/syscall.c kernel/power.h kernel/syscall.h kernel/interrupts.h kernel/process.h kernel/thread.h kernel/task.h kernel/timer.h kernel/vmm.h kernel/ipc.h kernel/shmem.h kernel/exec.h kernel/fb.h kernel/display_core.h kernel/input.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
 $(BUILD)/fb.o: kernel/fb.c kernel/fb.h kernel/memory.h kernel/vmm.h kernel/sync.h kernel/types.h | $(BUILD)
@@ -229,7 +229,7 @@ $(BUILD)/scheduler.o: kernel/scheduler.c kernel/scheduler.h kernel/task.h kernel
 # compiler-generated dependency files so header changes rebuild dependants.
 STORAGE_SRCS := $(wildcard kernel/storage/*.c)
 STORAGE_OBJS := $(patsubst kernel/storage/%.c,$(BUILD)/storage/%.o,$(STORAGE_SRCS))
-INFRA_OBJS := $(BUILD)/ksync.o $(BUILD)/crc.o $(BUILD)/kstring.o $(BUILD)/pci.o
+INFRA_OBJS := $(BUILD)/ksync.o $(BUILD)/crc.o $(BUILD)/kstring.o $(BUILD)/pci.o $(BUILD)/power.o
 PROBE_OBJ := $(BUILD)/storage_probe_image.o
 SESSION_OBJ := $(BUILD)/session_probe_image.o
 EXTRA_OBJS := $(STORAGE_OBJS) $(INFRA_OBJS) $(PROBE_OBJ) $(SESSION_OBJ)
@@ -240,7 +240,7 @@ $(BUILD)/storage:
 $(BUILD)/storage/%.o: kernel/storage/%.c | $(BUILD)/storage
 	$(CC) $(CFLAGS) -MMD -MP -Ikernel -c $< -o $@
 
-$(BUILD)/ksync.o $(BUILD)/crc.o $(BUILD)/kstring.o $(BUILD)/pci.o: $(BUILD)/%.o: kernel/%.c | $(BUILD)
+$(BUILD)/ksync.o $(BUILD)/crc.o $(BUILD)/kstring.o $(BUILD)/pci.o $(BUILD)/power.o: $(BUILD)/%.o: kernel/%.c | $(BUILD)
 	$(CC) $(CFLAGS) -MMD -MP -Ikernel -c $< -o $@
 
 -include $(STORAGE_OBJS:.o=.d) $(INFRA_OBJS:.o=.d)
@@ -308,6 +308,16 @@ iso: $(KERNEL)
 	cp $(KERNEL) $(BUILD)/iso/boot/zeroos.elf
 	cp grub/grub.cfg $(BUILD)/iso/boot/grub/grub.cfg
 	grub-mkrescue -o $(ISO) $(BUILD)/iso
+
+# Same image with the clean-shutdown certification option: the kernel powers
+# off through the orderly shutdown path once certification completes.
+iso-poweroff: $(KERNEL)
+	rm -rf $(BUILD)/iso-poweroff
+	mkdir -p $(BUILD)/iso-poweroff/boot/grub
+	cp $(KERNEL) $(BUILD)/iso-poweroff/boot/zeroos.elf
+	sed 's|multiboot2 /boot/zeroos.elf$$|multiboot2 /boot/zeroos.elf zeroos.shutdown=poweroff-after-cert|' grub/grub.cfg > $(BUILD)/iso-poweroff/boot/grub/grub.cfg
+	grep -q 'zeroos.shutdown=poweroff-after-cert' $(BUILD)/iso-poweroff/boot/grub/grub.cfg
+	grub-mkrescue -o $(BUILD)/zeroos-poweroff.iso $(BUILD)/iso-poweroff
 
 run: iso
 	qemu-system-x86_64 -cdrom $(ISO) -serial stdio -display none

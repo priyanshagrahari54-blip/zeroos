@@ -1315,6 +1315,16 @@ int vfs_unmount(const char *path, int force) {
     return rc;
 }
 
+uint32_t vfs_mount_count(void) {
+    uint32_t count=0;
+    kmutex_lock(&vfs_mount_lock);
+    for (uint32_t i=0; i<VFS_MAX_MOUNTS; ++i)
+        if (mounts[i].in_use)
+            ++count;
+    kmutex_unlock(&vfs_mount_lock);
+    return count;
+}
+
 int vfs_unmount_all(void) {
     int first=0;
     for (uint32_t i=0; i<VFS_MAX_MOUNTS; ++i) {
