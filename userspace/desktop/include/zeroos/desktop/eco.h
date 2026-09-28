@@ -64,8 +64,12 @@ void zd_eco_set_conn(struct zd_eco *e, uint32_t conn);
 /* Pair with zero permissions (explicit grant required afterwards).
  * empty/overlong name -> -22; full -> -28. */
 int zd_eco_pair(struct zd_eco *e, const char *name, uint32_t *out_idx);
+/* Unpair: queued work for that device is dropped and each dropped entry
+ * is counted in `refused_pairing` -- nothing disappears unaccounted. */
 int zd_eco_unpair(struct zd_eco *e, uint32_t idx);
-/* Grant/revoke exactly one permission bit on a paired device. */
+/* Grant/revoke exactly one permission bit on a paired device.  Revoking
+ * drops the queued entries that needed it and counts each one in
+ * `refused_perm`. */
 int zd_eco_grant(struct zd_eco *e, uint32_t idx, uint32_t perm);
 int zd_eco_revoke(struct zd_eco *e, uint32_t idx, uint32_t perm);
 /* Queue work for a device: requires paired + that permission

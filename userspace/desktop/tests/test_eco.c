@@ -63,6 +63,8 @@ void zd_test_eco_suite(void) {
     ZD_CHECK_EQ(zd_eco_revoke(&e, d0, ZD_ECO_PERM_SYNC_FILES), 0);
     ZD_CHECK_EQ(e.stats.revoked, 1);
     ZD_CHECK_EQ(e.queued, 0); /* revoke dropped the pending entry */
+    /* ... and counted it: 1 from the ungranted enqueue above, 1 dropped */
+    ZD_CHECK_EQ(e.stats.refused_perm, 2);
     ZD_CHECK_EQ(zd_eco_revoke(&e, d0, ZD_ECO_PERM_SYNC_FILES), -1);
     /* revoke of a perm never granted */
     ZD_CHECK_EQ(zd_eco_revoke(&e, d0, ZD_ECO_PERM_DISCOVER), -1);
@@ -76,6 +78,8 @@ void zd_test_eco_suite(void) {
                                "prefs"));
     ZD_CHECK_OK(zd_eco_unpair(&e, d1));
     ZD_CHECK_EQ(e.queued, 0); /* unpair dropped pending entries */
+    /* 1 from the unpaired-index enqueue above, 1 dropped here */
+    ZD_CHECK_EQ(e.stats.refused_pairing, 2);
     ZD_CHECK_EQ(zd_eco_flush(&e), 0); /* nothing left */
     ZD_CHECK_EQ(zd_eco_unpair(&e, d1), -2);
 

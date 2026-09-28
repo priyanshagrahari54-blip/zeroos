@@ -1243,6 +1243,7 @@ int session_main(void) {
     int dict_total;
     uint32_t eco_idx = 0;
     uint32_t eco_idx2 = 0;
+    uint32_t eco_sent = 0;
     uint32_t study_entries;
     uint32_t study_cards;
     int study_i;
@@ -4393,13 +4394,20 @@ int session_main(void) {
         session_eco.stats.revoked != 1)
         return fail("eco revoke", (int64_t)session_eco.stats.revoked);
     zd_eco_set_conn(&session_eco, ZD_ECO_ONLINE);
-    if (zd_eco_flush(&session_eco) != 1 ||
-        session_eco.stats.flushed != 1 ||
-        session_eco.stats.refused_perm != 2 ||
-        session_eco.devices[eco_idx].sent != 1 ||
-        session_eco.queued != 0)
-        return fail("eco partial flush",
+    eco_sent = zd_eco_flush(&session_eco);
+    if (eco_sent != 1)
+        return fail("eco flush sent", (int64_t)eco_sent);
+    if (session_eco.stats.flushed != 1)
+        return fail("eco flushed count",
                     (int64_t)session_eco.stats.flushed);
+    if (session_eco.stats.refused_perm != 2)
+        return fail("eco revoked refusal",
+                    (int64_t)session_eco.stats.refused_perm);
+    if (session_eco.devices[eco_idx].sent != 1)
+        return fail("eco device sent",
+                    (int64_t)session_eco.devices[eco_idx].sent);
+    if (session_eco.queued != 0)
+        return fail("eco queue drained", (int64_t)session_eco.queued);
     /* Work queued for a device that is then unpaired is dropped on the next
      * flush rather than sent to nowhere. */
     if (zd_eco_pair(&session_eco, "desk-02", &eco_idx2) != 0 ||
@@ -4409,8 +4417,10 @@ int session_main(void) {
                        "clipboard") != 0)
         return fail("eco queue two", 0);
     if (zd_eco_unpair(&session_eco, eco_idx2) != 0 ||
-        session_eco.stats.unpairs != 1)
-        return fail("eco unpair", (int64_t)session_eco.stats.unpairs);
+        session_eco.stats.unpairs != 1 ||
+        session_eco.stats.refused_pairing != 1)
+        return fail("eco unpair",
+                    (int64_t)session_eco.stats.refused_pairing);
     if (zd_eco_flush(&session_eco) != 0 || session_eco.queued != 0 ||
         session_eco.stats.flushed != 1)
         return fail("eco unpaired flush", (int64_t)session_eco.queued);

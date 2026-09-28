@@ -113,6 +113,8 @@ int zd_eco_unpair(struct zd_eco *e, uint32_t idx) {
                 e->queue[i].payload[0] = 0;
                 if (e->queued)
                     e->queued--;
+                /* the pairing that was going to carry it is gone */
+                e->stats.refused_pairing++;
             }
         }
     }
@@ -162,6 +164,10 @@ int zd_eco_revoke(struct zd_eco *e, uint32_t idx, uint32_t perm) {
                 e->queue[i].payload[0] = 0;
                 if (e->queued)
                     e->queued--;
+                /* queued work the revoked permission was carrying is a
+                 * refusal, not a silent disappearance */
+                e->stats.refused_perm++;
+                d->refused++;
             }
         }
     }
