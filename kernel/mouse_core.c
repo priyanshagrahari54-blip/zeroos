@@ -11,6 +11,8 @@
 #define MOUSE_Y_OVER    0x80U
 
 void mouse_decoder_init(struct mouse_decoder *decoder) {
+    if (!decoder)
+        return;
     decoder->index = 0;
     decoder->packet[0] = 0;
     decoder->packet[1] = 0;
@@ -61,6 +63,8 @@ static void queue_transition(struct mouse_decoder *decoder, uint8_t bit,
 }
 
 int mouse_decoder_feed(struct mouse_decoder *decoder, uint8_t byte) {
+    if (!decoder)
+        return 0;
     if (decoder->index == 0) {
         if (!(byte & MOUSE_SYNC))
             return 0; /* resync: consume stray bytes, wait for sync */
@@ -113,7 +117,7 @@ int mouse_decoder_feed(struct mouse_decoder *decoder, uint8_t byte) {
 
 int mouse_decoder_next(struct mouse_decoder *decoder,
                        struct mouse_event *event) {
-    if (!event || decoder->pending_count == 0)
+    if (!decoder || !event || decoder->pending_count == 0)
         return 0;
     *event = decoder->pending[0];
     for (uint32_t i = 1; i < decoder->pending_count; ++i)

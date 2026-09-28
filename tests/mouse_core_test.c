@@ -153,14 +153,126 @@ static void test_queue_bound(void) {
     CHECK(ev.buttons == 0x00);
 }
 
+static void test_null_safety(void) {
+    struct mouse_decoder d;
+    struct mouse_event ev;
+
+    /* init tolerates NULL rather than faulting */
+    mouse_decoder_init(0);
+
+    /* feed tolerates NULL and reports no completed packet */
+    CHECK(mouse_decoder_feed(0, 0x08) == 0);
+
+    /* next tolerates both NULL arguments */
+    reset(&d);
+    (void)mouse_decoder_feed(&d, 0x08);
+    CHECK(mouse_decoder_next(0, &ev) == 0);
+    CHECK(mouse_decoder_next(&d, 0) == 0);
+    CHECK(mouse_decoder_next(0, 0) == 0);
+}
+
+static void test_repeated_sync_byte(void) {
+    struct mouse_decoder d;
+    struct mouse_event ev;
+
+    reset(&d);
+    /* Only byte 0 of a packet can resynchronize the stream; once byte 0 has
+     * been accepted the next two bytes are taken as X/Y data whatever their
+     * value, so a 0x08 in those positions is motion of +8, not a new packet. */
+    CHECK(mouse_decoder_feed(&d, 0x08) == 0);
+    CHECK(mouse_decoder_feed(&d, 0x08) == 0);
+    CHECK(mouse_decoder_feed(&d, 0x08) == 1);
+    CHECK(mouse_decoder_next(&d, &ev) == 1);
+    CHECK(ev.kind == MOUSE_EV_MOTION);
+    CHECK(ev.dx == 8 && ev.dy == 8);
+
+    /* Index wraps back to 0 after a completed packet. */
+    CHECK(mouse_decoder_feed(&d, 0x09) == 0);
+    CHECK(mouse_decoder_feed(&d, 0x00) == 0);
+    CHECK(mouse_decoder_feed(&d, 0x00) == 1);
+    CHECK(mouse_decoder_next(&d, &ev) == 1);
+    CHECK(ev.kind == MOUSE_EV_BUTTON && ev.button == POINTER_BTN_LEFT);
+    CHECK(ev.pressed == 1 && ev.buttons == 0x01);
+}
+
+static void test_idle_packet_emits_nothing(void) {
+    struct mouse_decoder d;
+    struct mouse_event ev;
+
+    reset(&d);
+    /* No buttons held, no buttons pressed, zero motion: nothing queues. */
+    feed(&d, 0x08, 0x00, 0x00);
+    CHECK(mouse_decoder_next(&d, &ev) == 0);
+    /* Buttons already held and still held: no repeated transition. */
+    feed(&d, 0x09, 0x00, 0x00);
+    CHECK(mouse_decoder_next(&d, &ev) == 1);
+    feed(&d, 0x09, 0x00, 0x00);
+    CHECK(mouse_decoder_next(&d, &ev) == 0);
+
+    /* Re-init clears the held button mask. */
+    reset(&d);
+    feed(&d, 0x09, 0x00, 0x00);
+    CHECK(mouse_decoder_next(&d, &ev) == 1);
+    CHECK(ev.button == POINTER_BTN_LEFT && ev.pressed == 1);
+}
+
+static void test_y_overflow_discard(void) {
+    struct mouse_decoder d;
+    struct mouse_event ev;
+
+    reset(&d);
+    /* Hold a button, then take an overflow packet: the discard must not
+     * emit a spurious release and must not lose the held button. */
+    feed(&d, 0x09, 0x00, 0x00);
+    CHECK(mouse_decoder_next(&d, &ev) == 1);
+    CHECK(ev.button == POINTER_BTN_LEFT && ev.pressed == 1);
+
+    feed(&d, 0x88, 0xFF, 0xFF); /* Y overflow */
+    CHECK(mouse_decoder_next(&d, &ev) == 0);
+
+    feed(&d, 0x09, 0x00, 0x00); /* still held: no transition */
+    CHECK(mouse_decoder_next(&d, &ev) == 0);
+
+    feed(&d, 0x08, 0x00, 0x00); /* release */
+    CHECK(mouse_decoder_next(&d, &ev) == 1);
+    CHECK(ev.button == POINTER_BTN_LEFT && ev.pressed == 0);
+    CHECK(ev.buttons == 0x00);
+}
+
+static void test_motion_extremes(void) {
+    struct mouse_decoder d;
+    struct mouse_event ev;
+
+    reset(&d);
+    /* Maximum positive 9-bit values. */
+    feed(&d, 0x08, 0xFF, 0xFF);
+    CHECK(mouse_decoder_next(&d, &ev) == 1);
+    CHECK(ev.dx == 255 && ev.dy == 255);
+
+    /* Both signs set with zero data: -256 on each axis. */
+    feed(&d, 0x58, 0x00, 0x00);
+    CHECK(mouse_decoder_next(&d, &ev) == 1);
+    CHECK(ev.dx == -256 && ev.dy == -256);
+
+    /* Both signs set with 0xFF data: -1 on each axis. */
+    feed(&d, 0x58, 0xFF, 0xFF);
+    CHECK(mouse_decoder_next(&d, &ev) == 1);
+    CHECK(ev.dx == -1 && ev.dy == -1);
+}
+
 int main(void) {
     test_motion_basic();
     test_motion_sign();
+    test_motion_extremes();
     test_overflow_discard();
+    test_y_overflow_discard();
     test_resync();
+    test_repeated_sync_byte();
     test_button_transitions();
     test_button_plus_motion();
     test_queue_bound();
+    test_idle_packet_emits_nothing();
+    test_null_safety();
     if (failures) {
         printf("mouse_core_test: %d failure(s)\n", failures);
         return 1;
