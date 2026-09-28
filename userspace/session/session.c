@@ -1215,6 +1215,8 @@ int session_main(void) {
     int vault_i;
     int vault_j;
     int vault_match;
+    int vault_same;
+    uint8_t vault_nonce[12];
     struct zd_fw_flow fw_flow;
     struct zd_fw_rule fw_rule;
     struct zd_ai_request fw_request;
@@ -3899,6 +3901,29 @@ int session_main(void) {
     for (vault_i = 0; vault_i < (int)vault_len; ++vault_i)
         if (vault_out[vault_i] != update_key[vault_i])
             return fail("vault round trip", (int64_t)vault_i);
+    /* Re-wrapping one slot under one key must not reuse a nonce. ChaCha20
+     * keystream reuse turns two ciphertexts into the XOR of their plaintexts,
+     * so the 12-byte nonce the vault keeps ahead of the ciphertext has to
+     * change on every put -- even a put of the very same secret. */
+    if (session_vault.wraps != 1)
+        return fail("vault wrap count", (int64_t)session_vault.wraps);
+    for (vault_i = 0; vault_i < 12; ++vault_i)
+        vault_nonce[vault_i] = vault_entry->ct[vault_i];
+    if (zd_vault_put(&session_vault, "update.key", update_key,
+                     (uint32_t)sizeof(update_key)) != 0)
+        return fail("vault rewrap", 0);
+    vault_same = 1;
+    for (vault_i = 0; vault_i < 12; ++vault_i)
+        if (vault_entry->ct[vault_i] != vault_nonce[vault_i])
+            vault_same = 0;
+    if (vault_same)
+        return fail("vault nonce reuse", 0);
+    if (session_vault.wraps != 2)
+        return fail("vault wrap advance", (int64_t)session_vault.wraps);
+    if (zd_vault_get(&session_vault, "update.key", vault_out,
+                     (uint32_t)sizeof(vault_out), &vault_len) != 0 ||
+        vault_len != (uint32_t)sizeof(update_key))
+        return fail("vault rewrap get", (int64_t)vault_len);
     /* An over-long secret and an empty name are both refused and counted. */
     if (zd_vault_put(&session_vault, "big", vault_out,
                      ZD_VAULT_SECRET_MAX + 1) != -22 ||
