@@ -44,6 +44,12 @@ static uint32_t pd_obj_before(const uint8_t *d, uint32_t pos) {
         end_i = i;
         while (end_i > 0 && d[end_i - 1] >= '0' && d[end_i - 1] <= '9')
             --end_i;
+        /* A digit run longer than nine cannot be a 32-bit object number and
+         * would wrap the accumulator into some unrelated object's number.
+         * Skip the run (the caller reports a missing content stream) rather
+         * than bind a page to an object this document never named. */
+        if (i - end_i >= 9u)
+            continue;
         for (k = end_i; k <= i; ++k)
             num = num * 10u + (uint32_t)(d[k] - '0');
         /* forward: spaces, generation digits, spaces, "obj" */
