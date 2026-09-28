@@ -2124,6 +2124,44 @@ int session_main(void) {
         return fail("terminal line overflow", (int64_t)session_line.len);
     say("ZEROOS: session terminal line editing passed.");
 
+    /* 10c. Bounded byte-stream pipe semantics: partial write and backpressure. */
+    {
+        uint8_t chunk[256];
+        uint32_t fill_i;
+        for (fill_i = 0; fill_i < sizeof(chunk); ++fill_i)
+            chunk[fill_i] = (uint8_t)fill_i;
+        while (zeroos_pipe_read(pipe_pair.local, term_buffer,
+                                sizeof(term_buffer),
+                                ZEROOS_IPC_FLAG_NONBLOCK, &term_len, 0) > 0)
+            ;
+        for (fill_i = 0; fill_i < 8; ++fill_i) {
+            sys_result = zeroos_pipe_write(pipe_pair.peer, chunk,
+                                           sizeof(chunk),
+                                           ZEROOS_IPC_FLAG_NONBLOCK, 0);
+            if (sys_result != (int64_t)sizeof(chunk))
+                return fail("pipe fill", sys_result);
+        }
+        sys_result = zeroos_pipe_write(pipe_pair.peer, chunk, 1,
+                                       ZEROOS_IPC_FLAG_NONBLOCK, 0);
+        if (sys_result != -ZEROOS_EAGAIN)
+            return fail("pipe full backpressure", sys_result);
+        term_len = 0;
+        sys_result = zeroos_pipe_read(pipe_pair.local, term_buffer, 16,
+                                      ZEROOS_IPC_FLAG_NONBLOCK, &term_len, 0);
+        if (sys_result != 16 || term_len != 16)
+            return fail("pipe partial read", sys_result);
+        sys_result = zeroos_pipe_write(pipe_pair.peer, chunk, 64,
+                                       ZEROOS_IPC_FLAG_NONBLOCK, 0);
+        if (sys_result != 16)
+            return fail("pipe partial write", sys_result);
+        sys_result = zeroos_pipe_write(pipe_pair.peer, chunk, 1,
+                                       ZEROOS_IPC_FLAG_NONBLOCK, 0);
+        if (sys_result != -ZEROOS_EAGAIN)
+            return fail("pipe refilled backpressure", sys_result);
+        (void)zeroos_ipc_close(pipe_pair.local);
+        (void)zeroos_ipc_close(pipe_pair.peer);
+    }
+
     /* 11. Privacy centre over live refusal counters. The filesystem domain
      * is real: the shell defines a sandbox profile and the denials counted
      * here are actual policy decisions taken during this boot, not a

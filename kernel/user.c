@@ -1387,6 +1387,20 @@ static int userspace_ipc_self_test(struct process *process) {
             pipe_length!=1 ||
             ipc_pipe_write_timeout(process,pipe_local,pipe_data,1,
                                    ZEROOS_IPC_FLAG_NONBLOCK,0)!=1 ||
+            ipc_pipe_read_timeout(process,pipe_peer,pipe_read,4,
+                                  ZEROOS_IPC_FLAG_NONBLOCK,&pipe_length,0)!=4 ||
+            pipe_length!=4 ||
+            ipc_pipe_write_timeout(process,pipe_local,pipe_data,16,
+                                   ZEROOS_IPC_FLAG_NONBLOCK,0)!=4 ||
+            ipc_pipe_write_timeout(process,pipe_local,pipe_data,16,
+                                   ZEROOS_IPC_FLAG_NONBLOCK,0)!=-ZEROOS_EAGAIN ||
+            ipc_pipe_read_timeout(process,pipe_peer,pipe_read,4,
+                                  ZEROOS_IPC_FLAG_NONBLOCK,&pipe_length,0)!=4 ||
+            pipe_length!=4 || pipe_read[0]!=pipe_data[0] ||
+            pipe_read[1]!=pipe_data[1] || pipe_read[2]!=pipe_data[2] ||
+            pipe_read[3]!=pipe_data[3] ||
+            ipc_pipe_write_timeout(process,pipe_local,pipe_data,4,
+                                   ZEROOS_IPC_FLAG_NONBLOCK,0)!=4 ||
             ipc_pipe_write_timeout(process,pipe_local,pipe_data,
                                    ZEROOS_SYSCALL_MAX_TRANSFER+1ULL,0,0)!=
                                    -ZEROOS_EOVERFLOW ||
