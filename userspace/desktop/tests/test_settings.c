@@ -1,6 +1,12 @@
 #include <zeroos/desktop/desktop.h>
 #include "test_harness.h"
 
+/* Declared locally: the desktop core is freestanding-clean and these tests
+ * compile both hosted and freestanding, so no <stdint.h> limit macros are
+ * assumed to be exposed. */
+#define TEST_INT64_MAX 9223372036854775807LL
+#define TEST_INT64_MIN (-TEST_INT64_MAX - 1LL)
+
 static int change_events;
 static char last_changed_key[48];
 static uint32_t last_restart_flag;
@@ -257,6 +263,127 @@ static void test_v1_migration(void) {
     ZD_CHECK_EQ(value, 125);
 }
 
+/* The blob parser must reject integer text it cannot represent, and it must
+ * do so *before* the accumulator wraps.  The old form multiplied first and
+ * compared afterwards: "36893488147419103240" accumulated to the (legal)
+ * 3689348814741910324, wrapped to 8 on the next multiply, and was then
+ * happily accepted as 8.  A settings import that silently stores 8 for a
+ * number the user wrote as 3.6e19 is worse than a rejected import, because
+ * the caller treats a rejection as a transactional no-op.
+ *
+ * The wide key exists so the *parser* decides these cases: its declared
+ * range covers the whole of int64, so range validation cannot mask a
+ * parser defect (or vice versa). */
+static void test_import_int64_bounds(void) {
+    struct zd_settings settings;
+    struct zd_setting_def def;
+    int64_t value = 0;
+    uint32_t failures_before;
+
+    register_common(&settings);
+    memset(&def, 0, sizeof(def));
+    def.key = "test.wide_int";
+    def.type = ZD_SETTING_INT;
+    def.scope = ZD_SCOPE_USER;
+    def.default_value = 0;
+    def.min_value = TEST_INT64_MIN;
+    def.max_value = TEST_INT64_MAX;
+    ZD_CHECK_OK(zd_settings_register(&settings, &def));
+
+    /* Exact positive bound: accepted, stored verbatim. */
+    ZD_CHECK_OK(zd_settings_import(&settings,
+                                   "v2\ntest.wide_int=9223372036854775807\n",
+                                   ZD_PERM_SETTINGS_USER));
+    ZD_CHECK_OK(zd_settings_get(&settings, "test.wide_int", &value, 0, 0));
+    ZD_CHECK_EQ(value, TEST_INT64_MAX);
+
+    /* One past the positive bound: rejected, value untouched. */
+    failures_before = settings.stats.import_failures;
+    ZD_CHECK_ERR(zd_settings_import(&settings,
+                                    "v2\ntest.wide_int=9223372036854775808\n",
+                                    ZD_PERM_SETTINGS_USER),
+                 ZD_EINVAL);
+    ZD_CHECK(settings.stats.import_failures == failures_before + 1U);
+    ZD_CHECK_OK(zd_settings_get(&settings, "test.wide_int", &value, 0, 0));
+    ZD_CHECK_EQ(value, TEST_INT64_MAX);
+
+    /* Exact negative bound (one further than the positive). */
+    ZD_CHECK_OK(zd_settings_import(&settings,
+                                   "v2\ntest.wide_int=-9223372036854775808\n",
+                                   ZD_PERM_SETTINGS_USER));
+    ZD_CHECK_OK(zd_settings_get(&settings, "test.wide_int", &value, 0, 0));
+    ZD_CHECK_EQ(value, TEST_INT64_MIN);
+
+    /* One past the negative bound: rejected. */
+    ZD_CHECK_ERR(zd_settings_import(&settings,
+                                    "v2\ntest.wide_int=-9223372036854775809\n",
+                                    ZD_PERM_SETTINGS_USER),
+                 ZD_EINVAL);
+    ZD_CHECK_OK(zd_settings_get(&settings, "test.wide_int", &value, 0, 0));
+    ZD_CHECK_EQ(value, TEST_INT64_MIN);
+
+    /* Regression: the wrap case. 20 digits whose first 19 are in range. */
+    ZD_CHECK_OK(zd_settings_import(&settings,
+                                   "v2\ntest.wide_int=3689348814741910324\n",
+                                   ZD_PERM_SETTINGS_USER));
+    ZD_CHECK_OK(zd_settings_get(&settings, "test.wide_int", &value, 0, 0));
+    ZD_CHECK_EQ(value, 3689348814741910324LL);
+    ZD_CHECK_ERR(zd_settings_import(&settings,
+                                    "v2\ntest.wide_int=36893488147419103240\n",
+                                    ZD_PERM_SETTINGS_USER),
+                 ZD_EINVAL);
+    ZD_CHECK_OK(zd_settings_get(&settings, "test.wide_int", &value, 0, 0));
+    ZD_CHECK_EQ(value, 3689348814741910324LL);
+
+    /* Regression: uint64 wrap that lands back on a small positive value. */
+    ZD_CHECK_ERR(zd_settings_import(&settings,
+                                    "v2\ntest.wide_int=18446744073709551617\n",
+                                    ZD_PERM_SETTINGS_USER),
+                 ZD_EINVAL);
+    ZD_CHECK_OK(zd_settings_get(&settings, "test.wide_int", &value, 0, 0));
+    ZD_CHECK_EQ(value, 3689348814741910324LL);
+
+    /* Leading zeros are not digits of magnitude: the bound still applies to
+     * the value, not to the text length. */
+    ZD_CHECK_OK(zd_settings_import(
+        &settings, "v2\ntest.wide_int=0000009223372036854775807\n",
+        ZD_PERM_SETTINGS_USER));
+    ZD_CHECK_OK(zd_settings_get(&settings, "test.wide_int", &value, 0, 0));
+    ZD_CHECK_EQ(value, TEST_INT64_MAX);
+    ZD_CHECK_ERR(zd_settings_import(&settings,
+                                    "v2\ntest.wide_int=0000009223372036854775808\n",
+                                    ZD_PERM_SETTINGS_USER),
+                 ZD_EINVAL);
+
+    /* Malformed numeric text on a known key fails the whole import. */
+    ZD_CHECK_ERR(zd_settings_import(&settings, "v2\ntest.wide_int=12a\n",
+                                    ZD_PERM_SETTINGS_USER),
+                 ZD_EINVAL);
+    ZD_CHECK_ERR(zd_settings_import(&settings, "v2\ntest.wide_int=-\n",
+                                    ZD_PERM_SETTINGS_USER),
+                 ZD_EINVAL);
+    ZD_CHECK_ERR(zd_settings_import(&settings, "v2\ntest.wide_int=\n",
+                                    ZD_PERM_SETTINGS_USER),
+                 ZD_EINVAL);
+    ZD_CHECK_ERR(zd_settings_import(&settings, "v2\ntest.wide_int=1.5\n",
+                                    ZD_PERM_SETTINGS_USER),
+                 ZD_EINVAL);
+    ZD_CHECK_OK(zd_settings_get(&settings, "test.wide_int", &value, 0, 0));
+    ZD_CHECK_EQ(value, TEST_INT64_MAX);
+
+    /* The wrap also matters for a key whose range would have rejected the
+     * wrapped value anyway: the import must be *reported* as failed, not
+     * silently drop the key. */
+    failures_before = settings.stats.import_failures;
+    ZD_CHECK_ERR(
+        zd_settings_import(&settings, "v2\nui.scale_percent=36893488147419103240\n",
+                           ZD_PERM_SETTINGS_USER),
+        ZD_EINVAL);
+    ZD_CHECK(settings.stats.import_failures == failures_before + 1U);
+    ZD_CHECK_OK(zd_settings_get(&settings, "ui.scale_percent", &value, 0, 0));
+    ZD_CHECK_EQ(value, 100); /* default survives the rejected import */
+}
+
 static void test_register_negatives(void) {
     struct zd_settings settings;
     struct zd_setting_def def;
@@ -280,5 +407,6 @@ void zd_test_settings_suite(void) {
     ZD_RUN(test_export_import_roundtrip);
     ZD_RUN(test_import_negatives);
     ZD_RUN(test_v1_migration);
+    ZD_RUN(test_import_int64_bounds);
     ZD_RUN(test_register_negatives);
 }
