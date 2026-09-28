@@ -68,6 +68,22 @@ static void t_erase_cells(struct zd_term *t, uint32_t y, uint32_t x0,
         t_clear_cell(&t->grid[y][x], t->fg, t->bg);
 }
 
+/* Saturating cap on a numeric CSI/SGR parameter.
+ *
+ * The parser must never misparse, so a parameter is not allowed to wrap: an
+ * unbounded accumulator turns "ESC[4294967296C" into a small positive column
+ * and "SGR 4294967327" into SGR 31, i.e. a sequence the terminal does not
+ * support silently becomes one it does. Saturating at one above the largest
+ * reachable row/column keeps every consumer's arithmetic in range and pins
+ * the cursor at the edge that an over-large movement was asking for. */
+#define ZD_TERM_PARAM_MAX 65535u
+
+static uint32_t t_accum(uint32_t cur, uint32_t digit) {
+    if (cur > (ZD_TERM_PARAM_MAX - digit) / 10u)
+        return ZD_TERM_PARAM_MAX;
+    return cur * 10u + digit;
+}
+
 static uint32_t t_param(const char *s, uint32_t len, uint32_t idx,
                         uint32_t defv, int *ok) {
     uint32_t i = 0, cur = 0, which = 0;
@@ -82,7 +98,7 @@ static uint32_t t_param(const char *s, uint32_t len, uint32_t idx,
     for (i = 0; i < len; ++i) {
         char c = s[i];
         if (c >= '0' && c <= '9') {
-            cur = cur * 10 + (uint32_t)(c - '0');
+            cur = t_accum(cur, (uint32_t)(c - '0'));
             any = 1;
         } else if (c == ';') {
             if (which == idx)
@@ -113,7 +129,7 @@ static void t_sgr(struct zd_term *t, const char *s, uint32_t len) {
         int any = 0;
         while (i < len && s[i] != ';') {
             if (s[i] >= '0' && s[i] <= '9') {
-                v = v * 10 + (uint32_t)(s[i] - '0');
+                v = t_accum(v, (uint32_t)(s[i] - '0'));
                 any = 1;
             }
             ++i;

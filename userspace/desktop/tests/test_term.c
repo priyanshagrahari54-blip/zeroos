@@ -56,6 +56,34 @@ void zd_test_term_suite(void) {
     ZD_CHECK_EQ(t.cur_x, 15);
     wstr(&t, "\033[5;1H");
 
+    /* Numeric parameters saturate instead of wrapping. An unbounded
+     * accumulator turns an over-large movement into a small one (and an
+     * out-of-range SGR into a supported colour), so "never misparsed" would
+     * silently break: 4294967296 is 2^32, which wraps to 0. */
+    wstr(&t, "\033[4294967296C"); /* right, would wrap to +0 */
+    ZD_CHECK_EQ(t.cur_x, 15);
+    wstr(&t, "\033[4294967296B"); /* down, would wrap to +0 */
+    ZD_CHECK_EQ(t.cur_y, 5);
+    wstr(&t, "\033[99999999999999D"); /* left: clamps, does not wrap */
+    ZD_CHECK_EQ(t.cur_x, 0);
+    wstr(&t, "\033[99999999999999A"); /* up: clamps at the top */
+    ZD_CHECK_EQ(t.cur_y, 0);
+    {
+        uint32_t before = t.stats.unknown_seqs;
+        /* SGR 2^32+31 must not saturate into "red foreground". */
+        wstr(&t, "\033[4294967327m");
+        ZD_CHECK_EQ(t.stats.unknown_seqs, before);
+        ZD_CHECK_EQ(t.fg, 7);
+        ZD_CHECK_EQ(t.attrs, 0);
+        /* A leading run of zeros is still the value zero, not a saturation
+         * trigger: SGR 031 is red. */
+        wstr(&t, "\033[0000000031m");
+        ZD_CHECK_EQ(t.fg, 1);
+        wstr(&t, "\033[0m");
+        ZD_CHECK_EQ(t.fg, 7);
+    }
+    wstr(&t, "\033[5;1H");
+
     /* wrap at edge: 16-wide row, cursor starts at (4,0) after H */
     wstr(&t, "0123456789ABCDE"); /* 15 chars -> cols 0..14 */
     wstr(&t, "F");               /* fills col 15 */
