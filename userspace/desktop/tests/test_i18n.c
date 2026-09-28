@@ -107,10 +107,33 @@ static void test_formatting(void) {
                  ZD_EINVAL);
 }
 
+static void test_shell_catalog_surface(void) {
+    uint32_t size = 0;
+    uint32_t index;
+    const struct zd_i18n_entry *catalog = zd_i18n_shell_catalog(&size);
+    struct zd_i18n i18n;
+
+    ZD_CHECK(catalog != 0);
+    ZD_CHECK(size >= 30U);
+    /* Every shipped entry carries a key and both locales: the catalog is
+     * what the zero-fallback guarantee is measured against. */
+    for (index = 0; index < size; ++index) {
+        ZD_CHECK(catalog[index].key != 0 && catalog[index].key[0] != 0);
+        ZD_CHECK(catalog[index].en != 0 && catalog[index].en[0] != 0);
+        ZD_CHECK(catalog[index].hi != 0 && catalog[index].hi[0] != 0);
+    }
+    /* out_size is optional; the loader reports the same catalog. */
+    ZD_CHECK(zd_i18n_shell_catalog(0) == catalog);
+    zd_i18n_init(&i18n, ZD_LOCALE_EN);
+    ZD_CHECK_EQ(zd_i18n_load_shell_catalog(&i18n), size);
+    ZD_CHECK_EQ(i18n.catalog_size, size);
+}
+
 void zd_test_i18n_suite(void) {
     printf(" suite: localization\n");
     ZD_RUN(test_catalog_coverage);
     ZD_RUN(test_locale_switching);
     ZD_RUN(test_ui_state_strings_both_locales);
     ZD_RUN(test_formatting);
+    ZD_RUN(test_shell_catalog_surface);
 }

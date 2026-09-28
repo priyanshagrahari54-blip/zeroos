@@ -364,6 +364,94 @@ static void test_capacity_limits(void) {
     ZD_CHECK_ERR(zd_wm_create_window(&wm, &info, &id), ZD_EINVAL);
 }
 
+static void test_titles_maximize_monitors(void) {
+    struct zd_window_create_info info;
+    zd_window_id id = ZD_INVALID_WINDOW;
+    struct zd_monitor second;
+    char long_title[128];
+
+    setup();
+    memset(&second, 0, sizeof(second));
+    second.id = 2;
+    second.bounds.x = 1920;
+    second.bounds.y = 0;
+    second.bounds.w = 1280;
+    second.bounds.h = 720;
+    second.scale_percent = 150;
+    second.primary = 0;
+    second.enabled = 1;
+    strcpy(second.name, "HDMI-1");
+    ZD_CHECK_OK(zd_wm_add_monitor(&wm, &second));
+
+    info = make_info(client_a, 10, 10, 400, 300);
+    ZD_CHECK_OK(zd_wm_create_window(&wm, &info, &id));
+
+    /* Titles: a NULL or unknown-window write is refused, a long one is
+     * truncated and still NUL-terminated rather than overflowing. */
+    ZD_CHECK_ERR(zd_wm_set_title(&wm, id, 0), ZD_EINVAL);
+    ZD_CHECK_ERR(zd_wm_set_title(&wm, 9999, "ghost"), ZD_EINVAL);
+    ZD_CHECK_OK(zd_wm_set_title(&wm, id, "Files"));
+    ZD_CHECK(strcmp(zd_wm_window(&wm, id)->title, "Files") == 0);
+    memset(long_title, 'x', sizeof(long_title));
+    long_title[sizeof(long_title) - 1] = 0;
+    ZD_CHECK_OK(zd_wm_set_title(&wm, id, long_title));
+    ZD_CHECK_EQ((uint32_t)strlen(zd_wm_window(&wm, id)->title),
+                ZD_WINDOW_TITLE_CAP - 1U);
+    ZD_CHECK_OK(zd_wm_set_title(&wm, id, "Files"));
+
+    /* Maximize takes the workarea of the window's own monitor, and restore
+     * returns the window to NORMAL. */
+    ZD_CHECK_ERR(zd_wm_maximize(&wm, 9999), ZD_ENOENT);
+    ZD_CHECK_OK(zd_wm_maximize(&wm, id));
+    ZD_CHECK_EQ(zd_wm_window(&wm, id)->state, ZD_WINDOW_MAXIMIZED);
+    {
+        struct zd_rect work = zd_wm_workarea(zd_wm_monitor(&wm, 1));
+        struct zd_rect now = zd_wm_window(&wm, id)->logical;
+        ZD_CHECK_EQ(now.x, work.x);
+        ZD_CHECK_EQ(now.y, work.y);
+        ZD_CHECK_EQ(now.w, work.w);
+        ZD_CHECK_EQ(now.h, work.h);
+    }
+    ZD_CHECK_OK(zd_wm_restore(&wm, id));
+    ZD_CHECK_EQ(zd_wm_window(&wm, id)->state, ZD_WINDOW_NORMAL);
+
+    /* DPI helpers on the 150% monitor; a NULL monitor is the identity so a
+     * caller without one cannot produce a scaled value by accident. */
+    {
+        const struct zd_monitor *scaled = zd_wm_monitor(&wm, 2);
+        ZD_CHECK_EQ(zd_wm_scale_x(scaled, 10), 15);
+        ZD_CHECK_EQ(zd_wm_scale_y(scaled, 20), 30);
+        ZD_CHECK_EQ(zd_wm_unscale_y(scaled, 30), 20);
+        /* Integer scaling: 100 -> 150 -> 100 is exact, and a value that is
+         * not a multiple of the denominator rounds down in both directions
+         * (77 -> 115 -> 76), which is why layout works in scaled units
+         * rather than round-tripping through them. */
+        ZD_CHECK_EQ(zd_wm_scale_y(scaled, 100), 150);
+        ZD_CHECK_EQ(zd_wm_unscale_y(scaled, 150), 100);
+        ZD_CHECK_EQ(zd_wm_scale_y(scaled, 77), 115);
+        ZD_CHECK_EQ(zd_wm_unscale_y(scaled, 115), 76);
+        ZD_CHECK_EQ(zd_wm_scale_x(0, 10), 10);
+        ZD_CHECK_EQ(zd_wm_scale_y(0, 10), 10);
+        ZD_CHECK_EQ(zd_wm_unscale_y(0, 30), 30);
+    }
+
+    /* Assigning a monitor moves the window onto it and clamps the rectangle
+     * into that monitor's workarea -- it must not stay at x=10, which is on
+     * the first monitor. */
+    ZD_CHECK_ERR(zd_wm_assign_monitor(&wm, id, 99), ZD_ENOENT);
+    ZD_CHECK_ERR(zd_wm_assign_monitor(&wm, 9999, 2), ZD_ENOENT);
+    ZD_CHECK_OK(zd_wm_assign_monitor(&wm, id, 2));
+    ZD_CHECK_EQ(zd_wm_window(&wm, id)->monitor_id, 2U);
+    {
+        struct zd_rect now = zd_wm_window(&wm, id)->logical;
+        struct zd_rect work = zd_wm_workarea(zd_wm_monitor(&wm, 2));
+        ZD_CHECK(now.x >= work.x);
+        ZD_CHECK(now.y >= work.y);
+        ZD_CHECK(now.x + now.w <= work.x + work.w);
+        ZD_CHECK(now.y + now.h <= work.y + work.h);
+    }
+}
+
 void zd_test_window_suite(void) {
     printf(" suite: window system\n");
     ZD_RUN(test_monitor_and_dpi);
@@ -374,4 +462,5 @@ void zd_test_window_suite(void) {
     ZD_RUN(test_buffer_lifetime);
     ZD_RUN(test_client_crash_isolation);
     ZD_RUN(test_capacity_limits);
+    ZD_RUN(test_titles_maximize_monitors);
 }

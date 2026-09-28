@@ -263,6 +263,21 @@ static void test_expiry_is_relative_to_post_time(void) {
     ZD_CHECK_EQ(zd_notify_visible(&notify, up + 33ULL * s, ids, 4), 0U);
 }
 
+static void test_priority_names(void) {
+    ZD_CHECK(strcmp(zd_notify_priority_name(ZD_NOTIFY_LOW), "low") == 0);
+    ZD_CHECK(strcmp(zd_notify_priority_name(ZD_NOTIFY_NORMAL), "normal") == 0);
+    ZD_CHECK(strcmp(zd_notify_priority_name(ZD_NOTIFY_HIGH), "high") == 0);
+    ZD_CHECK(strcmp(zd_notify_priority_name(ZD_NOTIFY_CRITICAL), "critical") ==
+             0);
+    /* Anything outside the enum is unnamed rather than reading past the
+     * table: the name is only ever used for a11y announcements and logs. */
+    ZD_CHECK(strcmp(zd_notify_priority_name(
+                        (enum zd_notify_priority)(ZD_NOTIFY_CRITICAL + 1)),
+                    "?") == 0);
+    ZD_CHECK(strcmp(zd_notify_priority_name((enum zd_notify_priority)-1),
+                    "?") == 0);
+}
+
 void zd_test_notify_suite(void) {
     printf(" suite: notifications\n");
     ZD_RUN(test_post_and_priority_ordering);
@@ -270,6 +285,7 @@ void zd_test_notify_suite(void) {
     ZD_RUN(test_rate_limiting);
     ZD_RUN(test_defer_dismiss_expiry);
     ZD_RUN(test_expiry_is_relative_to_post_time);
+    ZD_RUN(test_priority_names);
     ZD_RUN(test_grouping);
     ZD_RUN(test_flood_stress);
 }
