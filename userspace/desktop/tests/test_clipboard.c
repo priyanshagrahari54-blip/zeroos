@@ -89,4 +89,40 @@ void zd_test_clipboard_suite(void) {
     zd_clipboard_clear(&cb);
     ZD_CHECK_EQ(zd_clipboard_history_count(&cb), 0U);
     ZD_CHECK(zd_clipboard_paste(&cb, out, sizeof(out)) == -1);
+
+    /* "Cleared" must leave no residue of any field, not merely make the
+     * entry unselectable: a clipboard holds whatever the user last copied,
+     * which includes secrets. Every slot's text, origin label and format is
+     * zeroed, so nothing survives that a later copy could inherit. */
+    {
+        uint32_t slot;
+        uint32_t byte;
+        int residue = 0;
+
+        ZD_CHECK_OK(zd_clipboard_copy(&cb, "secret-app", "hunter2",
+                                      ZD_CLIP_FMT_TEXT, 0));
+        ZD_CHECK_OK(zd_clipboard_copy(&cb, "secret-app", "hunter3",
+                                      ZD_CLIP_FMT_URI, 1)); /* sensitive slot */
+        zd_clipboard_clear(&cb);
+        for (slot = 0; slot < ZD_CLIP_MAX; ++slot) {
+            for (byte = 0; byte < ZD_CLIP_TEXT; ++byte)
+                if (cb.slots[slot].text[byte])
+                    residue = 1;
+            for (byte = 0; byte < ZD_CLIP_APP; ++byte)
+                if (cb.slots[slot].app[byte])
+                    residue = 1;
+            if (cb.slots[slot].format || cb.slots[slot].in_use ||
+                cb.slots[slot].sensitive || cb.slots[slot].seq)
+                residue = 1;
+        }
+        ZD_CHECK_EQ(residue, 0);
+        ZD_CHECK(cb.current == 0);
+        /* And a fresh copy after a clear starts from a known-clean slot. */
+        ZD_CHECK_OK(zd_clipboard_copy(&cb, "app", "fresh",
+                                      ZD_CLIP_FMT_TEXT, 0));
+        ZD_CHECK(strcmp(cb.current->text, "fresh") == 0);
+        ZD_CHECK(strcmp(cb.current->app, "app") == 0);
+        ZD_CHECK(zd_clipboard_paste(&cb, out, sizeof(out)) == 0);
+        ZD_CHECK(strcmp(out, "fresh") == 0);
+    }
 }

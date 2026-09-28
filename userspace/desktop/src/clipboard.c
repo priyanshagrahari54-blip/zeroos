@@ -168,6 +168,13 @@ void zd_clipboard_clear(struct zd_clipboard *cb) {
         uint32_t j;
         for (j = 0; j < ZD_CLIP_TEXT; ++j)
             cb->slots[i].text[j] = 0;
+        /* Origin and format are wiped too. They are unreachable once
+         * in_use is 0, but a clipboard holds whatever the user last copied --
+         * including secrets -- so "cleared" must mean no residue of any
+         * field, not merely "no longer selectable". */
+        for (j = 0; j < ZD_CLIP_APP; ++j)
+            cb->slots[i].app[j] = 0;
+        cb->slots[i].format = 0;
         cb->slots[i].in_use = 0;
         cb->slots[i].sensitive = 0;
         cb->slots[i].seq = 0;
