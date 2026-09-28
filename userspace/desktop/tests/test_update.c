@@ -132,7 +132,11 @@ void zd_test_update_suite(void) {
     zd_update_event(&u, ZD_UPD_EV_ROLLBACK_DONE);
     ZD_CHECK(zd_update_state(&u) == ZD_UPD_FAILED);
 
-    /* commit hook failure -> FAILED, not DONE */
+    /* commit hook failure -> FAILED, not DONE, and deliberately NOT rolled
+     * back: by the time commit runs the health check has already passed, so
+     * the new slot is live and known-good and only the "mark good" write
+     * failed. Reverting a healthy slot would trade a retryable bookkeeping
+     * error for a real outage. */
     log = (struct hook_log){0, 0, 0, 0, 0, 1, 0};
     zd_update_init(&u, &ops);
     zd_update_begin(&u, "5.3.2");
@@ -145,6 +149,12 @@ void zd_test_update_suite(void) {
     ZD_CHECK(zd_update_event(&u, ZD_UPD_EV_COMMIT_OK) == -5);
     ZD_CHECK(zd_update_state(&u) == ZD_UPD_FAILED);
     ZD_CHECK(u.stats.committed == 0);
+    ZD_CHECK(log.rollback == 0);
+    ZD_CHECK_EQ(u.stats.rollbacks, 0);
+    ZD_CHECK_EQ(u.stats.health_failures, 0);
+    /* FAILED is a restartable state, so the commit can be retried. */
+    ZD_CHECK(zd_update_begin(&u, "5.3.2") == 0);
+    ZD_CHECK(zd_update_state(&u) == ZD_UPD_DOWNLOADING);
 
     /* rollback hook failure -> FAILED, completed-rollback not counted */
     log = (struct hook_log){0, 0, 0, 0, 0, 0, 1};
