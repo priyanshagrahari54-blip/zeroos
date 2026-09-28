@@ -80,7 +80,7 @@ The authoritative per-core binding inventory (host-tested vs pending live integr
 
 | Suite | Command | Assertions | Failures |
 |---|---|---|---|
-| Desktop modules (display, compositor, window, input, a11y, i18n, search, settings, notify, lifecycle, watchdog, governor, automation, browser, AI, bar, launcher, capability, metrics, update, url, study, fps, snapshot, vault, nav, firewall, sandbox, clipboard, downloads, providers, shell providers + session-binding replay, perfcenter, fault, soak, pdf, media, gaming, eco, snapshot-bind, privacy, term, filemgr, formula, ocr, overview, notes, dict, assist, ui, stress, integration) | `make desktop-check` | 122132 | 0 |
+| Desktop modules (display, compositor, window, input, a11y, i18n, search, settings, notify, lifecycle, watchdog, governor, automation, browser, AI, bar, launcher, capability, metrics, update, url, study, fps, snapshot, vault, nav, firewall, sandbox, clipboard, downloads, providers, shell providers + session-binding replay, perfcenter, fault, soak, pdf, media, gaming, eco, snapshot-bind, privacy, term, filemgr, formula, ocr, overview, notes, dict, assist, ui, stress, integration) | `make desktop-check` | 122136 | 0 |
 | Windows compatibility core (lifecycle/paths/registry/DLL + PE validator) | `make compat-check` | 107 | 0 |
 | Hardware/driver cores (incl. crypto RFC vectors) | `make hardware-core-test` | per-suite PASS | 0 |
 | IPv4 ARP parser/builders + solicited-only expiring neighbor cache | `make hardware-core-test` | 85 | 0 |
@@ -101,6 +101,9 @@ persistence certification. A green
 
 | Commit | Evidence | Result |
 |---|---|---|
+| `2aace82` | Push-context boot FAILURE (runs 36361265729 and 36361260859): `session FAILED: eco partial flush (1)` | Revoking a permission drops the queued entries that needed it at revoke time, so the flush's refusal path never saw them. Fixed in `8c295c2`, which counts both drop paths; the bundled five-condition assertion is now one assertion per fact |
+| `7b47bb2` | Push-context CI SUCCESS (runs 36339818525 and 36339815419): both boots also grep `session study notes passed.` | Certifies the notebook with the shell as its storage -- real files written, read back and compared byte for byte -- and the OCR capability gate |
+| `4f88729` | Push-context CI SUCCESS (runs 36339321781 and 36339319156): both boots also grep `session navigation policy passed.` and `session study attachments passed.` | Certifies URL validation gating the browser, and a real PDF written to `/ram/shell`, read back through the kernel and parsed into a card in the live deck |
 | `40ea7c9` | Push-context CI SUCCESS (both boots): the serial log also carries `session accessibility and localization passed.`, `session media rights passed.`, `session recovery snapshots passed.` and `session egress policy passed.` | Certifies the a11y tree built from the live stacking order, the media library's per-origin rights over real files, recovery snapshots whose capture/restore hooks copy real files, and the firewall verdict enforced as the broker's egress capability |
 | `a06834c` | Push-context boot FAILURE (runs 36338933979 and 36338930759): `session FAILED: url reject reason (1)` | `zd_url_parse` left `reject_reason` at `ZD_URL_R_NULL` on success, so a good URL carried a "null input" diagnostic. Fixed in `4f88729`, with the new contract asserted by the host suite |
 | `0f216f7`, `11ab8c7` | Push-context boot FAILURE (runs 36338245644, 36338242119, 36338613086, 36338610533): `session FAILED: snapshot failed finish (0)` | `zd_snapshots_create_finish` returns the capture hook's own error while marking the slot FAILED; the step demanded 0 and so rejected a correct fail-closed path. Fixed in `40ea7c9` |
