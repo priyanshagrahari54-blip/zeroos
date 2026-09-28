@@ -104,6 +104,7 @@ int zd_overview_focus_next(struct zd_overview *o) {
     if (!o || o->count == 0)
         return -22;
     o->focus = (o->focus + 1) % o->count;
+    o->stats.selections++;
     return 0;
 }
 
@@ -111,6 +112,7 @@ int zd_overview_focus_prev(struct zd_overview *o) {
     if (!o || o->count == 0)
         return -22;
     o->focus = (o->focus + o->count - 1) % o->count;
+    o->stats.selections++;
     return 0;
 }
 

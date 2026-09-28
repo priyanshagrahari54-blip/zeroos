@@ -2786,6 +2786,10 @@ int session_main(void) {
     if (zd_overview_focus_next(&session_overview) != 0 ||
         zd_overview_focused_id(&session_overview) != overview_first)
         return fail("overview focus wrap", 0);
+    /* Both accepted moves are counted; nothing else selects. */
+    if (session_overview.stats.selections != 2)
+        return fail("overview selections",
+                    (int64_t)session_overview.stats.selections);
     /* Removing a window relayouts the rest. */
     if (zd_overview_remove(&session_overview, window_side) != 0 ||
         session_overview.count != 1)

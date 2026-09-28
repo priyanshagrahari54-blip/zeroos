@@ -88,6 +88,9 @@ void zd_test_overview_suite(void) {
     ZD_CHECK_EQ(o.focus, 0); /* wrapped */
     ZD_CHECK_OK(zd_overview_focus_prev(&o));
     ZD_CHECK_EQ(o.focus, 2); /* wrapped back */
+    /* three next + one prev were accepted; the two refused moves on an empty
+     * overview above are not selections */
+    ZD_CHECK_EQ(o.stats.selections, 4);
 
     /* remove relayouts and clamps focus */
     for (i = 0; i < 4; ++i)
