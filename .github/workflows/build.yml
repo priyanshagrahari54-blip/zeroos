@@ -171,6 +171,8 @@ jobs:
             grep -q "ZEROOS: session workspaces and snapping passed." build/serial.log
             grep -q "ZEROOS: session bar and quick controls passed." build/serial.log
             grep -q "ZEROOS: session system status passed." build/serial.log
+            grep -q "ZEROOS: session scanout present contract passed." build/serial.log
+            grep -q "ZEROOS: session scanout degraded path passed." build/serial.log
             grep -q "ZEROOS: session ai platform passed." build/serial.log
             grep -q "ZEROOS: session browser lifecycle passed." build/serial.log
             grep -q "ZEROOS: session study center passed." build/serial.log
@@ -275,6 +277,8 @@ jobs:
           grep -q "ZEROOS: session workspaces and snapping passed." build/serial-smp4.log
           grep -q "ZEROOS: session bar and quick controls passed." build/serial-smp4.log
           grep -q "ZEROOS: session system status passed." build/serial-smp4.log
+          grep -q "ZEROOS: session scanout present contract passed." build/serial-smp4.log
+          grep -q "ZEROOS: session scanout degraded path passed." build/serial-smp4.log
           grep -q "ZEROOS: session ai platform passed." build/serial-smp4.log
           grep -q "ZEROOS: session browser lifecycle passed." build/serial-smp4.log
           grep -q "ZEROOS: session study center passed." build/serial-smp4.log
