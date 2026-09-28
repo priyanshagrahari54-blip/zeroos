@@ -8,6 +8,7 @@
  * tampered AAD — all must fail with ZCRYPTO_AUTHFAIL and zero output. */
 #include <assert.h>
 #include <stdio.h>
+#include <string.h>
 #include "../kernel/crypto.h"
 
 static int checks;
@@ -221,12 +222,243 @@ static void test_aead(void) {
            "aead encrypt null aad with length rejected");
 }
 
+/* ---- Coverage beyond the RFC vectors ---- */
+
+/* Multi-block ChaCha20: the keystream must be the concatenation of the
+ * per-block outputs with the counter advanced once per 64-byte block, and a
+ * buffer of any length must round-trip. */
+static void test_chacha20_multiblock(void) {
+    uint8_t key[32], nonce[12];
+    uint8_t pt[300], ct[300], back[300], want[300];
+    uint32_t i, blocks;
+    unsigned j;
+
+    hex_fill(key, "000102030405060708090a0b0c0d0e0f"
+                  "101112131415161718191a1b1c1d1e1f", 32);
+    hex_fill(nonce, "000000000000004a00000000", 12);
+    for (i = 0; i < sizeof(pt); i++)
+        pt[i] = (uint8_t)(i * 7u + 3u);
+
+    blocks = (sizeof(pt) + 63u) / 64u;
+    for (i = 0; i < blocks; i++) {
+        uint8_t stream[64];
+        zeroos_chacha20_block(key, 1u + i, nonce, stream);
+        for (j = 0; j < 64 && i * 64u + j < sizeof(pt); j++)
+            want[i * 64u + j] = (uint8_t)(pt[i * 64u + j] ^ stream[j]);
+    }
+
+    zeroos_chacha20_xor(key, 1u, nonce, pt, ct, sizeof(pt));
+    expect(bytes_eq(ct, want, sizeof(pt)), "chacha20 multi-block keystream");
+
+    zeroos_chacha20_xor(key, 1u, nonce, ct, back, sizeof(pt));
+    expect(bytes_eq(back, pt, sizeof(pt)), "chacha20 multi-block roundtrip");
+
+    /* Counter overflow into the next block must not alias block 0. */
+    {
+        uint8_t a[64], b[64];
+        zeroos_chacha20_xor(key, 5u, nonce, 0, a, 64);
+        zeroos_chacha20_block(key, 5u, nonce, b);
+        expect(bytes_eq(a, b, 64), "chacha20 keystream equals block 0");
+    }
+
+    /* In-place operation: output aliasing input must still round-trip. */
+    {
+        uint8_t buf[200], copy[200];
+        for (i = 0; i < sizeof(buf); i++)
+            buf[i] = (uint8_t)(i ^ 0x5a);
+        memcpy(copy, buf, sizeof(buf));
+        zeroos_chacha20_xor(key, 1u, nonce, buf, buf, sizeof(buf));
+        expect(!bytes_eq(buf, copy, sizeof(buf)), "chacha20 in-place encrypts");
+        zeroos_chacha20_xor(key, 1u, nonce, buf, buf, sizeof(buf));
+        expect(bytes_eq(buf, copy, sizeof(buf)), "chacha20 in-place roundtrip");
+    }
+
+    /* Zero length is a no-op that must not touch the output. */
+    {
+        uint8_t out[4] = {1, 2, 3, 4};
+        zeroos_chacha20_xor(key, 1u, nonce, pt, out, 0);
+        expect(out[0] == 1 && out[3] == 4, "chacha20 zero length is a no-op");
+    }
+
+    /* A different nonce must produce a different keystream. */
+    {
+        uint8_t a[64], b[64];
+        uint8_t nonce2[12];
+        memcpy(nonce2, nonce, 12);
+        nonce2[0] ^= 0x01;
+        zeroos_chacha20_xor(key, 1u, nonce, 0, a, 64);
+        zeroos_chacha20_xor(key, 1u, nonce2, 0, b, 64);
+        expect(!bytes_eq(a, b, 64), "chacha20 nonce changes keystream");
+    }
+}
+
+/* Streaming Poly1305 must be independent of how the message is chopped:
+ * the partial-block buffer is exercised by byte-at-a-time feeding. */
+static void test_poly1305_chunking(void) {
+    uint8_t key[32], tag_one[16], tag_stream[16];
+    uint8_t msg[100];
+    struct zeroos_poly1305_ctx ctx;
+    uint32_t i;
+
+    hex_fill(key, "85d6be7857556d337f4452fe42d506a8"
+                  "0103808afb0db2fd4abff6af4149f51b", 32);
+    for (i = 0; i < sizeof(msg); i++)
+        msg[i] = (uint8_t)(i * 31u + 11u);
+
+    zeroos_poly1305(key, msg, sizeof(msg), tag_one);
+
+    /* One byte at a time. */
+    zeroos_poly1305_init(&ctx, key);
+    for (i = 0; i < sizeof(msg); i++)
+        zeroos_poly1305_update(&ctx, msg + i, 1);
+    zeroos_poly1305_final(&ctx, tag_stream);
+    expect(bytes_eq(tag_one, tag_stream, 16), "poly1305 byte-at-a-time");
+
+    /* 16-byte aligned chunks. */
+    zeroos_poly1305_init(&ctx, key);
+    for (i = 0; i + 16 <= sizeof(msg); i += 16)
+        zeroos_poly1305_update(&ctx, msg + i, 16);
+    zeroos_poly1305_update(&ctx, msg + i, sizeof(msg) - i);
+    zeroos_poly1305_final(&ctx, tag_stream);
+    expect(bytes_eq(tag_one, tag_stream, 16), "poly1305 aligned chunks");
+
+    /* A single 17-byte chunk: one whole block plus one buffered byte. */
+    zeroos_poly1305_init(&ctx, key);
+    zeroos_poly1305_update(&ctx, msg, 17);
+    zeroos_poly1305_update(&ctx, msg + 17, sizeof(msg) - 17);
+    zeroos_poly1305_final(&ctx, tag_stream);
+    expect(bytes_eq(tag_one, tag_stream, 16), "poly1305 split block refill");
+
+    /* Zero-length updates are harmless. */
+    zeroos_poly1305_init(&ctx, key);
+    zeroos_poly1305_update(&ctx, 0, 0);
+    zeroos_poly1305_update(&ctx, msg, sizeof(msg));
+    zeroos_poly1305_update(&ctx, msg, 0);
+    zeroos_poly1305_final(&ctx, tag_stream);
+    expect(bytes_eq(tag_one, tag_stream, 16), "poly1305 zero-length updates");
+
+    /* A different message must produce a different tag. */
+    msg[50] ^= 0x80;
+    zeroos_poly1305(key, msg, sizeof(msg), tag_stream);
+    expect(!bytes_eq(tag_one, tag_stream, 16), "poly1305 detects message change");
+}
+
+/* AEAD argument and bound guards, plus the empty-message and no-AAD paths. */
+static void test_aead_edges(void) {
+    uint8_t key[32], nonce[12], aad[12], tag[16], tag2[16];
+    uint8_t ct[64], pt[64], back[64];
+    uint32_t i;
+
+    hex_fill(key, "808182838485868788898a8b8c8d8e8f"
+                  "909192939495969798999a9b9c9d9e9f", 32);
+    hex_fill(nonce, "070000004041424344454647", 12);
+    hex_fill(aad, "50515253c0c1c2c3c4c5c6c7", 12);
+    for (i = 0; i < sizeof(pt); i++)
+        pt[i] = (uint8_t)(i + 1);
+
+    /* Empty plaintext with AAD: the tag must authenticate the AAD alone. */
+    expect(zeroos_aead_encrypt(key, nonce, aad, 12, 0, 0, ct, tag) ==
+               ZCRYPTO_OK,
+           "aead empty plaintext encrypt");
+    expect(zeroos_aead_decrypt(key, nonce, aad, 12, ct, 0, tag, back) ==
+               ZCRYPTO_OK,
+           "aead empty plaintext decrypt");
+
+    /* No AAD at all (NULL pointer, zero length) must be accepted. */
+    expect(zeroos_aead_encrypt(key, nonce, 0, 0, pt, sizeof(pt), ct, tag) ==
+               ZCRYPTO_OK,
+           "aead no-aad encrypt");
+    expect(zeroos_aead_decrypt(key, nonce, 0, 0, ct, sizeof(pt), tag, back) ==
+               ZCRYPTO_OK,
+           "aead no-aad decrypt");
+    expect(bytes_eq(back, pt, sizeof(pt)), "aead no-aad roundtrip");
+
+    /* Empty ciphertext with a NULL plaintext buffer is legal. */
+    expect(zeroos_aead_encrypt(key, nonce, 0, 0, 0, 0, ct, tag2) == ZCRYPTO_OK,
+           "aead empty message tag");
+    expect(zeroos_aead_decrypt(key, nonce, 0, 0, ct, 0, tag2, 0) ==
+               ZCRYPTO_OK,
+           "aead empty message decrypt with null output");
+
+    /* A zero-length AAD and a non-zero-length AAD over the same data must
+     * not produce the same tag: the lengths are bound into the MAC. */
+    expect(zeroos_aead_encrypt(key, nonce, aad, 12, 0, 0, ct, tag) ==
+               ZCRYPTO_OK,
+           "aead aad-only tag");
+    expect(!bytes_eq(tag, tag2, 16), "aead binds aad length into the tag");
+
+    /* Length bounds. */
+    expect(zeroos_aead_encrypt(key, nonce, aad, ZEROOS_CRYPTO_MAX_LEN + 1u, pt,
+                               sizeof(pt), ct, tag) == ZCRYPTO_ERR,
+           "aead rejects oversized aad");
+    expect(zeroos_aead_encrypt(key, nonce, aad, 12, pt,
+                               ZEROOS_CRYPTO_MAX_LEN + 1u, ct,
+                               tag) == ZCRYPTO_ERR,
+           "aead rejects oversized plaintext");
+
+    /* Missing required buffers. */
+    expect(zeroos_aead_encrypt(key, 0, aad, 12, pt, sizeof(pt), ct, tag) ==
+               ZCRYPTO_ERR,
+           "aead encrypt null nonce rejected");
+    expect(zeroos_aead_encrypt(key, nonce, aad, 12, pt, sizeof(pt), 0, tag) ==
+               ZCRYPTO_ERR,
+           "aead encrypt null ciphertext rejected");
+    expect(zeroos_aead_encrypt(key, nonce, aad, 12, 0, 8, ct, tag) ==
+               ZCRYPTO_ERR,
+           "aead encrypt null plaintext with length rejected");
+    expect(zeroos_aead_encrypt(key, nonce, aad, 12, pt, sizeof(pt), ct, 0) ==
+               ZCRYPTO_ERR,
+           "aead encrypt null tag rejected");
+    expect(zeroos_aead_decrypt(key, nonce, aad, 12, 0, sizeof(pt), tag, back) ==
+               ZCRYPTO_ERR,
+           "aead decrypt null ciphertext rejected");
+    expect(zeroos_aead_decrypt(key, nonce, aad, 12, ct, sizeof(pt), tag, 0) ==
+               ZCRYPTO_ERR,
+           "aead decrypt null plaintext with length rejected");
+    expect(zeroos_aead_decrypt(0, nonce, aad, 12, ct, sizeof(pt), tag, back) ==
+               ZCRYPTO_ERR,
+           "aead decrypt null key rejected");
+    expect(zeroos_aead_decrypt(key, 0, aad, 12, ct, sizeof(pt), tag, back) ==
+               ZCRYPTO_ERR,
+           "aead decrypt null nonce rejected");
+
+    /* Wrong nonce must fail authentication and zero the output. */
+    expect(zeroos_aead_encrypt(key, nonce, aad, 12, pt, sizeof(pt), ct, tag) ==
+               ZCRYPTO_OK,
+           "aead reference seal");
+    nonce[11] ^= 0x01;
+    for (i = 0; i < sizeof(back); i++)
+        back[i] = 0x5a;
+    expect(zeroos_aead_decrypt(key, nonce, aad, 12, ct, sizeof(pt), tag,
+                               back) == ZCRYPTO_AUTHFAIL,
+           "aead wrong nonce rejected");
+    expect(all_zero(back, sizeof(pt)), "aead wrong nonce zeroes output");
+    nonce[11] ^= 0x01;
+
+    /* In-place seal/open must round-trip. */
+    {
+        uint8_t buf[64], copy[64];
+        memcpy(copy, pt, sizeof(copy));
+        memcpy(buf, pt, sizeof(buf));
+        expect(zeroos_aead_encrypt(key, nonce, aad, 12, buf, sizeof(buf), buf,
+                                   tag) == ZCRYPTO_OK,
+               "aead in-place encrypt");
+        expect(zeroos_aead_decrypt(key, nonce, aad, 12, buf, sizeof(buf), tag,
+                                   buf) == ZCRYPTO_OK,
+               "aead in-place decrypt");
+        expect(bytes_eq(buf, copy, sizeof(buf)), "aead in-place roundtrip");
+    }
+}
+
 int main(void) {
     test_block();
     test_cipher();
+    test_chacha20_multiblock();
     test_poly1305();
+    test_poly1305_chunking();
     test_key_gen();
     test_aead();
+    test_aead_edges();
     printf("checks=%d failures=0\n", checks);
     return 0;
 }

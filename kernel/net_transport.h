@@ -6,6 +6,13 @@ enum net_tcp_state { TCP_CLOSED,TCP_LISTEN,TCP_SYN_SENT,TCP_SYN_RECEIVED,TCP_EST
 struct net_udp_view { uint16_t source_port,destination_port,length; const uint8_t *payload; uint16_t payload_length; };
 struct net_tcp_conn { enum net_tcp_state state; uint32_t snd_una,snd_nxt,rcv_nxt,retries,deadline; };
 int net_udp_parse(const uint8_t *segment,uint32_t available,struct net_udp_view *out);
+/* Returns 1 when the segment advanced the connection state, 0 when it was
+ * accepted but changed nothing, -1 when it is invalid for the current state,
+ * and -2 when it is an out-of-order data segment (ESTABLISHED only). A RST
+ * always closes the connection and reports 0. */
 int net_tcp_input(struct net_tcp_conn *c,uint8_t flags,uint32_t seq,uint32_t ack,uint32_t now,uint32_t timeout);
+/* Returns 1 when a retransmit is due (deadline reached, retry armed), 0 when
+ * the connection needs no timer work, and -1 when the retry limit is
+ * exhausted, in which case the connection is closed. */
 int net_tcp_timeout(struct net_tcp_conn *c,uint32_t now,uint32_t retry_limit,uint32_t next_timeout);
 #endif
