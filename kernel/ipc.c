@@ -344,7 +344,7 @@ int ipc_send_timeout(struct process *owner, zeroos_ipc_handle_t handle,
     uint64_t deadline=0;
 
     if (!process_can_use(owner) || !data || length==0 ||
-        length>ZEROOS_IPC_MAX_MESSAGE || (flags&~ZEROOS_IPC_VALID_FLAGS))
+        length>ZEROOS_IPC_MAX_MESSAGE || (flags&~ZEROOS_IPC_FLAG_NONBLOCK))
         return -ZEROOS_EINVAL;
     if (timeout_ticks!=ZEROOS_IPC_TIMEOUT_FOREVER) {
         deadline=timer_ticks()+timeout_ticks;
