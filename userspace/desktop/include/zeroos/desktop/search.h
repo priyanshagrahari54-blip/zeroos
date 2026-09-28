@@ -142,6 +142,11 @@ struct zd_search {
 };
 
 void zd_search_init(struct zd_search *search);
+/* Register a result source. Names identify providers, so a second
+ * registration under a name that is already registered is refused with
+ * -ZD_EBUSY rather than queried twice: the built-ins ("index", "apps") are
+ * registered by zd_search_init, so re-registering one would otherwise double
+ * its rows with no error anywhere. -ZD_ENOSPC when the table is full. */
 int zd_search_add_provider(struct zd_search *search,
                            const struct zd_search_provider *provider);
 int zd_search_add_index_listener(struct zd_search *search,

@@ -412,8 +412,18 @@ uint32_t zd_search_rank_merge(const struct zd_intent *intent,
 
 int zd_search_add_provider(struct zd_search *search,
                            const struct zd_search_provider *provider) {
+    uint32_t index;
     if (!search || !provider || !provider->name || !provider->query)
         return -ZD_EINVAL;
+    /* One provider per name. A second registration is not "another source",
+     * it is the same source queried twice, which silently doubles every row
+     * that source contributes -- and the built-ins are registered by init(),
+     * so a caller that re-registers one would not see an error anywhere
+     * else. Names are the identity the result rows report, so they are what
+     * is deduplicated here. */
+    for (index = 0; index < search->provider_count; ++index)
+        if (zd_str_equal(search->providers[index].name, provider->name))
+            return -ZD_EBUSY;
     if (search->provider_count >= ZD_SEARCH_MAX_PROVIDERS)
         return -ZD_ENOSPC;
     search->providers[search->provider_count] = *provider;
