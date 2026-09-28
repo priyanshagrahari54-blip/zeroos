@@ -153,8 +153,9 @@ This is strong evidence that the fixes remove the dominant race. It is
 not proof that no rarer SMP race remains, and it is not a hardware claim.
 `e5fdc31` smp2 with two concurrent QEMUs also passed 100/100.
 Oversubscribing the host hides the race, so the harness boots sequentially.
-CI since the fixes: `ac5ed3d`, `2731c7c`, `6b84ec1` (push+PR) and
-`2855b2a` (push+PR), 6/6 green.
+CI since the fixes: `ac5ed3d`, `2731c7c`, `6b84ec1` (push+PR),
+`2855b2a` (push+PR), `8f3b373`, `65a604d` (push+PR) and `22ed225`
+(push+PR). Every run was green.
 
 Reproduce:
 
@@ -162,6 +163,19 @@ Reproduce:
     LIMINE_DIR=/path/to/limine-v8-binary python3 tools/stress/mkiso-limine.py build/zeroos.elf build/zeroos-limine.iso
     tools/stress/boot-loop.sh smp4 build/zeroos-limine.iso 100
     tools/stress/boot-loop.sh storage build/zeroos-limine.iso 100
+
+Orderly shutdown / ACPI S5 and the CI SMP gate (`22ed225`, 2026-09-28):
+
+| Evidence | Result |
+|---|---|
+| CI `22ed225` push (run 36362586895) and PR (run 36362589939) | green, including the new steps "Clean shutdown certification" (QEMU must exit by itself; both ZJFS volumes `state=CLEAN journal=clean`; fsck clean without repair) and "SMP race regression gate" (8 sequential `-smp 4` boots) |
+| Local q35 `-smp 4` AHCI+NVMe, `zeroos.shutdown=poweroff-after-cert`, 3 consecutive boots on the same disks | QEMU exit 0 each time; boot counter 1→2→3; both volumes CLEAN/clean journal; fsck clean without repair |
+| Local `-machine pc,acpi=off` | S5 reported unavailable; probe sees ENOTSUP; automatic power-off refused (`-95`) with zero unmounts; boot completes |
+| Local regression on this change | plain smp4 40/40 and q35 storage 30/30 passed all CI boot patterns |
+
+Reproduce the power-off boot with a Limine ISO:
+
+    python3 tools/stress/mkiso-limine.py build/zeroos.elf build/p.iso "zeroos.shutdown=poweroff-after-cert"
 
 ## 4. Stage 5 part support matrix
 
