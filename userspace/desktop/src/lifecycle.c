@@ -132,8 +132,17 @@ int zd_lifecycle_dispatch(struct zd_lifecycle *lifecycle,
     uint32_t listener;
     (void)now_ns;
 
-    if (!lifecycle || (int)event >= ZD_LIFECYCLE_EVENT_COUNT || event < 0)
+    if (!lifecycle)
         return -ZD_EINVAL;
+    if ((int)event < 0 || (int)event >= ZD_LIFECYCLE_EVENT_COUNT) {
+        /* An id that is not one of the events is the plainest kind of
+         * illegal event, and this counter is how the machine tells a
+         * caller that something is feeding it nonsense -- refusing the
+         * event without counting it hides exactly the caller it exists
+         * to expose. */
+        ++lifecycle->illegal_event_count;
+        return -ZD_EINVAL;
+    }
     previous = lifecycle->state;
     next = (enum zd_lifecycle_state)lifecycle_table[previous][event];
     if ((int)next < 0) {
