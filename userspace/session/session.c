@@ -2898,7 +2898,9 @@ int session_main(void) {
         return fail("bar dnd state", 0);
     /* The workspace indicator follows the manager and refuses indices it
      * cannot show. */
-    session_bar.workspace_count = wm.workspace_count;
+    if (zd_bar_set_workspace_count(&session_bar, wm.workspace_count) != 0 ||
+        session_bar.workspace_count != wm.workspace_count)
+        return fail("bar workspace count", (int64_t)wm.workspace_count);
     if (zd_bar_set_workspace(&session_bar, wm.workspace_count) != -22)
         return fail("bar workspace range", 0);
     if (zd_bar_set_workspace(&session_bar, wm.active_workspace) != 0)

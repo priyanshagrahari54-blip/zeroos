@@ -7,6 +7,12 @@
 
 #include <stdint.h>
 
+/* The bar is a view of the window manager's workspace set, so it can
+ * show no more workspaces than the manager can hold.  The suite asserts
+ * the two limits are the same number, so they cannot drift apart
+ * quietly. */
+#define ZD_BAR_MAX_WORKSPACES 8
+
 enum zd_bar_applet {
     ZD_BAR_APPLET_MENU = 0,   /* launcher button */
     ZD_BAR_APPLET_WORKSPACES, /* workspace indicator */
@@ -85,6 +91,12 @@ int zd_bar_activate_focused(struct zd_bar *b, int *action_out, int *arg_out);
 
 int zd_bar_toggle_set(struct zd_bar *b, int toggle_id, int on);
 int zd_bar_set_workspace(struct zd_bar *b, uint32_t idx); /* -22 if OOR */
+/* Resize the workspace set the indicator shows (1..ZD_BAR_MAX_WORKSPACES).
+ * Shrinking pulls the active workspace back inside it, because an
+ * indicator pointing at a workspace the manager does not have is a lie
+ * about where the user is.  -22 on 0, on more than the manager can hold,
+ * or on a bar that is not there. */
+int zd_bar_set_workspace_count(struct zd_bar *b, uint32_t count);
 void zd_bar_set_title(struct zd_bar *b, const char *title);
 void zd_bar_set_notif_count(struct zd_bar *b, uint32_t n);
 

@@ -3,6 +3,7 @@
 #include "test_harness.h"
 #include <zeroos/desktop/bar.h>
 #include <zeroos/desktop/capability.h>
+#include <zeroos/desktop/window.h>
 
 static int deny_wifi(void *c, int id, int on) {
     int *n = (int *)c;
@@ -54,13 +55,39 @@ void zd_test_bar_suite(void) {
     rc = zd_bar_click(&bar, bar.width_logical + 10, &action, &arg);
     ZD_CHECK(rc == -2 && action == ZD_BAR_ACT_NONE);
     ZD_CHECK(zd_bar_click(&bar, 0, 0, &arg) == -22);
-    /* workspace cycling on click */
-    bar.workspace_count = 3;
+    /* Workspace cycling on click.  The count has a setter now: it used to
+     * be reachable only by writing the field, and nothing in the module
+     * could ever set it above the 1 it starts at -- so the indicator was
+     * showing one workspace and cycling to workspace 0 forever. */
+    ZD_CHECK(ZD_BAR_MAX_WORKSPACES == ZD_MAX_WORKSPACES);
+    ZD_CHECK_OK(zd_bar_set_workspace_count(&bar, 3));
+    ZD_CHECK_EQ(bar.workspace_count, 3U);
     rc = zd_bar_click(&bar, bar.applets[ZD_BAR_APPLET_WORKSPACES].x,
                       &action, &arg);
     ZD_CHECK(rc == 0 && action == ZD_BAR_ACT_SWITCH_WORKSPACE && arg == 1);
     ZD_CHECK(zd_bar_set_workspace(&bar, 3) == -22);
     ZD_CHECK(zd_bar_set_workspace(&bar, 2) == 0 && bar.workspace == 2);
+    /* the cycle wraps: 2 -> 0 -> 1 ... */
+    rc = zd_bar_click(&bar, bar.applets[ZD_BAR_APPLET_WORKSPACES].x,
+                      &action, &arg);
+    ZD_CHECK(rc == 0 && action == ZD_BAR_ACT_SWITCH_WORKSPACE && arg == 0);
+    if (action == ZD_BAR_ACT_SWITCH_WORKSPACE)
+        ZD_CHECK_OK(zd_bar_set_workspace(&bar, (uint32_t)arg));
+    rc = zd_bar_click(&bar, bar.applets[ZD_BAR_APPLET_WORKSPACES].x,
+                      &action, &arg);
+    ZD_CHECK(rc == 0 && arg == 1);
+    /* a count of zero, or more than the manager can hold, is refused */
+    ZD_CHECK_ERR(zd_bar_set_workspace_count(&bar, 0), 22);
+    ZD_CHECK_ERR(zd_bar_set_workspace_count(&bar, ZD_BAR_MAX_WORKSPACES + 1),
+                 22);
+    ZD_CHECK_EQ(bar.workspace_count, 3U); /* refusals change nothing */
+    /* shrinking pulls the active workspace back inside the set */
+    ZD_CHECK_OK(zd_bar_set_workspace_count(&bar, ZD_BAR_MAX_WORKSPACES));
+    ZD_CHECK_OK(zd_bar_set_workspace(&bar, ZD_BAR_MAX_WORKSPACES - 1));
+    ZD_CHECK_OK(zd_bar_set_workspace_count(&bar, 2));
+    ZD_CHECK_EQ(bar.workspace, 1U);
+    ZD_CHECK(zd_bar_set_workspace(&bar, 2) == -22);
+    ZD_CHECK_ERR(zd_bar_set_workspace_count(0, 2), 22);
 
     /* keyboard focus traversal covers every applet once */
     {

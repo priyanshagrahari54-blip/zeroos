@@ -204,6 +204,15 @@ int zd_bar_set_workspace(struct zd_bar *b, uint32_t idx) {
     return 0;
 }
 
+int zd_bar_set_workspace_count(struct zd_bar *b, uint32_t count) {
+    if (!b || count == 0 || count > ZD_BAR_MAX_WORKSPACES)
+        return b_bad_int();
+    b->workspace_count = count;
+    if (b->workspace >= count)
+        b->workspace = count - 1U;
+    return 0;
+}
+
 void zd_bar_set_title(struct zd_bar *b, const char *title) {
     if (b)
         b_copy(b->title, sizeof(b->title), title);
