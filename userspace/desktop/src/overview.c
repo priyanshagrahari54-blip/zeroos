@@ -13,6 +13,8 @@ static int ov_layout(struct zd_overview *o) {
     uint32_t cols, rows, i;
     uint32_t cw, ch;
     uint32_t gap = o->gap;
+    uint64_t total_gap_x;
+    uint64_t total_gap_y;
     if (!n) {
         o->cols = o->rows = 0;
         return 0;
@@ -23,11 +25,13 @@ static int ov_layout(struct zd_overview *o) {
     if (cols == 0)
         cols = 1;
     rows = (n + cols - 1) / cols;
-    if ((uint32_t)o->area.w <= 2 * gap + cols ||
-        (uint32_t)o->area.h <= 2 * gap + rows)
+    total_gap_x = (uint64_t)gap * (uint64_t)(cols + 1U);
+    total_gap_y = (uint64_t)gap * (uint64_t)(rows + 1U);
+    if ((uint64_t)(uint32_t)o->area.w <= total_gap_x ||
+        (uint64_t)(uint32_t)o->area.h <= total_gap_y)
         return -22; /* degenerate area for this grid */
-    cw = ((uint32_t)o->area.w - gap * (cols + 1)) / cols;
-    ch = ((uint32_t)o->area.h - gap * (rows + 1)) / rows;
+    cw = (uint32_t)(((uint64_t)(uint32_t)o->area.w - total_gap_x) / cols);
+    ch = (uint32_t)(((uint64_t)(uint32_t)o->area.h - total_gap_y) / rows);
     if (cw == 0 || ch == 0)
         return -22;
     for (i = 0; i < n; ++i) {

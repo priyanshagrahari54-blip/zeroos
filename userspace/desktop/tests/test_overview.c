@@ -116,6 +116,11 @@ void zd_test_overview_suite(void) {
 
     /* degenerate area for a grid -> -22 (no zero-size thumbs) */
     {
+        ZD_CHECK_OK(zd_overview_open(&o, area, 0x80000000U));
+        ids[0] = 777;
+        ZD_CHECK_EQ(zd_overview_set_windows(&o, ids, 1), -22);
+    }
+    {
         struct zd_rect tiny;
         tiny.x = 0;
         tiny.y = 0;
