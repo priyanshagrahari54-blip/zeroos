@@ -130,7 +130,10 @@ static int consume_token(struct zd_notify *notify, const char *app_id,
 static struct zd_notification *find_notification(struct zd_notify *notify,
                                                  zd_notification_id id) {
     uint32_t index;
-    if (id == ZD_NOTIFICATION_INVALID)
+    /* Callers check the centre in their own time, but this is the first
+     * thing they all do with it, so it answers for a centre that is not
+     * there instead of reading through it. */
+    if (!notify || id == ZD_NOTIFICATION_INVALID)
         return (struct zd_notification *)0;
     for (index = 0; index < ZD_NOTIFY_MAX; ++index)
         if (notify->items[index].in_use && notify->items[index].id == id)
@@ -250,8 +253,11 @@ int zd_notify_post(struct zd_notify *notify, const struct zd_notify_post *post,
 }
 
 int zd_notify_dismiss(struct zd_notify *notify, zd_notification_id id) {
-    struct zd_notification *item = find_notification(notify, id);
-    if (!notify || !item)
+    struct zd_notification *item;
+    if (!notify)
+        return -ZD_ENOENT;
+    item = find_notification(notify, id);
+    if (!item)
         return -ZD_ENOENT;
     if (item->state == ZD_NOTIFY_STATE_DISMISSED)
         return -ZD_ESTATE;
@@ -287,8 +293,11 @@ uint32_t zd_notify_dismiss_group(struct zd_notify *notify, const char *app_id,
 
 int zd_notify_defer(struct zd_notify *notify, zd_notification_id id,
                     uint64_t now_ns, uint64_t defer_for_ns) {
-    struct zd_notification *item = find_notification(notify, id);
-    if (!notify || !item)
+    struct zd_notification *item;
+    if (!notify)
+        return -ZD_ENOENT;
+    item = find_notification(notify, id);
+    if (!item)
         return -ZD_ENOENT;
     if (defer_for_ns == 0)
         return -ZD_EINVAL;

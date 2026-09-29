@@ -278,6 +278,30 @@ static void test_priority_names(void) {
                     "?") == 0);
 }
 
+/* A centre that does not exist has to refuse the request rather than be
+ * read through. dismiss() and defer() looked the item up first and
+ * checked the centre afterwards, so a notification id that was merely
+ * plausible -- not the invalid one, which short-circuits -- was enough
+ * to dereference a null centre on the way to reporting "not found". */
+static void test_null_centre_is_refused(void) {
+    ZD_CHECK_ERR(zd_notify_dismiss(0, 1), ZD_ENOENT);
+    ZD_CHECK_ERR(zd_notify_defer(0, 1, 0, 1000), ZD_ENOENT);
+    ZD_CHECK(zd_notify_get(0, 1) == 0);
+    /* the invalid id is still refused the same way, for the same reason */
+    ZD_CHECK_ERR(zd_notify_dismiss(0, ZD_NOTIFICATION_INVALID), ZD_ENOENT);
+    ZD_CHECK_ERR(zd_notify_defer(0, ZD_NOTIFICATION_INVALID, 0, 1000),
+                 ZD_ENOENT);
+    ZD_CHECK(zd_notify_get(0, ZD_NOTIFICATION_INVALID) == 0);
+    /* a centre that exists refuses an id it does not hold */
+    {
+        struct zd_notify n;
+        zd_notify_init(&n);
+        ZD_CHECK_ERR(zd_notify_dismiss(&n, 1), ZD_ENOENT);
+        ZD_CHECK_ERR(zd_notify_defer(&n, 1, 0, 1000), ZD_ENOENT);
+        ZD_CHECK(zd_notify_get(&n, 1) == 0);
+    }
+}
+
 void zd_test_notify_suite(void) {
     printf(" suite: notifications\n");
     ZD_RUN(test_post_and_priority_ordering);
@@ -288,4 +312,5 @@ void zd_test_notify_suite(void) {
     ZD_RUN(test_priority_names);
     ZD_RUN(test_grouping);
     ZD_RUN(test_flood_stress);
+    ZD_RUN(test_null_centre_is_refused);
 }
