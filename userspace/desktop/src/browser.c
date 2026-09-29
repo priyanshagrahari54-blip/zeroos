@@ -44,6 +44,12 @@ int zd_browser_open(struct zd_browser *browser, uint32_t content_bytes,
         if (!browser->tabs[i].used) {
             struct zd_tab *t = &browser->tabs[i];
             uint32_t j;
+            /* A slot is recycled, but the tab that lands in it is a new
+             * tab: its crash and reload history starts here. Left alone
+             * it inherits whatever the previous occupant did, so a fresh
+             * tab reports crashes it never had -- and reloading it counts
+             * as a crash recovery in the browser's own statistics. */
+            zd_memset(t, 0, sizeof(*t));
             for (j = 0; j < ZD_BROWSER_MAX_TABS; ++j)
                 if (browser->tabs[j].used &&
                     browser->tabs[j].id >= next_id)

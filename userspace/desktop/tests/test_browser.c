@@ -39,6 +39,35 @@ static void test_open_close_bounds(void) {
     ZD_CHECK_EQ(zd_browser_open(&b, 0, 0), -ZD_EINVAL);
 }
 
+static void test_slot_reuse_starts_a_fresh_history(void) {
+    struct zd_browser b;
+    uint32_t first = 0;
+    uint32_t second = 0;
+    uint32_t index;
+
+    zd_browser_init(&b, 100, 300, 900);
+    ZD_CHECK_OK(zd_browser_open(&b, 4096, &first));
+    ZD_CHECK_OK(zd_browser_event(&b, first, ZD_TAB_EV_RENDERER_CRASH, 10));
+    ZD_CHECK_OK(zd_browser_event(&b, first, ZD_TAB_EV_RELOAD, 11));
+    ZD_CHECK_EQ(b.stats.crashes, 1u);
+    ZD_CHECK_EQ(b.stats.crash_recoveries, 1u);
+    ZD_CHECK_OK(zd_browser_close(&b, first));
+
+    /* The slot comes back, but the tab that lands in it is not the tab
+     * that left it: a new document, and no history behind it. */
+    ZD_CHECK_OK(zd_browser_open(&b, 2048, &second));
+    for (index = 0; index < ZD_BROWSER_MAX_TABS; ++index)
+        if (b.tabs[index].used && b.tabs[index].id == second) {
+            ZD_CHECK_EQ(b.tabs[index].crashes, 0u);
+            ZD_CHECK_EQ(b.tabs[index].reloads, 0u);
+            ZD_CHECK_EQ(b.tabs[index].content_bytes, 2048u);
+        }
+    /* Reloading a healthy new tab is a reload, not a crash recovery. */
+    ZD_CHECK_OK(zd_browser_event(&b, second, ZD_TAB_EV_DISCARD_NOW, 12));
+    ZD_CHECK_OK(zd_browser_event(&b, second, ZD_TAB_EV_RELOAD, 13));
+    ZD_CHECK_EQ(b.stats.crash_recoveries, 1u);
+}
+
 static void test_ladder_transitions(void) {
     struct zd_browser b;
     uint32_t id = 0;
@@ -206,6 +235,7 @@ static void test_blur_and_focus_single(void) {
 void zd_test_browser_suite(void) {
     printf("  suite: browser tab lifecycle\n");
     ZD_RUN(test_open_close_bounds);
+    ZD_RUN(test_slot_reuse_starts_a_fresh_history);
     ZD_RUN(test_ladder_transitions);
     ZD_RUN(test_crash_recovery);
     ZD_RUN(test_explicit_discard_and_clock);
