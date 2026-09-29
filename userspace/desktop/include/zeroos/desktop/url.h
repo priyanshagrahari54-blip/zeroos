@@ -2,7 +2,11 @@
  * Strict validation with security defaults: only http/https (and
  * explicit internal pages), no javascript:/data: scheme smuggling,
  * no control characters, bounded components, port range checks.
- * Percent-encoding validated; canonical rebuild available. */
+ * Percent-encoding validated.  There is no canonicalising rebuild: the
+ * parser keeps the components exactly as they were written (scheme and
+ * host are case-insensitive to parse but are not rewritten), so a caller
+ * that needs a comparable form must define its own -- the parser makes
+ * no claim it would then have to keep. */
 #ifndef ZEROOS_DESKTOP_URL_H
 #define ZEROOS_DESKTOP_URL_H
 
