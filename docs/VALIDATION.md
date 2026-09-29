@@ -167,3 +167,10 @@ is the `98ba0ca` `evacuation failed (stage=7)` row.
   untested matrix entries (Section 4 column 3 must stay honest).
 - Real-hardware and soak rows close only with actual runs, not
   extrapolation from QEMU.
+
+
+## 10-stage validation alignment
+
+Validation maps to the 10-stage master plan. Stages 6-10 require explicit evidence for security enforcement, signed and rollback-capable updates, recovery, accelerated GPU/media/browser paths, compatibility runtimes, ZERO AI permission and lifecycle behavior, G560-class hardware, 1080p media where supported, actual network-link performance, thermal/power soak, and release gates.
+
+Every result records implementation status, test type (host/QEMU/hardware), hardware/configuration, commit, command, measured result, and unsupported conditions. Roadmap intent is never validation evidence. Detection is never operational support.
