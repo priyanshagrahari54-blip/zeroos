@@ -48,6 +48,8 @@ static int fw_valid_tmpl(const struct zd_fw_rule *t) {
         if ((unsigned char)t->app[i] < 0x21)
             return 0; /* no control/space in app ids */
     }
+    if (i == ZD_FW_APP)
+        return 0; /* app id must be NUL-terminated inside the fixed buffer */
     return 1;
 }
 

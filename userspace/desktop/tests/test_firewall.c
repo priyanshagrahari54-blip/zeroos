@@ -107,7 +107,10 @@ void zd_test_firewall_suite(void) {
     ZD_CHECK(zd_fw_add(&fw, &r, 0) == -22);
     r = rule(ZD_FW_OUT, ZD_FW_TCP, ZD_FW_ALLOW, 500, 100, 0); /* lo>hi */
     ZD_CHECK(zd_fw_add(&fw, &r, 0) == -22);
-    ZD_CHECK(fw.stats.rules_rejected >= 3U);
+    r = rule(ZD_FW_OUT, ZD_FW_TCP, ZD_FW_ALLOW, 0, 0, 0);
+    memset(r.app, 'x', sizeof(r.app)); /* no terminator in fixed field */
+    ZD_CHECK(zd_fw_add(&fw, &r, 0) == -22);
+    ZD_CHECK(fw.stats.rules_rejected >= 4U);
 
     /* invalid flows */
     ZD_CHECK(zd_fw_decide(&fw, 0) == -22);
