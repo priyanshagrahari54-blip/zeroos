@@ -268,8 +268,12 @@ static void test_rename_copy_move_peek(void) {
     ZD_CHECK_EQ(zd_fm_rename(&fm, ZD_FM_PERM_WRITE, "a.txt", "../b"), -22);
     ZD_CHECK_EQ(zd_fm_copy(&fm, ZD_FM_PERM_WRITE, "a.txt", "relative",
                            "c.txt"), -22);
+    ZD_CHECK_EQ(zd_fm_copy(&fm, ZD_FM_PERM_WRITE, "a.txt", "/dest/../escape",
+                           "c.txt"), -22);
     ZD_CHECK_EQ(zd_fm_move(&fm, ZD_FM_PERM_WRITE, "a.txt", "", "c.txt"), -22);
-    ZD_CHECK(fm.stats.rejected >= 4U);
+    ZD_CHECK_EQ(zd_fm_move(&fm, ZD_FM_PERM_WRITE, "a.txt", "/dest/..",
+                           "c.txt"), -22);
+    ZD_CHECK(fm.stats.rejected >= 6U);
 
     /* preview reads real content and terminates it */
     memset(preview, 'x', sizeof(preview));
@@ -408,10 +412,14 @@ static void test_batch_operations(void) {
     ZD_CHECK_EQ(zd_fm_batch_remove(&fm, ZD_FM_PERM_READ, 0, &result), -1);
     ZD_CHECK_EQ(fm.stats.ops_perm_denied, 1U);
     ZD_CHECK_EQ(op_len, 0);
-    /* relative target dir rejected for copy/move */
+    /* relative/traversal target dirs rejected for copy/move */
     ZD_CHECK_EQ(zd_fm_batch_copy(&fm, ZD_FM_PERM_WRITE, "dest", 0, &result),
                 -22);
+    ZD_CHECK_EQ(zd_fm_batch_copy(&fm, ZD_FM_PERM_WRITE, "/dest/../escape", 0,
+                                 &result), -22);
     ZD_CHECK_EQ(zd_fm_batch_move(&fm, ZD_FM_PERM_WRITE, "", 0, &result), -22);
+    ZD_CHECK_EQ(zd_fm_batch_move(&fm, ZD_FM_PERM_WRITE, "/dest/..", 0,
+                                 &result), -22);
 
     /* ---- directory policy: a recursive delete is never implied ---- */
     ZD_CHECK_OK(zd_fm_refresh(&fm));

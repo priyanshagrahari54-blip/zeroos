@@ -445,11 +445,7 @@ int zd_fm_mkdir(struct zd_fm *fm, uint32_t actor_perms,
  * than truncated so the destination is never a half-written file. */
 
 static int f_dir_ok(const char *dir) {
-    uint32_t n;
-    if (!dir || dir[0] != '/')
-        return 0;
-    n = f_len(dir);
-    return n > 0 && n < ZD_FM_PATH;
+    return f_path_ok(dir);
 }
 
 static int f_join_dir(const char *dir, const char *name, char *out,
