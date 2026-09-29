@@ -29,6 +29,14 @@ struct zd_vault {
      * reuse under one key is what breaks ChaCha20-Poly1305. */
     uint32_t wraps;
     struct zd_vault_entry entries[ZD_VAULT_MAX];
+    /* Refusals are not counted uniformly and the split is deliberate.
+     * `rejected` counts a request the vault refused on its own terms: a
+     * malformed argument, a put against a locked vault, and a put that
+     * would have had to repeat a nonce because the epoch is exhausted.
+     * A get against a locked vault is `get_denied` instead. A full vault
+     * (-28), an unknown name (-2) and a short output buffer (-22) are
+     * capacity and lookup outcomes rather than refusals, and count
+     * nothing. */
     struct {
         uint32_t puts, gets, get_denied, auth_failures, wipes,
                  rejected;
