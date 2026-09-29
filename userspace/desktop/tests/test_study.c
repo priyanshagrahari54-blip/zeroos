@@ -127,6 +127,12 @@ void zd_test_study_suite(void) {
     ZD_CHECK_EQ(c->ease, 230);         /* AGAIN drops 20 */
     ZD_CHECK_EQ(c->lapses, 1);         /* AGAIN from interval 21 = lapse */
     ZD_CHECK(c->reps == 5);
+    /* Relearned tomorrow, not re-shown in the same pass: due_day lands a
+     * day out, so a caller draining next_due() does not get the card it
+     * just graded handed back. The header used to call this "repeat
+     * today", which is the comment a caller would have believed. */
+    ZD_CHECK_EQ(c->due_day, s.day + 1);
+    ZD_CHECK(zd_study_next_due(&s) != c);
 
     /* grade errors */
     ZD_CHECK(zd_study_grade(&s, "nope", ZD_STUDY_GOOD) == -2);
