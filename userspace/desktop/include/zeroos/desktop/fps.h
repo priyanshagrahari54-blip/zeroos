@@ -9,7 +9,6 @@
 #include <stdint.h>
 
 #define ZD_FPS_RING 128
-#define ZD_FPS_BUCKETS 8 /* <=4,8,12,16,20,25,33,over ms */
 
 enum zd_perf_profile {
     ZD_PERF_LOW_LATENCY = 0, /* 8 ms budget  (~120 fps) */
@@ -18,7 +17,7 @@ enum zd_perf_profile {
 };
 
 struct zd_fps {
-    uint64_t stamp[ZD_FPS_RING];   /* last frame timestamps (ns) */
+    uint64_t stamp[ZD_FPS_RING];   /* last frame timestamps (ms) */
     uint64_t frame_ms[ZD_FPS_RING];/* last frame durations (ms) */
     uint32_t head;                 /* next write slot */
     uint32_t count;                /* samples stored (<= ring) */
