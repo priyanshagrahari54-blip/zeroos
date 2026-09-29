@@ -235,6 +235,22 @@ Stage 5 implemented contracts:
   to `zd_ui_condition_from_rc`; `zd_ui_condition_from_vfs_rc` is the only
   supported VFS-error -> UI-condition path (a VFS `-ENOENT` fed to the
   `ZD_*` mapper renders as LOW_RESOURCE instead of EMPTY).
+
+  What that sentence does **not** say is that every other core uses
+  `-ZD_E*`: the enum stops at ten and has no `EEXIST`, no `ENOTDIR` and no
+  unsupported-operation code, so the cores that need them — `url`,
+  `scan`, `sandbox`, `capability`, `firewall`, `bar`, `formula`, `pdf`,
+  `nav`, `notes`, `study`, `downloads`, `eco`, `gaming`, `fps`, `media`,
+  `ocr`, `overview`, `perfcenter`, `privacy`, `snapshot`, `term`, `vault`,
+  `dict`, `clipboard`, `launcher`, `update` (rejected events) — return
+  POSIX numbers and document them in their own headers. `providers.c`
+  inverts the stated boundary inside one file: the commands provider uses
+  POSIX (`-17` duplicate name, `-28` table full) while the files provider
+  it sits next to uses `-ZD_EINVAL`. Nothing renders either through the
+  wrong mapper today — the only `zd_ui_condition_from_rc` callers are the
+  suites, and the session feeds it nothing but its own return codes — but
+  a caller that trusted the blanket statement above would misread it, so
+  the rule is the per-module header, not this paragraph.
 - Every host suite is also rebuilt under AddressSanitizer +
   UndefinedBehaviorSanitizer with `-fno-sanitize-recover=all`
   (`make sanitizer-check`, part of `make check`), so an out-of-bounds
