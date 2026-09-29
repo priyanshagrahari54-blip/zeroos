@@ -77,6 +77,26 @@ static void test_focus_traversal(void) {
                 ++focused_flags;
         ZD_CHECK_EQ(focused_flags, 1U);
     }
+    /* set_states may change FOCUSED, but focus is still a singleton owner:
+     * it must clear the previous node and reject impossible focused states. */
+    ZD_CHECK_OK(zd_a11y_set_states(&a11y, ids[1],
+                                   ZD_A11Y_FOCUSABLE | ZD_A11Y_FOCUSED));
+    ZD_CHECK_EQ(zd_a11y_focused(&a11y), ids[1]);
+    ZD_CHECK_OK(zd_a11y_set_states(&a11y, ids[2],
+                                   ZD_A11Y_FOCUSABLE | ZD_A11Y_FOCUSED));
+    ZD_CHECK_EQ(zd_a11y_focused(&a11y), ids[2]);
+    ZD_CHECK(!(zd_a11y_node(&a11y, ids[1])->states & ZD_A11Y_FOCUSED));
+    ZD_CHECK_ERR(zd_a11y_set_states(&a11y, ids[3],
+                                    ZD_A11Y_FOCUSED | ZD_A11Y_HIDDEN),
+                 ZD_ESTATE);
+    {
+        uint32_t focused_flags = 0;
+        for (index = 0; index < ZD_A11Y_MAX_NODES; ++index)
+            if (a11y.nodes[index].in_use &&
+                (a11y.nodes[index].states & ZD_A11Y_FOCUSED))
+                ++focused_flags;
+        ZD_CHECK_EQ(focused_flags, 1U);
+    }
     /* Reverse traversal lands on a different node then continues. */
     {
         uint32_t current = zd_a11y_focused(&a11y);
