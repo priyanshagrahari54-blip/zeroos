@@ -117,8 +117,17 @@ static uint64_t kvsnprintf(char *buffer, uint64_t size, const char *format,
             pad='0';
             ++format;
         }
-        while (*format>='0' && *format<='9')
-            width=width*10+(*format++-'0');
+        while (*format>='0' && *format<='9') {
+            int digit=*format++-'0';
+            /* Every format string in the kernel is a literal with a small
+             * width, but the accumulator is `int` and this loop consumes
+             * whatever digits it finds: a width long enough to overflow is
+             * signed-overflow UB before it is ever used, and padding more
+             * than a megabyte would only fill the caller's buffer anyway.
+             * Keep consuming the digits, stop growing the value. */
+            if (width < (1<<20))
+                width=width*10+digit;
+        }
         while (*format=='l') {
             ++longness;
             ++format;

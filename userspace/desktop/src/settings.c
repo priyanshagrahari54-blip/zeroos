@@ -23,36 +23,58 @@ int zd_settings_register(struct zd_settings *settings,
     struct zd_setting_def *slot;
     if (!settings || !def || !def->key || !*def->key)
         return -ZD_EINVAL;
+    if (zd_str_length(def->key) >= ZD_SETTINGS_KEY_CAP)
+        return -ZD_EOVERFLOW;
     if (settings->count >= ZD_SETTINGS_MAX_KEYS)
         return -ZD_ENOSPC;
     if (settings_find(settings, def->key) >= 0)
         return -ZD_EBUSY;
     if ((int)def->type < ZD_SETTING_BOOL || (int)def->type > ZD_SETTING_STRING)
         return -ZD_EINVAL;
-    if (def->type == ZD_SETTING_INT && def->min_value > def->max_value)
+    if (def->type == ZD_SETTING_BOOL &&
+        def->default_value != 0 && def->default_value != 1)
         return -ZD_EINVAL;
-    if (def->type == ZD_SETTING_ENUM &&
-        (def->enum_count == 0 || def->enum_count > ZD_SETTINGS_MAX_ENUM))
+    if (def->type == ZD_SETTING_INT &&
+        (def->min_value > def->max_value ||
+         def->default_value < def->min_value ||
+         def->default_value > def->max_value))
         return -ZD_EINVAL;
-    if (def->type == ZD_SETTING_STRING && !def->default_string)
-        return -ZD_EINVAL;
+    if (def->type == ZD_SETTING_ENUM) {
+        uint32_t enum_index;
+        int default_found = 0;
+        if (def->enum_count == 0 || def->enum_count > ZD_SETTINGS_MAX_ENUM)
+            return -ZD_EINVAL;
+        for (enum_index = 0; enum_index < def->enum_count; ++enum_index)
+            if (def->enum_values[enum_index] == def->default_value)
+                default_found = 1;
+        if (!default_found)
+            return -ZD_EINVAL;
+    }
+    if (def->type == ZD_SETTING_STRING &&
+        (!def->default_string ||
+         zd_str_length(def->default_string) >= ZD_SETTINGS_STRING_CAP))
+        return -ZD_EOVERFLOW;
     if (def->dep_count > ZD_SETTINGS_MAX_DEPS)
         return -ZD_EINVAL;
 
     slot = &settings->defs[settings->count];
     *slot = *def;
-    /* Normalize key ownership into the store (defs may be stack copies). */
-    {
-        static char key_storage[ZD_SETTINGS_MAX_KEYS][ZD_SETTINGS_KEY_CAP];
-        zd_str_copy(key_storage[settings->count], ZD_SETTINGS_KEY_CAP, def->key);
-        slot->key = key_storage[settings->count];
-    }
+    /* Normalize key ownership into this store (defs may be stack
+     * copies) -- and into *this* store only, so a second store cannot
+     * rename the keys of the first. */
+    zd_str_copy(settings->keys[settings->count], ZD_SETTINGS_KEY_CAP,
+                def->key);
+    slot->key = settings->keys[settings->count];
     zd_memset(&settings->values[settings->count], 0,
               sizeof(settings->values[settings->count]));
     settings->values[settings->count].number = def->default_value;
-    if (def->type == ZD_SETTING_STRING)
-        zd_str_copy(settings->values[settings->count].text,
+    if (def->type == ZD_SETTING_STRING) {
+        zd_str_copy(settings->string_defaults[settings->count],
                     ZD_SETTINGS_STRING_CAP, def->default_string);
+        slot->default_string = settings->string_defaults[settings->count];
+        zd_str_copy(settings->values[settings->count].text,
+                    ZD_SETTINGS_STRING_CAP, slot->default_string);
+    }
     settings->values[settings->count].overridden = 0;
     ++settings->count;
     return 0;
@@ -377,6 +399,28 @@ struct settings_import_staging {
     uint32_t unknown_dropped;
 };
 
+/* Bounds check BEFORE the multiply, not after.
+ *
+ * The previous form accumulated first and then rejected anything above
+ * INT64_MAX. Because the accumulator is uint64, the multiply wraps well
+ * before the comparison runs, and a wrap can land back under the limit:
+ * "36893488147419103240" reached magnitude 3689348814741910324 (legal),
+ * whose *10 wraps to 8, and was then accepted as the value 8. A settings
+ * import that silently stores 8 for a number the user wrote as 3.6e19 is
+ * worse than a rejected import, which the caller already handles
+ * transactionally.
+ *
+ * The negative range reaches one further than the positive, so the limit
+ * depends on the sign. */
+static int parse_int64_bounded(uint64_t magnitude, uint64_t digit,
+                               int negative) {
+    uint64_t limit = negative ? 9223372036854775808ULL
+                              : 9223372036854775807ULL;
+    if (magnitude > (limit - digit) / 10ULL)
+        return -1;
+    return 0;
+}
+
 static int parse_int64(const char *text, size_t length, int64_t *out) {
     size_t index = 0;
     int negative = 0;
@@ -390,13 +434,20 @@ static int parse_int64(const char *text, size_t length, int64_t *out) {
             return -1;
     }
     for (; index < length; ++index) {
+        uint64_t digit;
         if (text[index] < '0' || text[index] > '9')
             return -1;
-        magnitude = magnitude * 10U + (uint64_t)(text[index] - '0');
-        if (magnitude > 9223372036854775807ULL)
+        digit = (uint64_t)(text[index] - '0');
+        if (parse_int64_bounded(magnitude, digit, negative) != 0)
             return -1;
+        magnitude = magnitude * 10ULL + digit;
     }
-    *out = negative ? -(int64_t)magnitude : (int64_t)magnitude;
+    if (negative)
+        *out = (magnitude == 9223372036854775808ULL)
+                   ? INT64_MIN
+                   : -(int64_t)magnitude;
+    else
+        *out = (int64_t)magnitude;
     return 0;
 }
 

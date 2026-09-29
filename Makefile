@@ -20,16 +20,30 @@ CFLAGS += $(EXTRA_CFLAGS)
 ASFLAGS := -m64 -ffreestanding -fno-pic -fno-pie -nostdlib
 LDFLAGS := -m elf_x86_64 -T kernel/linker.ld -nostdlib
 
-.PHONY: all clean elf iso run check storage-tools-check kernel-simd-check userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check
+.PHONY: all clean elf iso run check storage-tools-check kernel-simd-check userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check sanitizer-check
 
 all: iso
 
 # Reproducible local release gate: compile, ABI, core, desktop,
 # compatibility, storage-image recovery, and SIMD-safety checks before guest boot.
-check: elf userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check storage-tools-check
+check: elf userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check storage-tools-check null-sweep stats-write-check sanitizer-check
 
 storage-tools-check:
 	bash tools/storage/host_selftest.sh
+
+# Generated from the desktop headers: every entry point is called with
+# NULL/zero arguments in a child process, so a missing guard announces
+# itself as a crash.  Covers entry points the suites never reach, and new
+# ones the moment they are declared -- see tools/null_arg_sweep.py.
+null-sweep:
+	@python3 tools/null_arg_sweep.py
+
+# Also generated from the headers: a `stats` field nothing increments is a
+# promise the code forgets to keep, and no suite notices because nothing
+# reads it either. Calibrated by deleting a real increment -- see
+# tools/stats_write_check.py.
+stats-write-check:
+	@python3 tools/stats_write_check.py
 
 elf: $(KERNEL)
 
@@ -151,55 +165,77 @@ $(BUILD)/acpi.o: kernel/acpi.c kernel/acpi.h kernel/types.h | $(BUILD)
 $(BUILD)/hardware-%.o: kernel/%.c | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
+# Host core suites: <binary>:<comma,separated,sources>. One list feeds both
+# the plain gate and the sanitizer gate below, so a new suite cannot be added
+# to one and forgotten by the other.
+HARDWARE_CORE_SUITES := \
+	net-core-test:tests/net_core_test.c,kernel/net_core.c \
+	input-core-test:tests/input_core_test.c,kernel/input_core.c \
+	usb-core-test:tests/usb_core_test.c,kernel/usb_core.c \
+	audio-core-test:tests/audio_core_test.c,kernel/audio_core.c \
+	display-core-test:tests/display_core_test.c,kernel/display_core.c \
+	driver-core-test:tests/driver_core_test.c,kernel/driver_core.c \
+	net-route-test:tests/net_route_test.c,kernel/net_route.c \
+	net-transport-test:tests/net_transport_test.c,kernel/net_transport.c \
+	dhcp-core-test:tests/dhcp_core_test.c,kernel/dhcp_core.c \
+	dhcp-client-test:tests/dhcp_client_test.c,kernel/dhcp_core.c \
+	dma-test:tests/dma_test.c,kernel/dma.c \
+	dns-core-test:tests/dns_core_test.c,kernel/dns_core.c \
+	net-l2-test:tests/net_l2_test.c,kernel/net_l2.c \
+	net-arp-test:tests/net_arp_test.c,kernel/net_arp.c,kernel/net_l2.c \
+	net-ipv6-test:tests/net_ipv6_test.c,kernel/net_ipv6.c \
+	net-conntrack-test:tests/net_conntrack_test.c,kernel/net_conntrack.c \
+	resource-core-test:tests/resource_core_test.c,kernel/resource_core.c \
+	scancode-core-test:tests/scancode_core_test.c,kernel/scancode_core.c \
+	mouse-core-test:tests/mouse_core_test.c,kernel/mouse_core.c \
+	netif-test:tests/netif_test.c,kernel/netif.c,kernel/net_l2.c \
+	net-stack-test:tests/net_stack_test.c,kernel/net_stack.c,kernel/netif.c,kernel/net_l2.c,kernel/net_core.c,kernel/net_ipv6.c,kernel/net_transport.c,kernel/net_socket.c \
+	net-stack-tx-test:tests/net_stack_tx_test.c,kernel/net_stack.c,kernel/netif.c,kernel/net_l2.c,kernel/net_core.c,kernel/net_ipv6.c,kernel/net_transport.c \
+	net-socket-test:tests/net_socket_test.c,kernel/net_socket.c \
+	crypto-core-test:tests/crypto_test.c,kernel/crypto.c
+
 hardware-core-test: | $(BUILD)
-	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/net_core_test.c kernel/net_core.c -o $(BUILD)/net-core-test
-	$(BUILD)/net-core-test
-	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/input_core_test.c kernel/input_core.c -o $(BUILD)/input-core-test
-	$(BUILD)/input-core-test
-	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/usb_core_test.c kernel/usb_core.c -o $(BUILD)/usb-core-test
-	$(BUILD)/usb-core-test
-	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/audio_core_test.c kernel/audio_core.c -o $(BUILD)/audio-core-test
-	$(BUILD)/audio-core-test
-	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/display_core_test.c kernel/display_core.c -o $(BUILD)/display-core-test
-	$(BUILD)/display-core-test
-	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/driver_core_test.c kernel/driver_core.c -o $(BUILD)/driver-core-test
-	$(BUILD)/driver-core-test
-	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/net_route_test.c kernel/net_route.c -o $(BUILD)/net-route-test
-	$(BUILD)/net-route-test
-	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/net_transport_test.c kernel/net_transport.c -o $(BUILD)/net-transport-test
-	$(BUILD)/net-transport-test
-	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/dhcp_core_test.c kernel/dhcp_core.c -o $(BUILD)/dhcp-core-test
-	$(BUILD)/dhcp-core-test
-	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/dhcp_client_test.c kernel/dhcp_core.c -o $(BUILD)/dhcp-client-test
-	$(BUILD)/dhcp-client-test
-	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/dma_test.c kernel/dma.c -o $(BUILD)/dma-test
-	$(BUILD)/dma-test
-	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/dns_core_test.c kernel/dns_core.c -o $(BUILD)/dns-core-test
-	$(BUILD)/dns-core-test
-	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/net_l2_test.c kernel/net_l2.c -o $(BUILD)/net-l2-test
-	$(BUILD)/net-l2-test
-	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/net_arp_test.c kernel/net_arp.c kernel/net_l2.c -o $(BUILD)/net-arp-test
-	$(BUILD)/net-arp-test
-	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/net_ipv6_test.c kernel/net_ipv6.c -o $(BUILD)/net-ipv6-test
-	$(BUILD)/net-ipv6-test
-	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/net_conntrack_test.c kernel/net_conntrack.c -o $(BUILD)/net-conntrack-test
-	$(BUILD)/net-conntrack-test
-	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/resource_core_test.c kernel/resource_core.c -o $(BUILD)/resource-core-test
-	$(BUILD)/resource-core-test
-	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/scancode_core_test.c kernel/scancode_core.c -o $(BUILD)/scancode-core-test
-	$(BUILD)/scancode-core-test
-	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/mouse_core_test.c kernel/mouse_core.c -o $(BUILD)/mouse-core-test
-	$(BUILD)/mouse-core-test
-	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/netif_test.c kernel/netif.c kernel/net_l2.c -o $(BUILD)/netif-test
-	$(BUILD)/netif-test
-	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/net_stack_test.c kernel/net_stack.c kernel/netif.c kernel/net_l2.c kernel/net_core.c kernel/net_ipv6.c kernel/net_transport.c kernel/net_socket.c -o $(BUILD)/net-stack-test
-	$(BUILD)/net-stack-test
-	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/net_stack_tx_test.c kernel/net_stack.c kernel/netif.c kernel/net_l2.c kernel/net_core.c kernel/net_ipv6.c kernel/net_transport.c -o $(BUILD)/net-stack-tx-test
-	$(BUILD)/net-stack-tx-test
-	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/net_socket_test.c kernel/net_socket.c -o $(BUILD)/net-socket-test
-	$(BUILD)/net-socket-test
-	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/crypto_test.c kernel/crypto.c -o $(BUILD)/crypto-core-test
-	$(BUILD)/crypto-core-test
+	@set -e; for entry in $(HARDWARE_CORE_SUITES); do \
+		name=$${entry%%:*}; \
+		srcs=$$(echo $${entry#*:} | tr ',' ' '); \
+		$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel $$srcs -o $(BUILD)/$$name; \
+		$(BUILD)/$$name; \
+	done
+
+# Memory-safety / undefined-behaviour gate. Every host suite is rebuilt under
+# AddressSanitizer + UndefinedBehaviorSanitizer with
+# -fno-sanitize-recover=all so that a single out-of-bounds index or UB
+# operation fails the run instead of printing a warning nobody reads. This
+# gate is what caught the PS/2 extended-key down-state overrun in
+# kernel/scancode_core.c (a 128-entry table indexed with a full-byte index).
+SAN_CFLAGS := -std=c11 -g -O1 -Wall -Wextra -Werror -Ikernel \
+	-fsanitize=address,undefined -fno-sanitize-recover=all \
+	-fno-omit-frame-pointer
+SAN_ENV := ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=print_stacktrace=1
+
+sanitizer-check: | $(BUILD)
+	@mkdir -p $(BUILD)/san
+	@set -e; for entry in $(HARDWARE_CORE_SUITES); do \
+		name=$${entry%%:*}; \
+		srcs=$$(echo $${entry#*:} | tr ',' ' '); \
+		$(CC) $(SAN_CFLAGS) $$srcs -o $(BUILD)/san/$$name; \
+		if ! $(SAN_ENV) $(BUILD)/san/$$name >$(BUILD)/san/$$name.log 2>&1; then \
+			echo "sanitizer-check: $$name reported memory/UB errors:"; \
+			tail -30 $(BUILD)/san/$$name.log; exit 1; \
+		fi; \
+	done
+	$(CC) $(SAN_CFLAGS) -Iuserspace/include -I$(DESKTOP_DIR)/include \
+		-o $(BUILD)/san/desktop-tests $(DESKTOP_SRC) $(DESKTOP_TEST_SRC) kernel/crypto.c
+	$(CC) $(SAN_CFLAGS) -I$(COMPAT_DIR)/include \
+		-o $(BUILD)/san/compat-tests $(COMPAT_SRC) $(COMPAT_TEST_SRC)
+	@set -e; for suite in desktop-tests compat-tests; do \
+		if ! $(SAN_ENV) $(BUILD)/san/$$suite >$(BUILD)/san/$$suite.log 2>&1; then \
+			echo "sanitizer-check: $$suite reported memory/UB errors:"; \
+			tail -40 $(BUILD)/san/$$suite.log; exit 1; \
+		fi; \
+		tail -2 $(BUILD)/san/$$suite.log; \
+	done
+	@echo "sanitizer-check: PASS"
 
 $(BUILD)/gdt.o: kernel/gdt.c kernel/gdt.h kernel/memory.h kernel/cpu.h kernel/types.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
@@ -232,7 +268,9 @@ STORAGE_OBJS := $(patsubst kernel/storage/%.c,$(BUILD)/storage/%.o,$(STORAGE_SRC
 INFRA_OBJS := $(BUILD)/ksync.o $(BUILD)/crc.o $(BUILD)/kstring.o $(BUILD)/pci.o
 PROBE_OBJ := $(BUILD)/storage_probe_image.o
 SESSION_OBJ := $(BUILD)/session_probe_image.o
-EXTRA_OBJS := $(STORAGE_OBJS) $(INFRA_OBJS) $(PROBE_OBJ) $(SESSION_OBJ)
+CHILD_OBJ := $(BUILD)/shell_child_image.o
+EXTRA_OBJS := $(STORAGE_OBJS) $(INFRA_OBJS) $(PROBE_OBJ) $(SESSION_OBJ) \
+	$(CHILD_OBJ)
 
 $(BUILD)/storage:
 	mkdir -p $(BUILD)/storage
@@ -249,27 +287,60 @@ $(BUILD)/ksync.o $(BUILD)/crc.o $(BUILD)/kstring.o $(BUILD)/pci.o: $(BUILD)/%.o:
 # modules linked freestanding and embedded into the kernel image.
 SESSION_CFLAGS := -std=c11 -m64 -ffreestanding -fno-builtin -fno-stack-protector \
 	-fno-pic -fno-pie -nostdlib -mno-red-zone -mgeneral-regs-only -mcmodel=large \
-	-Wall -Wextra -Werror -O2 -Iuserspace/include -Iuserspace/desktop/include
+	-Wall -Wextra -Werror -O2 -Iuserspace/include -Iuserspace/desktop/include \
+	-Ikernel
 SESSION_DESKTOP_SRCS := userspace/desktop/src/common.c \
 	userspace/desktop/src/window.c userspace/desktop/src/compositor.c \
 	userspace/desktop/src/input.c userspace/desktop/src/display.c \
-	userspace/desktop/src/metrics.c
+	userspace/desktop/src/metrics.c \
+	userspace/desktop/src/filemgr.c userspace/desktop/src/search.c \
+	userspace/desktop/src/settings.c userspace/desktop/src/providers.c \
+	userspace/desktop/src/ui.c userspace/desktop/src/i18n.c \
+	userspace/desktop/src/governor.c userspace/desktop/src/lifecycle.c \
+	userspace/desktop/src/watchdog.c \
+	userspace/desktop/src/automation.c userspace/desktop/src/term.c \
+	userspace/desktop/src/sandbox.c userspace/desktop/src/privacy.c \
+	userspace/desktop/src/update.c \
+	userspace/desktop/src/clipboard.c \
+	userspace/desktop/src/downloads.c \
+	userspace/desktop/src/notify.c \
+	userspace/desktop/src/launcher.c \
+	userspace/desktop/src/capability.c \
+	userspace/desktop/src/perfcenter.c userspace/desktop/src/bar.c userspace/desktop/src/ai.c userspace/desktop/src/browser.c userspace/desktop/src/study.c userspace/desktop/src/fps.c userspace/desktop/src/gaming.c userspace/desktop/src/a11y.c userspace/desktop/src/media.c userspace/desktop/src/snapshot.c userspace/desktop/src/vault.c userspace/desktop/src/firewall.c userspace/desktop/src/url.c userspace/desktop/src/pdf.c userspace/desktop/src/notes.c userspace/desktop/src/ocr.c userspace/desktop/src/dict.c userspace/desktop/src/nav.c userspace/desktop/src/eco.c \
+	userspace/desktop/src/overview.c userspace/desktop/src/scan.c
 SESSION_DESKTOP_OBJS := $(patsubst userspace/desktop/src/%.c,$(BUILD)/session_desktop_%.o,$(SESSION_DESKTOP_SRCS))
 SESSION_DEPS := userspace/session/session.c userspace/session/session_start.S \
 	userspace/session/session.ld userspace/include/zeroos/syscall.h \
 	$(wildcard userspace/desktop/include/zeroos/desktop/*.h) \
 	$(SESSION_DESKTOP_SRCS)
-$(BUILD)/session_probe.elf: $(SESSION_DEPS) | $(BUILD)
+$(BUILD)/session_probe.elf: $(SESSION_DEPS) $(BUILD)/session_crypto.o | $(BUILD)
 	$(CC) $(SESSION_CFLAGS) -c userspace/session/session_start.S -o $(BUILD)/session_start.o
 	$(CC) $(SESSION_CFLAGS) -c userspace/session/session.c -o $(BUILD)/session_probe_user.o
 	@set -e; for src in $(SESSION_DESKTOP_SRCS); do \
 		$(CC) $(SESSION_CFLAGS) -c $$src -o $(BUILD)/session_desktop_$$(basename $$src .c).o; \
 	done
 	$(LD) -m elf_x86_64 -T userspace/session/session.ld -nostdlib -o $@ \
-		$(BUILD)/session_start.o $(BUILD)/session_probe_user.o $(SESSION_DESKTOP_OBJS)
+		$(BUILD)/session_start.o $(BUILD)/session_probe_user.o \
+		$(SESSION_DESKTOP_OBJS) $(BUILD)/session_crypto.o
+
+$(BUILD)/session_crypto.o: kernel/crypto.c kernel/crypto.h | $(BUILD)
+	$(CC) $(SESSION_CFLAGS) -c kernel/crypto.c -o $@
 
 $(BUILD)/session_probe_image.o: kernel/session_probe_image.S $(BUILD)/session_probe.elf | $(BUILD)
 	$(AS) $(ASFLAGS) -DPROBE_PATH='"$(BUILD)/session_probe.elf"' -c $< -o $@
+
+# Minimal Ring-3 child the shell spawns to certify the SPAWN/WAIT lifecycle.
+CHILD_DEPS := userspace/session/child.c userspace/session/child_start.S \
+	userspace/session/child.ld userspace/include/zeroos/syscall.h
+$(BUILD)/shell_child.elf: $(CHILD_DEPS) | $(BUILD)
+	$(CC) $(SESSION_CFLAGS) -c userspace/session/child_start.S -o $(BUILD)/child_start.o
+	$(CC) $(SESSION_CFLAGS) -c userspace/session/child.c -o $(BUILD)/child.o
+	$(LD) -m elf_x86_64 -T userspace/session/child.ld -nostdlib -o $@ \
+		$(BUILD)/child_start.o $(BUILD)/child.o
+	@python3 tools/check_child_elf.py $@
+
+$(BUILD)/shell_child_image.o: kernel/shell_child_image.S $(BUILD)/shell_child.elf | $(BUILD)
+	$(AS) $(ASFLAGS) -DPROBE_PATH='"$(BUILD)/shell_child.elf"' -c $< -o $@
 
 $(BUILD)/session_launch.o: kernel/session.c kernel/session.h kernel/types.h kernel/kstring.h kernel/memory.h kernel/vmm.h kernel/timer.h kernel/task.h kernel/process.h kernel/thread.h kernel/elf.h kernel/user.h kernel/syscall.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c kernel/session.c -o $@

@@ -47,7 +47,12 @@ struct zd_sandbox {
 };
 
 void zd_sandbox_init(struct zd_sandbox *sb);
-/* Define/replace a profile's mask.  Bad mask/name -> -22, full -> -28. */
+/* Define/replace a profile's mask.  Bad mask/name -> -22, full -> -28.
+ * Replacing an existing profile keeps its check/denied counters (it is
+ * the same profile with a new mask); a name being defined for the first
+ * time starts from zero even if it landed in a recycled slot.
+ * `stats.profiles_defined` counts the profiles that exist, so a
+ * replacement does not move it and forget() decrements it. */
 int zd_sandbox_define(struct zd_sandbox *sb, const char *name,
                       uint32_t allowed_mask);
 int zd_sandbox_forget(struct zd_sandbox *sb, const char *name);

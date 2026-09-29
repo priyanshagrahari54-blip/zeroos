@@ -77,6 +77,26 @@ static void test_focus_traversal(void) {
                 ++focused_flags;
         ZD_CHECK_EQ(focused_flags, 1U);
     }
+    /* set_states may change FOCUSED, but focus is still a singleton owner:
+     * it must clear the previous node and reject impossible focused states. */
+    ZD_CHECK_OK(zd_a11y_set_states(&a11y, ids[1],
+                                   ZD_A11Y_FOCUSABLE | ZD_A11Y_FOCUSED));
+    ZD_CHECK_EQ(zd_a11y_focused(&a11y), ids[1]);
+    ZD_CHECK_OK(zd_a11y_set_states(&a11y, ids[2],
+                                   ZD_A11Y_FOCUSABLE | ZD_A11Y_FOCUSED));
+    ZD_CHECK_EQ(zd_a11y_focused(&a11y), ids[2]);
+    ZD_CHECK(!(zd_a11y_node(&a11y, ids[1])->states & ZD_A11Y_FOCUSED));
+    ZD_CHECK_ERR(zd_a11y_set_states(&a11y, ids[3],
+                                    ZD_A11Y_FOCUSED | ZD_A11Y_HIDDEN),
+                 ZD_ESTATE);
+    {
+        uint32_t focused_flags = 0;
+        for (index = 0; index < ZD_A11Y_MAX_NODES; ++index)
+            if (a11y.nodes[index].in_use &&
+                (a11y.nodes[index].states & ZD_A11Y_FOCUSED))
+                ++focused_flags;
+        ZD_CHECK_EQ(focused_flags, 1U);
+    }
     /* Reverse traversal lands on a different node then continues. */
     {
         uint32_t current = zd_a11y_focused(&a11y);
@@ -153,9 +173,54 @@ static void test_snapshot_and_announcements(void) {
                  ZD_EINVAL);
 }
 
+static void test_node_names(void) {
+    struct zd_a11y a11y;
+    uint32_t window = 0;
+    uint32_t button = 0;
+    char long_name[128];
+    struct zd_a11y_snapshot_row rows[8];
+    uint32_t rows_out = 0;
+
+    zd_a11y_init(&a11y);
+    ZD_CHECK_OK(zd_a11y_create(&a11y, ZD_A11Y_ROOT, ZD_ROLE_WINDOW, "Files",
+                               0, 1, &window));
+    ZD_CHECK_OK(zd_a11y_create(&a11y, window, ZD_ROLE_BUTTON, "Open",
+                               ZD_A11Y_FOCUSABLE, 2, &button));
+    ZD_CHECK_ERR(zd_a11y_set_name(&a11y, button, 0), ZD_EINVAL);
+    ZD_CHECK_ERR(zd_a11y_set_name(&a11y, 9999, "ghost"), ZD_EINVAL);
+    ZD_CHECK_OK(zd_a11y_set_name(&a11y, button, "Open file"));
+    ZD_CHECK(strcmp(zd_a11y_node(&a11y, button)->name, "Open file") == 0);
+    /* The renamed node is what a screen reader is handed: the new name has
+     * to reach the snapshot, not just the node. */
+    rows_out = zd_a11y_snapshot(&a11y, rows, 8);
+    ZD_CHECK(rows_out >= 2U);
+    {
+        uint32_t index;
+        int found_new = 0;
+        int found_window = 0;
+        /* Document order starts at the root, so rows are matched by name
+         * rather than by index. */
+        for (index = 0; index < rows_out; ++index) {
+            if (strcmp(rows[index].name, "Open file") == 0)
+                found_new = 1;
+            if (strcmp(rows[index].name, "Files") == 0)
+                found_window = 1;
+        }
+        ZD_CHECK(found_new);
+        ZD_CHECK(found_window);
+    }
+    /* A name longer than the node holds is truncated, not overflowed. */
+    memset(long_name, 'n', sizeof(long_name));
+    long_name[sizeof(long_name) - 1] = 0;
+    ZD_CHECK_OK(zd_a11y_set_name(&a11y, button, long_name));
+    ZD_CHECK_EQ((uint32_t)strlen(zd_a11y_node(&a11y, button)->name),
+                ZD_A11Y_NAME_CAP - 1U);
+}
+
 void zd_test_a11y_suite(void) {
     printf(" suite: accessibility\n");
     ZD_RUN(test_tree_build_and_destroy);
     ZD_RUN(test_focus_traversal);
     ZD_RUN(test_snapshot_and_announcements);
+    ZD_RUN(test_node_names);
 }

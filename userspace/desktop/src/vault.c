@@ -23,9 +23,12 @@ static int v_find(const struct zd_vault *v, const char *name) {
             return i;
     return -1;
 }
-/* Deterministic per-slot nonce: unique per key per slot (fresh random
- * nonces belong to the OS entropy service, wired above this contract;
- * slot+epoch makes re-wraps of the same key distinct). */
+/* Per-slot nonce from a monotonic epoch. Fresh random nonces belong to the
+ * OS entropy service, wired above this contract; what this layer must never
+ * do is repeat a (key, nonce) pair, because ChaCha20-Poly1305 keystream reuse
+ * turns two ciphertexts into the XOR of their plaintexts. Epoch + slot is
+ * unique for as long as the counter does not wrap, and the caller is refused
+ * (not silently repeated) once it does. */
 static void v_nonce(uint8_t n[V_NONCE], uint32_t epoch, int slot) {
     n[0] = (uint8_t)(epoch);
     n[1] = (uint8_t)(epoch >> 8);
@@ -45,6 +48,9 @@ void zd_vault_init(struct zd_vault *v) {
     for (i = 0; i < ZD_VAULT_KEY_LEN; ++i)
         v->key[i] = 0;
     v->unlocked = 0;
+    /* init() also drops every ciphertext, so restarting the epoch here
+     * cannot resurrect a nonce that is still in use. */
+    v->wraps = 0;
     for (i = 0; i < ZD_VAULT_MAX; ++i) {
         v->entries[i].name[0] = 0;
         v->entries[i].ct_len = 0;
@@ -113,7 +119,12 @@ int zd_vault_put(struct zd_vault *v, const char *name,
     }
     if (idx < 0)
         return -28; /* ENOSPC */
-    v_nonce(nonce, 0x5A5AC0DEu, idx);
+    /* Refuse to seal rather than repeat a nonce. */
+    if (v->wraps == 0xFFFFFFFFu) {
+        v->stats.rejected++;
+        return -28;
+    }
+    v_nonce(nonce, v->wraps, idx);
     r = zeroos_aead_encrypt(v->key, nonce, (const uint8_t *)name,
                             slen, secret, secret_len,
                             v->entries[idx].ct + V_NONCE,
@@ -127,6 +138,9 @@ int zd_vault_put(struct zd_vault *v, const char *name,
         v->entries[idx].name[i] = name[i];
     v->entries[idx].name[slen] = 0;
     v->entries[idx].in_use = 1;
+    /* Consume the epoch only after the seal succeeded, so a failed put does
+     * not burn a nonce value. */
+    v->wraps++;
     v->stats.puts++;
     return 0;
 }

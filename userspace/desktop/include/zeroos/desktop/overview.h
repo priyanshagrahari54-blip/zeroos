@@ -22,6 +22,9 @@ struct zd_overview {
     uint32_t gap;                   /* px between thumbnails + edges */
     uint32_t cols, rows;            /* current grid */
     struct {
+        /* `selections` counts accepted selection moves: every focus_next
+         * and focus_prev that actually moved the focus.  A refused move
+         * (empty overview) is not a selection. */
         uint32_t opens, closes, relayouts, selections, rejected;
     } stats;
 };

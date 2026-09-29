@@ -1,5 +1,5 @@
 /* Study notes.  See notes.h. */
-#include <string.h>
+#include <zeroos/desktop/common.h>
 #include <zeroos/desktop/notes.h>
 
 static char nt_lower(char c) {
@@ -9,7 +9,7 @@ static char nt_lower(char c) {
 }
 
 static int nt_contains_ci(const char *hay, const char *needle) {
-    size_t nl = strlen(needle);
+    size_t nl = zd_str_length(needle);
     size_t i;
     if (!nl)
         return 1;
@@ -24,6 +24,23 @@ static int nt_contains_ci(const char *hay, const char *needle) {
     return 0;
 }
 
+/* Index of the first case-insensitive occurrence, or -1. */
+static long nt_find_ci(const char *hay, const char *needle) {
+    size_t nl = zd_str_length(needle);
+    size_t i;
+    if (!nl)
+        return 0;
+    for (i = 0; hay[i]; ++i) {
+        size_t k = 0;
+        while (k < nl && hay[i + k] &&
+               nt_lower(hay[i + k]) == nt_lower(needle[k]))
+            k++;
+        if (k == nl)
+            return (long)i;
+    }
+    return -1;
+}
+
 static struct zd_note *nt_find(struct zd_notes *n, uint32_t id) {
     uint32_t i;
     for (i = 0; i < n->count; ++i)
@@ -35,7 +52,7 @@ static struct zd_note *nt_find(struct zd_notes *n, uint32_t id) {
 void zd_notes_init(struct zd_notes *n) {
     if (!n)
         return;
-    memset(n, 0, sizeof(*n));
+    zd_memset(n, 0, sizeof(*n));
     n->next_id = 1;
 }
 
@@ -44,20 +61,20 @@ int zd_notes_create(struct zd_notes *n, const char *title,
     struct zd_note *note;
     if (!n || !title || !body || !out_id)
         return -22;
-    if (!title[0] || strlen(title) >= ZD_NOTES_TITLE ||
-        strlen(body) >= ZD_NOTES_BODY) {
+    if (!title[0] || zd_str_length(title) >= ZD_NOTES_TITLE ||
+        zd_str_length(body) >= ZD_NOTES_BODY) {
         n->stats.rejected++;
         return -22;
     }
     if (n->count >= ZD_NOTES_MAX)
         return -28;
     note = &n->items[n->count++];
-    memset(note, 0, sizeof(*note));
+    zd_memset(note, 0, sizeof(*note));
     note->id = n->next_id++;
     note->mtime = mtime;
-    memcpy(note->title, title, strlen(title) + 1);
-    memcpy(note->body, body, strlen(body) + 1);
-    note->body_len = (uint32_t)strlen(body);
+    zd_memcpy(note->title, title, zd_str_length(title) + 1);
+    zd_memcpy(note->body, body, zd_str_length(body) + 1);
+    note->body_len = (uint32_t)zd_str_length(body);
     n->stats.created++;
     *out_id = note->id;
     return 0;
@@ -71,15 +88,15 @@ int zd_notes_update(struct zd_notes *n, uint32_t id, const char *title,
     note = nt_find(n, id);
     if (!note)
         return -2;
-    if (strlen(body) >= ZD_NOTES_BODY ||
-        (title && (!title[0] || strlen(title) >= ZD_NOTES_TITLE))) {
+    if (zd_str_length(body) >= ZD_NOTES_BODY ||
+        (title && (!title[0] || zd_str_length(title) >= ZD_NOTES_TITLE))) {
         n->stats.rejected++;
         return -22;
     }
     if (title)
-        memcpy(note->title, title, strlen(title) + 1);
-    memcpy(note->body, body, strlen(body) + 1);
-    note->body_len = (uint32_t)strlen(body);
+        zd_memcpy(note->title, title, zd_str_length(title) + 1);
+    zd_memcpy(note->body, body, zd_str_length(body) + 1);
+    note->body_len = (uint32_t)zd_str_length(body);
     note->mtime = mtime;
     n->stats.updated++;
     return 0;
@@ -93,9 +110,13 @@ int zd_notes_delete(struct zd_notes *n, uint32_t id) {
         if (n->items[i].id != id)
             continue;
         if (i + 1 < n->count)
-            memmove(&n->items[i], &n->items[i + 1],
+            zd_memmove(&n->items[i], &n->items[i + 1],
                     (n->count - i - 1) * sizeof(n->items[0]));
         n->count--;
+        /* Deletion removes the note from the active set and from resident
+         * storage: after the memmove the old tail slot still contains a
+         * duplicate title/body until it is explicitly wiped. */
+        zd_memset(&n->items[n->count], 0, sizeof(n->items[n->count]));
         n->stats.deleted++;
         return 0;
     }
@@ -155,4 +176,30 @@ int zd_notes_search(const struct zd_notes *n, const char *sub,
     if (out && total > (int)cap)
         return (int)cap;
     return total;
+}
+
+int zd_notes_snippet(const struct zd_note *note, const char *needle,
+                     char *out, uint32_t cap) {
+    const char *field;
+    long at;
+    uint32_t n = 0;
+    if (!note || !needle || !out || cap == 0)
+        return -22;
+    out[0] = 0;
+    field = note->body;
+    at = nt_find_ci(note->body, needle);
+    if (at < 0) {
+        field = note->title;
+        at = nt_find_ci(note->title, needle);
+    }
+    if (at < 0)
+        return -2;
+    /* The window starts at the match so the caller can rely on the needle
+     * being present in the copy, even after truncation. */
+    while (field[at + n] && n + 1 < cap) {
+        out[n] = field[at + n];
+        ++n;
+    }
+    out[n] = 0;
+    return (int)n;
 }

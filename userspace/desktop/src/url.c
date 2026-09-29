@@ -77,6 +77,10 @@ int zd_url_parse(const char *input, struct zd_url *out) {
 
     if (!input)
         return -22;
+    /* From here the input exists: a URL that parses must not carry a
+     * rejection diagnostic, or every UI that shows the reason would call a
+     * perfectly good URL "null input". */
+    out->reject_reason = ZD_URL_OK_REJECT;
     n = u_len(input);
     if (n == 0) {
         out->reject_reason = ZD_URL_R_MALFORMED;
@@ -175,7 +179,7 @@ int zd_url_parse(const char *input, struct zd_url *out) {
     }
     {
         uint32_t h;
-        int label_len = 0, saw_digit = 0;
+        int label_len = 0;
         for (h = 0; h < host_len; ++h) {
             char c = host_start[h];
             if (c == ' ' || c == '\\' || c == '@' || c == '[' || c == ']' ||
@@ -196,8 +200,6 @@ int zd_url_parse(const char *input, struct zd_url *out) {
                 out->reject_reason = ZD_URL_R_BAD_HOST;
                 return -22;
             }
-            if (c >= '0' && c <= '9')
-                saw_digit = 1;
             if (c == '%') { /* percent-encoding in host: need 2 hex */
                 if (h + 2 >= host_len || u_hex(host_start[h + 1]) < 0 ||
                     u_hex(host_start[h + 2]) < 0) {
@@ -225,7 +227,6 @@ int zd_url_parse(const char *input, struct zd_url *out) {
             out->reject_reason = ZD_URL_R_BAD_HOST;
             return -22;
         }
-        (void)saw_digit;
     }
     u_copy(out->host, sizeof(out->host), host_start, host_len);
 

@@ -68,8 +68,16 @@ enum zeroos_syscall_id {
     ZEROOS_SYS_DISPLAY_PRESENT = 52,
     ZEROOS_SYS_INPUT_POLL = 53,
     ZEROOS_SYS_INPUT_WAIT = 54,
+    ZEROOS_SYS_SYSTEM_INFO = 55,
+    ZEROOS_SYS_CHILD_IMAGE = 56,
     ZEROOS_SYS_MAX
 };
+
+/* Shell child image (ZEROOS_SYS_CHILD_IMAGE): a minimal Ring-3 ELF the
+ * shell can spawn to exercise the SPAWN/WAIT lifecycle. The kernel copies
+ * the embedded image unchanged; the caller must supply a buffer at least
+ * as large as the image, otherwise -EFAULT (the kernel never writes a
+ * partial image). The returned value is the byte count. */
 
 #define ZEROOS_WAIT_VALID_FLAGS ZEROOS_WAIT_FLAG_NONBLOCK
 #define ZEROOS_IPC_VALID_FLAGS (ZEROOS_IPC_FLAG_NONBLOCK | ZEROOS_IPC_FLAG_PEEK)
@@ -149,6 +157,10 @@ enum zeroos_error {
 #define ZEROOS_ABI_FEATURE_DISPLAY (1ULL << 8)
 #define ZEROOS_ABI_FEATURE_PRESENT (1ULL << 9)
 #define ZEROOS_ABI_FEATURE_INPUT (1ULL << 10)
+/* System topology plus a monotonic uptime clock (syscall 55). */
+#define ZEROOS_ABI_FEATURE_SYSINFO (1ULL << 11)
+/* Embedded shell-child image for SPAWN/WAIT (syscall 56). */
+#define ZEROOS_ABI_FEATURE_CHILD (1ULL << 12)
 
 /* Display geometry (ABI): must match kernel/fb.h and kernel/syscall.h. */
 #define ZEROOS_DISPLAY_FORMAT_INDEXED     0U
@@ -196,6 +208,11 @@ struct zeroos_display_info {
 #define ZEROOS_S_IFMT 0xf000U
 #define ZEROOS_S_IFREG 0x8000U
 #define ZEROOS_S_IFDIR 0x4000U
+/* struct zeroos_dirent.type carries the file-type nibble of the mode
+ * (mode >> 12), not the raw S_IF* bits: 4 = directory, 8 = regular. */
+#define ZEROOS_DT_UNKNOWN 0U
+#define ZEROOS_DT_DIR (ZEROOS_S_IFDIR >> 12)
+#define ZEROOS_DT_REG (ZEROOS_S_IFREG >> 12)
 
 /* Input event kinds; values mirror kernel/input_core.h enum input_kind
  * (gated by abi_consistency.py). */
@@ -273,6 +290,27 @@ struct zeroos_input_event {
     uint8_t kind, flags;
 };
 
+/* System information (ZEROOS_SYS_SYSTEM_INFO). Ring 3 has no other time
+ * source: the ABI exposes no wall clock, so session services that need
+ * deadlines (watchdog heartbeats, automation cooldowns, metrics windows)
+ * read uptime_ns here. Every field is kernel-reported, never derived by
+ * the caller; `size` lets the kernel grow the struct later, and a caller
+ * passing a smaller size gets -EFAULT rather than a partial write. */
+#define ZEROOS_SYSTEM_INFO_VERSION 1
+struct zeroos_system_info {
+    uint32_t version;         /* ZEROOS_SYSTEM_INFO_VERSION */
+    uint32_t size;            /* sizeof(struct zeroos_system_info) */
+    uint32_t cpus_online;     /* booted CPUs, BSP included */
+    uint32_t cpus_discovered; /* CPUs found in the firmware tables */
+    uint32_t page_size;       /* ZEROOS_PAGE_SIZE */
+    uint32_t timer_hz;        /* scheduler tick frequency */
+    uint32_t clock_source;    /* 1 = invariant TSC, 0 = PIT fallback */
+    uint32_t padding;         /* keeps the 64-bit fields aligned */
+    uint64_t uptime_ns;       /* monotonic since boot; never goes back */
+    uint64_t ram_total_bytes; /* managed physical memory */
+    uint64_t ram_free_bytes;  /* free managed pages right now */
+};
+
 typedef uint64_t zeroos_handle_t;
 typedef zeroos_handle_t zeroos_ipc_handle_t;
 typedef zeroos_handle_t zeroos_shmem_handle_t;
@@ -304,7 +342,7 @@ struct zeroos_statfs {
 
 struct zeroos_dirent {
     uint64_t ino;
-    uint32_t type;
+    uint32_t type; /* ZEROOS_DT_*: mode >> 12 (4 = dir, 8 = regular) */
     uint32_t name_len;
     char name[256];
 };
@@ -529,6 +567,27 @@ static inline int64_t zeroos_input_wait(struct zeroos_input_event *event,
     return zeroos_syscall_result(zeroos_syscall6(
         ZEROOS_SYS_INPUT_WAIT,(uint64_t)(uintptr_t)event,flags,
         timeout_ticks,0,0,0));
+}
+
+/* Read real kernel topology and the monotonic uptime clock. `size` must
+ * be at least sizeof(struct zeroos_system_info); smaller buffers are
+ * rejected (-EFAULT) so the kernel never writes past the caller. */
+static inline int64_t zeroos_system_info(struct zeroos_system_info *out,
+                                        uint32_t size) {
+    if (!out)
+        return -ZEROOS_EFAULT;
+    return zeroos_syscall_result(zeroos_syscall6(
+        ZEROOS_SYS_SYSTEM_INFO,(uint64_t)(uintptr_t)out,size,0,0,0,0));
+}
+
+/* Copy the embedded shell-child ELF into `out`. `size` must be at least
+ * the image size (ZEROOS_EXEC_MAX_IMAGE is always enough); returns the
+ * byte count, or -EFAULT for a NULL or short buffer. */
+static inline int64_t zeroos_child_image(void *out, uint64_t size) {
+    if (!out)
+        return -ZEROOS_EFAULT;
+    return zeroos_syscall_result(zeroos_syscall6(
+        ZEROOS_SYS_CHILD_IMAGE,(uint64_t)(uintptr_t)out,size,0,0,0,0));
 }
 
 #endif

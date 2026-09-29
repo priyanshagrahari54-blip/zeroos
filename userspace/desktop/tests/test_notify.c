@@ -72,6 +72,7 @@ static void test_deduplication(void) {
     ZD_CHECK_EQ(first, second);
     ZD_CHECK_EQ(notify.stats.deduped, 1U);
     ZD_CHECK_EQ(notify.stats.posted, 1U);
+    ZD_CHECK_EQ(notify.stats.active, 1U);
     ZD_CHECK_EQ(zd_notify_get(&notify, first)->dedupe_count, 1U);
     /* Outside the dedupe window: a new notification. */
     ZD_CHECK_OK(zd_notify_post(&notify, &post, 2000000000ULL +
@@ -214,12 +215,103 @@ static void test_flood_stress(void) {
     ZD_CHECK(notify.count <= ZD_NOTIFY_MAX);
 }
 
+/* Expiry is relative to the post time, not to the clock's epoch: on a
+ * system up for longer than the priority TTL, a default-TTL notification
+ * used to be born expired. */
+static void test_expiry_is_relative_to_post_time(void) {
+    struct zd_notify notify;
+    struct zd_notify_post post;
+    zd_notification_id id = 0;
+    zd_notification_id ids[4];
+    const uint64_t s = 1000000000ULL;
+    const uint64_t up = 1000ULL * s;   /* 1000s of uptime */
+
+    /* Default TTL for LOW is 30s. */
+    zd_notify_init(&notify);
+    post = make_post("shell", "system", ZD_NOTIFY_LOW);
+    post.ttl_ns = 0;
+    ZD_CHECK_OK(zd_notify_post(&notify, &post, up, &id));
+    ZD_CHECK_EQ(zd_notify_visible(&notify, up + 1ULL, ids, 4), 1U);
+    ZD_CHECK_EQ(zd_notify_visible(&notify, up + 29ULL * s, ids, 4), 1U);
+    ZD_CHECK_EQ(zd_notify_visible(&notify, up + 31ULL * s, ids, 4), 0U);
+    ZD_CHECK_EQ(notify.stats.expired, 1U);
+
+    /* CRITICAL never expires, however long the system has been up. */
+    zd_notify_init(&notify);
+    post = make_post("shell", "system", ZD_NOTIFY_CRITICAL);
+    post.ttl_ns = 0;
+    ZD_CHECK_OK(zd_notify_post(&notify, &post, up, &id));
+    ZD_CHECK_EQ(zd_notify_visible(&notify, up + 100000ULL * s, ids, 4), 1U);
+    ZD_CHECK_EQ(notify.stats.expired, 0U);
+
+    /* An explicit TTL is a duration as well. */
+    zd_notify_init(&notify);
+    post = make_post("shell", "system", ZD_NOTIFY_NORMAL);
+    post.ttl_ns = 5ULL * s;
+    ZD_CHECK_OK(zd_notify_post(&notify, &post, up, &id));
+    ZD_CHECK_EQ(zd_notify_visible(&notify, up + 4ULL * s, ids, 4), 1U);
+    ZD_CHECK_EQ(zd_notify_visible(&notify, up + 6ULL * s, ids, 4), 0U);
+
+    /* A deduplicated repost re-arms the window from its own post time. */
+    zd_notify_init(&notify);
+    post = make_post("shell", "system", ZD_NOTIFY_LOW);
+    post.dedupe_key = "release";
+    post.ttl_ns = 0;
+    ZD_CHECK_OK(zd_notify_post(&notify, &post, up, &id));
+    ZD_CHECK_OK(zd_notify_post(&notify, &post, up + 2ULL * s, &id));
+    ZD_CHECK_EQ(notify.stats.deduped, 1U);
+    ZD_CHECK_EQ(zd_notify_visible(&notify, up + 31ULL * s, ids, 4), 1U);
+    ZD_CHECK_EQ(zd_notify_visible(&notify, up + 33ULL * s, ids, 4), 0U);
+}
+
+static void test_priority_names(void) {
+    ZD_CHECK(strcmp(zd_notify_priority_name(ZD_NOTIFY_LOW), "low") == 0);
+    ZD_CHECK(strcmp(zd_notify_priority_name(ZD_NOTIFY_NORMAL), "normal") == 0);
+    ZD_CHECK(strcmp(zd_notify_priority_name(ZD_NOTIFY_HIGH), "high") == 0);
+    ZD_CHECK(strcmp(zd_notify_priority_name(ZD_NOTIFY_CRITICAL), "critical") ==
+             0);
+    /* Anything outside the enum is unnamed rather than reading past the
+     * table: the name is only ever used for a11y announcements and logs. */
+    ZD_CHECK(strcmp(zd_notify_priority_name(
+                        (enum zd_notify_priority)(ZD_NOTIFY_CRITICAL + 1)),
+                    "?") == 0);
+    ZD_CHECK(strcmp(zd_notify_priority_name((enum zd_notify_priority)-1),
+                    "?") == 0);
+}
+
+/* A centre that does not exist has to refuse the request rather than be
+ * read through. dismiss() and defer() looked the item up first and
+ * checked the centre afterwards, so a notification id that was merely
+ * plausible -- not the invalid one, which short-circuits -- was enough
+ * to dereference a null centre on the way to reporting "not found". */
+static void test_null_centre_is_refused(void) {
+    ZD_CHECK_ERR(zd_notify_dismiss(0, 1), ZD_ENOENT);
+    ZD_CHECK_ERR(zd_notify_defer(0, 1, 0, 1000), ZD_ENOENT);
+    ZD_CHECK(zd_notify_get(0, 1) == 0);
+    /* the invalid id is still refused the same way, for the same reason */
+    ZD_CHECK_ERR(zd_notify_dismiss(0, ZD_NOTIFICATION_INVALID), ZD_ENOENT);
+    ZD_CHECK_ERR(zd_notify_defer(0, ZD_NOTIFICATION_INVALID, 0, 1000),
+                 ZD_ENOENT);
+    ZD_CHECK(zd_notify_get(0, ZD_NOTIFICATION_INVALID) == 0);
+    /* a centre that exists refuses an id it does not hold */
+    {
+        struct zd_notify n;
+        zd_notify_init(&n);
+        ZD_CHECK_ERR(zd_notify_dismiss(&n, 1), ZD_ENOENT);
+        ZD_CHECK_ERR(zd_notify_defer(&n, 1, 0, 1000), ZD_ENOENT);
+        ZD_CHECK(zd_notify_get(&n, 1) == 0);
+    }
+}
+
 void zd_test_notify_suite(void) {
     printf(" suite: notifications\n");
     ZD_RUN(test_post_and_priority_ordering);
     ZD_RUN(test_deduplication);
     ZD_RUN(test_rate_limiting);
     ZD_RUN(test_defer_dismiss_expiry);
+    ZD_RUN(test_expiry_is_relative_to_post_time);
+    ZD_RUN(test_priority_names);
     ZD_RUN(test_grouping);
     ZD_RUN(test_flood_stress);
+    ZD_RUN(test_null_centre_is_refused);
 }

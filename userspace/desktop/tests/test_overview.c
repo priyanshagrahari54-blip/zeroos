@@ -88,6 +88,9 @@ void zd_test_overview_suite(void) {
     ZD_CHECK_EQ(o.focus, 0); /* wrapped */
     ZD_CHECK_OK(zd_overview_focus_prev(&o));
     ZD_CHECK_EQ(o.focus, 2); /* wrapped back */
+    /* three next + one prev were accepted; the two refused moves on an empty
+     * overview above are not selections */
+    ZD_CHECK_EQ(o.stats.selections, 4);
 
     /* remove relayouts and clamps focus */
     for (i = 0; i < 4; ++i)
@@ -112,6 +115,11 @@ void zd_test_overview_suite(void) {
     ZD_CHECK_EQ(o.count, ZD_OVERVIEW_MAX);
 
     /* degenerate area for a grid -> -22 (no zero-size thumbs) */
+    {
+        ZD_CHECK_OK(zd_overview_open(&o, area, 0x80000000U));
+        ids[0] = 777;
+        ZD_CHECK_EQ(zd_overview_set_windows(&o, ids, 1), -22);
+    }
     {
         struct zd_rect tiny;
         tiny.x = 0;

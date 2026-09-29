@@ -1,5 +1,5 @@
 /* Study dictionary.  See dict.h. */
-#include <string.h>
+#include <zeroos/desktop/common.h>
 #include <zeroos/desktop/dict.h>
 
 static char dc_lower(char c) {
@@ -26,12 +26,12 @@ static void dc_insert_sort(char w[][ZD_DICT_WORD], uint32_t n) {
     for (i = 1; i < n; ++i) {
         char tmp[ZD_DICT_WORD];
         uint32_t j = i;
-        memcpy(tmp, w[i], ZD_DICT_WORD);
+        zd_memcpy(tmp, w[i], ZD_DICT_WORD);
         while (j > 0 && dc_cmp(tmp, w[j - 1]) < 0) {
-            memcpy(w[j], w[j - 1], ZD_DICT_WORD);
+            zd_memcpy(w[j], w[j - 1], ZD_DICT_WORD);
             j--;
         }
-        memcpy(w[j], tmp, ZD_DICT_WORD);
+        zd_memcpy(w[j], tmp, ZD_DICT_WORD);
     }
 }
 
@@ -46,8 +46,12 @@ static int dc_has_prefix(const char *word, const char *prefix) {
 int zd_dict_load(struct zd_dict *d, zd_dict_source_fn src, void *ctx) {
     uint32_t n = 0, i;
     int rc;
-    if (!d || !src)
+    if (!d)
         return -22;
+    if (!src) {
+        d->stats.rejected++;
+        return -22;
+    }
     d->loaded = 0; /* failed loads leave the dict unreadable (-95) */
     d->truncated = 0;
     rc = src(ctx, d->words, ZD_DICT_MAX, &n);
@@ -67,7 +71,7 @@ int zd_dict_load(struct zd_dict *d, zd_dict_source_fn src, void *ctx) {
             if (k > 0 && dc_cmp(d->words[k - 1], d->words[i]) == 0)
                 continue;
             if (k != i)
-                memcpy(d->words[k], d->words[i], ZD_DICT_WORD);
+                zd_memcpy(d->words[k], d->words[i], ZD_DICT_WORD);
             k++;
         }
         d->count = k;
@@ -79,10 +83,19 @@ int zd_dict_load(struct zd_dict *d, zd_dict_source_fn src, void *ctx) {
 
 int zd_dict_lookup(struct zd_dict *d, const char *word) {
     uint32_t lo, hi;
-    if (!d || !word || !word[0])
+    if (!d)
         return -22;
-    if (!d->loaded)
+    if (!word || !word[0]) {
+        d->stats.rejected++;
+        return -22;
+    }
+    if (!d->loaded) {
+        /* A lookup before a successful load is a refusal like any other,
+         * and it is the one a caller makes by accident -- the counter is
+         * how it finds out. */
+        d->stats.rejected++;
         return -95;
+    }
     d->stats.lookups++;
     lo = 0;
     hi = d->count;
@@ -106,16 +119,22 @@ int zd_dict_prefix(struct zd_dict *d, const char *prefix,
                    uint32_t *out_n) {
     uint32_t i, written = 0;
     int total = 0;
-    if (!d || !prefix || !out_n)
+    if (!d)
         return -22;
-    if (!d->loaded)
+    if (!prefix || !out_n) {
+        d->stats.rejected++;
+        return -22;
+    }
+    if (!d->loaded) {
+        d->stats.rejected++;
         return -95;
+    }
     d->stats.prefix_queries++;
     for (i = 0; i < d->count; ++i) {
         if (!dc_has_prefix(d->words[i], prefix))
             continue;
         if (out && written < cap) {
-            memcpy(out[written], d->words[i], ZD_DICT_WORD);
+            zd_memcpy(out[written], d->words[i], ZD_DICT_WORD);
             written++;
         }
         total++;

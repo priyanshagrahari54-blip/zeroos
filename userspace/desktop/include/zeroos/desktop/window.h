@@ -119,7 +119,8 @@ struct zd_wm_stats {
     uint32_t workspace_switches;
     uint32_t client_crashes_handled;
     uint32_t buffer_rejects;
-    uint32_t invalid_route_attempts;
+    uint32_t invalid_route_attempts; /* focus requests the manager refused:
+                                      * unknown, minimized or off-workspace */
 };
 
 struct zd_wm_listener_context;
@@ -177,6 +178,10 @@ int zd_wm_lower(struct zd_wm *wm, zd_window_id id);
 int zd_wm_focus(struct zd_wm *wm, zd_window_id id);
 int zd_wm_set_workspace(struct zd_wm *wm, zd_window_id id, uint32_t workspace);
 int zd_wm_switch_workspace(struct zd_wm *wm, uint32_t workspace);
+/* Resize the workspace set (1..ZD_MAX_WORKSPACES). Shrinking moves windows
+ * off removed workspaces onto the highest surviving one and clamps the
+ * active workspace. Returns 0, -ZD_EINVAL out of range. */
+int zd_wm_set_workspace_count(struct zd_wm *wm, uint32_t count);
 int zd_wm_assign_monitor(struct zd_wm *wm, zd_window_id id, uint32_t monitor_id);
 /* Pointer routing: topmost mapped, non-minimized window of the active
  * workspace under the physical point, or 0 for shell/desktop. */

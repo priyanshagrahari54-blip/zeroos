@@ -67,6 +67,40 @@ void zd_test_ui_suite(void) {
     ZD_CHECK_EQ((int)zd_ui_condition_from_rc(-99),
                 (int)ZD_UI_ERROR);
 
+    /* VFS error namespace: the file syscalls return POSIX numbers, and the
+     * ZD_* mapper above must never be used for them (-ZEROOS_ENOENT == -2
+     * would otherwise render as LOW_RESOURCE). */
+    ZD_CHECK_EQ((int)zd_ui_condition_from_vfs_rc(0), (int)ZD_UI_NORMAL);
+    ZD_CHECK_EQ((int)zd_ui_condition_from_vfs_rc(7), (int)ZD_UI_NORMAL);
+    ZD_CHECK_EQ((int)zd_ui_condition_from_vfs_rc(-ZEROOS_ENOENT),
+                (int)ZD_UI_EMPTY);
+    ZD_CHECK((int)zd_ui_condition_from_vfs_rc(-ZEROOS_ENOENT) !=
+             (int)zd_ui_condition_from_rc(-ZEROOS_ENOENT));
+    ZD_CHECK_EQ((int)zd_ui_condition_from_vfs_rc(-ZEROOS_EPERM),
+                (int)ZD_UI_PERMISSION_DENIED);
+    ZD_CHECK_EQ((int)zd_ui_condition_from_vfs_rc(-ZEROOS_EACCES),
+                (int)ZD_UI_PERMISSION_DENIED);
+    ZD_CHECK_EQ((int)zd_ui_condition_from_vfs_rc(-ZEROOS_ENOSPC),
+                (int)ZD_UI_LOW_RESOURCE);
+    ZD_CHECK_EQ((int)zd_ui_condition_from_vfs_rc(-ZEROOS_ENOMEM),
+                (int)ZD_UI_LOW_RESOURCE);
+    ZD_CHECK_EQ((int)zd_ui_condition_from_vfs_rc(-ZEROOS_EMFILE),
+                (int)ZD_UI_LOW_RESOURCE);
+    ZD_CHECK_EQ((int)zd_ui_condition_from_vfs_rc(-ZEROOS_EBUSY),
+                (int)ZD_UI_LOADING);
+    ZD_CHECK_EQ((int)zd_ui_condition_from_vfs_rc(-ZEROOS_EAGAIN),
+                (int)ZD_UI_OFFLINE);
+    ZD_CHECK_EQ((int)zd_ui_condition_from_vfs_rc(-ZEROOS_ETIMEDOUT),
+                (int)ZD_UI_OFFLINE);
+    ZD_CHECK_EQ((int)zd_ui_condition_from_vfs_rc(-ZEROOS_EIO),
+                (int)ZD_UI_ERROR);
+    ZD_CHECK_EQ((int)zd_ui_condition_from_vfs_rc(-ZEROOS_ENOTDIR),
+                (int)ZD_UI_ERROR);
+    ZD_CHECK_EQ((int)zd_ui_condition_from_vfs_rc(-ZEROOS_EEXIST),
+                (int)ZD_UI_ERROR);
+    ZD_CHECK_EQ((int)zd_ui_condition_from_vfs_rc(-999),
+                (int)ZD_UI_ERROR);
+
     /* keys + localized labels through the shell catalog */
     zd_i18n_init(&en, ZD_LOCALE_EN);
     zd_i18n_init(&hi, ZD_LOCALE_HI);

@@ -72,6 +72,76 @@ void zd_test_vault_suite(void) {
     ZD_CHECK(zd_vault_get(&v, "wifi", out, sizeof(out), &out_len) == 0);
     ZD_CHECK(out_len == 3 && memcmp(out, "new", 3) == 0);
 
+    /* Nonce discipline: re-wrapping one slot under one key must never reuse a
+     * (key, nonce) pair. Keystream reuse is what turns two ciphertexts into
+     * the XOR of their plaintexts, so the stored 12-byte nonce prefix has to
+     * change on every put, including a put of the very same plaintext. */
+    {
+        struct zd_vault n;
+        uint8_t first[ZD_VAULT_CT_MAX];
+        uint8_t second[ZD_VAULT_CT_MAX];
+        uint8_t third[ZD_VAULT_CT_MAX];
+        int slot;
+
+        zd_vault_init(&n);
+        ZD_CHECK_EQ(n.wraps, 0u);
+        ZD_CHECK(zd_vault_unlock(&n, key) == 0);
+
+        ZD_CHECK(zd_vault_put(&n, "same", (const uint8_t*)"value", 5) == 0);
+        ZD_CHECK_EQ(n.wraps, 1u);
+        for (slot = 0; slot < ZD_VAULT_MAX; ++slot)
+            if (n.entries[slot].in_use)
+                break;
+        ZD_CHECK(slot < ZD_VAULT_MAX);
+        memcpy(first, n.entries[slot].ct, sizeof(first));
+
+        /* Identical plaintext, same slot: the nonce (not the plaintext) must
+         * be what changes. */
+        ZD_CHECK(zd_vault_put(&n, "same", (const uint8_t*)"value", 5) == 0);
+        ZD_CHECK_EQ(n.wraps, 2u);
+        memcpy(second, n.entries[slot].ct, sizeof(second));
+        ZD_CHECK(memcmp(first, second, 12) != 0);  /* nonce prefix differs */
+        ZD_CHECK(memcmp(first + 12, second + 12,
+                        ZD_VAULT_CT_MAX - 12) != 0); /* and the seal */
+
+        /* A third wrap of a different slot must differ from both. */
+        ZD_CHECK(zd_vault_put(&n, "other", (const uint8_t*)"value", 5) == 0);
+        ZD_CHECK_EQ(n.wraps, 3u);
+        {
+            int other;
+            for (other = 0; other < ZD_VAULT_MAX; ++other)
+                if (other != slot && n.entries[other].in_use)
+                    break;
+            ZD_CHECK(other < ZD_VAULT_MAX);
+            memcpy(third, n.entries[other].ct, sizeof(third));
+            ZD_CHECK(memcmp(third, second, 12) != 0);
+        }
+
+        /* A refused put must not consume an epoch. */
+        ZD_CHECK(zd_vault_put(&n, "same", 0, 4) == -22);
+        ZD_CHECK_EQ(n.wraps, 3u);
+
+        /* unlock() installs a new key without rewinding the epoch, so a new
+         * key cannot inherit another key's nonce history. */
+        ZD_CHECK(zd_vault_unlock(&n, key2) == 0);
+        ZD_CHECK_EQ(n.wraps, 3u);
+        ZD_CHECK(zd_vault_put(&n, "same", (const uint8_t*)"value", 5) == 0);
+        ZD_CHECK_EQ(n.wraps, 4u);
+        ZD_CHECK(memcmp(n.entries[slot].ct, second, 12) != 0);
+
+        /* The epoch is exhausted atomically: the vault refuses to seal rather
+         * than repeat a nonce. */
+        n.wraps = 0xFFFFFFFEu;
+        ZD_CHECK(zd_vault_put(&n, "same", (const uint8_t*)"value", 5) == 0);
+        ZD_CHECK_EQ(n.wraps, 0xFFFFFFFFu);
+        ZD_CHECK(zd_vault_put(&n, "same", (const uint8_t*)"value", 5) == -28);
+        ZD_CHECK_EQ(n.wraps, 0xFFFFFFFFu);
+
+        /* init() clears the epoch together with every ciphertext. */
+        zd_vault_init(&n);
+        ZD_CHECK_EQ(n.wraps, 0u);
+    }
+
     /* bounds and bad args */
     ZD_CHECK(zd_vault_put(&v, "", secret, 1) == -22);
     ZD_CHECK(zd_vault_put(&v, "x", secret, 0) == -22);

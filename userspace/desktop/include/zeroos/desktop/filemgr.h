@@ -19,6 +19,12 @@
 #define ZD_FM_NAME 48
 #define ZD_FM_PATH 96
 #define ZD_FM_HISTORY 16
+/* Bounded transfer window for copy/preview. A file larger than this is
+ * refused (-27) rather than silently truncated. */
+#define ZD_FM_COPY_MAX 4096
+/* Batch ceiling. Selections larger than this are processed in one pass
+ * up to the cap and the remainder is reported, never silently dropped. */
+#define ZD_FM_BATCH_MAX 32
 
 /* entry kind flags */
 #define ZD_FM_DIR    (1u << 0)
@@ -46,6 +52,16 @@ typedef int (*zd_fm_source_fn)(void *ctx, const char *path,
 struct zd_fm_ops {
     int (*remove)(void *ctx, const char *path);
     int (*mkdir)(void *ctx, const char *path);
+    /* Rename inside one filesystem; both paths absolute. */
+    int (*rename)(void *ctx, const char *from, const char *to);
+    /* Bounded content transfer used by copy and preview. read_file fills
+     * at most `capacity` bytes and reports how many through *out_length;
+     * write_file creates or truncates. Both return 0 or a negative
+     * errno, and neither may write past `capacity`. */
+    int (*read_file)(void *ctx, const char *path, void *buffer,
+                     uint32_t capacity, uint32_t *out_length);
+    int (*write_file)(void *ctx, const char *path, const void *buffer,
+                      uint32_t length);
     void *ctx;
 };
 
@@ -74,7 +90,9 @@ struct zd_fm {
     struct {
         uint32_t refreshes, source_errors, truncations, rejected,
                  navigations, backs, forwards, history_dropped,
-                 selects, ops_perm_denied, removed, mkdirs, op_errors;
+                 selects, ops_perm_denied, removed, mkdirs, op_errors,
+                 renamed, copied, moved, peeks, refusals,
+                 batch_ops, batch_entries, batch_failures, batch_skipped;
     } stats;
 };
 
@@ -103,5 +121,59 @@ int zd_fm_remove(struct zd_fm *fm, uint32_t actor_perms,
                  const char *name);
 int zd_fm_mkdir(struct zd_fm *fm, uint32_t actor_perms,
                 const char *name);
+
+/* Rename `name` inside the current directory. Both names are bare (no
+ * '/'); -1 permission denied, -22 bad args or no rename op, the op's
+ * errno otherwise. Refreshes the listing on success. */
+int zd_fm_rename(struct zd_fm *fm, uint32_t actor_perms, const char *name,
+                 const char *new_name);
+/* Copy `name` into `target_dir` (absolute) as `new_name`. Needs the
+ * read_file and write_file ops; -27 when the source is larger than
+ * ZD_FM_COPY_MAX or is not in the current listing, so a copy is never a
+ * half-written file. */
+int zd_fm_copy(struct zd_fm *fm, uint32_t actor_perms, const char *name,
+               const char *target_dir, const char *new_name);
+/* Move `name` into `target_dir` as `new_name`: a real rename when the
+ * target is the current directory, otherwise copy + remove (the source is
+ * only removed after the copy succeeded). */
+int zd_fm_move(struct zd_fm *fm, uint32_t actor_perms, const char *name,
+               const char *target_dir, const char *new_name);
+/* Content preview of `name` in the current directory: reads at most
+ * `capacity - 1` bytes into `out` and NUL-terminates, so the caller can
+ * treat it as text. Requires ZD_FM_PERM_READ and the read_file op. */
+int zd_fm_peek(struct zd_fm *fm, uint32_t actor_perms, const char *name,
+               char *out, uint32_t capacity, uint32_t *out_length);
+
+/* ---- batch operations over the selection -----------------------------
+ * The selection is snapshotted by name first, because every operation
+ * refreshes the listing and clears the selection: walking it in place
+ * would skip entries.  Each entry is attempted independently — one
+ * failure never aborts the batch — and the result struct is the
+ * contract: attempted/succeeded/failed, directories skipped under the
+ * directory policy, entries beyond ZD_FM_BATCH_MAX, and the errno plus
+ * name of the first failure.  Directories are skipped unless
+ * `allow_dirs` is set, so a recursive delete is never implied.  An empty
+ * selection is a no-op (attempted == 0), not an error.  Batch copy/move
+ * keep each entry's own name in the target directory.
+ * Returns -1 permission denied (counted), -22 bad arguments or a missing
+ * op, 0 when the batch ran (inspect *out for per-entry failures). */
+struct zd_fm_batch_result {
+    uint32_t attempted;
+    uint32_t succeeded;
+    uint32_t failed;
+    uint32_t skipped_dirs;
+    uint32_t selection_overflow;
+    int32_t last_errno;
+    char first_failed[ZD_FM_NAME];
+};
+
+int zd_fm_batch_remove(struct zd_fm *fm, uint32_t actor_perms,
+                       uint32_t allow_dirs, struct zd_fm_batch_result *out);
+int zd_fm_batch_copy(struct zd_fm *fm, uint32_t actor_perms,
+                     const char *target_dir, uint32_t allow_dirs,
+                     struct zd_fm_batch_result *out);
+int zd_fm_batch_move(struct zd_fm *fm, uint32_t actor_perms,
+                     const char *target_dir, uint32_t allow_dirs,
+                     struct zd_fm_batch_result *out);
 
 #endif /* ZEROOS_DESKTOP_FILEMGR_H */

@@ -6,6 +6,7 @@ int zd_test_checks = 0;
 const char *zd_test_current = "main";
 
 /* Declared per suite. */
+void zd_test_common_suite(void);
 void zd_test_lifecycle_suite(void);
 void zd_test_governor_suite(void);
 void zd_test_window_suite(void);
@@ -32,9 +33,11 @@ void zd_test_vault_suite(void);
 void zd_test_nav_suite(void);
 void zd_test_firewall_suite(void);
 void zd_test_sandbox_suite(void);
+void zd_test_scan_suite(void);
 void zd_test_clipboard_suite(void);
 void zd_test_downloads_suite(void);
 void zd_test_providers_suite(void);
+void zd_test_providers_shell_suite(void);
 void zd_test_perfcenter_suite(void);
 void zd_test_fault_suite(void);
 void zd_test_soak_suite(void);
@@ -55,6 +58,7 @@ void zd_test_integration_suite(void);
 
 int main(void) {
     printf("ZEROOS desktop platform core tests\n");
+    zd_test_common_suite();
     zd_test_lifecycle_suite();
     zd_test_governor_suite();
     zd_test_window_suite();
@@ -81,9 +85,11 @@ int main(void) {
     zd_test_nav_suite();
     zd_test_firewall_suite();
     zd_test_sandbox_suite();
+    zd_test_scan_suite();
     zd_test_clipboard_suite();
     zd_test_downloads_suite();
     zd_test_providers_suite();
+    zd_test_providers_shell_suite();
     zd_test_perfcenter_suite();
     zd_test_fault_suite();
     zd_test_soak_suite();

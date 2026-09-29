@@ -56,6 +56,34 @@ void zd_test_term_suite(void) {
     ZD_CHECK_EQ(t.cur_x, 15);
     wstr(&t, "\033[5;1H");
 
+    /* Numeric parameters saturate instead of wrapping. An unbounded
+     * accumulator turns an over-large movement into a small one (and an
+     * out-of-range SGR into a supported colour), so "never misparsed" would
+     * silently break: 4294967296 is 2^32, which wraps to 0. */
+    wstr(&t, "\033[4294967296C"); /* right, would wrap to +0 */
+    ZD_CHECK_EQ(t.cur_x, 15);
+    wstr(&t, "\033[4294967296B"); /* down, would wrap to +0 */
+    ZD_CHECK_EQ(t.cur_y, 5);
+    wstr(&t, "\033[99999999999999D"); /* left: clamps, does not wrap */
+    ZD_CHECK_EQ(t.cur_x, 0);
+    wstr(&t, "\033[99999999999999A"); /* up: clamps at the top */
+    ZD_CHECK_EQ(t.cur_y, 0);
+    {
+        uint32_t before = t.stats.unknown_seqs;
+        /* SGR 2^32+31 must not saturate into "red foreground". */
+        wstr(&t, "\033[4294967327m");
+        ZD_CHECK_EQ(t.stats.unknown_seqs, before);
+        ZD_CHECK_EQ(t.fg, 7);
+        ZD_CHECK_EQ(t.attrs, 0);
+        /* A leading run of zeros is still the value zero, not a saturation
+         * trigger: SGR 031 is red. */
+        wstr(&t, "\033[0000000031m");
+        ZD_CHECK_EQ(t.fg, 1);
+        wstr(&t, "\033[0m");
+        ZD_CHECK_EQ(t.fg, 7);
+    }
+    wstr(&t, "\033[5;1H");
+
     /* wrap at edge: 16-wide row, cursor starts at (4,0) after H */
     wstr(&t, "0123456789ABCDE"); /* 15 chars -> cols 0..14 */
     wstr(&t, "F");               /* fills col 15 */
@@ -206,4 +234,89 @@ void zd_test_term_suite(void) {
     /* stats + byte accounting */
     ZD_CHECK(t.stats.writes >= 5); /* since the last init */
     ZD_CHECK(t.stats.bytes > 0);
+
+    /* ---- line discipline ---- */
+    {
+        struct zd_term_line l;
+        struct zd_term lt;
+        const uint8_t typed[] = { 'z', 'e', 'r', 'o', 0x08, 0x08,
+                                  'o', 's', 0x0d };
+        char row[64];
+        uint32_t i;
+        int done = 0;
+        zd_term_line_init(&l);
+        zd_term_init(&lt, 24, 80);
+        ZD_CHECK_EQ(l.len, 0);
+        ZD_CHECK_EQ(l.completions, 0);
+        for (i = 0; i < sizeof(typed); ++i) {
+            const char *echo;
+            uint32_t echo_len;
+            int rc = zd_term_line_input(&l, typed[i], &echo, &echo_len);
+            ZD_CHECK(rc == 0 || rc == 1);
+            if (rc == 1)
+                done = 1;
+            if (echo_len) {
+                ZD_CHECK(echo != 0);
+                /* The echo goes through the same parser that renders
+                 * program output, so BS is interpreted, not displayed. */
+                /* zd_term_write returns 0 on success. */
+                ZD_CHECK_EQ(zd_term_write(&lt, (const uint8_t *)echo,
+                                          echo_len), 0);
+            }
+        }
+        ZD_CHECK_EQ(done, 1);
+        ZD_CHECK_EQ(l.completions, 1);
+        ZD_CHECK_EQ(l.erased, 2);
+        ZD_CHECK_EQ(l.overflow, 0);
+        ZD_CHECK_EQ(l.ignored, 0);
+        {
+            char line[64];
+            ZD_CHECK_EQ(zd_term_line_copy(&l, line, sizeof(line)), 4);
+            ZD_CHECK(strcmp(line, "zeos") == 0);
+            /* The rendered row matches the edited line exactly. */
+            ZD_CHECK_EQ(zd_term_row_text(&lt, 0, row, sizeof(row)), 4);
+            ZD_CHECK(strcmp(row, "zeos") == 0);
+        }
+        /* DEL (0x7f) erases like BS; other control bytes are ignored and
+         * never echoed. */
+        zd_term_line_init(&l);
+        {
+            const char *echo;
+            uint32_t echo_len;
+            ZD_CHECK_EQ(zd_term_line_input(&l, 'a', &echo, &echo_len), 0);
+            ZD_CHECK_EQ(echo_len, 1);
+            ZD_CHECK_EQ(zd_term_line_input(&l, 0x7f, &echo, &echo_len), 0);
+            ZD_CHECK_EQ(echo_len, 3);
+            ZD_CHECK_EQ(l.erased, 1);
+            ZD_CHECK_EQ(l.len, 0);
+            /* Erasing an empty line is a no-op with no echo. */
+            ZD_CHECK_EQ(zd_term_line_input(&l, 0x08, &echo, &echo_len), 0);
+            ZD_CHECK_EQ(echo_len, 0);
+            ZD_CHECK_EQ(l.erased, 1);
+            ZD_CHECK_EQ(zd_term_line_input(&l, 0x01, &echo, &echo_len), 0);
+            ZD_CHECK_EQ(echo_len, 0);
+            ZD_CHECK_EQ(l.ignored, 1);
+            /* LF completes a line exactly like CR. */
+            ZD_CHECK_EQ(zd_term_line_input(&l, 0x0a, &echo, &echo_len), 1);
+            ZD_CHECK_EQ(l.completions, 1);
+        }
+        /* A full line refuses further bytes instead of truncating them. */
+        zd_term_line_init(&l);
+        for (i = 0; i < ZD_TERM_LINE_MAX + 1; ++i) {
+            const char *echo;
+            uint32_t echo_len;
+            ZD_CHECK_EQ(zd_term_line_input(&l, 'x', &echo, &echo_len), 0);
+        }
+        ZD_CHECK_EQ(l.len, ZD_TERM_LINE_MAX);
+        ZD_CHECK_EQ(l.overflow, 1);
+        {
+            char small[8];
+            ZD_CHECK_EQ(zd_term_line_copy(&l, small, sizeof(small)),
+                        ZD_TERM_LINE_MAX);
+            ZD_CHECK(strlen(small) == sizeof(small) - 1);
+        }
+        /* Bad arguments are rejected. */
+        ZD_CHECK_EQ(zd_term_line_input(0, 'a', 0, 0), -22);
+        ZD_CHECK_EQ(zd_term_line_copy(0, row, sizeof(row)), 0);
+    }
 }

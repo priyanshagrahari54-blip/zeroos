@@ -24,7 +24,19 @@ struct zd_vault_entry {
 struct zd_vault {
     uint8_t key[ZD_VAULT_KEY_LEN];
     uint8_t unlocked;             /* 1 while the key is resident */
+    /* Monotonic AEAD nonce epoch. Never reset by unlock(): a fresh key must
+     * not inherit the nonce history of the key it replaced, because nonce
+     * reuse under one key is what breaks ChaCha20-Poly1305. */
+    uint32_t wraps;
     struct zd_vault_entry entries[ZD_VAULT_MAX];
+    /* Refusals are not counted uniformly and the split is deliberate.
+     * `rejected` counts a request the vault refused on its own terms: a
+     * malformed argument, a put against a locked vault, and a put that
+     * would have had to repeat a nonce because the epoch is exhausted.
+     * A get against a locked vault is `get_denied` instead. A full vault
+     * (-28), an unknown name (-2) and a short output buffer (-22) are
+     * capacity and lookup outcomes rather than refusals, and count
+     * nothing. */
     struct {
         uint32_t puts, gets, get_denied, auth_failures, wipes,
                  rejected;
@@ -37,7 +49,14 @@ int zd_vault_unlock(struct zd_vault *v, const uint8_t key[ZD_VAULT_KEY_LEN]);
 /* Wipe key (entries stay as ciphertext; stats.wipes++). */
 int zd_vault_lock(struct zd_vault *v);
 /* Store/replace a secret.  Locked -> -1.  Bounds -> -22.  Full -> -28.
- * Returns 0; plaintext is never retained. */
+ * Returns 0; plaintext is never retained.
+ *
+ * Every wrap uses a fresh nonce derived from (epoch, slot), where epoch is
+ * the vault's monotonic wrap counter. Re-wrapping the same slot therefore
+ * never reuses a keystream, which is the property that stops two ciphertexts
+ * under one key from leaking the XOR of their plaintexts. When the epoch
+ * counter is exhausted the vault refuses to seal rather than repeat a nonce:
+ * -28 in that case. */
 int zd_vault_put(struct zd_vault *v, const char *name,
                  const uint8_t *secret, uint32_t secret_len);
 /* Decrypt into out (cap >= secret length).  Unknown name -> -2;

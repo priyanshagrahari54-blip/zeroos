@@ -77,6 +77,39 @@ void zd_test_notes_dict_suite(void) {
     ZD_CHECK_EQ(ids[0], id1);
     ZD_CHECK_EQ(zd_notes_search(&notes, 0, 0, 0), -22);
 
+    /* note snippets: the matched context search results carry */
+    {
+        const struct zd_note *note = zd_notes_get(&notes, id1);
+        char snip[ZD_NOTES_BODY];
+        ZD_CHECK(note != 0);
+        if (note) {
+            /* Bad arguments are rejected. */
+            ZD_CHECK_EQ(zd_notes_snippet(0, "q", snip, sizeof(snip)), -22);
+            ZD_CHECK_EQ(zd_notes_snippet(note, 0, snip, sizeof(snip)), -22);
+            ZD_CHECK_EQ(zd_notes_snippet(note, "q", 0, sizeof(snip)), -22);
+            ZD_CHECK_EQ(zd_notes_snippet(note, "q", snip, 0), -22);
+            /* The window starts at the match, case-insensitively: the body
+             * of note 1 was updated to "Quantum advanced" above. */
+            ZD_CHECK(zd_notes_snippet(note, "QUANTUM", snip,
+                                      sizeof(snip)) > 0);
+            ZD_CHECK_EQ(snip[0], 'Q');
+            ZD_CHECK(strcmp(snip, "Quantum advanced") == 0);
+            /* A title-only match falls back to the title. */
+            ZD_CHECK(zd_notes_snippet(note, "lecture", snip,
+                                      sizeof(snip)) > 0);
+            ZD_CHECK_EQ(snip[0], 'L');
+            /* An absent needle is reported, never approximated. */
+            ZD_CHECK_EQ(zd_notes_snippet(note, "zzzz", snip, sizeof(snip)),
+                        -2);
+            ZD_CHECK_EQ(snip[0], 0);
+            /* Truncation still starts at the match, so the needle survives
+             * even a two-byte window. */
+            ZD_CHECK_EQ(zd_notes_snippet(note, "quantum", snip, 2), 1);
+            ZD_CHECK_EQ(snip[0], 'Q');
+            ZD_CHECK_EQ(snip[1], 0);
+        }
+    }
+
     /* pin */
     ZD_CHECK_OK(zd_notes_set_pinned(&notes, id2, 1));
     ZD_CHECK_EQ(zd_notes_get(&notes, id2)->pinned, 1);
@@ -90,6 +123,17 @@ void zd_test_notes_dict_suite(void) {
     ZD_CHECK_OK(zd_notes_delete(&notes, id3));
     ZD_CHECK_EQ(zd_notes_delete(&notes, id3), -2);
     ZD_CHECK_EQ(notes.count, 2u);
+    /* The vacated tail slot is wiped; deleting a note must not leave its
+     * title/body resident outside the active count after the memmove. */
+    {
+        uint32_t byte;
+        const unsigned char *raw = (const unsigned char *)&notes.items[2];
+        uint32_t residue = 0;
+        for (byte = 0; byte < sizeof(notes.items[2]); ++byte)
+            if (raw[byte])
+                residue = 1;
+        ZD_CHECK_EQ(residue, 0U);
+    }
     {
         uint32_t tmp, i;
         for (i = notes.count; i < ZD_NOTES_MAX; ++i) {
@@ -111,10 +155,15 @@ void zd_test_notes_dict_suite(void) {
     /* bad args */
     ZD_CHECK_EQ(zd_dict_load(&dict, 0, 0), -22);
     ZD_CHECK_EQ(zd_dict_lookup(&dict, ""), -22);
+    /* Every refusal is counted, including the ones that happen before a
+     * load: a dictionary that has not loaded is asked constantly, and
+     * `rejected` is how a caller sees it. */
+    ZD_CHECK_EQ(dict.stats.rejected, 4u);
     /* source error */
     ZD_CHECK_EQ(zd_dict_load(&dict, dict_src_err, 0), -5);
     ZD_CHECK_EQ(dict.stats.load_errors, 1u);
     ZD_CHECK_EQ(zd_dict_lookup(&dict, "apple"), -95);
+    ZD_CHECK_EQ(dict.stats.rejected, 5u);
     /* real load: 7 raw -> dedup "apple"/"Apple" case-differently...
      * list has apple+apple (dup), Zebra+zebra (dup) -> 5 unique */
     ZD_CHECK_OK(zd_dict_load(&dict, dict_src_ok, 0));

@@ -36,6 +36,9 @@ void zd_test_eco_suite(void) {
                 -22);
     ZD_CHECK_EQ(zd_eco_grant(&e, d0, 1u << 9), -22);
     ZD_CHECK_EQ(zd_eco_grant(&e, 9, ZD_ECO_PERM_SYNC_FILES), -2);
+    /* The unpaired-index grant is a lookup miss, not a malformed request;
+     * the other four refusals in this block all counted. */
+    ZD_CHECK_EQ(e.stats.rejected, 6);
 
     /* grant -> enqueue succeeds (still offline: nothing sent) */
     ZD_CHECK_OK(zd_eco_grant(&e, d0, ZD_ECO_PERM_SYNC_FILES));
@@ -48,6 +51,8 @@ void zd_test_eco_suite(void) {
     ZD_CHECK_EQ(zd_eco_flush(&e), 0); /* offline: 0 sent */
     ZD_CHECK_EQ(e.queued, 2);
     ZD_CHECK_EQ(e.stats.flushed, 0);
+    /* both pending entries were held back, and that is counted */
+    ZD_CHECK_EQ(e.stats.refused_offline, 2);
 
     /* online: flush transmits both */
     zd_eco_set_conn(&e, ZD_ECO_ONLINE);
@@ -61,6 +66,8 @@ void zd_test_eco_suite(void) {
     ZD_CHECK_EQ(zd_eco_revoke(&e, d0, ZD_ECO_PERM_SYNC_FILES), 0);
     ZD_CHECK_EQ(e.stats.revoked, 1);
     ZD_CHECK_EQ(e.queued, 0); /* revoke dropped the pending entry */
+    /* ... and counted it: 1 from the ungranted enqueue above, 1 dropped */
+    ZD_CHECK_EQ(e.stats.refused_perm, 2);
     ZD_CHECK_EQ(zd_eco_revoke(&e, d0, ZD_ECO_PERM_SYNC_FILES), -1);
     /* revoke of a perm never granted */
     ZD_CHECK_EQ(zd_eco_revoke(&e, d0, ZD_ECO_PERM_DISCOVER), -1);
@@ -74,6 +81,8 @@ void zd_test_eco_suite(void) {
                                "prefs"));
     ZD_CHECK_OK(zd_eco_unpair(&e, d1));
     ZD_CHECK_EQ(e.queued, 0); /* unpair dropped pending entries */
+    /* 1 from the unpaired-index enqueue above, 1 dropped here */
+    ZD_CHECK_EQ(e.stats.refused_pairing, 2);
     ZD_CHECK_EQ(zd_eco_flush(&e), 0); /* nothing left */
     ZD_CHECK_EQ(zd_eco_unpair(&e, d1), -2);
 
@@ -97,6 +106,7 @@ void zd_test_eco_suite(void) {
         }
         ZD_CHECK_EQ(r, -28);
         ZD_CHECK_EQ(e.queued, ZD_ECO_QUEUE);
+        ZD_CHECK_EQ(e.stats.rejected, 7); /* full queue counted */
         /* offline flush still sends nothing */
         zd_eco_set_conn(&e, ZD_ECO_OFFLINE);
         ZD_CHECK_EQ(zd_eco_flush(&e), 0);
@@ -111,6 +121,7 @@ void zd_test_eco_suite(void) {
     ZD_CHECK_OK(zd_eco_pair(&e, "tab2", 0));
     ZD_CHECK_EQ(zd_eco_pair(&e, "tab3", 0), -28);
     ZD_CHECK_EQ(e.device_count, ZD_ECO_DEVICES);
+    ZD_CHECK_EQ(e.stats.rejected, 8); /* full device table counted */
 
     /* null safety */
     zd_eco_init(NULL);

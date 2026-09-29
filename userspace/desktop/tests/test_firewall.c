@@ -107,7 +107,10 @@ void zd_test_firewall_suite(void) {
     ZD_CHECK(zd_fw_add(&fw, &r, 0) == -22);
     r = rule(ZD_FW_OUT, ZD_FW_TCP, ZD_FW_ALLOW, 500, 100, 0); /* lo>hi */
     ZD_CHECK(zd_fw_add(&fw, &r, 0) == -22);
-    ZD_CHECK(fw.stats.rules_rejected >= 3U);
+    r = rule(ZD_FW_OUT, ZD_FW_TCP, ZD_FW_ALLOW, 0, 0, 0);
+    memset(r.app, 'x', sizeof(r.app)); /* no terminator in fixed field */
+    ZD_CHECK(zd_fw_add(&fw, &r, 0) == -22);
+    ZD_CHECK(fw.stats.rules_rejected >= 4U);
 
     /* invalid flows */
     ZD_CHECK(zd_fw_decide(&fw, 0) == -22);
@@ -148,4 +151,34 @@ void zd_test_firewall_suite(void) {
     /* matching helper counts without deciding */
     ZD_CHECK(zd_fw_matching(&fw, &f) == 1U);
     ZD_CHECK(zd_fw_matching(&fw, 0) == 0U);
+
+    /* A protocol this engine has no concept of is not a flow it can
+     * judge: it is refused and counted, not matched by a rule written
+     * for ZD_FW_ANY -- rules are validated on the way in, so flows
+     * have to be too. */
+    zd_fw_init(&fw);
+    r = rule(ZD_FW_OUT, ZD_FW_ANY, ZD_FW_ALLOW, 0, 0, 0);
+    ZD_CHECK_OK(zd_fw_add(&fw, &r, 0));
+    memset(&f, 0, sizeof(f));
+    f.dir = ZD_FW_OUT;
+    f.proto = ZD_FW_TCP;
+    f.dst_port = 443;
+    ZD_CHECK_EQ(zd_fw_decide(&fw, &f), ZD_FW_ALLOW);
+    ZD_CHECK_EQ(zd_fw_matching(&fw, &f), 1U);
+    f.proto = 99; /* not one of the four the engine knows */
+    ZD_CHECK(zd_fw_decide(&fw, &f) == -22);
+    ZD_CHECK_EQ(fw.stats.invalid_flows, 1U);
+    ZD_CHECK_EQ(fw.stats.flows, 1U); /* only the decidable one counted */
+    ZD_CHECK_EQ(zd_fw_matching(&fw, &f), 0U);
+    /* an out-of-range direction is the same refusal */
+    f.proto = ZD_FW_TCP;
+    f.dir = 77;
+    ZD_CHECK(zd_fw_decide(&fw, &f) == -22);
+    ZD_CHECK_EQ(fw.stats.invalid_flows, 2U);
+    ZD_CHECK_EQ(zd_fw_matching(&fw, &f), 0U);
+    /* ICMP and ANY have no port to check, outbound or not */
+    f.dir = ZD_FW_OUT;
+    f.proto = ZD_FW_ICMP;
+    f.dst_port = 0;
+    ZD_CHECK_EQ(zd_fw_decide(&fw, &f), ZD_FW_ALLOW);
 }

@@ -41,6 +41,18 @@ static int provider_unavailable_called(void *context,
     return -ZD_EPERM; /* must never be reached when availability=0 */
 }
 
+static int index_events;
+static enum zd_index_doc_kind last_index_kind;
+static char last_index_key[64];
+
+static void on_index_event(void *context, enum zd_index_doc_kind kind,
+                           const char *key) {
+    (void)context;
+    ++index_events;
+    last_index_kind = kind;
+    snprintf(last_index_key, sizeof(last_index_key), "%s", key ? key : "");
+}
+
 static void test_parser(void) {
     struct zd_intent intent;
     ZD_CHECK_OK(zd_search_parse("terminal", &intent));
@@ -138,6 +150,75 @@ static void test_index_incremental(void) {
                  ZD_ENOENT);
     ZD_CHECK_ERR(zd_search_index_upsert(&search, ZD_INDEX_FILE, "", "x"),
                  ZD_EINVAL);
+}
+
+/* --- cancellation -------------------------------------------------- */
+
+/* A provider that observes the generation move mid-query and stops, exactly
+ * as in-flight work must when a newer query supersedes it. */
+static int provider_stale(void *context, const struct zd_intent *intent,
+                          struct zd_search_result *results, uint32_t capacity,
+                          volatile uint32_t *cancel_token,
+                          uint32_t query_generation) {
+    (void)context;
+    (void)intent;
+    (void)results;
+    (void)capacity;
+    if (cancel_token && *cancel_token != query_generation)
+        return -ZD_ECANCELED;
+    return 0;
+}
+
+/* Runs first and moves the generation, the way a concurrent re-query would,
+ * so every provider after it in the same query is stale. */
+static int provider_generation_bump(void *context,
+                                    const struct zd_intent *intent,
+                                    struct zd_search_result *results,
+                                    uint32_t capacity,
+                                    volatile uint32_t *cancel_token,
+                                    uint32_t query_generation) {
+    struct zd_search *s = (struct zd_search *)context;
+    (void)intent;
+    (void)results;
+    (void)capacity;
+    (void)cancel_token;
+    (void)query_generation;
+    ++s->index_stats.cancel_generation;
+    return 0;
+}
+
+static void test_query_cancellation(void) {
+    struct zd_search_result results[ZD_SEARCH_MAX_RESULTS];
+    struct zd_search_provider bumper;
+    struct zd_search_provider stale;
+    uint64_t canceled_before;
+    uint64_t drops_before;
+    uint32_t count = 0;
+
+    zd_search_init(&search);
+    ZD_CHECK_OK(zd_search_index_upsert(&search, ZD_INDEX_APP, "terminal",
+                                       "Terminal"));
+    memset(&bumper, 0, sizeof(bumper));
+    bumper.name = "bumper";
+    bumper.available = provider_available_yes;
+    bumper.query = provider_generation_bump;
+    bumper.context = &search;
+    ZD_CHECK_OK(zd_search_add_provider(&search, &bumper));
+    memset(&stale, 0, sizeof(stale));
+    stale.name = "stale";
+    stale.available = provider_available_yes;
+    stale.query = provider_stale;
+    ZD_CHECK_OK(zd_search_add_provider(&search, &stale));
+
+    canceled_before = search.index_stats.queries_canceled;
+    drops_before = search.stats.stale_drops;
+    /* The superseded provider stops, and the query still completes. */
+    ZD_CHECK_OK(zd_search_query(&search, "terminal", results, 16, &count));
+    ZD_CHECK(search.stats.stale_drops > drops_before);
+    /* One cancellation is counted for the query, not one per provider. */
+    ZD_CHECK_EQ(search.index_stats.queries_canceled, canceled_before + 1);
+    ZD_CHECK_OK(zd_search_query(&search, "terminal", results, 16, &count));
+    ZD_CHECK_EQ(search.index_stats.queries_canceled, canceled_before + 2);
 }
 
 static void test_query_pipeline(void) {
@@ -295,10 +376,135 @@ static void test_provider_registry_limits(void) {
         else
             break;
     }
-    /* init already registered "index", so capacity-1 more fit. */
-    ZD_CHECK_EQ(registered, ZD_SEARCH_MAX_PROVIDERS - 1U);
+    /* init already registered "index" and "apps", so capacity-2 more fit. */
+    ZD_CHECK_EQ(registered, ZD_SEARCH_MAX_PROVIDERS - 2U);
     ZD_CHECK_ERR(zd_search_add_provider(&search, &provider), ZD_ENOSPC);
     ZD_CHECK_ERR(zd_search_add_provider(&search, 0), ZD_EINVAL);
+}
+
+static void test_live_app_provider(void) {
+    struct zd_window windows[2];
+    const struct zd_window *live[2];
+    struct zd_search_result results[4];
+    uint32_t count = 0;
+    uint32_t index;
+    int found_app = 0;
+
+    zd_search_init(&search);
+
+    /* No window list attached: the built-in provider stays silent. */
+    ZD_CHECK_EQ(zd_search_query(&search, "app:editor", results, 4, &count), 0);
+    ZD_CHECK_EQ(count, 0U);
+
+    memset(windows, 0, sizeof(windows));
+    windows[0].in_use = 1;
+    windows[0].id = 7;
+    snprintf(windows[0].title, sizeof(windows[0].title), "editor-window");
+    snprintf(windows[0].a11y_label, sizeof(windows[0].a11y_label),
+             "text editor");
+    windows[1].in_use = 0; /* free slot: must be skipped, never emitted */
+    live[0] = &windows[0];
+    live[1] = &windows[1];
+    zd_search_set_live_apps(&search, live, 2);
+
+    ZD_CHECK_EQ(zd_search_query(&search, "app:editor", results, 4, &count), 0);
+    ZD_CHECK(count >= 1U);
+    for (index = 0; index < count; ++index)
+        if (results[index].kind == ZD_SEARCH_APP &&
+            strcmp(results[index].label, "editor-window") == 0 &&
+            results[index].document_id == 7U)
+            found_app = 1;
+    ZD_CHECK_EQ(found_app, 1);
+
+    /* A token no window carries yields nothing: rows are scored, not
+     * canned, so the provider cannot manufacture a match. */
+    ZD_CHECK_EQ(zd_search_query(&search, "app:zzzmissing", results, 4,
+                                &count), 0);
+    ZD_CHECK_EQ(count, 0U);
+
+    /* Detaching the list removes the rows again. */
+    zd_search_set_live_apps(&search, 0, 0);
+    ZD_CHECK_EQ(zd_search_query(&search, "app:editor", results, 4, &count), 0);
+    ZD_CHECK_EQ(count, 0U);
+}
+
+static void test_index_listener_touch_and_names(void) {
+    struct zd_search_result results[8];
+    uint32_t count = 0;
+    uint32_t before;
+    int index;
+
+    zd_search_init(&search);
+    index_events = 0;
+
+    /* Every search kind is named; anything outside the enum is not. */
+    ZD_CHECK(strcmp(zd_search_kind_name(ZD_SEARCH_ANY), "any") == 0);
+    ZD_CHECK(strcmp(zd_search_kind_name(ZD_SEARCH_APP), "app") == 0);
+    ZD_CHECK(strcmp(zd_search_kind_name(ZD_SEARCH_AI_ACTION), "ai_action") == 0);
+    ZD_CHECK(strcmp(zd_search_kind_name(ZD_SEARCH_KIND_COUNT), "?") == 0);
+    ZD_CHECK(strcmp(zd_search_kind_name((enum zd_search_kind)-1), "?") == 0);
+
+    /* Index listeners: reject bad registrations, then see both events. */
+    ZD_CHECK_ERR(zd_search_add_index_listener(&search, 0, 0), ZD_EINVAL);
+    ZD_CHECK_ERR(zd_search_add_index_listener(0, on_index_event, 0), ZD_EINVAL);
+    ZD_CHECK_OK(zd_search_add_index_listener(&search, on_index_event, 0));
+    ZD_CHECK_OK(zd_search_index_upsert(&search, ZD_INDEX_APP, "app:terminal",
+                                       "Terminal"));
+    ZD_CHECK_EQ(index_events, 1);
+    ZD_CHECK_EQ((int)last_index_kind, (int)ZD_INDEX_APP);
+    ZD_CHECK(strcmp(last_index_key, "app:terminal") == 0);
+    ZD_CHECK_OK(zd_search_index_remove(&search, "app:terminal"));
+    ZD_CHECK_EQ(index_events, 2);
+    for (index = 0; index < ZD_SEARCH_MAX_LISTENERS - 1; ++index)
+        ZD_CHECK_OK(zd_search_add_index_listener(&search, on_index_event, 0));
+    ZD_CHECK_ERR(zd_search_add_index_listener(&search, on_index_event, 0),
+                 ZD_ENOSPC);
+
+    /* Touch: recency is a ranking input, so it cannot be a silent no-op,
+     * and it re-arms tokenization for the document it touched. */
+    ZD_CHECK_ERR(zd_search_index_touch(&search, "file:notes", 900), ZD_ENOENT);
+    ZD_CHECK_ERR(zd_search_index_touch(&search, 0, 900), ZD_EINVAL);
+    ZD_CHECK_ERR(zd_search_index_touch(0, "file:notes", 900), ZD_EINVAL);
+    ZD_CHECK_OK(zd_search_index_upsert(&search, ZD_INDEX_FILE, "file:notes",
+                                       "notes"));
+    ZD_CHECK_OK(zd_search_index_upsert(&search, ZD_INDEX_FILE, "file:older",
+                                       "notes"));
+    while (zd_search_index_step(&search, 4) == 1) {
+    }
+    before = search.index_stats.docs_tokenized;
+    ZD_CHECK_OK(zd_search_index_touch(&search, "file:notes", 9000));
+    while (zd_search_index_step(&search, 4) == 1) {
+    }
+    ZD_CHECK(search.index_stats.docs_tokenized > before);
+    ZD_CHECK_OK(zd_search_query(&search, "notes", results, 8, &count));
+    ZD_CHECK_EQ(count, 2U);
+    ZD_CHECK(strcmp(results[0].path, "file:notes") == 0);
+    ZD_CHECK(results[0].score > results[1].score);
+
+    /* Provider names are identities: a second registration under a name that
+     * is already registered is refused, because the alternative is querying
+     * the same source twice and reporting its rows twice. */
+    {
+        struct zd_search_provider extra;
+        memset(&extra, 0, sizeof(extra));
+        extra.name = "extra";
+        extra.query = provider_dead;
+        ZD_CHECK_OK(zd_search_add_provider(&search, &extra));
+        ZD_CHECK_ERR(zd_search_add_provider(&search, &extra), ZD_EBUSY);
+        ZD_CHECK_ERR(zd_search_add_provider(&search, 0), ZD_EINVAL);
+        memset(&extra, 0, sizeof(extra));
+        extra.query = provider_dead;
+        ZD_CHECK_ERR(zd_search_add_provider(&search, &extra), ZD_EINVAL);
+    }
+
+    /* The built-in registrations are idempotent and tolerate NULL: an
+     * owner that re-registers must not grow the provider table. */
+    before = search.provider_count;
+    zd_search_register_index_provider(&search);
+    zd_search_register_app_provider(&search);
+    ZD_CHECK_EQ(search.provider_count, before);
+    zd_search_register_index_provider(0);
+    zd_search_register_app_provider(0);
 }
 
 void zd_test_search_suite(void) {
@@ -306,6 +512,9 @@ void zd_test_search_suite(void) {
     ZD_RUN(test_parser);
     ZD_RUN(test_index_incremental);
     ZD_RUN(test_query_pipeline);
+    ZD_RUN(test_query_cancellation);
     ZD_RUN(test_ranking_semantics);
     ZD_RUN(test_provider_registry_limits);
+    ZD_RUN(test_live_app_provider);
+    ZD_RUN(test_index_listener_touch_and_names);
 }

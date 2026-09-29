@@ -48,6 +48,8 @@ static int fw_valid_tmpl(const struct zd_fw_rule *t) {
         if ((unsigned char)t->app[i] < 0x21)
             return 0; /* no control/space in app ids */
     }
+    if (i == ZD_FW_APP)
+        return 0; /* app id must be NUL-terminated inside the fixed buffer */
     return 1;
 }
 
@@ -121,11 +123,24 @@ static int fw_match(const struct zd_fw_rule *r,
     return 1;
 }
 
+/* A flow the engine cannot classify is not decidable.  Rules are
+ * validated when they are added, so flows have to be held to the same
+ * standard: a rule written for ZD_FW_ANY must not silently allow
+ * traffic whose protocol this engine has no concept of. */
+static int fw_flow_ok(const struct zd_fw_flow *f) {
+    if (f->dir != ZD_FW_IN && f->dir != ZD_FW_OUT)
+        return 0;
+    return f->proto == ZD_FW_ANY || f->proto == ZD_FW_TCP ||
+           f->proto == ZD_FW_UDP || f->proto == ZD_FW_ICMP;
+}
+
 uint32_t zd_fw_matching(const struct zd_fw *fw,
                         const struct zd_fw_flow *flow) {
     uint32_t i, n = 0;
     if (!fw || !flow)
         return 0;
+    if (!fw_flow_ok(flow))
+        return 0; /* nothing can decide it, so nothing matches it */
     for (i = 0; i < fw->rule_count; ++i)
         if (fw_match(&fw->rules[i], flow))
             ++n;
@@ -136,7 +151,7 @@ int zd_fw_decide(struct zd_fw *fw, const struct zd_fw_flow *flow) {
     uint32_t i;
     if (!fw || !flow)
         return fw_bad();
-    if (flow->dir != ZD_FW_IN && flow->dir != ZD_FW_OUT) {
+    if (!fw_flow_ok(flow)) {
         fw->stats.invalid_flows++;
         return fw_bad();
     }

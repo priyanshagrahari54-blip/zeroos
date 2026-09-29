@@ -15,13 +15,14 @@ void zd_caps_init(struct zd_caps *c) {
         return;
     for (i = 0; i < ZD_SVC_COUNT; ++i) {
         c->granted[i] = 0;
+        c->revoked[i] = 0;
         c->active[i] = 0;
     }
     for (i = 0; i < ZD_CAP_AUDIT_RING; ++i) {
         c->audit[i].service = 0;
         c->audit[i].capability = 0;
         c->audit[i].allowed = 0;
-        c->audit[i].revoked = 0;
+        c->audit[i].reason = 0;
         c->audit[i].seq = 0;
     }
     c->audit_head = 0;
@@ -31,12 +32,12 @@ void zd_caps_init(struct zd_caps *c) {
 }
 
 static void cap_audit(struct zd_caps *c, int service, int cap,
-                      int allowed, int revoked) {
+                      int allowed, int reason) {
     struct zd_cap_audit_entry *e = &c->audit[c->audit_head];
     e->service = (uint8_t)service;
     e->capability = (uint8_t)cap;
     e->allowed = allowed ? 1 : 0;
-    e->revoked = revoked ? 1 : 0;
+    e->reason = (uint8_t)reason;
     e->seq = c->audit_count;
     c->audit_head = (c->audit_head + 1) % ZD_CAP_AUDIT_RING;
     c->audit_count++;
@@ -48,6 +49,7 @@ int zd_caps_activate(struct zd_caps *c, int service, uint64_t mask) {
     if (mask & ~((1ULL << ZD_CAP_COUNT) - 1ULL))
         return cap_bad(); /* unknown capability bits rejected */
     c->granted[service] = mask;
+    c->revoked[service] = 0; /* a fresh start is not carrying old policy */
     c->active[service] = 1;
     c->stats.activations++;
     return 0;
@@ -57,6 +59,7 @@ int zd_caps_deactivate(struct zd_caps *c, int service) {
     if (!c || service < 0 || service >= ZD_SVC_COUNT)
         return cap_bad();
     c->granted[service] = 0; /* no sticky privileges across restarts */
+    c->revoked[service] = 0;
     c->active[service] = 0;
     c->stats.deactivations++;
     return 0;
@@ -68,6 +71,7 @@ int zd_caps_grant(struct zd_caps *c, int service, int cap) {
     if (!c->active[service])
         return cap_perm(); /* grants attach to running services only */
     c->granted[service] |= (1ULL << cap);
+    c->revoked[service] &= ~(1ULL << cap); /* re-granted: no longer a revoke */
     return 0;
 }
 
@@ -79,24 +83,30 @@ int zd_caps_revoke(struct zd_caps *c, int service, int cap) {
     if (!(c->granted[service] & (1ULL << cap)))
         return 0; /* already absent: idempotent */
     c->granted[service] &= ~(1ULL << cap);
+    c->revoked[service] |= (1ULL << cap);
     c->stats.revocations++;
     return 0;
 }
 
 int zd_caps_check(struct zd_caps *c, int service, int cap) {
-    int ok;
+    int ok, reason;
     if (!c || !cap_valid(service, cap))
         return cap_bad();
     c->stats.checks++;
     ok = c->active[service] && (c->granted[service] & (1ULL << cap)) != 0;
     if (ok) {
         c->stats.allowed++;
-        cap_audit(c, service, cap, 1, 0);
+        cap_audit(c, service, cap, 1, ZD_CAP_DENY_NONE);
         return 0;
     }
     c->stats.denied++;
-    cap_audit(c, service, cap, 0,
-              c->active[service] ? 0 : 1);
+    if (!c->active[service])
+        reason = ZD_CAP_DENY_INACTIVE;
+    else if (c->revoked[service] & (1ULL << cap))
+        reason = ZD_CAP_DENY_REVOKED;
+    else
+        reason = ZD_CAP_DENY_ABSENT;
+    cap_audit(c, service, cap, 0, reason);
     return cap_perm();
 }
 

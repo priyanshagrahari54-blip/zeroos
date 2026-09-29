@@ -164,6 +164,36 @@ static void test_rate_limit_and_cap(void) {
     ZD_CHECK_EQ(engine.stats.cap_reached, 1);
 }
 
+static void test_unknown_events_are_counted(void) {
+    struct zd_automation engine;
+    struct zd_automation_ops ops = make_ops();
+    struct zd_automation_rule rule;
+    uint32_t id = 0;
+    uint64_t seen;
+
+    reset_ops();
+    ZD_CHECK_EQ(zd_automation_init(&engine, &ops), 0);
+    rule = make_rule(ZD_AUTO_EV_CALLER_TICK, ZD_AUTO_ACT_LOG, "audit");
+    rule.permission = 1;
+    ZD_CHECK_EQ(zd_automation_add(&engine, &rule, &id), 0);
+
+    /* A recognised event fires and is counted. */
+    ZD_CHECK_EQ(zd_automation_fire(&engine, ZD_AUTO_EV_CALLER_TICK, 10), 1);
+    ZD_CHECK_EQ(engine.stats.events_seen, 1u);
+
+    /* An id that is not one of the events fires nothing -- but it was
+     * delivered, and the counter is the only place that shows it: no
+     * rule matches, so the audit ring records nothing either. */
+    seen = engine.stats.events_seen;
+    ZD_CHECK_EQ(zd_automation_fire(&engine, 9999u, 11), 0);
+    ZD_CHECK_EQ(engine.stats.events_seen, seen + 1u);
+    ZD_CHECK_EQ(zd_automation_fire(&engine, 0u, 12), 0);
+    ZD_CHECK_EQ(engine.stats.events_seen, seen + 2u);
+    ZD_CHECK_EQ(engine.stats.fires, 1u);
+    ZD_CHECK_EQ(engine.audit_count, 1u); /* only the real fire */
+    ZD_CHECK_EQ(zd_automation_fire(0, ZD_AUTO_EV_CALLER_TICK, 13), 0);
+}
+
 static void test_action_dispatch(void) {
     struct zd_automation engine;
     struct zd_automation_ops ops = make_ops();
@@ -260,6 +290,7 @@ void zd_test_automation_suite(void) {
     test_permission_gate();
     test_rate_limit_and_cap();
     test_action_dispatch();
+    test_unknown_events_are_counted();
     test_audit_overflow_and_remove();
     zd_test_current = "main";
 }

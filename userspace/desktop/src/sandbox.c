@@ -45,6 +45,7 @@ static int sb_find(const struct zd_sandbox *sb, const char *name) {
 int zd_sandbox_define(struct zd_sandbox *sb, const char *name,
                       uint32_t allowed_mask) {
     int idx, i;
+    int fresh = 0;
     uint32_t n;
     if (!sb || !name || !name[0]) {
         if (sb)
@@ -66,6 +67,7 @@ int zd_sandbox_define(struct zd_sandbox *sb, const char *name,
         for (i = 0; i < ZD_SB_PROFILES; ++i)
             if (!sb->profiles[i].in_use) {
                 idx = i;
+                fresh = 1;
                 break;
             }
     }
@@ -78,7 +80,15 @@ int zd_sandbox_define(struct zd_sandbox *sb, const char *name,
     sb->profiles[idx].name[n] = 0;
     sb->profiles[idx].allowed = allowed_mask;
     sb->profiles[idx].in_use = 1;
-    sb->stats.profiles_defined++;
+    if (fresh) {
+        /* The slot is new to this name, so the counters it may still be
+         * carrying belong to whatever profile was forgotten here. */
+        sb->profiles[idx].checks = 0;
+        sb->profiles[idx].denied = 0;
+        sb->stats.profiles_defined++;
+    }
+    /* Replacing an existing profile keeps its counters: it is the same
+     * profile with a new mask, not a new one. */
     return 0;
 }
 
@@ -92,6 +102,10 @@ int zd_sandbox_forget(struct zd_sandbox *sb, const char *name) {
     sb->profiles[idx].in_use = 0;
     sb->profiles[idx].name[0] = 0;
     sb->profiles[idx].allowed = 0;
+    sb->profiles[idx].checks = 0;
+    sb->profiles[idx].denied = 0;
+    if (sb->stats.profiles_defined > 0)
+        sb->stats.profiles_defined--;
     return 0;
 }
 

@@ -72,8 +72,10 @@ int zd_eco_pair(struct zd_eco *e, const char *name, uint32_t *out_idx) {
             e->stats.rejected++;
         return -22;
     }
-    if (e->device_count >= ZD_ECO_DEVICES)
+    if (e->device_count >= ZD_ECO_DEVICES) {
+        e->stats.rejected++;
         return -28;
+    }
     for (i = 0; i < ZD_ECO_DEVICES; ++i) {
         if (e->devices[i].in_use)
             continue;
@@ -89,6 +91,7 @@ int zd_eco_pair(struct zd_eco *e, const char *name, uint32_t *out_idx) {
             *out_idx = i;
         return 0;
     }
+    e->stats.rejected++;
     return -28;
 }
 
@@ -113,6 +116,8 @@ int zd_eco_unpair(struct zd_eco *e, uint32_t idx) {
                 e->queue[i].payload[0] = 0;
                 if (e->queued)
                     e->queued--;
+                /* the pairing that was going to carry it is gone */
+                e->stats.refused_pairing++;
             }
         }
     }
@@ -162,6 +167,10 @@ int zd_eco_revoke(struct zd_eco *e, uint32_t idx, uint32_t perm) {
                 e->queue[i].payload[0] = 0;
                 if (e->queued)
                     e->queued--;
+                /* queued work the revoked permission was carrying is a
+                 * refusal, not a silent disappearance */
+                e->stats.refused_perm++;
+                d->refused++;
             }
         }
     }
@@ -192,8 +201,12 @@ int zd_eco_enqueue(struct zd_eco *e, uint32_t idx, uint32_t perm,
         d->refused++;
         return -1;
     }
-    if (e->queued >= ZD_ECO_QUEUE)
+    if (e->queued >= ZD_ECO_QUEUE) {
+        /* the queue is full: the work is not queued, and it does not
+         * disappear without being counted either */
+        e->stats.rejected++;
         return -28;
+    }
     for (i = 0; i < ZD_ECO_QUEUE; ++i) {
         if (e->queue[i].in_use)
             continue;
@@ -207,6 +220,7 @@ int zd_eco_enqueue(struct zd_eco *e, uint32_t idx, uint32_t perm,
         e->stats.queued++;
         return 0;
     }
+    e->stats.rejected++;
     return -28;
 }
 
@@ -215,7 +229,12 @@ uint32_t zd_eco_flush(struct zd_eco *e) {
     if (!e)
         return 0;
     if (e->conn != ZD_ECO_ONLINE) {
-        /* offline: nothing lost, nothing sent early */
+        /* offline: nothing lost, nothing sent early. The work held back is
+         * counted per entry, so a reporting surface can tell "nothing
+         * pending" apart from "pending and held" -- privacy.c sums this. */
+        for (i = 0; i < ZD_ECO_QUEUE; ++i)
+            if (e->queue[i].in_use && !e->queue[i].flushed)
+                e->stats.refused_offline++;
         return 0;
     }
     for (i = 0; i < ZD_ECO_QUEUE; ++i) {
@@ -225,7 +244,11 @@ uint32_t zd_eco_flush(struct zd_eco *e) {
             continue;
         d = e_dev(e, en->device_idx);
         if (!d) {
-            /* pairing vanished: drop, keep queue consistent */
+            /* unpair() drops the entry and counts it, so this is only
+             * reachable if the two ever disagree. If they do, the work
+             * still went nowhere, and it is counted as such rather than
+             * dropped in silence. */
+            e->stats.refused_pairing++;
             en->in_use = 0;
             en->payload[0] = 0;
             if (e->queued)

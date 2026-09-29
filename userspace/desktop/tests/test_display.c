@@ -192,6 +192,15 @@ static void test_damage_merge_and_clip(void) {
                                           (struct zd_rect){-50, -50, 10, 10}),
                 0);
     ZD_CHECK_EQ(service.pending_valid, 0);
+
+    /* Extreme caller rectangles are clipped in widened arithmetic: the
+     * endpoint additions must not overflow before clipping decides that the
+     * rectangle is outside the scanout. */
+    ZD_CHECK_EQ(zd_display_service_damage(
+                    &service,
+                    (struct zd_rect){2147483640, 10, 100, 10}),
+                0);
+    ZD_CHECK_EQ(service.pending_valid, 0);
 }
 
 static void test_present_contract(void) {

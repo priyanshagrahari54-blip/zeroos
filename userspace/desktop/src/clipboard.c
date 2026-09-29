@@ -20,6 +20,20 @@ static uint32_t c_len(const char *s) {
     return n;
 }
 
+static void clip_wipe_slot(struct zd_clip *slot) {
+    uint32_t j;
+    if (!slot)
+        return;
+    for (j = 0; j < ZD_CLIP_TEXT; ++j)
+        slot->text[j] = 0;
+    for (j = 0; j < ZD_CLIP_APP; ++j)
+        slot->app[j] = 0;
+    slot->format = 0;
+    slot->seq = 0;
+    slot->sensitive = 0;
+    slot->in_use = 0;
+}
+
 void zd_clipboard_init(struct zd_clipboard *cb) {
     uint32_t i;
     if (!cb)
@@ -63,6 +77,12 @@ int zd_clipboard_copy(struct zd_clipboard *cb, const char *app,
         slot = &cb->slots[ZD_CLIP_MAX - 1];
         cb->stats.sensitive_kept++;
     } else {
+        /* A sensitive clipping is transient.  Once it stops being current it
+         * must not remain resident in the reserved slot; history already
+         * excludes that slot, but privacy requires wiping the payload too. */
+        if (cb->slots[ZD_CLIP_MAX - 1].in_use &&
+            cb->slots[ZD_CLIP_MAX - 1].sensitive)
+            clip_wipe_slot(&cb->slots[ZD_CLIP_MAX - 1]);
         for (i = 0; i < ZD_CLIP_MAX - 1; ++i) {
             if (!cb->slots[i].in_use) {
                 slot = &cb->slots[i];
@@ -164,14 +184,8 @@ void zd_clipboard_clear(struct zd_clipboard *cb) {
     uint32_t i;
     if (!cb)
         return;
-    for (i = 0; i < ZD_CLIP_MAX; ++i) {
-        uint32_t j;
-        for (j = 0; j < ZD_CLIP_TEXT; ++j)
-            cb->slots[i].text[j] = 0;
-        cb->slots[i].in_use = 0;
-        cb->slots[i].sensitive = 0;
-        cb->slots[i].seq = 0;
-    }
+    for (i = 0; i < ZD_CLIP_MAX; ++i)
+        clip_wipe_slot(&cb->slots[i]);
     cb->current = 0;
 }
 

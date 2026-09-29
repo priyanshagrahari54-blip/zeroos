@@ -147,6 +147,48 @@ jobs:
             grep -Eq 'ZEROOS: session (scanout present contract|scanout degraded path) passed\.' build/serial.log
             grep -q "ZEROOS: session input pump passed." build/serial.log
             grep -q "ZEROOS: session input routing passed." build/serial.log
+            grep -q "ZEROOS: session file manager VFS binding passed." build/serial.log
+            grep -q "ZEROOS: session file manager transfer ops passed." build/serial.log
+            grep -q "ZEROOS: session file manager batch operations passed." build/serial.log
+            grep -q "ZEROOS: session universal search live providers passed." build/serial.log
+            grep -q "ZEROOS: session monotonic clock and pacing passed." build/serial.log
+            grep -q "ZEROOS: session lifecycle governor activation passed." build/serial.log
+            grep -q "ZEROOS: session watchdog recovery passed." build/serial.log
+            grep -q "ZEROOS: session automation live events passed." build/serial.log
+            grep -q "ZEROOS: session terminal pipe binding passed." build/serial.log
+            grep -q "ZEROOS: session privacy aggregation passed." build/serial.log
+            grep -q "ZEROOS: shell child process alive." build/serial.log
+            grep -q "ZEROOS: shell child argv1=certify." build/serial.log
+            grep -q "ZEROOS: session terminal line editing passed." build/serial.log
+            grep -q "ZEROOS: shell child env0=ZEROOS_CHILD=certified." build/serial.log
+            grep -q "ZEROOS: session update verification passed." build/serial.log
+            grep -q "ZEROOS: session clipboard privacy passed." build/serial.log
+            grep -q "ZEROOS: session downloads pipeline passed." build/serial.log
+            grep -q "ZEROOS: session notification lifecycle passed." build/serial.log
+            grep -q "ZEROOS: session launcher process binding passed." build/serial.log
+            grep -q "ZEROOS: session settings persistence passed." build/serial.log
+            grep -q "ZEROOS: session performance centre passed." build/serial.log
+            grep -q "ZEROOS: session workspaces and snapping passed." build/serial.log
+            grep -q "ZEROOS: session bar and quick controls passed." build/serial.log
+            grep -q "ZEROOS: session system status passed." build/serial.log
+            grep -q "ZEROOS: session ai platform passed." build/serial.log
+            grep -q "ZEROOS: session browser lifecycle passed." build/serial.log
+            grep -q "ZEROOS: session study center passed." build/serial.log
+            grep -q "ZEROOS: session gaming and fps passed." build/serial.log
+            grep -q "ZEROOS: session accessibility and localization passed." build/serial.log
+            grep -q "ZEROOS: session media rights passed." build/serial.log
+            grep -q "ZEROOS: session recovery snapshots passed." build/serial.log
+            grep -q "ZEROOS: session secret vault passed." build/serial.log
+            grep -q "ZEROOS: session egress policy passed." build/serial.log
+            grep -q "ZEROOS: session navigation policy passed." build/serial.log
+            grep -q "ZEROOS: session study attachments passed." build/serial.log
+            grep -q "ZEROOS: session study notes passed." build/serial.log
+            grep -q "ZEROOS: session study dictionary passed." build/serial.log
+            grep -q "ZEROOS: session navigation history passed." build/serial.log
+            grep -q "ZEROOS: session device ecosystem passed." build/serial.log
+            grep -q "ZEROOS: session child process reaped cleanly." build/serial.log
+            grep -q "ZEROOS: session credential enforcement passed." build/serial.log
+            grep -q "ZEROOS: session security scan pipeline passed." build/serial.log
             grep -q "ZEROOS: session shell process complete." build/serial.log
             grep -q "ZEROOS: session shell process reaped cleanly." build/serial.log
             if grep -q "storage.*FAILED" build/serial.log; then
@@ -210,6 +252,48 @@ jobs:
           grep -Eq 'ZEROOS: session (scanout present contract|scanout degraded path) passed\.' build/serial-smp4.log
           grep -q "ZEROOS: session input pump passed." build/serial-smp4.log
           grep -q "ZEROOS: session input routing passed." build/serial-smp4.log
+          grep -q "ZEROOS: session file manager VFS binding passed." build/serial-smp4.log
+          grep -q "ZEROOS: session file manager transfer ops passed." build/serial-smp4.log
+          grep -q "ZEROOS: session file manager batch operations passed." build/serial-smp4.log
+          grep -q "ZEROOS: session universal search live providers passed." build/serial-smp4.log
+          grep -q "ZEROOS: session monotonic clock and pacing passed." build/serial-smp4.log
+          grep -q "ZEROOS: session lifecycle governor activation passed." build/serial-smp4.log
+          grep -q "ZEROOS: session watchdog recovery passed." build/serial-smp4.log
+          grep -q "ZEROOS: session automation live events passed." build/serial-smp4.log
+          grep -q "ZEROOS: session terminal pipe binding passed." build/serial-smp4.log
+          grep -q "ZEROOS: session privacy aggregation passed." build/serial-smp4.log
+          grep -q "ZEROOS: shell child process alive." build/serial-smp4.log
+          grep -q "ZEROOS: shell child argv1=certify." build/serial-smp4.log
+          grep -q "ZEROOS: session terminal line editing passed." build/serial-smp4.log
+          grep -q "ZEROOS: shell child env0=ZEROOS_CHILD=certified." build/serial-smp4.log
+          grep -q "ZEROOS: session update verification passed." build/serial-smp4.log
+          grep -q "ZEROOS: session clipboard privacy passed." build/serial-smp4.log
+          grep -q "ZEROOS: session downloads pipeline passed." build/serial-smp4.log
+          grep -q "ZEROOS: session notification lifecycle passed." build/serial-smp4.log
+          grep -q "ZEROOS: session launcher process binding passed." build/serial-smp4.log
+          grep -q "ZEROOS: session settings persistence passed." build/serial-smp4.log
+          grep -q "ZEROOS: session performance centre passed." build/serial-smp4.log
+          grep -q "ZEROOS: session workspaces and snapping passed." build/serial-smp4.log
+          grep -q "ZEROOS: session bar and quick controls passed." build/serial-smp4.log
+          grep -q "ZEROOS: session system status passed." build/serial-smp4.log
+          grep -q "ZEROOS: session ai platform passed." build/serial-smp4.log
+          grep -q "ZEROOS: session browser lifecycle passed." build/serial-smp4.log
+          grep -q "ZEROOS: session study center passed." build/serial-smp4.log
+          grep -q "ZEROOS: session gaming and fps passed." build/serial-smp4.log
+          grep -q "ZEROOS: session accessibility and localization passed." build/serial-smp4.log
+          grep -q "ZEROOS: session media rights passed." build/serial-smp4.log
+          grep -q "ZEROOS: session recovery snapshots passed." build/serial-smp4.log
+          grep -q "ZEROOS: session secret vault passed." build/serial-smp4.log
+          grep -q "ZEROOS: session egress policy passed." build/serial-smp4.log
+          grep -q "ZEROOS: session navigation policy passed." build/serial-smp4.log
+          grep -q "ZEROOS: session study attachments passed." build/serial-smp4.log
+          grep -q "ZEROOS: session study notes passed." build/serial-smp4.log
+          grep -q "ZEROOS: session study dictionary passed." build/serial-smp4.log
+          grep -q "ZEROOS: session navigation history passed." build/serial-smp4.log
+          grep -q "ZEROOS: session device ecosystem passed." build/serial-smp4.log
+          grep -q "ZEROOS: session child process reaped cleanly." build/serial-smp4.log
+          grep -q "ZEROOS: session credential enforcement passed." build/serial-smp4.log
+          grep -q "ZEROOS: session security scan pipeline passed." build/serial-smp4.log
           grep -q "ZEROOS: session shell process complete." build/serial-smp4.log
           grep -q "ZEROOS: session shell process reaped cleanly." build/serial-smp4.log
           grep -q "ZEROOS: shared-memory map/grant/lifecycle self-test passed." build/serial-smp4.log

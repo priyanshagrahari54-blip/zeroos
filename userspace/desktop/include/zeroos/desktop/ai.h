@@ -6,7 +6,9 @@
  * (backends are invoked only inside submit/drain), permission-aware
  * (every context bit and the remote egress need explicit grants) and
  * minimal-resident (request payloads are cleared when drained; nothing
- * is retained across calls unless ZD_AI_GRANT_PERSIST is set).
+ * is retained across calls unless ZD_AI_GRANT_PERSIST is set: with that
+ * grant the drained payload and output stay in the broker's store and are
+ * accounted for in `resident_bytes_after_drain`).
  *
  * Pipeline (docs/ARCHITECTURE.md section 17):
  *   request -> broker -> permission check -> backend select -> run
@@ -45,6 +47,7 @@ struct zd_ai_request {
 };
 
 #define ZD_AI_QUEUE_DEPTH 8u
+#define ZD_AI_OUTPUT_CAP 128u
 
 struct zd_ai_stats {
     uint32_t submitted;
@@ -77,6 +80,14 @@ struct zd_ai_broker {
     uint32_t grants;
     uint32_t queued;          /* occupancy */
     uint8_t active;           /* 0 = dormant (no request resident) */
+    /* Retained result of the last drained request.  Populated only while
+     * ZD_AI_GRANT_PERSIST is granted and cleared at the start of every
+     * drain, so `resident_bytes_after_drain` describes exactly what this
+     * broker is holding right now. */
+    char last_payload[64];
+    char last_output[ZD_AI_OUTPUT_CAP + 1];
+    uint32_t last_payload_len;
+    uint32_t last_output_len;
 };
 
 void zd_ai_broker_init(struct zd_ai_broker *broker,

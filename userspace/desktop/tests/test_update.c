@@ -1,4 +1,5 @@
 /* Transactional update state machine host tests (part B). */
+#include <string.h>
 #include "test_harness.h"
 #include <zeroos/desktop/update.h>
 #include "crypto.h"
@@ -132,7 +133,11 @@ void zd_test_update_suite(void) {
     zd_update_event(&u, ZD_UPD_EV_ROLLBACK_DONE);
     ZD_CHECK(zd_update_state(&u) == ZD_UPD_FAILED);
 
-    /* commit hook failure -> FAILED, not DONE */
+    /* commit hook failure -> FAILED, not DONE, and deliberately NOT rolled
+     * back: by the time commit runs the health check has already passed, so
+     * the new slot is live and known-good and only the "mark good" write
+     * failed. Reverting a healthy slot would trade a retryable bookkeeping
+     * error for a real outage. */
     log = (struct hook_log){0, 0, 0, 0, 0, 1, 0};
     zd_update_init(&u, &ops);
     zd_update_begin(&u, "5.3.2");
@@ -145,6 +150,12 @@ void zd_test_update_suite(void) {
     ZD_CHECK(zd_update_event(&u, ZD_UPD_EV_COMMIT_OK) == -5);
     ZD_CHECK(zd_update_state(&u) == ZD_UPD_FAILED);
     ZD_CHECK(u.stats.committed == 0);
+    ZD_CHECK(log.rollback == 0);
+    ZD_CHECK_EQ(u.stats.rollbacks, 0);
+    ZD_CHECK_EQ(u.stats.health_failures, 0);
+    /* FAILED is a restartable state, so the commit can be retried. */
+    ZD_CHECK(zd_update_begin(&u, "5.3.2") == 0);
+    ZD_CHECK(zd_update_state(&u) == ZD_UPD_DOWNLOADING);
 
     /* rollback hook failure -> FAILED, completed-rollback not counted */
     log = (struct hook_log){0, 0, 0, 0, 0, 0, 1};
@@ -218,4 +229,49 @@ void zd_test_update_suite(void) {
                                           ZD_UPDATE_VERIFY_MAX + 1,
                                           tag) == -22);
     }
+
+    /* START is a transition, not a way to begin from nothing. The
+     * version is the AEAD's AAD and the label the shell reports, so a
+     * machine that has never been told what it is installing must not
+     * invent one: it refuses and counts the refusal, and the state it
+     * was in is untouched. A machine that has been told restarts from
+     * IDLE (after a cancel), from DONE and from FAILED, and keeps the
+     * version it was given. */
+    zd_update_init(&u, 0);
+    ZD_CHECK(zd_update_event(&u, ZD_UPD_EV_START) == -22);
+    ZD_CHECK_EQ(zd_update_state(&u), ZD_UPD_IDLE);
+    ZD_CHECK_EQ(u.stats.rejected_events, 1U);
+    ZD_CHECK_EQ(u.stats.started, 0U);
+    ZD_CHECK_EQ(u.seq, 0U);
+
+    /* a cancel leaves the version behind, so START restarts the target */
+    ZD_CHECK_OK(zd_update_begin(&u, "1.2.3"));
+    ZD_CHECK_OK(zd_update_event(&u, ZD_UPD_EV_CANCEL));
+    ZD_CHECK_EQ(zd_update_state(&u), ZD_UPD_IDLE);
+    ZD_CHECK_OK(zd_update_event(&u, ZD_UPD_EV_START));
+    ZD_CHECK_EQ(zd_update_state(&u), ZD_UPD_DOWNLOADING);
+    ZD_CHECK(strcmp(u.version, "1.2.3") == 0);
+    ZD_CHECK_EQ(u.stats.started, 2U);
+
+    /* from DONE: the next update starts with the version it was given */
+    ZD_CHECK_OK(zd_update_event(&u, ZD_UPD_EV_DOWNLOAD_OK));
+    ZD_CHECK_OK(zd_update_event(&u, ZD_UPD_EV_VERIFY_OK));
+    ZD_CHECK_OK(zd_update_event(&u, ZD_UPD_EV_STAGE_OK));
+    ZD_CHECK_OK(zd_update_event(&u, ZD_UPD_EV_PREFLIGHT_OK));
+    ZD_CHECK_OK(zd_update_event(&u, ZD_UPD_EV_ACTIVATE_OK));
+    ZD_CHECK_OK(zd_update_event(&u, ZD_UPD_EV_HEALTH_OK));
+    ZD_CHECK_OK(zd_update_event(&u, ZD_UPD_EV_COMMIT_OK));
+    ZD_CHECK_EQ(zd_update_state(&u), ZD_UPD_DONE);
+    ZD_CHECK_EQ(u.stats.committed, 1U);
+    ZD_CHECK_OK(zd_update_event(&u, ZD_UPD_EV_START));
+    ZD_CHECK_EQ(zd_update_state(&u), ZD_UPD_DOWNLOADING);
+    ZD_CHECK(strcmp(u.version, "1.2.3") == 0);
+
+    /* from FAILED: a failed run is restartable, with the same version */
+    ZD_CHECK_OK(zd_update_event(&u, ZD_UPD_EV_DOWNLOAD_FAIL));
+    ZD_CHECK_EQ(zd_update_state(&u), ZD_UPD_FAILED);
+    ZD_CHECK_OK(zd_update_event(&u, ZD_UPD_EV_START));
+    ZD_CHECK_EQ(zd_update_state(&u), ZD_UPD_DOWNLOADING);
+    ZD_CHECK(strcmp(u.version, "1.2.3") == 0);
+    ZD_CHECK_EQ(u.stats.started, 4U);
 }

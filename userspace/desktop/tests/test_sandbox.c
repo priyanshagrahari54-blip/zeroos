@@ -91,4 +91,52 @@ void zd_test_sandbox_suite(void) {
         /* forgotten profile denies again */
         ZD_CHECK(zd_sandbox_check(&sb, "p0", ZD_SB_FS_READ) == -1);
     }
+
+    /* `profiles_defined` counts the profiles that exist, not the number
+     * of define() calls -- test_fault already leans on that invariant,
+     * and a replacement or a forget used to break it. A recycled slot
+     * also has to start from zero: history belongs to the profile that
+     * earned it, not to the one that inherited the slot. */
+    zd_sandbox_init(&sb);
+    ZD_CHECK(zd_sandbox_define(&sb, "a", 1u << ZD_SB_FS_READ) == 0);
+    ZD_CHECK(zd_sandbox_check(&sb, "a", ZD_SB_FS_READ) == 0);
+    ZD_CHECK(zd_sandbox_check(&sb, "a", ZD_SB_FS_WRITE) == -1);
+    ZD_CHECK(zd_sandbox_define(&sb, "a", ZD_SB_ALL) == 0); /* replace */
+    ZD_CHECK_EQ(sb.stats.profiles_defined, 1U);
+    {
+        struct zd_sb_profile *p = zd_sandbox_profile(&sb, "a");
+        ZD_CHECK(p != 0);
+        if (p) {
+            ZD_CHECK_EQ(p->allowed, (uint32_t)ZD_SB_ALL);
+            /* same profile, new mask, counters kept */
+            ZD_CHECK_EQ(p->checks, 2U);
+            ZD_CHECK_EQ(p->denied, 1U);
+        }
+    }
+    ZD_CHECK(zd_sandbox_check(&sb, "a", ZD_SB_FS_WRITE) == 0); /* replaced */
+    ZD_CHECK(zd_sandbox_define(&sb, "b", ZD_SB_ALL) == 0);
+    ZD_CHECK_EQ(sb.stats.profiles_defined, 2U);
+    ZD_CHECK(zd_sandbox_forget(&sb, "b") == 0);
+    ZD_CHECK_EQ(sb.stats.profiles_defined, 1U);
+    ZD_CHECK(zd_sandbox_forget(&sb, "a") == 0);
+    ZD_CHECK_EQ(sb.stats.profiles_defined, 0U);
+    /* the slot "b" freed is now reused by "c", with no history carried */
+    ZD_CHECK(zd_sandbox_define(&sb, "c", 1u << ZD_SB_FS_READ) == 0);
+    ZD_CHECK(zd_sandbox_check(&sb, "c", ZD_SB_FS_READ) == 0);
+    {
+        struct zd_sb_profile *p = zd_sandbox_profile(&sb, "c");
+        ZD_CHECK(p != 0);
+        if (p) {
+            ZD_CHECK_EQ(p->checks, 1U);
+            ZD_CHECK_EQ(p->denied, 0U);
+        }
+    }
+    ZD_CHECK_EQ(sb.stats.profiles_defined, 1U);
+    /* the counter cannot run away past the profiles that can exist */
+    {
+        int i;
+        for (i = 0; i < ZD_SB_PROFILES + 4; ++i)
+            (void)zd_sandbox_define(&sb, "c", (uint32_t)i & ZD_SB_ALL);
+        ZD_CHECK(sb.stats.profiles_defined <= ZD_SB_PROFILES);
+    }
 }

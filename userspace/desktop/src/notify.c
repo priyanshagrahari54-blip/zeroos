@@ -10,6 +10,24 @@ static const uint64_t priority_ttl[ZD_NOTIFY_CRITICAL + 1U] = {
     ~0ULL                      /* CRITICAL: no expiry */
 };
 
+/* Absolute expiry for a post.  Both an explicit TTL and the priority
+ * default are *durations*, so they must be added to the post time: the
+ * comparison in the expiry check is `now_ns >= expires_at_ns` against the
+ * same monotonic clock.  Assigning the bare duration made every
+ * default-TTL notification born expired once uptime passed the TTL (30s
+ * for LOW, 2min for NORMAL, 10min for HIGH).  CRITICAL never expires, and
+ * the addition must not wrap around to a small value. */
+static uint64_t notify_expiry(uint64_t now_ns, uint64_t ttl_ns,
+                              enum zd_notify_priority priority) {
+    uint64_t ttl;
+    if (priority > ZD_NOTIFY_CRITICAL)
+        return ~0ULL;
+    ttl = ttl_ns ? ttl_ns : priority_ttl[priority];
+    if (ttl == ~0ULL || now_ns > ~0ULL - ttl)
+        return ~0ULL;
+    return now_ns + ttl;
+}
+
 void zd_notify_init(struct zd_notify *notify) {
     if (!notify)
         return;
@@ -112,7 +130,10 @@ static int consume_token(struct zd_notify *notify, const char *app_id,
 static struct zd_notification *find_notification(struct zd_notify *notify,
                                                  zd_notification_id id) {
     uint32_t index;
-    if (id == ZD_NOTIFICATION_INVALID)
+    /* Callers check the centre in their own time, but this is the first
+     * thing they all do with it, so it answers for a centre that is not
+     * there instead of reading through it. */
+    if (!notify || id == ZD_NOTIFICATION_INVALID)
         return (struct zd_notification *)0;
     for (index = 0; index < ZD_NOTIFY_MAX; ++index)
         if (notify->items[index].in_use && notify->items[index].id == id)
@@ -159,11 +180,10 @@ int zd_notify_post(struct zd_notify *notify, const struct zd_notify_post *post,
         zd_str_copy(existing->title, sizeof(existing->title), post->title);
         zd_str_copy(existing->body, sizeof(existing->body),
                     post->body ? post->body : "");
-        existing->expires_at_ns = post->ttl_ns ?
-            now_ns + post->ttl_ns : priority_ttl[existing->priority];
+        existing->expires_at_ns =
+            notify_expiry(now_ns, post->ttl_ns, existing->priority);
         existing->state = ZD_NOTIFY_STATE_ACTIVE;
         ++notify->stats.deduped;
-        ++notify->stats.active;
         if (out_id)
             *out_id = existing->id;
         return 0;
@@ -214,8 +234,8 @@ int zd_notify_post(struct zd_notify *notify, const struct zd_notify_post *post,
     slot->priority = post->priority;
     slot->state = ZD_NOTIFY_STATE_ACTIVE;
     slot->posted_ns = now_ns;
-    slot->expires_at_ns = post->ttl_ns ?
-        now_ns + post->ttl_ns : priority_ttl[post->priority];
+    slot->expires_at_ns =
+        notify_expiry(now_ns, post->ttl_ns, post->priority);
     slot->in_use = 1;
     ++notify->count;
     ++notify->stats.posted;
@@ -232,8 +252,11 @@ int zd_notify_post(struct zd_notify *notify, const struct zd_notify_post *post,
 }
 
 int zd_notify_dismiss(struct zd_notify *notify, zd_notification_id id) {
-    struct zd_notification *item = find_notification(notify, id);
-    if (!notify || !item)
+    struct zd_notification *item;
+    if (!notify)
+        return -ZD_ENOENT;
+    item = find_notification(notify, id);
+    if (!item)
         return -ZD_ENOENT;
     if (item->state == ZD_NOTIFY_STATE_DISMISSED)
         return -ZD_ESTATE;
@@ -269,8 +292,11 @@ uint32_t zd_notify_dismiss_group(struct zd_notify *notify, const char *app_id,
 
 int zd_notify_defer(struct zd_notify *notify, zd_notification_id id,
                     uint64_t now_ns, uint64_t defer_for_ns) {
-    struct zd_notification *item = find_notification(notify, id);
-    if (!notify || !item)
+    struct zd_notification *item;
+    if (!notify)
+        return -ZD_ENOENT;
+    item = find_notification(notify, id);
+    if (!item)
         return -ZD_ENOENT;
     if (defer_for_ns == 0)
         return -ZD_EINVAL;

@@ -33,6 +33,8 @@ const struct zd_a11y_node *zd_a11y_node_const(const struct zd_a11y *a11y,
 struct zd_a11y_node *zd_a11y_node(struct zd_a11y *a11y, uint32_t id) {
     return node_lookup(a11y, id);
 }
+static void focus_apply(struct zd_a11y *a11y, uint32_t target);
+
 
 int zd_a11y_create(struct zd_a11y *a11y, uint32_t parent,
                    enum zd_a11y_role role, const char *name, uint32_t states,
@@ -142,13 +144,29 @@ int zd_a11y_destroy(struct zd_a11y *a11y, uint32_t id) {
 int zd_a11y_set_states(struct zd_a11y *a11y, uint32_t id, uint32_t states) {
     struct zd_a11y_node *node = node_lookup(a11y, id);
     uint32_t previous;
+    uint32_t wants_focus = states & ZD_A11Y_FOCUSED;
     if (!node)
         return -ZD_ENOENT;
+    /* FOCUSED is not just a bit on a node: it is also the tree's single
+     * focus owner. Accepting it here without routing through the focus
+     * owner lets a caller create two focused nodes, or a focused bit on
+     * a hidden/disabled node, while zd_a11y_focused() still names the
+     * old owner. */
+    if (wants_focus &&
+        (!(states & ZD_A11Y_FOCUSABLE) || (states & ZD_A11Y_DISABLED) ||
+         (states & ZD_A11Y_HIDDEN)))
+        return -ZD_ESTATE;
     previous = node->states;
-    node->states = states;
-    if ((previous & ZD_A11Y_FOCUSED) && !(states & ZD_A11Y_FOCUSED) &&
+    node->states = states & ~ZD_A11Y_FOCUSED;
+    if ((previous & ZD_A11Y_FOCUSED) && !wants_focus &&
         a11y->focused == id)
         a11y->focused = ZD_A11Y_INVALID;
+    if (wants_focus) {
+        if (a11y->focused != id)
+            focus_apply(a11y, id);
+        else
+            node->states |= ZD_A11Y_FOCUSED;
+    }
     return 0;
 }
 

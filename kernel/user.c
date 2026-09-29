@@ -1311,6 +1311,7 @@ static int userspace_ipc_self_test(struct process *process) {
         ipc_send_timeout(process,local,send_buffer,16,0,2)!=-ZEROOS_ETIMEDOUT ||
         ipc_send(process,local,send_buffer,1ULL<<9,0)!=-ZEROOS_EINVAL ||
         ipc_send(process,local,send_buffer,16,1ULL<<7)!=-ZEROOS_EINVAL ||
+        ipc_send(process,local,send_buffer,16,ZEROOS_IPC_FLAG_PEEK)!=-ZEROOS_EINVAL ||
         ipc_send(process,local,send_buffer,0,0)!=-ZEROOS_EINVAL ||
         ipc_grant_rights(process,local,process->pid,0,0)!=-ZEROOS_EINVAL ||
         ipc_grant_rights(process,local,process->pid,1U<<4,0)!=-ZEROOS_EINVAL ||
@@ -1407,6 +1408,56 @@ static int userspace_ipc_self_test(struct process *process) {
                                               &pipe_length,0);
         } while (pipe_result==(int)sizeof(pipe_read));
         if (pipe_result!=-ZEROOS_EPIPE || ipc_close(process,pipe_peer)!=0 ||
+            ipc_debug_validate()!=0)
+            return -1;
+    }
+
+    /* Bounded byte-stream pipe semantics: partial write and backpressure. */
+    {
+        zeroos_ipc_handle_t p_wr=0, p_rd=0;
+        uint8_t p_data[ZEROOS_SYSCALL_MAX_TRANSFER];
+        uint8_t p_read[ZEROOS_SYSCALL_MAX_TRANSFER];
+        uint64_t p_len=0;
+        for (uint32_t i=0; i<sizeof(p_data); ++i)
+            p_data[i]=(uint8_t)('A'+(i%26U));
+        if (ipc_create_pipe(process,&p_wr,&p_rd)!=0)
+            return -1;
+        for (uint32_t i=0; i<4; ++i) {
+            if (ipc_pipe_write_timeout(process,p_wr,p_data,
+                                       sizeof(p_data),
+                                       ZEROOS_IPC_FLAG_NONBLOCK,0)!=
+                (int)sizeof(p_data)) {
+                (void)ipc_close(process,p_wr);
+                (void)ipc_close(process,p_rd);
+                return -1;
+            }
+        }
+        if (ipc_pipe_write_timeout(process,p_wr,p_data,1,
+                                   ZEROOS_IPC_FLAG_NONBLOCK,0)!=-ZEROOS_EAGAIN) {
+            (void)ipc_close(process,p_wr);
+            (void)ipc_close(process,p_rd);
+            return -1;
+        }
+        if (ipc_pipe_read_timeout(process,p_rd,p_read,16,
+                                  ZEROOS_IPC_FLAG_NONBLOCK,&p_len,0)!=16 ||
+            p_len!=16) {
+            (void)ipc_close(process,p_wr);
+            (void)ipc_close(process,p_rd);
+            return -1;
+        }
+        if (ipc_pipe_write_timeout(process,p_wr,p_data,64,
+                                   ZEROOS_IPC_FLAG_NONBLOCK,0)!=16) {
+            (void)ipc_close(process,p_wr);
+            (void)ipc_close(process,p_rd);
+            return -1;
+        }
+        if (ipc_pipe_write_timeout(process,p_wr,p_data,1,
+                                   ZEROOS_IPC_FLAG_NONBLOCK,0)!=-ZEROOS_EAGAIN) {
+            (void)ipc_close(process,p_wr);
+            (void)ipc_close(process,p_rd);
+            return -1;
+        }
+        if (ipc_close(process,p_wr)!=0 || ipc_close(process,p_rd)!=0 ||
             ipc_debug_validate()!=0)
             return -1;
     }

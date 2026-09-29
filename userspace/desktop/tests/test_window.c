@@ -193,7 +193,7 @@ static void test_workspaces(void) {
     struct zd_window_create_info info;
     zd_window_id on_ws0 = ZD_INVALID_WINDOW;
     setup();
-    wm.workspace_count = 3;
+    ZD_CHECK_OK(zd_wm_set_workspace_count(&wm, 3));
     info = make_info(client_a, 10, 10, 300, 200);
     ZD_CHECK_OK(zd_wm_create_window(&wm, &info, &on_ws0));
     ZD_CHECK_EQ(zd_wm_window(&wm, on_ws0)->workspace, 0U);
@@ -213,6 +213,42 @@ static void test_workspaces(void) {
     ZD_CHECK_OK(zd_wm_switch_workspace(&wm, 0));
     ZD_CHECK_EQ(zd_wm_keyboard_target(&wm), ZD_INVALID_WINDOW);
     ZD_CHECK_EQ(wm.stats.workspace_switches, 2U);
+
+    /* A fresh manager has a single workspace and refuses the rest. */
+    setup();
+    ZD_CHECK_EQ(wm.workspace_count, 1U);
+    ZD_CHECK_ERR(zd_wm_set_workspace_count(&wm, 0), ZD_EINVAL);
+    ZD_CHECK_ERR(zd_wm_set_workspace_count(&wm, ZD_MAX_WORKSPACES + 1), ZD_EINVAL);
+    /* Growing makes the next workspace addressable. */
+    ZD_CHECK_OK(zd_wm_set_workspace_count(&wm, 2));
+    info = make_info(client_a, 40, 40, 200, 120);
+    ZD_CHECK_OK(zd_wm_create_window(&wm, &info, &on_ws0));
+    ZD_CHECK_ERR(zd_wm_set_workspace(&wm, on_ws0, 2), ZD_EINVAL);
+    ZD_CHECK_OK(zd_wm_set_workspace(&wm, on_ws0, 1));
+    ZD_CHECK_OK(zd_wm_switch_workspace(&wm, 1));
+    /* Shrinking pulls stranded windows back and clamps the active one. */
+    ZD_CHECK_OK(zd_wm_set_workspace_count(&wm, 1));
+    ZD_CHECK_EQ(zd_wm_window(&wm, on_ws0)->workspace, 0U);
+    ZD_CHECK_EQ(wm.active_workspace, 0U);
+    ZD_CHECK_EQ(zd_wm_hit_test(&wm, 50, 50), on_ws0);
+
+    /* Focus requests the manager cannot honour are counted as invalid route
+     * attempts, and honourable ones are not. */
+    setup();
+    ZD_CHECK_OK(zd_wm_set_workspace_count(&wm, 2));
+    info = make_info(client_a, 10, 10, 200, 120);
+    ZD_CHECK_OK(zd_wm_create_window(&wm, &info, &on_ws0));
+    ZD_CHECK_ERR(zd_wm_focus(&wm, 4242), ZD_ENOENT);
+    ZD_CHECK_OK(zd_wm_set_workspace(&wm, on_ws0, 1));
+    ZD_CHECK_ERR(zd_wm_focus(&wm, on_ws0), ZD_ESTATE);
+    ZD_CHECK_EQ(wm.stats.invalid_route_attempts, 2U);
+    ZD_CHECK_OK(zd_wm_switch_workspace(&wm, 1));
+    ZD_CHECK_OK(zd_wm_focus(&wm, on_ws0));
+    ZD_CHECK_EQ(wm.stats.invalid_route_attempts, 2U);
+    /* A minimized window cannot be routed to either. */
+    ZD_CHECK_OK(zd_wm_minimize(&wm, on_ws0));
+    ZD_CHECK_ERR(zd_wm_focus(&wm, on_ws0), ZD_ESTATE);
+    ZD_CHECK_EQ(wm.stats.invalid_route_attempts, 3U);
 }
 
 static void test_input_routing(void) {
@@ -328,6 +364,136 @@ static void test_capacity_limits(void) {
     ZD_CHECK_ERR(zd_wm_create_window(&wm, &info, &id), ZD_EINVAL);
 }
 
+static void test_titles_maximize_monitors(void) {
+    struct zd_window_create_info info;
+    zd_window_id id = ZD_INVALID_WINDOW;
+    struct zd_monitor second;
+    char long_title[128];
+
+    setup();
+    memset(&second, 0, sizeof(second));
+    second.id = 2;
+    second.bounds.x = 1920;
+    second.bounds.y = 0;
+    second.bounds.w = 1280;
+    second.bounds.h = 720;
+    second.scale_percent = 150;
+    second.primary = 0;
+    second.enabled = 1;
+    strcpy(second.name, "HDMI-1");
+    ZD_CHECK_OK(zd_wm_add_monitor(&wm, &second));
+
+    info = make_info(client_a, 10, 10, 400, 300);
+    ZD_CHECK_OK(zd_wm_create_window(&wm, &info, &id));
+
+    /* Titles: a NULL or unknown-window write is refused, a long one is
+     * truncated and still NUL-terminated rather than overflowing. */
+    ZD_CHECK_ERR(zd_wm_set_title(&wm, id, 0), ZD_EINVAL);
+    ZD_CHECK_ERR(zd_wm_set_title(&wm, 9999, "ghost"), ZD_EINVAL);
+    ZD_CHECK_OK(zd_wm_set_title(&wm, id, "Files"));
+    ZD_CHECK(strcmp(zd_wm_window(&wm, id)->title, "Files") == 0);
+    memset(long_title, 'x', sizeof(long_title));
+    long_title[sizeof(long_title) - 1] = 0;
+    ZD_CHECK_OK(zd_wm_set_title(&wm, id, long_title));
+    ZD_CHECK_EQ((uint32_t)strlen(zd_wm_window(&wm, id)->title),
+                ZD_WINDOW_TITLE_CAP - 1U);
+    ZD_CHECK_OK(zd_wm_set_title(&wm, id, "Files"));
+
+    /* Maximize takes the workarea of the window's own monitor, and restore
+     * returns the window to NORMAL. */
+    ZD_CHECK_ERR(zd_wm_maximize(&wm, 9999), ZD_ENOENT);
+    ZD_CHECK_OK(zd_wm_maximize(&wm, id));
+    ZD_CHECK_EQ(zd_wm_window(&wm, id)->state, ZD_WINDOW_MAXIMIZED);
+    {
+        struct zd_rect work = zd_wm_workarea(zd_wm_monitor(&wm, 1));
+        struct zd_rect now = zd_wm_window(&wm, id)->logical;
+        ZD_CHECK_EQ(now.x, work.x);
+        ZD_CHECK_EQ(now.y, work.y);
+        ZD_CHECK_EQ(now.w, work.w);
+        ZD_CHECK_EQ(now.h, work.h);
+    }
+    ZD_CHECK_OK(zd_wm_restore(&wm, id));
+    ZD_CHECK_EQ(zd_wm_window(&wm, id)->state, ZD_WINDOW_NORMAL);
+
+    /* DPI helpers on the 150% monitor; a NULL monitor is the identity so a
+     * caller without one cannot produce a scaled value by accident. */
+    {
+        const struct zd_monitor *scaled = zd_wm_monitor(&wm, 2);
+        ZD_CHECK_EQ(zd_wm_scale_x(scaled, 10), 15);
+        ZD_CHECK_EQ(zd_wm_scale_y(scaled, 20), 30);
+        ZD_CHECK_EQ(zd_wm_unscale_y(scaled, 30), 20);
+        /* Integer scaling: 100 -> 150 -> 100 is exact, and a value that is
+         * not a multiple of the denominator rounds down in both directions
+         * (77 -> 115 -> 76), which is why layout works in scaled units
+         * rather than round-tripping through them. */
+        ZD_CHECK_EQ(zd_wm_scale_y(scaled, 100), 150);
+        ZD_CHECK_EQ(zd_wm_unscale_y(scaled, 150), 100);
+        ZD_CHECK_EQ(zd_wm_scale_y(scaled, 77), 115);
+        ZD_CHECK_EQ(zd_wm_unscale_y(scaled, 115), 76);
+        ZD_CHECK_EQ(zd_wm_scale_x(0, 10), 10);
+        ZD_CHECK_EQ(zd_wm_scale_y(0, 10), 10);
+        ZD_CHECK_EQ(zd_wm_unscale_y(0, 30), 30);
+    }
+
+    /* Assigning a monitor moves the window onto it and clamps the rectangle
+     * into that monitor's workarea -- it must not stay at x=10, which is on
+     * the first monitor. */
+    ZD_CHECK_ERR(zd_wm_assign_monitor(&wm, id, 99), ZD_ENOENT);
+    ZD_CHECK_ERR(zd_wm_assign_monitor(&wm, 9999, 2), ZD_ENOENT);
+    ZD_CHECK_OK(zd_wm_assign_monitor(&wm, id, 2));
+    ZD_CHECK_EQ(zd_wm_window(&wm, id)->monitor_id, 2U);
+    {
+        struct zd_rect now = zd_wm_window(&wm, id)->logical;
+        struct zd_rect work = zd_wm_workarea(zd_wm_monitor(&wm, 2));
+        ZD_CHECK(now.x >= work.x);
+        ZD_CHECK(now.y >= work.y);
+        ZD_CHECK(now.x + now.w <= work.x + work.w);
+        ZD_CHECK(now.y + now.h <= work.y + work.h);
+    }
+}
+
+/* Every entry point takes a manager pointer, and the ones that route to
+ * a window have to refuse a request they cannot route rather than
+ * dereference it.  zd_wm_focus() used to count the refusal on the
+ * manager before it had checked that the manager existed, so the one
+ * path whose job is to survive a bad request was the one that could
+ * not survive it. */
+static void test_null_manager_is_refused(void) {
+    zd_window_id id = 0;
+    zd_buffer_generation gen = 0;
+    struct zd_rect rect;
+    zd_memset(&rect, 0, sizeof(rect));
+
+    /* focus is the one that used to dereference a null manager */
+    ZD_CHECK_ERR(zd_wm_focus(0, 0), ZD_EINVAL);
+    /* the rest refuse through window_at(), which is null-safe */
+    ZD_CHECK_ERR(zd_wm_set_title(0, 0, "t"), ZD_EINVAL);
+    ZD_CHECK_ERR(zd_wm_move_resize(0, 0, rect), ZD_EINVAL);
+    ZD_CHECK_ERR(zd_wm_snap(0, 0, ZD_SNAP_LEFT), ZD_EINVAL);
+    ZD_CHECK_ERR(zd_wm_minimize(0, 0), ZD_ENOENT);
+    ZD_CHECK_ERR(zd_wm_maximize(0, 0), ZD_ENOENT);
+    ZD_CHECK_ERR(zd_wm_restore(0, 0), ZD_ENOENT);
+    ZD_CHECK_ERR(zd_wm_raise(0, 0), ZD_ENOENT);
+    ZD_CHECK_ERR(zd_wm_lower(0, 0), ZD_ENOENT);
+    ZD_CHECK_ERR(zd_wm_set_workspace(0, 0, 0), ZD_ENOENT);
+    ZD_CHECK_ERR(zd_wm_assign_monitor(0, 0, 0), ZD_ENOENT);
+    ZD_CHECK_ERR(zd_wm_queue_buffer(0, 0, 0), ZD_ENOENT);
+    ZD_CHECK_ERR(zd_wm_release_buffer(0, 0, 0), ZD_ENOENT);
+    ZD_CHECK(zd_wm_create_window(0, 0, &id) != 0);
+    ZD_CHECK(zd_wm_buffer_state(0, 0, &gen) == ZD_BUFFER_INVALID);
+    ZD_CHECK(zd_wm_window(0, 0) == 0);
+    ZD_CHECK_EQ(zd_wm_stacking_order(0, 0, 0), 0U);
+    ZD_CHECK_EQ(zd_wm_windows_for_client(0, 0, 0, 0), 0U);
+    /* a manager that exists still refuses a window it does not have,
+     * and still counts the attempt */
+    {
+        struct zd_wm wm;
+        zd_wm_init(&wm);
+        ZD_CHECK_ERR(zd_wm_focus(&wm, 0), ZD_ENOENT);
+        ZD_CHECK_EQ(wm.stats.invalid_route_attempts, 1U);
+    }
+}
+
 void zd_test_window_suite(void) {
     printf(" suite: window system\n");
     ZD_RUN(test_monitor_and_dpi);
@@ -338,4 +504,6 @@ void zd_test_window_suite(void) {
     ZD_RUN(test_buffer_lifetime);
     ZD_RUN(test_client_crash_isolation);
     ZD_RUN(test_capacity_limits);
+    ZD_RUN(test_titles_maximize_monitors);
+    ZD_RUN(test_null_manager_is_refused);
 }

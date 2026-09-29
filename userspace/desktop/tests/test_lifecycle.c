@@ -55,10 +55,21 @@ static void test_illegal_events(void) {
                  ZD_EINVAL);
     ZD_CHECK_EQ(lifecycle.illegal_event_count, before + 1U);
     ZD_CHECK_EQ(zd_lifecycle_state(&lifecycle), ZD_LIFECYCLE_ACTIVE);
-    /* Out-of-range event. */
+    /* An out-of-range event is illegal too, and it is counted: the
+     * counter is how the machine reports that something is feeding it
+     * nonsense, so refusing the event without counting it would hide
+     * the thing the counter exists to expose. */
+    before = lifecycle.illegal_event_count;
     ZD_CHECK_ERR(zd_lifecycle_dispatch(&lifecycle,
                                        (enum zd_lifecycle_event)99, 0),
                  ZD_EINVAL);
+    ZD_CHECK_EQ(lifecycle.illegal_event_count, before + 1U);
+    ZD_CHECK_ERR(zd_lifecycle_dispatch(&lifecycle,
+                                       (enum zd_lifecycle_event)-1, 0),
+                 ZD_EINVAL);
+    ZD_CHECK_EQ(lifecycle.illegal_event_count, before + 2U);
+    ZD_CHECK_EQ(zd_lifecycle_state(&lifecycle), ZD_LIFECYCLE_ACTIVE);
+    ZD_CHECK_ERR(zd_lifecycle_dispatch(0, ZD_LIFECYCLE_START, 0), ZD_EINVAL);
 }
 
 static void test_failure_isolation_path(void) {

@@ -111,8 +111,20 @@ static void test_click_grab_and_raise(void) {
     ZD_CHECK_EQ(got.window, first);
     ZD_CHECK_EQ(router.pointer_grab, first);
 
-    /* Release clears the grab; motion over `second` re-targets. */
+    /* The implicit grab lasts while any button is still held, not merely
+     * until the first release in a multi-button drag. */
+    got = zd_input_pointer_button(&router, 2, 1);
+    ZD_CHECK_EQ(got.window, first);
+    ZD_CHECK_EQ(router.pointer_grab, first);
     got = zd_input_pointer_button(&router, 1, 0);
+    ZD_CHECK_EQ(got.window, first);
+    ZD_CHECK_EQ(router.pointer_grab, first);
+    got = zd_input_pointer_move(&router, 310, 20);
+    ZD_CHECK_EQ(got.window, first);
+
+    /* Release of the last held button clears the grab; motion over `second`
+     * re-targets. */
+    got = zd_input_pointer_button(&router, 2, 0);
     ZD_CHECK_EQ(got.window, first);
     ZD_CHECK_EQ(router.pointer_grab, ZD_INVALID_WINDOW);
     got = zd_input_pointer_move(&router, 310, 20);

@@ -142,6 +142,11 @@ struct zd_search {
 };
 
 void zd_search_init(struct zd_search *search);
+/* Register a result source. Names identify providers, so a second
+ * registration under a name that is already registered is refused with
+ * -ZD_EBUSY rather than queried twice: the built-ins ("index", "apps") are
+ * registered by zd_search_init, so re-registering one would otherwise double
+ * its rows with no error anywhere. -ZD_ENOSPC when the table is full. */
 int zd_search_add_provider(struct zd_search *search,
                            const struct zd_search_provider *provider);
 int zd_search_add_index_listener(struct zd_search *search,
@@ -178,14 +183,23 @@ int zd_search_query(struct zd_search *search, const char *input,
  * automatically by zd_search_init as provider name "index". */
 void zd_search_register_index_provider(struct zd_search *search);
 
+/* Built-in live-application provider: turns the window list registered
+ * through zd_search_set_live_apps into ZD_SEARCH_APP rows (provider name
+ * "apps"). Registered automatically by zd_search_init; without a window
+ * list it contributes nothing, so it is safe to leave in place. */
+void zd_search_register_app_provider(struct zd_search *search);
+
 /* Ranking (exposed for tests and deterministic replay). */
 uint32_t zd_search_score(const struct zd_intent *intent,
                          const struct zd_search_result *result);
 uint32_t zd_search_rank_merge(const struct zd_intent *intent,
                               struct zd_search_result *results, uint32_t count);
 
-/* Live application provider helper: builds results from the window manager
- * application list registered via zd_search_set_live_apps. */
+/* Point the built-in "apps" provider at the shell's live window list.
+ * The pointer is retained (not copied), so the caller owns the array and
+ * must keep it alive for the search object's lifetime; passing NULL
+ * detaches the list. Rows are scored by the shared ranker, so only
+ * windows whose title or accessibility label matches the query surface. */
 void zd_search_set_live_apps(struct zd_search *search,
                              const struct zd_window *const *windows,
                              uint32_t count);

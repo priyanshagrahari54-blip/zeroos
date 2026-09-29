@@ -44,6 +44,12 @@ static uint32_t pd_obj_before(const uint8_t *d, uint32_t pos) {
         end_i = i;
         while (end_i > 0 && d[end_i - 1] >= '0' && d[end_i - 1] <= '9')
             --end_i;
+        /* A digit run longer than nine cannot be a 32-bit object number and
+         * would wrap the accumulator into some unrelated object's number.
+         * Skip the run (the caller reports a missing content stream) rather
+         * than bind a page to an object this document never named. */
+        if (i - end_i >= 9u)
+            continue;
         for (k = end_i; k <= i; ++k)
             num = num * 10u + (uint32_t)(d[k] - '0');
         /* forward: spaces, generation digits, spaces, "obj" */
@@ -267,9 +273,16 @@ static int pd_page_content(const uint8_t *d, uint32_t n,
             ++i;
         {
             uint32_t digits = 0;
-            while (i < n && d[i] >= '0' && d[i] <= '9' && digits < 10) {
-                contents_val = contents_val * 10 +
-                               (uint32_t)(d[i] - '0');
+            while (i < n && d[i] >= '0' && d[i] <= '9') {
+                uint32_t digit = (uint32_t)(d[i] - '0');
+                /* An object number this parser cannot represent is not a
+                 * page's content stream. Refusing is the honest answer:
+                 * letting the accumulator wrap binds the page to whatever
+                 * object happens to own the wrapped number, so a document
+                 * never naming that object would still yield its bytes. */
+                if (contents_val > (0xFFFFFFFFu - digit) / 10u)
+                    return -1;
+                contents_val = contents_val * 10u + digit;
                 ++i;
                 ++digits;
             }

@@ -71,6 +71,20 @@ static const char pdf_escapes[] =
     "trailer << /Size 5 /Root 1 0 R >>\n"
     "%%EOF\n";
 
+/* Object numbers wider than a 32-bit accumulator. Left unbounded, the digit
+ * run wraps into some unrelated object number (12345678901 became
+ * 3755744309) and the page reports a number this document never named. */
+static const char pdf_big_object[] =
+    "%PDF-1.7\n"
+    "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n"
+    "2 0 obj << /Type /Pages /Kids [12345678901 0 R] /Count 1 >> endobj\n"
+    "12345678901 0 obj << /Type /Page /Parent 2 0 R /Contents 4 0 R >> endobj\n"
+    "4 0 obj << /Length 5 >> stream\n"
+    "(Hi) Tj\n"
+    "endstream endobj\n"
+    "trailer << /Size 5 /Root 1 0 R >>\n"
+    "%%EOF\n";
+
 void zd_test_pdf_suite(void) {
     struct zd_pdf doc;
     int rc;
@@ -128,6 +142,84 @@ void zd_test_pdf_suite(void) {
     ZD_CHECK_OK(zd_pdf_extract(&doc));
     ZD_CHECK_EQ(doc.parse_warnings, 1);
     ZD_CHECK_EQ(doc.pages[0].text_len, 0);
+
+    /* ---- object number too wide for the 32-bit accumulator ----
+     * The page must report no object at all rather than a wrapped number
+     * this document never named (12345678901 used to become 3755744309). */
+    rc = zd_pdf_open((const uint8_t *)pdf_big_object,
+                     (uint32_t)(sizeof(pdf_big_object) - 1), &doc);
+    ZD_CHECK_OK(rc);
+    ZD_CHECK_EQ(doc.page_count, 1);
+    ZD_CHECK_OK(zd_pdf_extract(&doc));
+    ZD_CHECK_EQ(doc.pages[0].obj_num, 0u);
+    ZD_CHECK_EQ(doc.pages[0].text_len, 0);
+    ZD_CHECK_EQ(doc.parse_warnings, 1);
+    /* A nine-digit object number is still the largest accepted value. */
+    {
+        static const char nine[] =
+            "%PDF-1.7\n"
+            "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n"
+            "2 0 obj << /Type /Pages /Kids [123456789 0 R] /Count 1 >> "
+            "endobj\n"
+            "123456789 0 obj << /Type /Page /Parent 2 0 R /Contents 4 0 R >> "
+            "endobj\n"
+            "4 0 obj << /Length 5 >> stream\n"
+            "(Hi) Tj\n"
+            "endstream endobj\n"
+            "trailer << /Size 5 /Root 1 0 R >>\n"
+            "%%EOF\n";
+        rc = zd_pdf_open((const uint8_t *)nine, (uint32_t)(sizeof(nine) - 1),
+                         &doc);
+        ZD_CHECK_OK(rc);
+        ZD_CHECK_OK(zd_pdf_extract(&doc));
+        ZD_CHECK_EQ(doc.pages[0].obj_num, 123456789u);
+    }
+
+    /* ---- a /Contents reference that would wrap onto a real object ----
+     * 4294967300 is 2^32 + 4, and object 4 in this file *is* a content
+     * stream, so an unbounded accumulator would bind this page to bytes the
+     * document never referenced for it. The page must report no content and
+     * a warning instead. */
+    {
+        static const char wrap_contents[] =
+            "%PDF-1.7\n"
+            "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n"
+            "2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n"
+            "3 0 obj << /Type /Page /Parent 2 0 R /Contents 4294967300 0 R >> "
+            "endobj\n"
+            "4 0 obj << /Length 20 >> stream\n"
+            "(ZEROOS page one) Tj\n"
+            "endstream endobj\n"
+            "trailer << /Size 5 /Root 1 0 R >>\n"
+            "%%EOF\n";
+        rc = zd_pdf_open((const uint8_t *)wrap_contents,
+                         (uint32_t)(sizeof(wrap_contents) - 1), &doc);
+        ZD_CHECK_OK(rc);
+        ZD_CHECK_EQ(doc.page_count, 1);
+        ZD_CHECK_OK(zd_pdf_extract(&doc));
+        ZD_CHECK_EQ(doc.pages[0].text_len, 0);
+        ZD_CHECK_EQ(doc.parse_warnings, 1);
+        /* The same file naming object 4 directly still extracts: the refusal
+         * above is about the number, not about the stream. */
+        {
+            static const char direct_contents[] =
+                "%PDF-1.7\n"
+                "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n"
+                "2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n"
+                "3 0 obj << /Type /Page /Parent 2 0 R /Contents 4 0 R >> "
+                "endobj\n"
+                "4 0 obj << /Length 20 >> stream\n"
+                "(ZEROOS page one) Tj\n"
+                "endstream endobj\n"
+                "trailer << /Size 5 /Root 1 0 R >>\n"
+                "%%EOF\n";
+            rc = zd_pdf_open((const uint8_t *)direct_contents,
+                             (uint32_t)(sizeof(direct_contents) - 1), &doc);
+            ZD_CHECK_OK(rc);
+            ZD_CHECK_OK(zd_pdf_extract(&doc));
+            ZD_CHECK(strcmp(doc.pages[0].text, "ZEROOS page one\n") == 0);
+        }
+    }
 
     /* ---- escapes unescaped ---- */
     rc = zd_pdf_open((const uint8_t *)pdf_escapes,

@@ -1,6 +1,16 @@
 /* Transactional update core (Stage 5 part B / ARCHITECTURE section 20).
  * Pipeline: download -> verify -> stage -> preflight -> activate ->
- * health check -> commit, with rollback on any post-verify failure.
+ * health check -> commit.
+ *
+ * Rollback scope: every failure from staging through the health check rolls
+ * the A/B slot back, because at those points the new slot is not proven. A
+ * failing commit hook is deliberately NOT rolled back: by then the health
+ * check has passed and the new slot is live and known-good, so what failed is
+ * only the "mark this slot good" bookkeeping. Reverting a healthy slot to
+ * recover from a bookkeeping write would trade a recoverable state for an
+ * unnecessary outage; the machine reports FAILED and the caller may retry
+ * from there (zd_update_begin accepts IDLE, DONE and FAILED).
+ *
  * Step-driven (no polling): the shell feeds completion/failure events.
  * Hooks are injected; nothing fabricates success.  Host-testable. */
 #ifndef ZEROOS_DESKTOP_UPDATE_H
@@ -24,7 +34,9 @@ enum zd_update_state {
 };
 
 enum zd_update_event {
-    ZD_UPD_EV_START = 0,     /* begin: -> DOWNLOADING */
+    ZD_UPD_EV_START = 0,     /* -> DOWNLOADING; refused (-22) unless a
+                              * version was set by zd_update_begin(): the
+                              * machine does not invent what it installs */
     ZD_UPD_EV_DOWNLOAD_OK,
     ZD_UPD_EV_DOWNLOAD_FAIL,
     ZD_UPD_EV_VERIFY_OK,

@@ -835,6 +835,7 @@ static void scheduler_probe_monitor(void *argument) {
     int per_cpu_reported=0;
     int hotplug_reported=0;
     int userspace_reported=0;
+    int session_requested=0;
     uint64_t stress_start=timer_ticks();
 
     /* Keep the certification monitor on the BSP: it owns the control-plane
@@ -990,8 +991,17 @@ static void scheduler_probe_monitor(void *argument) {
                 serial_write_public("ZEROOS: display present contract verified.\n");
                 /* Stage 3: storage bring-up runs in its own task. */
                 storage_start();
-                /* Stage 5: the session/shell process certifies the
-                 * display service, compositor and input paths. */
+            }
+            /* Stage 5: the session/shell process certifies the display
+             * service, compositor and input paths, and its shell services
+             * (file manager, Universal Search) bind to the VFS file
+             * syscalls.  Those need the storage manager's /ram mount, so
+             * the session is started only once storage bring-up has
+             * finished; the monitor sleeps between iterations, so this is
+             * a dependency gate rather than a spin. */
+            if (userspace_reported && !session_requested &&
+                storage_finished()) {
+                session_requested=1;
                 session_start();
             }
         }

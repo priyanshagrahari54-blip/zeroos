@@ -50,5 +50,13 @@ const struct zd_note *zd_notes_get(const struct zd_notes *n,
  * hit count.  -22 on bad args. */
 int zd_notes_search(const struct zd_notes *n, const char *sub,
                     uint32_t *out, uint32_t cap);
+/* Matching context for one note: copies a window of the body (or title,
+ * when the body does not match) starting *at* the first case-insensitive
+ * occurrence of needle, NUL-terminated into out (cap bytes).  Returns the
+ * copied length, -2 when the note does not contain needle, -22 on bad
+ * arguments.  The window starts at the match so the needle survives
+ * truncation, which is what search result labels rely on. */
+int zd_notes_snippet(const struct zd_note *note, const char *needle,
+                     char *out, uint32_t cap);
 
 #endif /* ZEROOS_DESKTOP_NOTES_H */

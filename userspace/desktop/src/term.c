@@ -68,6 +68,22 @@ static void t_erase_cells(struct zd_term *t, uint32_t y, uint32_t x0,
         t_clear_cell(&t->grid[y][x], t->fg, t->bg);
 }
 
+/* Saturating cap on a numeric CSI/SGR parameter.
+ *
+ * The parser must never misparse, so a parameter is not allowed to wrap: an
+ * unbounded accumulator turns "ESC[4294967296C" into a small positive column
+ * and "SGR 4294967327" into SGR 31, i.e. a sequence the terminal does not
+ * support silently becomes one it does. Saturating at one above the largest
+ * reachable row/column keeps every consumer's arithmetic in range and pins
+ * the cursor at the edge that an over-large movement was asking for. */
+#define ZD_TERM_PARAM_MAX 65535u
+
+static uint32_t t_accum(uint32_t cur, uint32_t digit) {
+    if (cur > (ZD_TERM_PARAM_MAX - digit) / 10u)
+        return ZD_TERM_PARAM_MAX;
+    return cur * 10u + digit;
+}
+
 static uint32_t t_param(const char *s, uint32_t len, uint32_t idx,
                         uint32_t defv, int *ok) {
     uint32_t i = 0, cur = 0, which = 0;
@@ -82,7 +98,7 @@ static uint32_t t_param(const char *s, uint32_t len, uint32_t idx,
     for (i = 0; i < len; ++i) {
         char c = s[i];
         if (c >= '0' && c <= '9') {
-            cur = cur * 10 + (uint32_t)(c - '0');
+            cur = t_accum(cur, (uint32_t)(c - '0'));
             any = 1;
         } else if (c == ';') {
             if (which == idx)
@@ -113,7 +129,7 @@ static void t_sgr(struct zd_term *t, const char *s, uint32_t len) {
         int any = 0;
         while (i < len && s[i] != ';') {
             if (s[i] >= '0' && s[i] <= '9') {
-                v = v * 10 + (uint32_t)(s[i] - '0');
+                v = t_accum(v, (uint32_t)(s[i] - '0'));
                 any = 1;
             }
             ++i;
@@ -483,4 +499,73 @@ uint32_t zd_term_row_text(const struct zd_term *t, uint32_t y,
     }
     out[n] = 0;
     return n;
+}
+
+/* ---- line discipline -------------------------------------------------- */
+
+static const char line_echo_erase[] = "\b \b";
+static const char line_echo_newline[] = "\r\n";
+
+void zd_term_line_init(struct zd_term_line *l) {
+    if (!l)
+        return;
+    l->buf[0] = 0;
+    l->len = 0;
+    l->completions = 0;
+    l->erased = 0;
+    l->overflow = 0;
+    l->ignored = 0;
+}
+
+int zd_term_line_input(struct zd_term_line *l, uint8_t byte,
+                       const char **echo, uint32_t *echo_len) {
+    static char printable[1];
+    if (!l || !echo || !echo_len)
+        return -22;
+    *echo = 0;
+    *echo_len = 0;
+    if (byte == 0x08 || byte == 0x7f) {
+        if (l->len == 0)
+            return 0;
+        l->len--;
+        l->buf[l->len] = 0;
+        l->erased++;
+        *echo = line_echo_erase;
+        *echo_len = (uint32_t)(sizeof(line_echo_erase) - 1);
+        return 0;
+    }
+    if (byte == 0x0d || byte == 0x0a) {
+        l->completions++;
+        *echo = line_echo_newline;
+        *echo_len = (uint32_t)(sizeof(line_echo_newline) - 1);
+        return 1;
+    }
+    if (byte < 0x20 || byte > 0x7e) {
+        l->ignored++;
+        return 0;
+    }
+    if (l->len >= ZD_TERM_LINE_MAX) {
+        l->overflow++;
+        return 0;
+    }
+    printable[0] = (char)byte;
+    l->buf[l->len++] = (char)byte;
+    l->buf[l->len] = 0;
+    *echo = printable;
+    *echo_len = 1;
+    return 0;
+}
+
+uint32_t zd_term_line_copy(const struct zd_term_line *l, char *out,
+                           uint32_t cap) {
+    uint32_t n;
+    if (!l || !out || !cap)
+        return 0;
+    n = l->len;
+    if (n > cap - 1)
+        n = cap - 1;
+    for (uint32_t i = 0; i < n; ++i)
+        out[i] = l->buf[i];
+    out[n] = 0;
+    return l->len;
 }

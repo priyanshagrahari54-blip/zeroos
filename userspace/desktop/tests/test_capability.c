@@ -59,4 +59,50 @@ void zd_test_capability_suite(void) {
     ZD_CHECK(c.stats.activations >= 3);
     ZD_CHECK(c.stats.deactivations >= 1);
     ZD_CHECK(c.stats.denied > 0);
+
+    /* The audit has to say *why* a check was denied. "Never had it",
+     * "policy took it away" and "the service is not running" are three
+     * different facts and nothing read this field, so it could report
+     * the wrong one without a single assertion noticing. */
+    zd_caps_init(&c);
+    ZD_CHECK(zd_caps_activate(&c, ZD_SVC_AI, (1ULL << ZD_CAP_NETWORK_REMOTE)) == 0);
+    ZD_CHECK(zd_caps_check(&c, ZD_SVC_AI, ZD_CAP_NETWORK_REMOTE) == 0);
+    n = zd_caps_audit_recent(&c, e, 8);
+    ZD_CHECK_EQ(n, 1);
+    ZD_CHECK(e[0].allowed == 1 && e[0].reason == ZD_CAP_DENY_NONE);
+
+    /* never granted is ABSENT, not a revoke */
+    ZD_CHECK(zd_caps_check(&c, ZD_SVC_AI, ZD_CAP_LAUNCH_APPS) == -1);
+    n = zd_caps_audit_recent(&c, e, 8);
+    ZD_CHECK(e[0].allowed == 0 && e[0].reason == ZD_CAP_DENY_ABSENT);
+
+    /* revoked while the service is up is a REVOKE */
+    ZD_CHECK(zd_caps_grant(&c, ZD_SVC_AI, ZD_CAP_LAUNCH_APPS) == 0);
+    ZD_CHECK(zd_caps_revoke(&c, ZD_SVC_AI, ZD_CAP_LAUNCH_APPS) == 0);
+    ZD_CHECK(zd_caps_check(&c, ZD_SVC_AI, ZD_CAP_LAUNCH_APPS) == -1);
+    n = zd_caps_audit_recent(&c, e, 8);
+    ZD_CHECK(e[0].allowed == 0 && e[0].reason == ZD_CAP_DENY_REVOKED);
+
+    /* re-granting clears the record: the next denial is a revoke again
+     * only because it was revoked again, not because a revoke once
+     * happened */
+    ZD_CHECK(zd_caps_grant(&c, ZD_SVC_AI, ZD_CAP_LAUNCH_APPS) == 0);
+    ZD_CHECK(zd_caps_check(&c, ZD_SVC_AI, ZD_CAP_LAUNCH_APPS) == 0);
+    ZD_CHECK(zd_caps_revoke(&c, ZD_SVC_AI, ZD_CAP_LAUNCH_APPS) == 0);
+    ZD_CHECK(zd_caps_check(&c, ZD_SVC_AI, ZD_CAP_LAUNCH_APPS) == -1);
+    n = zd_caps_audit_recent(&c, e, 8);
+    ZD_CHECK(e[0].reason == ZD_CAP_DENY_REVOKED);
+
+    /* a stopped service denies everything as INACTIVE -- not as a
+     * revoke, and the revoke record does not survive the restart */
+    ZD_CHECK(zd_caps_check(&c, ZD_SVC_AI, ZD_CAP_NETWORK_REMOTE) == 0);
+    ZD_CHECK(zd_caps_deactivate(&c, ZD_SVC_AI) == 0);
+    ZD_CHECK(zd_caps_check(&c, ZD_SVC_AI, ZD_CAP_NETWORK_REMOTE) == -1);
+    n = zd_caps_audit_recent(&c, e, 8);
+    ZD_CHECK(e[0].allowed == 0 && e[0].reason == ZD_CAP_DENY_INACTIVE);
+    ZD_CHECK(zd_caps_activate(&c, ZD_SVC_AI, (1ULL << ZD_CAP_NETWORK_REMOTE)) == 0);
+    ZD_CHECK(zd_caps_check(&c, ZD_SVC_AI, ZD_CAP_NETWORK_REMOTE) == 0);
+    ZD_CHECK(zd_caps_check(&c, ZD_SVC_AI, ZD_CAP_LAUNCH_APPS) == -1);
+    n = zd_caps_audit_recent(&c, e, 8);
+    ZD_CHECK(e[0].reason == ZD_CAP_DENY_ABSENT); /* not the old revoke */
 }

@@ -82,4 +82,35 @@ const struct zd_term_cell *zd_term_cell(const struct zd_term *t,
 uint32_t zd_term_row_text(const struct zd_term *t, uint32_t y,
                           char *out, uint32_t cap);
 
+/* Line discipline (interactive input path).  The terminal above renders
+ * output; this is the editing half of an interactive shell line: bytes
+ * arrive one at a time, printable bytes are appended, BS/DEL erases, and
+ * CR/LF completes the line.  It never writes to the screen itself -- it
+ * reports the exact echo bytes the caller must send down its output path
+ * (in the session, a real kernel pipe), so what the user sees is produced
+ * by the same parser that renders program output.  Nothing is silently
+ * truncated: a byte that does not fit is refused and counted. */
+#define ZD_TERM_LINE_MAX 256
+
+struct zd_term_line {
+    char buf[ZD_TERM_LINE_MAX + 1];
+    uint32_t len;          /* bytes currently in the line */
+    uint32_t completions;  /* CR/LF accepted */
+    uint32_t erased;       /* BS/DEL applied to a non-empty line */
+    uint32_t overflow;     /* printable bytes refused (line full) */
+    uint32_t ignored;      /* control bytes other than BS/DEL/CR/LF */
+};
+
+void zd_term_line_init(struct zd_term_line *l);
+/* Feed one input byte.  *echo / *echo_len receive the bytes to send to the
+ * display path (may be empty).  Returns 1 when the line is complete, 0
+ * when more input is needed, -22 on bad arguments.  A completed line stays
+ * in the buffer until the next input byte or zd_term_line_init. */
+int zd_term_line_input(struct zd_term_line *l, uint8_t byte,
+                       const char **echo, uint32_t *echo_len);
+/* Copy the current line, NUL-terminated, into out (cap bytes); returns the
+ * full line length even when the copy was truncated. */
+uint32_t zd_term_line_copy(const struct zd_term_line *l, char *out,
+                           uint32_t cap);
+
 #endif /* ZEROOS_DESKTOP_TERM_H */

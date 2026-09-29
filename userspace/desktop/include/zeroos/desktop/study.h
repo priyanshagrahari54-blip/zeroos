@@ -12,7 +12,13 @@
 #define ZD_STUDY_TEXT 96
 
 enum zd_study_grade {
-    ZD_STUDY_AGAIN = 0,   /* repeat today, ease down */
+    /* AGAIN drops the card to the bottom rung of the ladder -- one day,
+     * so it is relearned tomorrow, not re-shown in the same pass. There
+     * is no separate learning queue here, and a card that came back due
+     * the moment it was graded would be handed straight back to a
+     * caller looping on next_due(). It counts a lapse whenever the card
+     * had an interval to lose. */
+    ZD_STUDY_AGAIN = 0,   /* reset to 1 day, ease down */
     ZD_STUDY_HARD,        /* same interval tier, ease down */
     ZD_STUDY_GOOD,        /* advance one step */
     ZD_STUDY_EASY         /* advance two steps */

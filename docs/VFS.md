@@ -204,6 +204,13 @@ These calls are additive to syscall ABI v1 and advertised by
 - **Structures** (`zeroos_stat`, `zeroos_statfs`, `zeroos_dirent` with
   `name[256]`) have fixed layouts. They are `_Static_assert`ed against the
   kernel structures and checked by `userspace/tests/abi_consistency.py`.
+- **`zeroos_dirent.type`** carries the file-type *nibble* of the mode
+  (`mode >> 12`), not the raw `S_IF*` bits: `ZEROOS_DT_DIR` = 4 for a
+  directory and `ZEROOS_DT_REG` = 8 for a regular file, with
+  `ZEROOS_DT_UNKNOWN` = 0. Testing a returned type against
+  `ZEROOS_S_IFDIR` (0x4000) is always false; the constants are defined in
+  both ABI headers, gated by `abi_consistency.py`, pinned by the desktop
+  host suite and certified in the guest by the Ring-3 storage probe.
 
 ### ABI migration notes (R11)
 - **Additive:** no existing v1 call, number, structure or errno changed,

@@ -37,7 +37,7 @@ static const struct zd_i18n_entry shell_catalog[] = {
      "विंडोज़ अनुकूलता द्वारा समर्थित नहीं"},
     {"update.downloading", "Downloading update", "अपडेट डाउनलोड हो रहा है"},
     {"update.verifying", "Verifying signature", "हस्ताक्षर सत्यापित हो रहे हैं"},
-    {"update.applying", "Applying update", "अपडेल लागू हो रहा है"},
+    {"update.applying", "Applying update", "अपडेट लागू हो रहा है"},
     {"update.rollback", "Restoring previous version",
      "पिछला संस्करण बहाल हो रहा है"},
     {"update.failed", "Update failed", "अपडेट विफल रहा"},

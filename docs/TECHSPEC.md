@@ -84,8 +84,12 @@ process, thread, memory, file, directory, time, IPC, synchronization, device, ne
 Stage 5 additions: `DISPLAY_INFO` (ID 51) — display geometry read-only query;
 `DISPLAY_PRESENT` (ID 52) — pixel-mapping scanout submit;
 `INPUT_POLL` (ID 53) / `INPUT_WAIT` (ID 54) — keyboard/pointer event drain
-and blocking wait; ABI feature bits 8 (`ZEROOS_ABI_FEATURE_DISPLAY`),
-9 (`ZEROOS_ABI_FEATURE_PRESENT`) and 10 (`ZEROOS_ABI_FEATURE_INPUT`). (Before
+and blocking wait; `SYSTEM_INFO` (ID 55) — CPU topology, memory totals and
+the kernel monotonic clock; `CHILD_IMAGE` (ID 56) — bounded copy of the
+embedded shell-child ELF so Ring 3 can spawn a real child; ABI feature bits
+8 (`ZEROOS_ABI_FEATURE_DISPLAY`), 9 (`ZEROOS_ABI_FEATURE_PRESENT`),
+10 (`ZEROOS_ABI_FEATURE_INPUT`), 11 (`ZEROOS_ABI_FEATURE_SYSINFO`) and
+12 (`ZEROOS_ABI_FEATURE_CHILD`). (Before
 the Stage 3/Stage 5 merge the unreleased Stage 5 branch used IDs 25/26 and
 bits 7/8, which collided with the Stage 3 file ABI; they were renumbered
 before reaching main. IDs 25–50 and bit 7 belong to the file ABI, see VFS.md
@@ -180,6 +184,29 @@ Stage 5 implemented contracts:
   nonblocking (-EAGAIN when empty); WAIT accepts `ZEROOS_WAIT_FLAG_NONBLOCK`
   and a scheduler-tick timeout (0 = forever) with -ETIMEDOUT/-EINTR, using
   the same wait-queue and tick-deadline discipline as the IPC syscalls.
+- `ZEROOS_SYS_SYSTEM_INFO` (ID 55, feature bit 11) fills
+  `struct zeroos_system_info` (struct-gated between the public and kernel
+  headers) with kernel-reported facts: online/discovered CPUs, page size,
+  scheduler tick frequency, clock source, `uptime_ns`, and total/free
+  managed memory. `uptime_ns` comes from `timer_monotonic_ns()` — the
+  invariant TSC when the CPU guarantees it, the 100 Hz PIT otherwise — and
+  is the only monotonic time source Ring 3 has: present pacing, automation
+  cooldowns and watchdog heartbeats are all expressed in these
+  nanoseconds. The caller passes its own `size`; a NULL buffer or a size
+  smaller than the kernel's struct is rejected with -EFAULT so the kernel
+  never writes past the caller's structure. The session certifies that the
+  clock really advances across a timed wait, that the pacing floor refuses
+  and then accepts the same damage, and that both bad-pointer cases fail
+  closed.
+- `ZEROOS_SYS_CHILD_IMAGE` (ID 56, feature bit 12) copies the embedded
+  shell-child ELF (`userspace/session/child.c`, linked by
+  `userspace/session/child.ld`) into a caller buffer and returns its byte
+  count. The caller passes its own size; a NULL buffer or one smaller than
+  the image is rejected with -EFAULT, so the kernel never hands back a
+  partial image. The image is only a convenience: `SPAWN` still runs the
+  full ELF validation and W^X mapping on whatever bytes it is given, so
+  this syscall grants no execution rights the caller could not otherwise
+  construct.
   Events come from the PS/2 i8042 driver (`kernel/input.c`): keyboard on
   IRQ1 (set-1 decoding via `scancode_core`) and mouse on IRQ12 (3-byte
   auxiliary packets via `mouse_core`), both host-tested and routed on
@@ -198,6 +225,37 @@ Stage 5 implemented contracts:
   a11y nodes, 128 settings keys, 16 watchdog services), listener-callback
   events, and must compile with `-ffreestanding -fno-builtin` under
   `-Wall -Wextra -Werror` (enforced by `make desktop-check`).
+- Two error namespaces coexist and the boundary is explicit. The desktop
+  core returns `-ZD_E*` (`ZD_EINVAL = 1`, `ZD_ENOENT = 3`, ...). The cores
+  that bind to the file syscalls — the file manager (`filemgr.h`) and the
+  files search provider — propagate the kernel's `ZEROOS_E*` values, which
+  are the POSIX numbers (`ZEROOS_EINVAL = 22`, `ZEROOS_ENOENT = 2`),
+  because that is what the injected directory/ops callbacks return. The
+  two enums are *not* the same integers, so a VFS error must never be fed
+  to `zd_ui_condition_from_rc`; `zd_ui_condition_from_vfs_rc` is the only
+  supported VFS-error -> UI-condition path (a VFS `-ENOENT` fed to the
+  `ZD_*` mapper renders as LOW_RESOURCE instead of EMPTY).
+
+  What that sentence does **not** say is that every other core uses
+  `-ZD_E*`: the enum stops at ten and has no `EEXIST`, no `ENOTDIR` and no
+  unsupported-operation code, so the cores that need them — `url`,
+  `scan`, `sandbox`, `capability`, `firewall`, `bar`, `formula`, `pdf`,
+  `nav`, `notes`, `study`, `downloads`, `eco`, `gaming`, `fps`, `media`,
+  `ocr`, `overview`, `perfcenter`, `privacy`, `snapshot`, `term`, `vault`,
+  `dict`, `clipboard`, `launcher`, `update` (rejected events) — return
+  POSIX numbers and document them in their own headers. `providers.c`
+  inverts the stated boundary inside one file: the commands provider uses
+  POSIX (`-17` duplicate name, `-28` table full) while the files provider
+  it sits next to uses `-ZD_EINVAL`. Nothing renders either through the
+  wrong mapper today — the only `zd_ui_condition_from_rc` callers are the
+  suites, and the session feeds it nothing but its own return codes — but
+  a caller that trusted the blanket statement above would misread it, so
+  the rule is the per-module header, not this paragraph.
+- Every host suite is also rebuilt under AddressSanitizer +
+  UndefinedBehaviorSanitizer with `-fno-sanitize-recover=all`
+  (`make sanitizer-check`, part of `make check`), so an out-of-bounds
+  index or UB operation fails the build instead of printing a report
+  nobody reads.
 
 ## 13. Audio
 Audio graph:
@@ -354,4 +412,4 @@ records typed ranges, checks overflow and overlap, supports containment
 checks, and protects reserved intervals from release. All calls require
 caller-side IRQ-safe serialization, and it does not program the PCI
 resource tree (it is not yet consulted by `pci_map_bar`). PCIe ECAM and
-extended capabilities are outside scope. Portable `net_core`, `input_core`, `usb_core`, `audio_core`, and `display_core` helpers provide bounded parsing/queues and input-level validity checks. They are not wired to device hardware or service syscalls, with two limited integrations: `input_core` is consumed by the kernel PS/2 driver (`kernel/input.c` — keyboard IRQ1 + mouse IRQ12), which supplies locking, IRQ delivery and Ring-3 syscalls; the network helper path composes netif frames, IPv4/UDP policy/validation and an owner-tagged UDP endpoint queue in host-tested callback flow, but has no NIC, synchronization/registry, or user socket syscall integration. `net_core` validates IPv4 header length/checksum and evaluates an ordered default-deny table; `usb_core` only validates descriptor framing/minimum sizes; audio is a bounded sample ring; display validates bounded framebuffer mode dimensions; input defines a bounded device registry/event queue plus the host-tested scancode (`scancode_core`) and mouse-packet (`mouse_core`) decoders. `make hardware-core-test` covers helper-level allow/deny, malformed input, queue backpressure, descriptor truncation, audio underrun/overrun, and display bounds. `netif` defines an event-driven bounded Ethernet-frame ingress queue and transmit callback, accounts drops/errors, validates MTU/link state, and requires caller-supplied lock/unlock hooks suitable for IRQ/SMP serialization; it has no NIC backend. `netif` adds a bounded event-driven Ethernet RX queue, validated MTU/link transitions, TX callback and counters with caller-supplied IRQ-safe serialization hooks, but no concrete NIC driver. `net_stack` composes Ethernet/IPv4/UDP input validation, enforces a configured local destination and default-deny IPv4 firewall, verifies UDP checksums (allowing zero only for IPv4), and dispatches accepted datagrams through a callback; fragments are dropped and IPv6 remains fail-closed pending family-specific policy. Its bounded IPv4/UDP transmit helper builds DF-marked Ethernet/IP/UDP frames, emits IPv4 and UDP checksums, validates unicast addresses and MTU, then calls `netif_send`; callers must already resolve the next-hop MAC, with live ARP/neighbor resolution, route-to-transmit integration, retransmission and NIC integration explicitly absent. `net_arp` provides a host-tested IPv4 ARP request/reply validator/builder and fixed-capacity expiring neighbor cache; reply learning requires a matching live request and local IP/MAC identity, but the helper is not wired into this transmit path. `net_socket` adds a caller-serialized, bounded IPv4 UDP endpoint table with owner-bound generation handles, exclusive wildcard/specific-address bind rules, per-endpoint receive queues, queue-full drop accounting and stale-handle rejection; it is wired to the dispatcher callback but is not exposed as user-visible POSIX/BSD socket syscalls. The dispatcher’s bounded polling API returns on an empty queue and neither layer has bus/NIC integration. `net_l2` bounds Ethernet/VLAN and ARP frames; `net_ipv6` validates the IPv6 base header and walks bounded Hop-by-Hop, Routing, Fragment, AH and Destination Options extension chains (maximum 8 headers/256 bytes); it reports fragments but does not reassemble them, and rejects ESP/jumbograms; `net_conntrack` stores bounded flow observations with expiration/eviction; `net_route` provides a bounded IPv4 longest-prefix/metric lookup table; `net_transport` validates UDP framing and offers a limited TCP state/timeout helper (not RFC-complete TCP, retransmission/congestion/window management, or sockets); `dhcp_core` bounds BOOTP/DHCP option parsing but has no client state machine; `dns_core` validates bounded DNS message framing/name compression but does not resolve or cache names. `dma` defines an owner-scoped callback contract and refuses owner destruction while mappings remain, but supplies no IOMMU/cache-coherency backend. `driver_core` provides an explicit lifecycle transition and reverse-order exactly-once release bookkeeping. These helpers, apart from the PS/2 hardware input path and the host-tested netif→IPv4/UDP dispatcher→UDP endpoint callback composition noted above, are not wired to a bus or hardware resources. Neither the network composition nor the endpoint table is exposed through a synchronized kernel registry or userspace socket ABI. They are foundations—not operational network drivers or complete subsystem implementations. See `HARDWARE.md` for the support matrix.
+extended capabilities are outside scope. Portable `net_core`, `input_core`, `usb_core`, `audio_core`, and `display_core` helpers provide bounded parsing/queues and input-level validity checks. They are not wired to device hardware or service syscalls, with two limited integrations: `input_core` is consumed by the kernel PS/2 driver (`kernel/input.c` — keyboard IRQ1 + mouse IRQ12), which supplies locking, IRQ delivery and Ring-3 syscalls; the network helper path composes netif frames, IPv4/UDP policy/validation and an owner-tagged UDP endpoint queue in host-tested callback flow, but has no NIC, synchronization/registry, or user socket syscall integration. `net_core` validates IPv4 header length/checksum and evaluates an ordered default-deny table; `usb_core` only validates descriptor framing/minimum sizes; audio is a bounded sample ring; display validates bounded framebuffer mode dimensions; input defines a bounded device registry/event queue plus the host-tested scancode (`scancode_core`) and mouse-packet (`mouse_core`) decoders. `make hardware-core-test` covers helper-level allow/deny, malformed input, queue backpressure, descriptor truncation, audio underrun/overrun, and display bounds. `netif` defines an event-driven bounded Ethernet-frame ingress queue and transmit callback, accounts drops/errors, validates MTU/link state, and requires caller-supplied lock/unlock hooks suitable for IRQ/SMP serialization; it has no NIC backend. `netif` adds a bounded event-driven Ethernet RX queue, validated MTU/link transitions, TX callback and counters with caller-supplied IRQ-safe serialization hooks, but no concrete NIC driver. `net_stack` composes Ethernet/IPv4/UDP input validation, enforces a configured local destination and default-deny IPv4 firewall, verifies UDP checksums (allowing zero only for IPv4), and dispatches accepted datagrams through a callback; fragments are dropped and IPv6 remains fail-closed pending family-specific policy. Its bounded IPv4/UDP transmit helper builds DF-marked Ethernet/IP/UDP frames, emits IPv4 and UDP checksums, validates unicast addresses and MTU, then calls `netif_send`; callers must already resolve the next-hop MAC, with live ARP/neighbor resolution, route-to-transmit integration, retransmission and NIC integration explicitly absent. `net_arp` provides a host-tested IPv4 ARP request/reply validator/builder and fixed-capacity expiring neighbor cache; reply learning requires a matching live request and local IP/MAC identity, but the helper is not wired into this transmit path. `net_socket` adds a caller-serialized, bounded IPv4 UDP endpoint table with owner-bound generation handles, exclusive wildcard/specific-address bind rules, per-endpoint receive queues, queue-full drop accounting and stale-handle rejection; it is wired to the dispatcher callback but is not exposed as user-visible POSIX/BSD socket syscalls. The dispatcher’s bounded polling API returns on an empty queue and neither layer has bus/NIC integration. `net_l2` bounds Ethernet/VLAN and ARP frames; `net_ipv6` validates the IPv6 base header and walks bounded Hop-by-Hop, Routing, Fragment, AH and Destination Options extension chains (maximum 8 headers/256 bytes); it reports fragments but does not reassemble them, and rejects ESP/jumbograms; `net_conntrack` stores bounded flow observations with expiration/eviction; `net_route` provides a bounded IPv4 longest-prefix/metric lookup table; `net_transport` validates UDP framing and offers a limited TCP state/timeout helper (not RFC-complete TCP, retransmission/congestion/window management, or sockets); `dhcp_core` bounds BOOTP/DHCP option parsing and adds a host-tested lease client state machine (DISCOVER→OFFER→REQUEST→ACK, NAK restarts discovery, derived and explicit T1/T2 renewal timers, bounded retry ladder to a failed terminal state) with no socket, timer or NIC integration; `dns_core` validates bounded DNS message framing/name compression but does not resolve or cache names. `dma` defines an owner-scoped callback contract and refuses owner destruction while mappings remain, but supplies no IOMMU/cache-coherency backend. `driver_core` provides an explicit lifecycle transition and reverse-order exactly-once release bookkeeping. These helpers, apart from the PS/2 hardware input path and the host-tested netif→IPv4/UDP dispatcher→UDP endpoint callback composition noted above, are not wired to a bus or hardware resources. Neither the network composition nor the endpoint table is exposed through a synchronized kernel registry or userspace socket ABI. They are foundations—not operational network drivers or complete subsystem implementations. See `HARDWARE.md` for the support matrix.

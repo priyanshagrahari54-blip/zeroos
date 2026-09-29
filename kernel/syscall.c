@@ -13,6 +13,11 @@
 #include "fb.h"
 #include "display_core.h"
 #include "input.h"
+#include "smp.h"
+#include "memory.h"
+
+extern const uint8_t shell_child_image_start[];
+extern const uint8_t shell_child_image_end[];
 
 extern void serial_write_public(const char *text);
 
@@ -209,7 +214,9 @@ void syscall_dispatch(struct interrupt_frame *frame) {
                       ZEROOS_ABI_FEATURE_FILES |
                       ZEROOS_ABI_FEATURE_DISPLAY |
                       ZEROOS_ABI_FEATURE_PRESENT |
-                      ZEROOS_ABI_FEATURE_INPUT,
+                      ZEROOS_ABI_FEATURE_INPUT |
+                      ZEROOS_ABI_FEATURE_SYSINFO |
+                      ZEROOS_ABI_FEATURE_CHILD,
             .max_transfer=ZEROOS_SYSCALL_MAX_TRANSFER
         };
         if (frame->rdi==0 || frame->rsi<sizeof(info) ||
@@ -685,6 +692,47 @@ void syscall_dispatch(struct interrupt_frame *frame) {
             frame->rax=syscall_result(result);
         break;
     }
+    case ZEROOS_SYS_SYSTEM_INFO: {
+        struct zeroos_system_info info={
+            .version=ZEROOS_SYSTEM_INFO_VERSION,
+            .size=(uint32_t)sizeof(info),
+            .cpus_online=smp_online_count(),
+            .cpus_discovered=smp_discovered_count(),
+            .page_size=ZEROOS_PAGE_SIZE,
+            .timer_hz=timer_frequency_hz(),
+            .clock_source=cpu_has(ZEROOS_CPU_FEATURE_INVARIANT_TSC)?1U:0U,
+            .padding=0,
+            .uptime_ns=timer_monotonic_ns(),
+            .ram_total_bytes=memory_total_pages()*ZEROOS_PAGE_SIZE,
+            .ram_free_bytes=memory_free_pages()*ZEROOS_PAGE_SIZE
+        };
+        if (frame->rdi==0 || frame->rsi<sizeof(info) ||
+            !process_address_space_is_user_range(process,frame->rdi,
+                                                 sizeof(info),1)) {
+            frame->rax=syscall_error(ZEROOS_EFAULT);
+            break;
+        }
+        if (copy_to_user(frame->rdi,&info,sizeof(info))!=0)
+            frame->rax=syscall_error(ZEROOS_EFAULT);
+        else
+            frame->rax=0;
+        break;
+    }
+    case ZEROOS_SYS_CHILD_IMAGE: {
+        uint64_t image_size=(uint64_t)(shell_child_image_end-
+                                       shell_child_image_start);
+        if (frame->rdi==0 || frame->rsi<image_size ||
+            !process_address_space_is_user_range(process,frame->rdi,
+                                                 image_size,1)) {
+            frame->rax=syscall_error(ZEROOS_EFAULT);
+            break;
+        }
+        if (copy_to_user(frame->rdi,shell_child_image_start,image_size)!=0)
+            frame->rax=syscall_error(ZEROOS_EFAULT);
+        else
+            frame->rax=(int64_t)image_size;
+        break;
+    }
     default:
         if (frame->rax>=ZEROOS_SYS_OPEN && frame->rax<=ZEROOS_SYS_CHOWN) {
             fsyscall_dispatch(frame,process);
@@ -713,7 +761,9 @@ int syscall_debug_validate(void) {
         ZEROOS_SYS_DISPLAY_INFO+1U!=ZEROOS_SYS_DISPLAY_PRESENT ||
         ZEROOS_SYS_DISPLAY_PRESENT+1U!=ZEROOS_SYS_INPUT_POLL ||
         ZEROOS_SYS_INPUT_POLL+1U!=ZEROOS_SYS_INPUT_WAIT ||
-        ZEROOS_SYS_INPUT_WAIT+1U!=ZEROOS_SYS_MAX)
+        ZEROOS_SYS_INPUT_WAIT+1U!=ZEROOS_SYS_SYSTEM_INFO ||
+        ZEROOS_SYS_SYSTEM_INFO+1U!=ZEROOS_SYS_CHILD_IMAGE ||
+        ZEROOS_SYS_CHILD_IMAGE+1U!=ZEROOS_SYS_MAX)
         return -1;
     return 0;
 }

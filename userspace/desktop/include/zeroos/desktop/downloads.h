@@ -1,7 +1,18 @@
 /* Downloads manager (Stage 5 shell surface).
  * Bounded queue with explicit lifecycle QUEUED -> RUNNING -> DONE /
  * FAILED / CANCELED, progress accounting, single-active-run policy
- * (cooperative resource sharing) and injected start hooks. */
+ * (cooperative resource sharing) and injected start hooks.
+ *
+ * The queue is also a bounded history: a terminal item keeps its slot, so
+ * once ZD_DL_MAX transfers have been recorded add() reports -28 until the
+ * manager is re-initialised. Eight slots is the whole history, not the
+ * number of transfers in flight.
+ *
+ * A declared `total` is advisory. Progress is checked for monotonicity
+ * only: a transfer that overruns the size its owner declared is reported
+ * as it is reported, rather than clamped or refused, because the owner is
+ * the authority on byte counts and a wrong Content-Length is not the
+ * manager's to adjudicate. */
 #ifndef ZEROOS_DESKTOP_DOWNLOADS_H
 #define ZEROOS_DESKTOP_DOWNLOADS_H
 

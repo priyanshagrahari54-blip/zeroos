@@ -29,6 +29,11 @@ static void test_locale_switching(void) {
     ZD_CHECK(strcmp(hindi, "Settings") != 0);
     ZD_CHECK(hindi[0] != '\0');
     ZD_CHECK(strcmp(hindi, "सेटिंग्स") == 0);
+    /* Coverage only proves that a Hindi string exists. Pin one easy-to-miss
+     * shipped label semantically enough that a typo in "update" cannot
+     * ship while the zero-fallback coverage still passes. */
+    ZD_CHECK(strcmp(zd_i18n_text(&i18n, "update.applying"),
+                    "अपडेट लागू हो रहा है") == 0);
     /* UTF-8 bytes preserved exactly (Devanagari multi-byte sequence). */
     ZD_CHECK(strlen(hindi) > 3U);
     /* Missing key falls back to the key text and is counted. */
@@ -107,10 +112,33 @@ static void test_formatting(void) {
                  ZD_EINVAL);
 }
 
+static void test_shell_catalog_surface(void) {
+    uint32_t size = 0;
+    uint32_t index;
+    const struct zd_i18n_entry *catalog = zd_i18n_shell_catalog(&size);
+    struct zd_i18n i18n;
+
+    ZD_CHECK(catalog != 0);
+    ZD_CHECK(size >= 30U);
+    /* Every shipped entry carries a key and both locales: the catalog is
+     * what the zero-fallback guarantee is measured against. */
+    for (index = 0; index < size; ++index) {
+        ZD_CHECK(catalog[index].key != 0 && catalog[index].key[0] != 0);
+        ZD_CHECK(catalog[index].en != 0 && catalog[index].en[0] != 0);
+        ZD_CHECK(catalog[index].hi != 0 && catalog[index].hi[0] != 0);
+    }
+    /* out_size is optional; the loader reports the same catalog. */
+    ZD_CHECK(zd_i18n_shell_catalog(0) == catalog);
+    zd_i18n_init(&i18n, ZD_LOCALE_EN);
+    ZD_CHECK_EQ(zd_i18n_load_shell_catalog(&i18n), size);
+    ZD_CHECK_EQ(i18n.catalog_size, size);
+}
+
 void zd_test_i18n_suite(void) {
     printf(" suite: localization\n");
     ZD_RUN(test_catalog_coverage);
     ZD_RUN(test_locale_switching);
     ZD_RUN(test_ui_state_strings_both_locales);
     ZD_RUN(test_formatting);
+    ZD_RUN(test_shell_catalog_surface);
 }

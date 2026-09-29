@@ -560,14 +560,26 @@ int zd_wm_lower(struct zd_wm *wm, zd_window_id id) {
 }
 
 int zd_wm_focus(struct zd_wm *wm, zd_window_id id) {
-    struct zd_window *window = window_at(wm, id);
+    struct zd_window *window;
     struct zd_window *previous = (struct zd_window *)0;
     uint32_t index;
 
-    if (!window)
+    /* The refusal below counts the attempt, so the manager has to exist
+     * before the path that reports a bad one can run. */
+    if (!wm)
+        return -ZD_EINVAL;
+    window = window_at(wm, id);
+    if (!window) {
+        /* Asked to route input somewhere that does not exist. */
+        ++wm->stats.invalid_route_attempts;
         return -ZD_ENOENT;
-    if (!window_visible_on_workspace(window, wm->active_workspace))
+    }
+    if (!window_visible_on_workspace(window, wm->active_workspace)) {
+        /* Asked to route input to a window that cannot take it: minimized or
+         * on another workspace. */
+        ++wm->stats.invalid_route_attempts;
         return -ZD_ESTATE;
+    }
     for (index = 0; index < ZD_MAX_WINDOWS; ++index)
         if (wm->windows[index].in_use && wm->windows[index].keyboard_focused) {
             previous = &wm->windows[index];
@@ -583,6 +595,28 @@ int zd_wm_focus(struct zd_wm *wm, zd_window_id id) {
     if (previous)
         emit_window_event(wm, previous->id, 4);
     emit_window_event(wm, id, 4);
+    return 0;
+}
+
+/* Resize the workspace set. Growing simply makes more workspaces
+ * addressable; shrinking pulls every window on a removed workspace onto the
+ * highest surviving one and clamps the active workspace, so no window can be
+ * left somewhere the shell can never switch to. */
+int zd_wm_set_workspace_count(struct zd_wm *wm, uint32_t count) {
+    uint32_t index;
+    if (!wm || count == 0 || count > ZD_MAX_WORKSPACES)
+        return -ZD_EINVAL;
+    if (count == wm->workspace_count)
+        return 0;
+    if (count < wm->workspace_count) {
+        for (index = 0; index < ZD_MAX_WINDOWS; ++index) {
+            if (wm->windows[index].in_use && wm->windows[index].workspace >= count)
+                wm->windows[index].workspace = count - 1U;
+        }
+        if (wm->active_workspace >= count)
+            wm->active_workspace = count - 1U;
+    }
+    wm->workspace_count = count;
     return 0;
 }
 

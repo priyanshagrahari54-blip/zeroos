@@ -49,9 +49,13 @@ void zd_fw_init(struct zd_fw *fw);
 /* Insert at the front (highest precedence) or back.  Full -> -28. */
 int zd_fw_add(struct zd_fw *fw, const struct zd_fw_rule *tmpl, int front);
 int zd_fw_remove(struct zd_fw *fw, uint32_t id);   /* -2 if unknown */
-/* First-match decision; invalid flow -> -22 and stats.invalid_flows. */
+/* First-match decision; invalid flow -> -22 and stats.invalid_flows.
+ * A flow is invalid when its direction or its protocol is not one this
+ * engine knows: an unclassifiable flow is refused and counted, never
+ * judged by a rule written for ZD_FW_ANY. */
 int zd_fw_decide(struct zd_fw *fw, const struct zd_fw_flow *flow);
-/* Count enabled rules matching a flow without deciding (planning). */
+/* Count enabled rules matching a flow without deciding (planning).
+ * Returns 0 for a flow the engine cannot classify. */
 uint32_t zd_fw_matching(const struct zd_fw *fw, const struct zd_fw_flow *flow);
 
 #endif /* ZEROOS_DESKTOP_FIREWALL_H */

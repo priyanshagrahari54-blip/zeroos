@@ -214,13 +214,17 @@ static void test_minimal_resident_state(void) {
     struct zd_ai_request r = make_req(5, 0, 0);
     uint32_t done = 0;
 
-    zd_ai_broker_init(&b, &ops, ZD_AI_GRANT_ALL);
+    /* PERSIST deliberately withheld: this is the minimal-resident case. */
+    zd_ai_broker_init(&b, &ops, ZD_AI_GRANT_ALL & ~(uint32_t)ZD_AI_GRANT_PERSIST);
     ZD_CHECK_OK(zd_ai_submit(&b, &r));
     ZD_CHECK_OK(zd_ai_drain(&b, 4, &done));
     ZD_CHECK_EQ(done, 1);
 
-    /* Everything wiped: slot inactive, payload zeroed, stats report
-     * zero resident bytes without PERSIST. */
+    /* Everything wiped: slot inactive, payload zeroed, nothing retained in
+     * the broker's store, and stats report zero resident bytes. */
+    ZD_CHECK_EQ(b.last_output_len, 0u);
+    ZD_CHECK_EQ(b.last_payload_len, 0u);
+    ZD_CHECK_EQ(b.last_output[0], 0);
     for (uint32_t i = 0; i < ZD_AI_QUEUE_DEPTH; ++i) {
         ZD_CHECK_EQ(b.queue[i].active, 0);
         ZD_CHECK_EQ(b.queue[i].id, 0);
@@ -236,6 +240,51 @@ static void test_minimal_resident_state(void) {
     ZD_CHECK_EQ(zd_ai_submit(&b, 0), -ZD_EINVAL);
 }
 
+/* --- persistence grant ----------------------------------------------- */
+
+static void test_persist_grant(void) {
+    struct zd_ai_broker b;
+    struct zd_ai_ops ops = {ops_select_local, ops_run_ok, 0};
+    struct zd_ai_request r = make_req(7, 0, 0);
+    uint32_t done = 0;
+
+    zd_ai_broker_init(&b, &ops, ZD_AI_GRANT_ALL);
+    ZD_CHECK_OK(zd_ai_submit(&b, &r));
+    ZD_CHECK_OK(zd_ai_drain(&b, 4, &done));
+    ZD_CHECK_EQ(done, 1);
+
+    /* With PERSIST the drained payload and the backend's output survive in
+     * the broker's store, and the resident accounting names exactly those
+     * bytes. */
+    ZD_CHECK_EQ(b.last_output_len, 2u);
+    ZD_CHECK_EQ(b.last_output[0], 'o');
+    ZD_CHECK_EQ(b.last_output[1], 'k');
+    ZD_CHECK_EQ(b.last_output[2], 0);
+    ZD_CHECK_EQ(b.last_payload_len, 2u);
+    ZD_CHECK_EQ(b.last_payload[0], 'h');
+    ZD_CHECK_EQ(b.last_payload[1], 'i');
+    ZD_CHECK_EQ(b.stats.resident_bytes_after_drain, 4u);
+    /* The queue slot is freed either way. */
+    ZD_CHECK_EQ(b.queued, 0u);
+    ZD_CHECK_EQ(b.active, 0);
+
+    /* A later drain without the grant clears the store again rather than
+     * leaving stale bytes behind. */
+    zd_ai_revoke(&b, ZD_AI_GRANT_PERSIST);
+    r = make_req(8, 0, 0);
+    ZD_CHECK_OK(zd_ai_submit(&b, &r));
+    ZD_CHECK_OK(zd_ai_drain(&b, 4, &done));
+    ZD_CHECK_EQ(done, 1);
+    ZD_CHECK_EQ(b.last_output_len, 0u);
+    ZD_CHECK_EQ(b.last_payload_len, 0u);
+    ZD_CHECK_EQ(b.stats.resident_bytes_after_drain, 0u);
+
+    /* An empty drain neither retains nor reports anything. */
+    ZD_CHECK_OK(zd_ai_drain(&b, 4, &done));
+    ZD_CHECK_EQ(done, 0u);
+    ZD_CHECK_EQ(b.stats.resident_bytes_after_drain, 0u);
+}
+
 void zd_test_ai_suite(void) {
     printf("  suite: ai broker\n");
     ZD_RUN(test_permission_gate);
@@ -243,4 +292,5 @@ void zd_test_ai_suite(void) {
     ZD_RUN(test_queue_bounds);
     ZD_RUN(test_failure_paths);
     ZD_RUN(test_minimal_resident_state);
+    ZD_RUN(test_persist_grant);
 }

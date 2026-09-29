@@ -101,10 +101,21 @@ static void test_tier_effect_monotonicity(void) {
     }
 }
 
+static void test_tier_names(void) {
+    ZD_CHECK(strcmp(zd_governor_tier_name(ZD_TIER_RICH), "RICH") == 0);
+    ZD_CHECK(strcmp(zd_governor_tier_name(ZD_TIER_BALANCED), "BALANCED") == 0);
+    ZD_CHECK(strcmp(zd_governor_tier_name(ZD_TIER_SIMPLIFIED), "SIMPLIFIED") ==
+             0);
+    ZD_CHECK(strcmp(zd_governor_tier_name(ZD_TIER_MINIMAL), "MINIMAL") == 0);
+    ZD_CHECK(strcmp(zd_governor_tier_name(ZD_TIER_COUNT), "?") == 0);
+    ZD_CHECK(strcmp(zd_governor_tier_name((enum zd_perf_tier)-1), "?") == 0);
+}
+
 void zd_test_governor_suite(void) {
     printf(" suite: governor\n");
     ZD_RUN(test_tier_detection);
     ZD_RUN(test_pressure_ladder);
     ZD_RUN(test_governor_recovery_guard);
     ZD_RUN(test_tier_effect_monotonicity);
+    ZD_RUN(test_tier_names);
 }

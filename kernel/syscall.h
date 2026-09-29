@@ -63,8 +63,16 @@ enum zeroos_syscall_id {
     ZEROOS_SYS_DISPLAY_PRESENT = 52,
     ZEROOS_SYS_INPUT_POLL = 53,
     ZEROOS_SYS_INPUT_WAIT = 54,
+    ZEROOS_SYS_SYSTEM_INFO = 55,
+    ZEROOS_SYS_CHILD_IMAGE = 56,
     ZEROOS_SYS_MAX
 };
+
+/* Shell child image (ZEROOS_SYS_CHILD_IMAGE): a minimal Ring-3 ELF the
+ * shell can spawn to exercise the SPAWN/WAIT lifecycle. The kernel copies
+ * the embedded image unchanged; the caller must supply a buffer at least
+ * as large as the image, otherwise -EFAULT (the kernel never writes a
+ * partial image). The returned value is the byte count. */
 
 #define ZEROOS_WAIT_FLAG_NONBLOCK (1ULL << 0)
 #define ZEROOS_WAIT_VALID_FLAGS ZEROOS_WAIT_FLAG_NONBLOCK
@@ -118,6 +126,10 @@ enum zeroos_syscall_error {
 #define ZEROOS_ABI_FEATURE_DISPLAY  (1ULL << 8)
 #define ZEROOS_ABI_FEATURE_PRESENT  (1ULL << 9)
 #define ZEROOS_ABI_FEATURE_INPUT    (1ULL << 10)
+/* System topology plus a monotonic uptime clock (syscall 55). */
+#define ZEROOS_ABI_FEATURE_SYSINFO  (1ULL << 11)
+/* Embedded shell-child image for SPAWN/WAIT (syscall 56). */
+#define ZEROOS_ABI_FEATURE_CHILD    (1ULL << 12)
 
 /* Display geometry: ABI copy of kernel/fb.h (abi_consistency.py gates the
  * struct body against the public header). */
@@ -166,6 +178,11 @@ struct zeroos_display_info {
 #define ZEROOS_S_IFMT 0xf000U
 #define ZEROOS_S_IFREG 0x8000U
 #define ZEROOS_S_IFDIR 0x4000U
+/* struct zeroos_dirent.type carries the file-type nibble of the mode
+ * (mode >> 12), not the raw S_IF* bits: 4 = directory, 8 = regular. */
+#define ZEROOS_DT_UNKNOWN 0U
+#define ZEROOS_DT_DIR (ZEROOS_S_IFDIR >> 12)
+#define ZEROOS_DT_REG (ZEROOS_S_IFREG >> 12)
 
 struct zeroos_stat {
     uint64_t ino;
@@ -194,7 +211,7 @@ struct zeroos_statfs {
 
 struct zeroos_dirent {
     uint64_t ino;
-    uint32_t type;
+    uint32_t type; /* ZEROOS_DT_*: mode >> 12 (4 = dir, 8 = regular) */
     uint32_t name_len;
     char name[256];
 };
@@ -274,6 +291,27 @@ struct zeroos_input_event {
     int32_t x, y, value;
     uint16_t code;
     uint8_t kind, flags;
+};
+
+/* System information (ZEROOS_SYS_SYSTEM_INFO). Ring 3 has no other time
+ * source: the ABI exposes no wall clock, so session services that need
+ * deadlines (watchdog heartbeats, automation cooldowns, metrics windows)
+ * read uptime_ns here. Every field is kernel-reported, never derived by
+ * the caller; `size` lets the kernel grow the struct later, and a caller
+ * passing a smaller size gets -EFAULT rather than a partial write. */
+#define ZEROOS_SYSTEM_INFO_VERSION 1
+struct zeroos_system_info {
+    uint32_t version;         /* ZEROOS_SYSTEM_INFO_VERSION */
+    uint32_t size;            /* sizeof(struct zeroos_system_info) */
+    uint32_t cpus_online;     /* booted CPUs, BSP included */
+    uint32_t cpus_discovered; /* CPUs found in the firmware tables */
+    uint32_t page_size;       /* ZEROOS_PAGE_SIZE */
+    uint32_t timer_hz;        /* scheduler tick frequency */
+    uint32_t clock_source;    /* 1 = invariant TSC, 0 = PIT fallback */
+    uint32_t padding;         /* keeps the 64-bit fields aligned */
+    uint64_t uptime_ns;       /* monotonic since boot; never goes back */
+    uint64_t ram_total_bytes; /* managed physical memory */
+    uint64_t ram_free_bytes;  /* free managed pages right now */
 };
 
 struct zeroos_syscall_abi_info {

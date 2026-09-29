@@ -26,6 +26,12 @@ void zd_test_fps_suite(void) {
         ZD_CHECK(zd_fps_record(&f, i * 16, 16) == 0);
     ZD_CHECK_EQ(f.frames_total, 60);
     ZD_CHECK(zd_fps_current(&f, 60 * 16) > 0);
+    /* The window and the stamps are the same millisecond scale: 60 frames
+     * inside one 1000 ms window is 60 fps, not 60 frames inside a window
+     * that was really a nanosecond budget. The header used to call these
+     * timestamps nanoseconds, which is the kind of comment a caller
+     * believes. */
+    ZD_CHECK_EQ(zd_fps_current(&f, 60 * 16), 60);
     /* a mid-history instant whose 1 s window covers ~35 frames */
     ZD_CHECK(zd_fps_current(&f, 1400) >= 30);
     ZD_CHECK(zd_fps_avg_frame_ms(&f) == 16);
