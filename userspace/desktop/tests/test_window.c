@@ -452,6 +452,48 @@ static void test_titles_maximize_monitors(void) {
     }
 }
 
+/* Every entry point takes a manager pointer, and the ones that route to
+ * a window have to refuse a request they cannot route rather than
+ * dereference it.  zd_wm_focus() used to count the refusal on the
+ * manager before it had checked that the manager existed, so the one
+ * path whose job is to survive a bad request was the one that could
+ * not survive it. */
+static void test_null_manager_is_refused(void) {
+    zd_window_id id = 0;
+    zd_buffer_generation gen = 0;
+    struct zd_rect rect;
+    zd_memset(&rect, 0, sizeof(rect));
+
+    /* focus is the one that used to dereference a null manager */
+    ZD_CHECK_ERR(zd_wm_focus(0, 0), ZD_EINVAL);
+    /* the rest refuse through window_at(), which is null-safe */
+    ZD_CHECK_ERR(zd_wm_set_title(0, 0, "t"), ZD_EINVAL);
+    ZD_CHECK_ERR(zd_wm_move_resize(0, 0, rect), ZD_EINVAL);
+    ZD_CHECK_ERR(zd_wm_snap(0, 0, ZD_SNAP_LEFT), ZD_EINVAL);
+    ZD_CHECK_ERR(zd_wm_minimize(0, 0), ZD_ENOENT);
+    ZD_CHECK_ERR(zd_wm_maximize(0, 0), ZD_ENOENT);
+    ZD_CHECK_ERR(zd_wm_restore(0, 0), ZD_ENOENT);
+    ZD_CHECK_ERR(zd_wm_raise(0, 0), ZD_ENOENT);
+    ZD_CHECK_ERR(zd_wm_lower(0, 0), ZD_ENOENT);
+    ZD_CHECK_ERR(zd_wm_set_workspace(0, 0, 0), ZD_ENOENT);
+    ZD_CHECK_ERR(zd_wm_assign_monitor(0, 0, 0), ZD_ENOENT);
+    ZD_CHECK_ERR(zd_wm_queue_buffer(0, 0, 0), ZD_ENOENT);
+    ZD_CHECK_ERR(zd_wm_release_buffer(0, 0, 0), ZD_ENOENT);
+    ZD_CHECK(zd_wm_create_window(0, 0, &id) != 0);
+    ZD_CHECK(zd_wm_buffer_state(0, 0, &gen) == ZD_BUFFER_INVALID);
+    ZD_CHECK(zd_wm_window(0, 0) == 0);
+    ZD_CHECK_EQ(zd_wm_stacking_order(0, 0, 0), 0U);
+    ZD_CHECK_EQ(zd_wm_windows_for_client(0, 0, 0, 0), 0U);
+    /* a manager that exists still refuses a window it does not have,
+     * and still counts the attempt */
+    {
+        struct zd_wm wm;
+        zd_wm_init(&wm);
+        ZD_CHECK_ERR(zd_wm_focus(&wm, 0), ZD_ENOENT);
+        ZD_CHECK_EQ(wm.stats.invalid_route_attempts, 1U);
+    }
+}
+
 void zd_test_window_suite(void) {
     printf(" suite: window system\n");
     ZD_RUN(test_monitor_and_dpi);
@@ -463,4 +505,5 @@ void zd_test_window_suite(void) {
     ZD_RUN(test_client_crash_isolation);
     ZD_RUN(test_capacity_limits);
     ZD_RUN(test_titles_maximize_monitors);
+    ZD_RUN(test_null_manager_is_refused);
 }

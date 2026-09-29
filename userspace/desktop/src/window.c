@@ -560,10 +560,15 @@ int zd_wm_lower(struct zd_wm *wm, zd_window_id id) {
 }
 
 int zd_wm_focus(struct zd_wm *wm, zd_window_id id) {
-    struct zd_window *window = window_at(wm, id);
+    struct zd_window *window;
     struct zd_window *previous = (struct zd_window *)0;
     uint32_t index;
 
+    /* The refusal below counts the attempt, so the manager has to exist
+     * before the path that reports a bad one can run. */
+    if (!wm)
+        return -ZD_EINVAL;
+    window = window_at(wm, id);
     if (!window) {
         /* Asked to route input somewhere that does not exist. */
         ++wm->stats.invalid_route_attempts;
