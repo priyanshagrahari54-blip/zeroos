@@ -113,6 +113,10 @@ int zd_notes_delete(struct zd_notes *n, uint32_t id) {
             zd_memmove(&n->items[i], &n->items[i + 1],
                     (n->count - i - 1) * sizeof(n->items[0]));
         n->count--;
+        /* Deletion removes the note from the active set and from resident
+         * storage: after the memmove the old tail slot still contains a
+         * duplicate title/body until it is explicitly wiped. */
+        zd_memset(&n->items[n->count], 0, sizeof(n->items[n->count]));
         n->stats.deleted++;
         return 0;
     }

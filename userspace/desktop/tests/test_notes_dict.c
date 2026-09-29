@@ -123,6 +123,17 @@ void zd_test_notes_dict_suite(void) {
     ZD_CHECK_OK(zd_notes_delete(&notes, id3));
     ZD_CHECK_EQ(zd_notes_delete(&notes, id3), -2);
     ZD_CHECK_EQ(notes.count, 2u);
+    /* The vacated tail slot is wiped; deleting a note must not leave its
+     * title/body resident outside the active count after the memmove. */
+    {
+        uint32_t byte;
+        const unsigned char *raw = (const unsigned char *)&notes.items[2];
+        uint32_t residue = 0;
+        for (byte = 0; byte < sizeof(notes.items[2]); ++byte)
+            if (raw[byte])
+                residue = 1;
+        ZD_CHECK_EQ(residue, 0U);
+    }
     {
         uint32_t tmp, i;
         for (i = notes.count; i < ZD_NOTES_MAX; ++i) {
