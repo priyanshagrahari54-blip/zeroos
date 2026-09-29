@@ -17,7 +17,8 @@
  * ASCII value; non-printable keys use ZEROOS_KEY_* above 0xFF.
  */
 
-#define SCANCODER_TABLE_SIZE 128U
+/* One slot for each base code and each E0-prefixed code: 2 * 128. */
+#define SCANCODER_TABLE_SIZE 256U
 
 struct scancode_decoder {
     /* (e0 << 7 | scancode) -> code emitted at make; 0 = not down. */

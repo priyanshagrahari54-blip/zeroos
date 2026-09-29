@@ -13,6 +13,7 @@ int main(void) {
     struct zeroos_input_event ev;
 
     scancode_decoder_init(&d);
+    assert(sizeof(d.down_codes) / sizeof(d.down_codes[0]) == 256U);
 
     /* Plain letter make/break. */
     assert(feed(&d, 0x1e, &ev) == 1);           /* 'a' make */
