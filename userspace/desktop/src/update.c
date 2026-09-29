@@ -87,7 +87,13 @@ int zd_update_event(struct zd_update *u, int event) {
         if (prev != ZD_UPD_IDLE && prev != ZD_UPD_DONE &&
             prev != ZD_UPD_FAILED)
             REJECT();
-        return zd_update_begin(u, u->version[0] ? u->version : "update");
+        /* The version is what the payload is bound to (it is the AEAD's
+         * AAD) and what the shell reports as installed, so a machine
+         * that has never been told what it is installing does not get
+         * to invent one: name the target with zd_update_begin() first. */
+        if (!u->version[0])
+            REJECT();
+        return zd_update_begin(u, u->version);
 
     case ZD_UPD_EV_DOWNLOAD_OK:
         if (prev != ZD_UPD_DOWNLOADING)

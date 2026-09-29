@@ -34,7 +34,9 @@ enum zd_update_state {
 };
 
 enum zd_update_event {
-    ZD_UPD_EV_START = 0,     /* begin: -> DOWNLOADING */
+    ZD_UPD_EV_START = 0,     /* -> DOWNLOADING; refused (-22) unless a
+                              * version was set by zd_update_begin(): the
+                              * machine does not invent what it installs */
     ZD_UPD_EV_DOWNLOAD_OK,
     ZD_UPD_EV_DOWNLOAD_FAIL,
     ZD_UPD_EV_VERIFY_OK,
