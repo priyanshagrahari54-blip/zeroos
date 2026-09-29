@@ -74,8 +74,11 @@ int zd_governor_set_pressure(struct zd_governor *governor,
                              int recovery_necessary);
 uint64_t zd_governor_actions_for_level(enum zd_pressure_level level,
                                        int recovery_necessary);
-/* Frame budget/effects for a tier; lower tiers always get <= budget of
- * higher tiers and a subset of effects. */
+/* Frame budget/effects for a tier. As the tier degrades the budget only
+ * ever grows -- 16, 16, 33, 50 ms, so a less capable tier targets fewer
+ * frames per second and never more -- and the effects mask only ever
+ * loses bits, each tier's effects being a subset of the tier above it.
+ * Both directions are asserted by the suite. */
 void zd_governor_effects_for_tier(enum zd_perf_tier tier,
                                   uint32_t *frame_budget_ms,
                                   uint32_t *effects_mask);
