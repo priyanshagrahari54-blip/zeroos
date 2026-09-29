@@ -118,6 +118,56 @@ static void test_backoff_escalation(void) {
     ZD_CHECK(watchdog.total_giveups >= 1U);
 }
 
+static void test_giveup_exit_escalation_is_published(void) {
+    struct zd_watchdog watchdog;
+    uint32_t id = 0;
+    struct zd_watchdog_result result;
+    struct zd_watchdog_log_entry entries[ZD_WATCHDOG_MAX_LOG];
+    uint64_t now = 1000000ULL;
+    int decisions_before;
+    int escalates_logged = 0;
+    uint32_t count;
+    uint32_t index;
+
+    zd_watchdog_init(&watchdog);
+    ZD_CHECK_OK(zd_watchdog_set_listener(&watchdog, on_decision, on_degraded,
+                                         0));
+    decision_events = 0;
+    degraded_events = 0;
+    /* One restart of budget, so the second failure gives up. */
+    ZD_CHECK_OK(zd_watchdog_register(&watchdog, "flaky", ZD_WD_ALWAYS, 1, 0,
+                                     1000ULL, 8000ULL, &id));
+    ZD_CHECK_OK(zd_watchdog_note_start(&watchdog, id, now));
+    ZD_CHECK_OK(zd_watchdog_note_exit(&watchdog, id, now + 1ULL, 1, &result));
+    ZD_CHECK_EQ(result.decision, ZD_WD_RESTART);
+    now += 100000ULL;
+    ZD_CHECK_OK(zd_watchdog_note_start(&watchdog, id, now));
+    ZD_CHECK_OK(zd_watchdog_note_exit(&watchdog, id, now + 1ULL, 1, &result));
+    ZD_CHECK_EQ(result.decision, ZD_WD_GIVE_UP);
+    ZD_CHECK_EQ(watchdog.services[0].gave_up, 1U);
+    now += 100000ULL;
+
+    /* A service that keeps dying after it gave up escalates the session.
+     * The caller is told ESCALATE, so the listener and the audit log have
+     * to be told the same thing -- every other decision path publishes,
+     * including the heartbeat-expiry escalation in zd_watchdog_evaluate. */
+    decisions_before = decision_events;
+    last_decision = ZD_WD_CONTINUE;
+    ZD_CHECK_OK(zd_watchdog_note_start(&watchdog, id, now));
+    ZD_CHECK_OK(zd_watchdog_note_exit(&watchdog, id, now + 1ULL, 1, &result));
+    ZD_CHECK_EQ(result.decision, ZD_WD_ESCALATE);
+    ZD_CHECK_EQ(decision_events, decisions_before + 1);
+    ZD_CHECK_EQ(last_decision, ZD_WD_ESCALATE);
+    count = zd_watchdog_log(&watchdog, entries, ZD_WATCHDOG_MAX_LOG);
+    for (index = 0; index < count; ++index)
+        if (entries[index].kind == ZD_WD_EVENT_DECISION &&
+            entries[index].decision == ZD_WD_ESCALATE)
+            ++escalates_logged;
+    ZD_CHECK(escalates_logged >= 1);
+    ZD_CHECK(zd_watchdog_session_degraded(&watchdog));
+    ZD_CHECK_EQ(degraded_events, 1);
+}
+
 static void test_health_window_resets_budget(void) {
     struct zd_watchdog watchdog;
     uint32_t id = 0;
@@ -147,11 +197,21 @@ static void test_never_policy_and_unregister(void) {
     uint32_t id = 0;
     struct zd_watchdog_result result;
     zd_watchdog_init(&watchdog);
+    ZD_CHECK_OK(zd_watchdog_set_listener(&watchdog, on_decision, on_degraded,
+                                         0));
+    decision_events = 0;
+    degraded_events = 0;
+    last_decision = ZD_WD_RESTART;
     ZD_CHECK_OK(zd_watchdog_register(&watchdog, "onshot", ZD_WD_NEVER, 0, 0,
                                      1000ULL, 0ULL, &id));
     ZD_CHECK_OK(zd_watchdog_note_start(&watchdog, id, 100ULL));
     ZD_CHECK_OK(zd_watchdog_note_exit(&watchdog, id, 200ULL, 9, &result));
     ZD_CHECK_EQ(result.decision, ZD_WD_CONTINUE);
+    /* "Stay down" is a decision too: the caller is told CONTINUE, so the
+     * listener is told CONTINUE. */
+    ZD_CHECK_EQ(decision_events, 1);
+    ZD_CHECK_EQ(last_decision, ZD_WD_CONTINUE);
+    ZD_CHECK_EQ(degraded_events, 0);
     ZD_CHECK_ERR(zd_watchdog_note_exit(&watchdog, 9999, 300ULL, 1, &result),
                  ZD_ENOENT);
     ZD_CHECK_OK(zd_watchdog_unregister(&watchdog, id));
@@ -220,5 +280,6 @@ void zd_test_watchdog_suite(void) {
     ZD_RUN(test_health_window_resets_budget);
     ZD_RUN(test_never_policy_and_unregister);
     ZD_RUN(test_heartbeat_escalation);
+    ZD_RUN(test_giveup_exit_escalation_is_published);
     ZD_RUN(test_audit_log);
 }

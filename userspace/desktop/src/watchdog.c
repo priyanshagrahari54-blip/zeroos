@@ -198,6 +198,13 @@ int zd_watchdog_note_exit(struct zd_watchdog *watchdog, uint32_t id,
     if (service->gave_up) {
         result.decision = ZD_WD_ESCALATE;
         mark_degraded(watchdog, now_ns);
+        /* Published like every other decision: the caller is told
+         * ESCALATE, so the listener and the audit log must be told the
+         * same thing. The heartbeat-expiry escalation in
+         * zd_watchdog_evaluate publishes; this one did not, so a
+         * service that kept dying after its budget ran out escalated
+         * the session with nothing in the log and no callback. */
+        publish_decision(watchdog, id, result.decision, 0);
         if (out_result)
             *out_result = result;
         return 0;

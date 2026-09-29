@@ -89,6 +89,12 @@ struct zd_watchdog_result {
 };
 
 void zd_watchdog_init(struct zd_watchdog *watchdog);
+/* Every decision the watchdog returns to a caller is published: one
+ * on_decision call carrying the same service id, decision and delay, and
+ * one ZD_WD_EVENT_DECISION line in the bounded audit log. A consumer may
+ * therefore watch the listener alone and still see every decision,
+ * escalations included — on_degraded fires once, when the session first
+ * needs degrading. */
 int zd_watchdog_set_listener(struct zd_watchdog *watchdog,
                              void (*on_decision)(void *context,
                                                  uint32_t service_id,
