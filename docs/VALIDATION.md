@@ -91,7 +91,7 @@ The authoritative per-core binding inventory (host-tested vs pending live integr
 | Full guest kernel build | `make elf -j4` | 0 warnings (Werror) | 0 |
 | Session probe image size (46 bound desktop cores + shell) | `readelf -lW build/session_probe.elf`, measured against `ZEROOS_ELF_MAX_TOTAL_PAGES` | 398 PT_LOAD pages of the loader's 4096 | 0 |
 | Memory safety / undefined behaviour | `make sanitizer-check` (every hardware-core, desktop and compat suite rebuilt with `-fsanitize=address,undefined -fno-sanitize-recover=all`, leaks detected) | all suites clean | 0 |
-| Every desktop, compatibility and hardware-core entry point refuses a null argument (generated from the headers, each call in a child process, scalars 0 and 3; the primitives whose contract is a caller-supplied buffer are excluded by name) | `make null-sweep` | 499 entry points x 2 scalar values (401 desktop, 17 compat, 81 hardware) | 0 |
+| Every desktop, compatibility and hardware-core entry point refuses a null argument (generated from the headers, each call in a child process, scalars 0 and 3; the primitives whose contract is a caller-supplied buffer are excluded by name) | `make null-sweep` | 500 entry points x 2 scalar values (402 desktop, 17 compat, 81 hardware) | 0 |
 | Shell child image (spawned by the session to certify `SPAWN`/`WAIT`) | `python3 tools/check_child_elf.py build/shell_child.elf` (ELF class, machine, entry, segment layout) before embedding | PASS | 0 |
 
 Reproduce all host/build checks locally with `make check` (it builds the
