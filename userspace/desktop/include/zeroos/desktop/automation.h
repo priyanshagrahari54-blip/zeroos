@@ -79,6 +79,10 @@ struct zd_automation_audit_entry {
 };
 
 struct zd_automation_stats {
+    /* Every delivery to zd_automation_fire, including an id that is not
+     * one of the events: a caller feeding the engine nonsense should be
+     * able to see that it did, because nothing else records it -- no
+     * rule matches, so the audit ring stays empty too. */
     uint64_t events_seen;
     uint64_t fires;
     uint64_t denied_permission;
@@ -119,7 +123,14 @@ struct zd_automation_rule *zd_automation_find(struct zd_automation *engine,
 
 /* Deliver one event at `now_tick`: every enabled matching rule is
  * evaluated in id order (permission → cap → cooldown → action).
- * Returns the number of rules that fired. */
+ * Returns the number of rules that fired.
+ *
+ * `now_tick` is the caller's monotonic clock and is never rewound here.
+ * The cooldown is `now_tick - last_fire_tick`, so a tick that jumps
+ * backwards reads as a very long interval and the rule fires rather
+ * than being rate limited: the engine does not police the clock, and a
+ * caller whose ticks can move backwards should not lean on the rate
+ * limit. The session drives this from the kernel's monotonic uptime. */
 uint32_t zd_automation_fire(struct zd_automation *engine, uint32_t event,
                             uint64_t now_tick);
 

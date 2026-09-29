@@ -135,9 +135,16 @@ uint32_t zd_automation_fire(struct zd_automation *engine, uint32_t event,
                             uint64_t now_tick) {
     uint32_t fired = 0;
 
-    if (!engine || !event_known(event))
+    if (!engine)
         return 0;
+    /* Counted before the event is recognised: this counter is how the
+     * engine tells a caller how much of its event stream arrived, and an
+     * id that is not one of the events is part of that stream. Refused
+     * silently it is the one delivery that leaves no trace anywhere --
+     * no rule matches, so nothing is audited either. */
     engine->stats.events_seen++;
+    if (!event_known(event))
+        return 0;
 
     for (uint32_t i = 0; i < engine->rule_count; ++i) {
         struct zd_automation_rule *rule = &engine->rules[i];
