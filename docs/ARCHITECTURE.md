@@ -500,7 +500,7 @@ mapping, localized labels for all seven conditions).
 ### Stage 5 binding inventory (production status)
 
 Every desktop core introduced in Stage 5 is host-tested with real
-assertions (no mocks presented as functionality), and 45 of the 46
+assertions (no mocks presented as functionality), and 46 of the 47
 `userspace/desktop/src/*.c` cores are now also linked into the guest
 session image and exercised against live kernel state on every CI boot.
 The one exception is `formula.c`, which returns `double` and so cannot be
@@ -539,6 +539,7 @@ claimed:
 | Downloads | the shell binds the queue's start hook to the VFS: the enqueued source path is streamed into the destination in bounded chunks with progress reported as bytes move, the single-active policy refuses a second transfer with `-EBUSY`, progress regression is rejected, the finished file is stat'ed and byte-compared against its source, and a missing source fails the transfer with the VFS `ENOENT` rather than reporting success | network transports (the source is a local path until a socket ABI exists) |
 | Cloud/device sync | offline queue + permission suites | transport over kernel sockets; real device pairing |
 | Firewall engine | first-match/default-deny suites | kernel packet-path hook (userspace policy today) |
+| Security scanning architecture | queue, bounded incremental scheduler with a byte budget, quarantine policy hook, bounded audit ring and fail-closed reporting — host-tested with a fixture detector, and bound in the session where files the VFS really holds are queued and completed. No detector ships in this build, so every item reports `unavailable`: "not scanned" is never reported as clean, and an engine that finishes without deciding is a failed scan rather than a clean one | A signature/behavior engine and its corpus; until one is registered the module reports `unavailable` and claims no detection |
 | Sandbox profiles | fail-closed gates + audit suites, and the session enforces a denial in the kernel: the confined profile denies writes, the shell drops its identity with `SETCRED`, and the VFS then refuses the owner-only file with `EACCES` while a world-readable file still opens — with `SETCRED` proven one-way for an unprivileged caller | namespaces/cgroups-style isolation and per-mount profiles |
 | Update payload verification | AEAD vectors + tamper/replay suites, and the session runs the whole pipeline live: the key is provisioned through the filesystem (written, read back, then used), the bundle is sealed with the RFC 8439 AEAD core and verified with the version bound as AAD, and the stage/activate/commit/rollback hooks perform real VFS writes that the step reads back | platform/PKI key injection (the key is provisioned by the filesystem path, not sealed by hardware) |
 | OCR | capability gate + pluggable-engine path (fixture only) | licensed engine; until then `-95`, no accuracy claims |

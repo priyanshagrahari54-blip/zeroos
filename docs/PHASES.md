@@ -131,6 +131,32 @@ bypass, and no proprietary codec/container claims without tests.
 
 ## Phase 7 — Security, Update and Recovery
 Firewall, permissions, encryption integration, antivirus scanning, privacy center, secure vault, update manager, snapshots and rollback.
+
+The antivirus/security scanning bullet is delivered as an *architecture*
+(`userspace/desktop/src/scan.c`), not as a detector: the work queue, the
+bounded incremental scheduler, the quarantine policy hook, the audit ring
+and the fail-closed reporting are implemented, host-tested and run in the
+guest, while the part that recognises a threat is a pluggable engine. No
+engine ships in this build, so every scan reports `unavailable` rather
+than `clean` -- claiming detection without a signature corpus would be a
+fabricated bill of health, and the stage prompt's own rule is that an
+unsupported capability must fail explicitly and diagnostically.
+
+**Not implemented (Stage 5 part B): safe/recovery boot.** The building
+blocks exist and are certified -- ZJFS replay and `fsck` with a host
+image-recovery gate, degraded device modes for display/input/SMP that let
+the kernel come up without the hardware it expected, snapshots and
+transactional-update rollback, and the userspace negative/fault probes --
+but there is no boot-mode selector: nothing records that a boot was
+attempted, nothing marks a boot as good, and nothing therefore boots a
+minimal recovery configuration when the full one does not come up. It is
+recorded here rather than implied by the pieces around it, because "can
+fsck a filesystem" is not "can boot into recovery". Closing it means a
+persistent boot-attempt record, a "boot good" mark written once userspace
+is up, and a kernel path that starts the minimal configuration when the
+mark is missing -- all of which need guest certification, not just host
+tests.
+
 Status: kernel crypto primitives (RFC 8439 ChaCha20-Poly1305: block,
 cipher, Poly1305, key generation, AEAD — vector-tested plus tamper
 negatives) landed as `kernel/crypto.c` and are linked into the kernel;
