@@ -72,8 +72,10 @@ int zd_eco_pair(struct zd_eco *e, const char *name, uint32_t *out_idx) {
             e->stats.rejected++;
         return -22;
     }
-    if (e->device_count >= ZD_ECO_DEVICES)
+    if (e->device_count >= ZD_ECO_DEVICES) {
+        e->stats.rejected++;
         return -28;
+    }
     for (i = 0; i < ZD_ECO_DEVICES; ++i) {
         if (e->devices[i].in_use)
             continue;
@@ -89,6 +91,7 @@ int zd_eco_pair(struct zd_eco *e, const char *name, uint32_t *out_idx) {
             *out_idx = i;
         return 0;
     }
+    e->stats.rejected++;
     return -28;
 }
 
@@ -198,8 +201,12 @@ int zd_eco_enqueue(struct zd_eco *e, uint32_t idx, uint32_t perm,
         d->refused++;
         return -1;
     }
-    if (e->queued >= ZD_ECO_QUEUE)
+    if (e->queued >= ZD_ECO_QUEUE) {
+        /* the queue is full: the work is not queued, and it does not
+         * disappear without being counted either */
+        e->stats.rejected++;
         return -28;
+    }
     for (i = 0; i < ZD_ECO_QUEUE; ++i) {
         if (e->queue[i].in_use)
             continue;
@@ -213,6 +220,7 @@ int zd_eco_enqueue(struct zd_eco *e, uint32_t idx, uint32_t perm,
         e->stats.queued++;
         return 0;
     }
+    e->stats.rejected++;
     return -28;
 }
 
@@ -236,7 +244,11 @@ uint32_t zd_eco_flush(struct zd_eco *e) {
             continue;
         d = e_dev(e, en->device_idx);
         if (!d) {
-            /* pairing vanished: drop, keep queue consistent */
+            /* unpair() drops the entry and counts it, so this is only
+             * reachable if the two ever disagree. If they do, the work
+             * still went nowhere, and it is counted as such rather than
+             * dropped in silence. */
+            e->stats.refused_pairing++;
             en->in_use = 0;
             en->payload[0] = 0;
             if (e->queued)

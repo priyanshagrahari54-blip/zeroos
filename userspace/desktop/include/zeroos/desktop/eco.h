@@ -52,6 +52,12 @@ struct zd_eco {
     uint32_t queued;
     uint32_t queued_ever;
     uint32_t conn;                 /* enum zd_eco_conn */
+    /* Work refused for a reason the caller asked about -- permission,
+     * connectivity, pairing -- is counted under that counter. Everything
+     * else a request can be turned away for (a malformed argument, a
+     * device table or a queue that is full) is counted in `rejected`, so
+     * nothing disappears unaccounted: attempts are successes plus the
+     * refusals, and every refusal is in one column or the other. */
     struct {
         uint32_t paired, unpairs, granted, revoked, queued,
                  flushed, refused_perm, refused_offline,
@@ -62,7 +68,9 @@ struct zd_eco {
 void zd_eco_init(struct zd_eco *e);
 void zd_eco_set_conn(struct zd_eco *e, uint32_t conn);
 /* Pair with zero permissions (explicit grant required afterwards).
- * empty/overlong name -> -22; full -> -28. */
+ * empty/overlong name -> -22 (counted in `rejected`); full -> -28
+ * (counted there too: four devices are already paired, and that is a
+ * request turned away, not a request that happened). */
 int zd_eco_pair(struct zd_eco *e, const char *name, uint32_t *out_idx);
 /* Unpair: queued work for that device is dropped and each dropped entry
  * is counted in `refused_pairing` -- nothing disappears unaccounted. */
@@ -73,7 +81,8 @@ int zd_eco_unpair(struct zd_eco *e, uint32_t idx);
 int zd_eco_grant(struct zd_eco *e, uint32_t idx, uint32_t perm);
 int zd_eco_revoke(struct zd_eco *e, uint32_t idx, uint32_t perm);
 /* Queue work for a device: requires paired + that permission
- * (else -1 with the matching refusal counter).  Full -> -28. */
+ * (else -1 with the matching refusal counter).  Full -> -28, counted in
+ * `rejected` for the same reason the device table being full is. */
 int zd_eco_enqueue(struct zd_eco *e, uint32_t idx, uint32_t perm,
                    const char *payload);
 /* Flush while ONLINE: each entry still checks pairing+perm (a
