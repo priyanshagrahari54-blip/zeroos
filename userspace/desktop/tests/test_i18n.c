@@ -29,6 +29,11 @@ static void test_locale_switching(void) {
     ZD_CHECK(strcmp(hindi, "Settings") != 0);
     ZD_CHECK(hindi[0] != '\0');
     ZD_CHECK(strcmp(hindi, "सेटिंग्स") == 0);
+    /* Coverage only proves that a Hindi string exists. Pin one easy-to-miss
+     * shipped label semantically enough that a typo in "update" cannot
+     * ship while the zero-fallback coverage still passes. */
+    ZD_CHECK(strcmp(zd_i18n_text(&i18n, "update.applying"),
+                    "अपडेट लागू हो रहा है") == 0);
     /* UTF-8 bytes preserved exactly (Devanagari multi-byte sequence). */
     ZD_CHECK(strlen(hindi) > 3U);
     /* Missing key falls back to the key text and is counted. */
