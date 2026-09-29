@@ -69,3 +69,4 @@ page discovery/allocation, x86-64 virtual memory, IDT/ISR entry, 8259 PIC,
 PIT, ACPI RSDP/root/MADT validation, and the bounded APIC/SMP functionality
 documented in `ACPI.md`. QEMU and physical-device certification are distinct;
 no real-hardware certification is implied by compilation.
+\n\n## 10-stage hardware alignment\n\nHardware certification is evidence-gated. The Lenovo G560 class is the reference low-resource profile, but exact CPU, RAM, GPU, display and network adapter must be detected per machine. Native 1366x768 is the reference display target; 1080p source playback is a capability test, not a panel-resolution claim. Network throughput is recorded from the actual adapter/link. Thermal, power, HDD, memory-pressure and long-duration results must be recorded in the validation matrix.\n\nDo not convert detection, enumeration or host tests into support claims. Controller/gamepad support is not part of the current ZEROOS hardware target.\n
