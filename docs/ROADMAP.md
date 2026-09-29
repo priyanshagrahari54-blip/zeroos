@@ -78,3 +78,18 @@ Every stage follows:
 AUDIT -> DESIGN -> IMPLEMENT -> TEST -> STRESS -> MEASURE -> DOCUMENT -> INTEGRATE
 
 No roadmap item is considered implemented merely because its architecture is documented.
+
+
+## 10-stage execution bridge
+
+Stages 0-5 are the existing production foundation. The next five stages are:
+
+6. Security enforcement, packages, updates and recovery.
+7. GPU acceleration, media, browser and native app foundation.
+8. Windows compatibility, Android runtime foundation and gaming.
+9. ZERO AI, automation, service lifecycle and performance engineering.
+10. G560/hardware certification, long-duration stability and release.
+
+The detailed authoritative definitions are in `ZEROOS_MASTER_ROADMAP.md`. The reusable agent prompt is `ZEROOS_MASTER_PROMPT_10_STAGE.md`.
+
+All stage claims remain evidence-gated: detection != operational support, host-tested != hardware-supported, roadmap intent != implementation.
