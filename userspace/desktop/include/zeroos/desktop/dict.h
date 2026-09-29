@@ -23,6 +23,9 @@ struct zd_dict {
     uint8_t truncated; /* source returned more than we kept */
     struct {
         uint32_t loads, load_errors, lookups, lookup_hits;
+        /* Every call the dictionary refused: a malformed argument, or a
+         * lookup against a dictionary that has not loaded. A miss is not
+         * a refusal and is counted by `lookups` alone. */
         uint32_t prefix_queries, suggestions, rejected;
     } stats;
 };

@@ -144,10 +144,15 @@ void zd_test_notes_dict_suite(void) {
     /* bad args */
     ZD_CHECK_EQ(zd_dict_load(&dict, 0, 0), -22);
     ZD_CHECK_EQ(zd_dict_lookup(&dict, ""), -22);
+    /* Every refusal is counted, including the ones that happen before a
+     * load: a dictionary that has not loaded is asked constantly, and
+     * `rejected` is how a caller sees it. */
+    ZD_CHECK_EQ(dict.stats.rejected, 4u);
     /* source error */
     ZD_CHECK_EQ(zd_dict_load(&dict, dict_src_err, 0), -5);
     ZD_CHECK_EQ(dict.stats.load_errors, 1u);
     ZD_CHECK_EQ(zd_dict_lookup(&dict, "apple"), -95);
+    ZD_CHECK_EQ(dict.stats.rejected, 5u);
     /* real load: 7 raw -> dedup "apple"/"Apple" case-differently...
      * list has apple+apple (dup), Zebra+zebra (dup) -> 5 unique */
     ZD_CHECK_OK(zd_dict_load(&dict, dict_src_ok, 0));

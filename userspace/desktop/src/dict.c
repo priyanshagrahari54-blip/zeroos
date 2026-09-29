@@ -46,8 +46,12 @@ static int dc_has_prefix(const char *word, const char *prefix) {
 int zd_dict_load(struct zd_dict *d, zd_dict_source_fn src, void *ctx) {
     uint32_t n = 0, i;
     int rc;
-    if (!d || !src)
+    if (!d)
         return -22;
+    if (!src) {
+        d->stats.rejected++;
+        return -22;
+    }
     d->loaded = 0; /* failed loads leave the dict unreadable (-95) */
     d->truncated = 0;
     rc = src(ctx, d->words, ZD_DICT_MAX, &n);
@@ -79,10 +83,19 @@ int zd_dict_load(struct zd_dict *d, zd_dict_source_fn src, void *ctx) {
 
 int zd_dict_lookup(struct zd_dict *d, const char *word) {
     uint32_t lo, hi;
-    if (!d || !word || !word[0])
+    if (!d)
         return -22;
-    if (!d->loaded)
+    if (!word || !word[0]) {
+        d->stats.rejected++;
+        return -22;
+    }
+    if (!d->loaded) {
+        /* A lookup before a successful load is a refusal like any other,
+         * and it is the one a caller makes by accident -- the counter is
+         * how it finds out. */
+        d->stats.rejected++;
         return -95;
+    }
     d->stats.lookups++;
     lo = 0;
     hi = d->count;
@@ -106,10 +119,16 @@ int zd_dict_prefix(struct zd_dict *d, const char *prefix,
                    uint32_t *out_n) {
     uint32_t i, written = 0;
     int total = 0;
-    if (!d || !prefix || !out_n)
+    if (!d)
         return -22;
-    if (!d->loaded)
+    if (!prefix || !out_n) {
+        d->stats.rejected++;
+        return -22;
+    }
+    if (!d->loaded) {
+        d->stats.rejected++;
         return -95;
+    }
     d->stats.prefix_queries++;
     for (i = 0; i < d->count; ++i) {
         if (!dc_has_prefix(d->words[i], prefix))
