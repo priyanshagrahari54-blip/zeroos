@@ -72,6 +72,7 @@ static void test_deduplication(void) {
     ZD_CHECK_EQ(first, second);
     ZD_CHECK_EQ(notify.stats.deduped, 1U);
     ZD_CHECK_EQ(notify.stats.posted, 1U);
+    ZD_CHECK_EQ(notify.stats.active, 1U);
     ZD_CHECK_EQ(zd_notify_get(&notify, first)->dedupe_count, 1U);
     /* Outside the dedupe window: a new notification. */
     ZD_CHECK_OK(zd_notify_post(&notify, &post, 2000000000ULL +

@@ -184,7 +184,6 @@ int zd_notify_post(struct zd_notify *notify, const struct zd_notify_post *post,
             notify_expiry(now_ns, post->ttl_ns, existing->priority);
         existing->state = ZD_NOTIFY_STATE_ACTIVE;
         ++notify->stats.deduped;
-        ++notify->stats.active;
         if (out_id)
             *out_id = existing->id;
         return 0;
