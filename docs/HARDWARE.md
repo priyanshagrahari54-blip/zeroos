@@ -69,4 +69,17 @@ page discovery/allocation, x86-64 virtual memory, IDT/ISR entry, 8259 PIC,
 PIT, ACPI RSDP/root/MADT validation, and the bounded APIC/SMP functionality
 documented in `ACPI.md`. QEMU and physical-device certification are distinct;
 no real-hardware certification is implied by compilation.
-\n\n## 10-stage hardware alignment\n\nHardware certification is evidence-gated. The Lenovo G560 class is the reference low-resource profile, but exact CPU, RAM, GPU, display and network adapter must be detected per machine. Native 1366x768 is the reference display target; 1080p source playback is a capability test, not a panel-resolution claim. Network throughput is recorded from the actual adapter/link. Thermal, power, HDD, memory-pressure and long-duration results must be recorded in the validation matrix.\n\nDo not convert detection, enumeration or host tests into support claims. Controller/gamepad support is not part of the current ZEROOS hardware target.\n
+
+
+## 10-stage hardware alignment
+
+Hardware certification is evidence-gated. The Lenovo G560 class is the reference low-resource profile, but exact CPU, RAM, GPU, display and network adapter must be detected per machine. Native 1366x768 is the reference display target; 1080p source playback is a capability test, not a panel-resolution claim. Network throughput is recorded from the actual adapter/link. Thermal, power, HDD, memory-pressure and long-duration results must be recorded in the validation matrix.
+
+Do not convert detection, enumeration or host tests into support claims. Controller/gamepad support is not part of the current ZEROOS hardware target.
+
+
+## Stage 10 hardware certification profile (2026-09-29)
+
+**No ZEROOS target hardware was attached or certified.** The only observed machine was the sandbox's KVM virtualized Linux build environment, not a Lenovo G560. It exposed 2 logical vCPUs (reported model string `Intel(R) Xeon(R) Processor @ 2.60GHz`), `MemTotal` 4,034,452 kB (~3.85 GiB), and virtual block device `vda` 21.8 GB with guest-visible `ROTA=1`. These values describe the VM/container view, not the physical host; `ROTA=1` is not an RPM measurement and is not proof of an HDD. GPU/VRAM, display/native resolution, actual storage model/SATA mode, Wi-Fi/Ethernet adapters, audio, USB controller, ACPI/BIOS, battery, fans and temperature sensors are **unknown/not exposed**.
+
+The profile is therefore `sandbox-kvm-2026-09-29`, class `BUILD/CI ENVIRONMENT ONLY`, and is not a supported-hardware profile. No G560 model/configuration, 1366x768 panel, 2 GB machine, or 100 Mbps link is claimed. The hardware certification checklist and per-device result template remain open; do not substitute QEMU emulation or enumeration logs for a detected physical profile. See `STAGE_10_REPORT.md`.

@@ -1,0 +1,117 @@
+# ZEROOS Stage 10 Production Certification Report
+
+**Status: BLOCKED**
+**Assessment date:** 2026-09-29
+**Source SHA:** `91e30eb7eae80b832f8daecdd1dee8e43424a2f9`
+**Recommendation:** DO NOT RELEASE as production-ready.
+**Scope:** source/host tests, existing exact-SHA CI evidence, and available build environment. No physical target hardware was present. The source commit includes the scancode bounds fix described below; the linked GitHub run validates this exact source commit.
+
+## Executive determination
+
+Stage 10 is not complete. On-demand host tests and the exact-SHA QEMU CI workflow pass meaningful subsets of the system, but critical release evidence is missing for physical hardware, low-memory operation, real HDD/network/GPU/media workloads, production security enforcement and signed update lifecycle, measured performance, thermal behavior, and long-duration operation. The current evidence is not sufficient to call the operating system stable, secure, recoverable, performant, or production-ready across its intended matrix.
+
+This report separates:
+
+- **Implemented:** source/interface exists.
+- **Tested:** stated test executes and passes in stated environment.
+- **Hardware tested:** identified physical hardware was used.
+- **Supported:** explicit combination passed the applicable matrix.
+- **Production ready:** all release gates for the stated support scope passed.
+
+The only Stage 10 hardware profile recorded is the sandbox environment profile in `HARDWARE.md`, which is not product hardware. The compatibility decision is in `COMPATIBILITY_MATRIX.md`; measured results policy and N/A figures are in `PERFORMANCE_BASELINE.md`.
+
+## Reproduction record
+
+| Evidence | Result |
+|---|---|
+| `make check` | PASS, exit 0, 2026-09-29, on the current working tree. GCC 12.2.0; GNU ld 2.40; Python 3.11.2. Kernel ELF/SIMD, userspace ABI/runtime, core tests, desktop, compatibility, and storage host self-test all ran |
+| Desktop host tests | 120,907 assertions, 0 failures; includes bounded host stress/soak suites, not a long-duration OS soak |
+| Compatibility host tests | 107 checks, 0 failures; compatibility-core tests, not Windows application execution |
+| Sanitizer follow-up | First ASan/UBSan run exposed an out-of-bounds access in the E0-prefixed PS/2 scancode down-key table (index 200 into 128 entries). Increased the table to 256 entries and added a size regression assertion. Re-ran `desktop-check compat-check hardware-core-test` with GCC AddressSanitizer + UndefinedBehaviorSanitizer: PASS; no sanitizer diagnostics. ASan/UBSan local evidence; the source fix is also exercised by the exact-commit CI run. |
+| Storage host tools | GPT/ZJFS fixture create, checksum and fsck/recovery scenarios PASS; not a physical HDD or actual power-loss test |
+| Exact-SHA CI | [Workflow run 36610649336](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36610649336), SUCCESS at source commit `91e30eb7eae80b832f8daecdd1dee8e43424a2f9`. Build, `make check`, kernel verification, 2-vCPU repeated QEMU, 4-vCPU QEMU, NX-disabled QEMU and AHCI/NVMe persistence job all reported success; this run includes the scancode bounds fix. |
+| Local ISO packaging | BLOCKED, `grub-mkrescue` missing; no local ISO/QEMU boot |
+| New CI dispatch | Attempted for session branch; HTTP 403 `Resource not accessible by integration`, so no new run |
+| Physical target | Not available; no Lenovo G560, 2 GB machine or actual network/display/media adapter tested |
+
+## Sanitizer-discovered defect and local fix
+
+A supplementary host run used `make -j3 CC='gcc -fsanitize=address,undefined -fno-omit-frame-pointer' desktop-check compat-check hardware-core-test`. The first run stopped in `tests/scancode_core_test.c`: the E0-prefixed PS/2 key index is `0x80 | scancode`, but `SCANCODER_TABLE_SIZE` was only 128. An extended key (index 200) therefore caused out-of-bounds reads/writes in `kernel/scancode_core.c` and an AddressSanitizer stack-buffer-overflow. Existing functional tests exercised this path but did not detect the memory error.
+
+The local fix changes the decoder table to 256 entries (the full base + E0-prefixed index space) and asserts the size in the test. The same ASan/UBSan command then passed for desktop, compatibility and all hardware-core host tests, and `make check` passed on the fixed working tree. This was a real memory-safety defect, not merely an intended change. The fix is committed in `91e30eb7eae80b832f8daecdd1dee8e43424a2f9` and validated by run 36610649336. The sandbox cannot install QEMU/GRUB packages because Debian mirror connections failed; guest boot was therefore validated by CI, not locally.
+
+## Certification matrix
+
+| Subsystem | Implemented / tested evidence | Hardware-tested | Assessment |
+|---|---|---:|---|
+| Kernel / syscall / user boundary | Kernel ELF and boot milestones; CI checks negative syscall/fault/malformed-ELF probes | No | Tested in host/emulation; target security review open |
+| Scheduler / interrupts / timers | CI asserts scheduler fairness/latency, timer preemption, process lifecycle and wake/wait paths | No | Tested in QEMU assertions only; longer physical saturation soak open |
+| SMP / TLB | CI QEMU 2-vCPU and 4-vCPU milestones, per-CPU ownership and remote TLB self-tests | No | Emulated tests pass; no hardware SMP cert |
+| Physical/virtual memory | Host/build and boot allocator self-tests | No | No measured reclaim, COW, swap, 2 GB pressure, OOM or sustained-memory behavior |
+| Storage / VFS / ZJFS | Host GPT/ZJFS image recovery and CI guest storage/persistence milestones | No | Partial; physical HDD latency/queue/load and safe real power-loss testing absent |
+| Drivers / PCI / DMA | Host driver/DMA core suites; CI emulated AHCI/NVMe | No | Adapter-specific hardware matrix absent; IOMMU containment/BAR risk remains per architecture |
+| Network | Host protocol/parser/socket core suites | No | No physical NIC, link, packet loss, DNS/DHCP/reconnect or throughput test |
+| Graphics / compositor / display | Host desktop/compositor tests and QEMU display/session milestones | No | No GPU backend (including Vulkan) or physical panel/fallback certification |
+| Media | Host media policy tests | No | Decoder path and video/audio playback evidence absent |
+| Desktop/native applications | Host core suites; session shell path booted under CI | No | Partial shell/probe implementation; no production app compatibility catalogue |
+| Windows compatibility | PE/core validation tests (107) | No | Partial parser/policy; no tested Windows process/application support |
+| Android compatibility | Baseline documented | No | Unsupported; runtime and APK execution absent |
+| Gaming | Policy/profile unit tests | No | No game/runtime/hardware combination measured; unsupported as game compatibility |
+| ZERO AI | Host permission/dormancy/failure-policy suite | No | Partial optional broker; no backend linked; no production action lifecycle |
+| Security | Crypto vectors and host capability/sandbox/firewall/policy tests | No | Blocked: kernel enforcement/PKI gaps documented; signed package/update and adversarial system-boundary audit not proven |
+| Updates / rollback | Host update/snapshot/state-machine suites | No | Partial: no signed installed-system download-to-commit lifecycle, interruption/rollback certification |
+| Recovery | Host fsck/recovery and CI guest init-recovery assertions | No | Partial: no target recovery boot/repair or failed-update physical recovery run |
+| Thermal / power | Governor policy unit tests only | No | Not tested: no temperature/fan/frequency/throttle/battery/suspend data |
+| Long-duration stability | Bounded deterministic host churn tests | No | Not tested: no declared-duration OS-level idle, mixed-workload or media/network/storage soak |
+
+## Workload and test gaps
+
+The following required areas have no qualifying target evidence: cold/warm physical boot and desktop-ready timing; 2 GB boot/idle/multiple apps/browser/media/cache/reclaim/OOM/isolation; sequential/random HDD I/O, metadata, concurrent I/O, queue depth/latency/CPU/RAM cache; actual Ethernet/Wi-Fi setup/recovery/throughput/loss; GPU fallback and actual compositor frame pacing/occlusion; 720p/1080p playback and AV sync under pressure; thermal and battery behavior; installed-system recovery boot; signed update failure/interruption/rollback; performance regression comparison; sustained operational soak. `VALIDATION.md` contains the precise gate disposition.
+
+## Failure and recovery matrix
+
+This is an evidence classification, not a claim that every failure mode has been injected on target hardware.
+
+| Subsystem | NORMAL | FAILURE considered in current evidence | Detection | Recovery evidenced | User impact / open risk |
+|---|---|---|---|---|---|
+| Kernel / scheduler | CI boot and scheduler assertions | QEMU panic and negative/fault probes are gated | Serial milestones/panic grep in workflow | Reboot/recovery behavior is asserted in selected tests | No physical/extended soak; unobserved deadlock/race remains possible |
+| SMP | QEMU 2/4 vCPU | CI checks startup and TLB/scheduler assertions | Serial milestones | startup/recovery contract self-tests | Hardware topology/firmware differences untested |
+| Memory | Boot allocator checks; host resource policies | Host limits/fault suites | Test counters/return codes | Host lifecycle/reclaim policy paths | Real 2 GB reclaim/OOM and data-integrity effects unknown |
+| Filesystem/storage | Host ZJFS fixture and emulated guest persistence | Corrupt GPT/superblock and unclean image scenarios | fsck/checksum/error reporting | Host image repair/replay; CI persistence across boots | Real device errors, HDD starvation and power loss untested |
+| Network | Host stack/parser tests | Malformed packet/error input in cores | Unit assertions | No physical reconnect recovery result | Actual connectivity/recovery unsupported by evidence |
+| Graphics | Host compositor/display contracts; CI session | Host fault/degraded display paths | Test result and guest milestone | Degraded path is covered at core/session contract level | Physical GPU failure/fallback/display recovery unknown |
+| Security | Host crypto/policy operations | Tamper/wrong-key and permission negatives in cores | Test assertions/counters | Fail-closed behavior in those host components | Kernel-wide enforcement, keys/PKI, privilege-escalation audit open |
+| Update/recovery | Host update/snapshot state machine | Host download/verify/health-failure paths | State/result code | Host rollback contract | No signed installed update/recovery-boot proof; release blocked |
+| Compatibility | Core parser/policy suites | Malformed PE/policy cases | Host assertion results | No application-level recovery evidence | No Windows/Android app support claim |
+| ZERO AI | Dormant/permission policy cores | Host permission, queue, failure cases | Broker state/test assertions | Return to dormant tested at core level | No runtime backend/action integration certification |
+| Thermal/power/soak | No target normal run | None at physical target | Sensors unavailable | None evidenced | Risk unknown; release blocked |
+
+## Known limitations / blocking issues
+
+1. No certified reference hardware profile or physically tested support matrix.
+2. No 2 GB-class resource-pressure certification.
+3. No real HDD or power-loss certification; CI storage evidence is emulated.
+4. No real network adapter, graphics device/display, or media decoder throughput/latency measurement.
+5. Security policy/crypto tests do not establish kernel-wide policy enforcement, secure boot, package signing trust, or production update-key lifecycle. Architecture notes existing kernel enforcement and PKI gaps.
+6. Windows code is partial compatibility-core/PE work; no Windows application is demonstrated. Android runtime is absent. No game compatibility or production media playback is certified.
+7. ZERO AI has tested broker policy components but no backend linked; it must remain optional and dormant.
+8. No thermal, battery, long-duration system soak, or published target performance baseline/regression comparison.
+9. Local ISO packaging could not be completed in the sandbox because GRUB/QEMU packages could not be installed from unreachable Debian mirrors. GitHub workflow dispatch was denied by API permissions, but pushing the session branch triggered the passing exact-source run 36610649336.
+
+These are release blockers due to missing evidence and incomplete production scope, not claims that a specific defect was reproduced. No user impact may be represented as safe based on absence of a test.
+
+## Final status block
+
+- **STAGE 10 STATUS:** BLOCKED
+- **CERTIFIED HARDWARE:** None. Sandbox KVM environment is build/test-only; see `HARDWARE.md`.
+- **CERTIFIED FEATURES:** Host unit-test suites and exact-SHA emulated CI subsets only; see evidence table. No physical production feature set certified.
+- **PARTIAL FEATURES:** Native session/probe path, Windows PE/compatibility core, browser lifecycle/policy, ZERO AI broker policy, storage recovery paths, security/update policy cores.
+- **UNSUPPORTED FEATURES:** Android runtime/APK execution; production Windows app execution; general game compatibility; production media playback; universal GPU/Vulkan support.
+- **CRITICAL ISSUES:** Required hardware, security, recovery, performance, media/network, memory, thermal, and soak evidence gates remain open.
+- **PERFORMANCE RESULTS:** No production benchmark results; host `make check` is functional verification, not a benchmark.
+- **THERMAL RESULTS:** Not measured.
+- **SECURITY RESULTS:** Host crypto/policy checks pass; system-level enforcement and signing certification not established.
+- **RECOVERY RESULTS:** Host filesystem recovery and emulated guest recovery/persistence subsets pass; physical recovery/update rollback not certified.
+- **KNOWN LIMITATIONS:** See this report and `COMPATIBILITY_MATRIX.md`.
+- **RELEASE RECOMMENDATION:** DO NOT RELEASE as production-ready.
+- **COMMIT SHA (tested code):** `91e30eb7eae80b832f8daecdd1dee8e43424a2f9`

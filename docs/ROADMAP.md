@@ -82,7 +82,7 @@ No roadmap item is considered implemented merely because its architecture is doc
 
 ## 10-stage execution bridge
 
-Stages 0-5 are the existing production foundation. The next five stages are:
+Stages 0-5 describe the existing implementation and test foundations; they are not a blanket production certification. The next five stages are:
 
 6. Security enforcement, packages, updates and recovery.
 7. GPU acceleration, media, browser and native app foundation.
@@ -93,3 +93,8 @@ Stages 0-5 are the existing production foundation. The next five stages are:
 The detailed authoritative definitions are in `ZEROOS_MASTER_ROADMAP.md`. The reusable agent prompt is `ZEROOS_MASTER_PROMPT_10_STAGE.md`.
 
 All stage claims remain evidence-gated: detection != operational support, host-tested != hardware-supported, roadmap intent != implementation.
+
+
+## Stage 10 status (2026-09-29)
+
+**BLOCKED — production release evidence incomplete.** Host `make check` and exact-SHA GitHub QEMU/CI pass, but there is no physical G560 profile, real HDD/network/graphics/media/thermal measurement, 2 GB stress certification, signed update/recovery hardware test, or qualifying long-duration soak. The detailed gate/evidence matrix is in `STAGE_10_REPORT.md`; do not label Stage 10 COMPLETE based on the CI pass.

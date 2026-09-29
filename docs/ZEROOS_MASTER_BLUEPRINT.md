@@ -946,3 +946,8 @@ The following documents must remain synchronized:
 - docs/ZEROOS_MASTER_PROMPT_10_STAGE.md — reusable execution prompt
 
 A roadmap statement is never evidence of implementation.
+
+
+## Stage 10 certification addendum (2026-09-29)
+
+Stage 10 is **BLOCKED**, not complete. Exact-SHA CI and host checks are evidence for build/host/QEMU subsets only. No physical Lenovo G560-class profile, physical HDD/GPU/network/display test, 2 GB pressure run, thermal/battery run, installed-update recovery test, or qualifying long-duration soak was available. Do not elevate subsystem implementation or documented intent to SUPPORTED or PRODUCTION READY. The evidence ledger and gate disposition are in `VALIDATION.md` and `RELEASE_CERTIFICATION.md`.

@@ -1,6 +1,6 @@
-# ZEROOS — Stage 5 Validation and Support Matrix
-Status: living evidence ledger for Stage 5 (graphics/desktop/platform +
-ecosystem capability) work.  Every row is backed by a command that runs
+# ZEROOS — Validation and Support Matrix
+Status: living evidence ledger. The following Stage 5 material is historical
+host/CI evidence, not Stage 10 hardware or production certification.  Every row is backed by a command that runs
 in this repository or by a CI run of a recorded commit.  Where evidence
 does not exist yet, the row says so — no claim is made without it.
 
@@ -174,3 +174,38 @@ is the `98ba0ca` `evacuation failed (stage=7)` row.
 Validation maps to the 10-stage master plan. Stages 6-10 require explicit evidence for security enforcement, signed and rollback-capable updates, recovery, accelerated GPU/media/browser paths, compatibility runtimes, ZERO AI permission and lifecycle behavior, G560-class hardware, 1080p media where supported, actual network-link performance, thermal/power soak, and release gates.
 
 Every result records implementation status, test type (host/QEMU/hardware), hardware/configuration, commit, command, measured result, and unsupported conditions. Roadmap intent is never validation evidence. Detection is never operational support.
+
+## Stage 10 certification status (2026-09-29)
+
+**Status: BLOCKED — not a production certification.** This evidence update is deliberately separate from implementation/Stage-5 host-suite claims above. A passing host test, QEMU boot, feature detector, or design document is not hardware certification. Release gates that require Lenovo G560-class hardware, real sensors/adapters, real media/runtime workloads, or sustained soak remain open. See `RELEASE_CERTIFICATION.md`, `STAGE_10_REPORT.md`, `HARDWARE.md`, and `PERFORMANCE_BASELINE.md` for evidence and limitations.
+
+
+## Stage 10 execution record
+
+- Source code commit: `91e30eb7eae80b832f8daecdd1dee8e43424a2f9` (contains the locally discovered and corrected scancode bounds defect).
+- Local `make check`: **PASS**, exit 0, 2026-09-29. GCC 12.2.0. Includes freestanding kernel/ELF build and SIMD safety check, userspace ABI/runtime checks, host hardware-core tests, desktop suite (**120,907 checks, 0 failures**), compatibility core (**107 checks, 0 failures**), and storage image/fsck host self-test (PASS). This is host evidence only; test counts are not hardware workloads.
+- Local `make`: **BLOCKED at ISO packaging**, exit 2: `grub-mkrescue: No such file or directory`. The ELF had been produced by `make check`; this environment lacks `grub-mkrescue`, `qemu-system-x86_64`, and `xorriso`, so no local guest boot was attempted.
+- GitHub Actions: workflow `ZEROOS Build`, run [36610649336](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36610649336), source commit `91e30eb7eae80b832f8daecdd1dee8e43424a2f9`, completed **SUCCESS**. Its steps report success for build, `make check`, image verification, QEMU boot (2-vCPU repeated boots, 4-vCPU SMP, NX-disabled compatibility), and AHCI/NVMe storage persistence certification. This is emulated CI evidence, not Lenovo or bare-metal evidence.
+- Attempted to dispatch a fresh run on `arena/01a0ee2b-zeroos`; GitHub returned HTTP 403 `Resource not accessible by integration`. No new run was created. A push to the session branch triggered the current-source run above despite the workflow-dispatch API restriction.
+- ASan/UBSan host follow-up initially found an out-of-bounds access in the E0-prefixed scancode table (index 200 into 128 entries). `kernel/scancode_core.h` now has 256 entries and the test asserts this capacity. Re-run of `desktop-check compat-check hardware-core-test` under ASan/UBSan passed with no diagnostics; this fix is included in `91e30eb7eae80b832f8daecdd1dee8e43424a2f9` and the linked CI run validates it.
+- A package-install retry could not reach Debian mirrors, so GRUB/QEMU were not installed locally.
+- The local environment exposes a KVM virtualized Linux host, 2 logical CPUs, approximately 3.85 GiB `MemTotal`, and a 21.8 GB virtual `vda` marked rotational by the guest. This is not the target machine and does not constitute the 2 GB/HDD/G560 profile. GPU, panel, adapters, firmware, battery and physical thermal data were not available.
+
+### Stage 10 release gate disposition
+
+| Gate | Evidence/result | Disposition |
+|---|---|---|
+| Build + host release checks | Local `make check` PASS; exact-SHA GitHub build PASS | Tested (host/CI), reproducible artifact comparison not shown |
+| Guest boot / kernel / scheduler / SMP | Exact-SHA CI run 36610649336 on `91e30eb7eae80b832f8daecdd1dee8e43424a2f9`: QEMU boot, 2-vCPU repeated + 4-vCPU assertions PASS | Tested in emulation; not hardware-certified |
+| Storage crash/recovery | Host ZJFS/GPT recovery PASS; CI AHCI/NVMe persistence step PASS | Tested in host tools/emulation; physical HDD and power-loss certification open |
+| 2 GB memory pressure / OOM / reclaim | No 2 GB target run or measured process workloads in this environment | Not tested |
+| Network adapters / throughput / packet loss | Host protocol-core suites only; no actual NIC/link measurement | Not hardware-tested |
+| Graphics / media / GPU / display | Host policy/core suites and QEMU display milestones only; no physical GPU, panel, decoder or media soak | Not hardware-tested |
+| Security enforcement / signed updates | Host policy/crypto tests; architecture records kernel enforcement/PKI gaps | Partial; production gate open |
+| Update interruption / rollback / recovery | Host state-machine and snapshot suites; guest init recovery milestone in CI | Partial; installed-system update lifecycle not hardware-tested |
+| ZERO AI lifecycle | Host broker policy/dormancy suites; backend not linked | Partial; production integration not tested |
+| Compatibility / native apps | Core host tests only; see compatibility matrix | Runtime support unproven |
+| Thermal, battery, suspend/resume, long-duration soak | No sensors or physical target available; host soak loops are bounded unit tests | Not tested |
+| Performance baseline and regression | No certified physical baseline or comparable previous baseline | Not available |
+
+Passing evidence must not be interpreted as all release gates passing. Stage 10 remains blocked until the open rows have repeatable target evidence or are explicitly taken out of the release support matrix.

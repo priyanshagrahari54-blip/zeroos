@@ -651,3 +651,8 @@ The following documents must remain synchronized:
 - docs/ZEROOS_MASTER_PROMPT_10_STAGE.md — reusable execution prompt
 
 A roadmap statement is never evidence of implementation.
+
+
+## Stage 10 actual execution status (2026-09-29)
+
+**BLOCKED.** On source SHA `91e30eb7eae80b832f8daecdd1dee8e43424a2f9`, local `make check` and the ASan/UBSan host suites passed after fixing an E0-prefixed scancode table out-of-bounds bug. The exact-SHA GitHub Actions run 36610649336 passed its build, host gates, QEMU boot/SMP/NX-off and AHCI/NVMe persistence jobs. Local ISO creation could not run because `grub-mkrescue` is absent and package mirrors were unreachable; workflow dispatch was denied (HTTP 403), but a branch push triggered the passing run. No physical target, hardware profile, measured performance baseline, thermal soak or long-duration operational soak was available. This does not satisfy the Stage 10 exit evidence above. Gate-by-gate results are in `VALIDATION.md` and `STAGE_10_REPORT.md`; Stage 10 must not be marked complete.
