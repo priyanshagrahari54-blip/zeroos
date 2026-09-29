@@ -92,10 +92,10 @@ int zd_display_service_damage(struct zd_display_service *service,
     if (!service || !service->width || !service->height)
         return -ZD_EINVAL;
 
-    x0 = rect.x;
-    y0 = rect.y;
-    x1 = rect.x + rect.w;
-    y1 = rect.y + rect.h;
+    x0 = (int64_t)rect.x;
+    y0 = (int64_t)rect.y;
+    x1 = (int64_t)rect.x + (int64_t)rect.w;
+    y1 = (int64_t)rect.y + (int64_t)rect.h;
     if (rect.w <= 0 || rect.h <= 0)
         return 0;
     if (x0 < 0)
