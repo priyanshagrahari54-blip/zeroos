@@ -74,6 +74,15 @@ typedef void (*zd_settings_change_fn)(void *context, const char *key,
 struct zd_settings {
     struct zd_setting_def defs[ZD_SETTINGS_MAX_KEYS];
     struct zd_setting_value values[ZD_SETTINGS_MAX_KEYS];
+    /* Registered keys and string defaults are copied in here, so a
+     * caller may build a zd_setting_def on the stack and let it go. The
+     * storage belongs to *this* store: one array shared by the module
+     * (indexed by slot) is shared by every store in the process, so
+     * registering a key in one silently renames the same-numbered key
+     * in all the others, and any pointer a search handed out earlier
+     * now names something else. */
+    char keys[ZD_SETTINGS_MAX_KEYS][ZD_SETTINGS_KEY_CAP];
+    char string_defaults[ZD_SETTINGS_MAX_KEYS][ZD_SETTINGS_STRING_CAP];
     uint32_t count;
     uint32_t listener_count;
     struct {
@@ -93,6 +102,12 @@ struct zd_settings {
 };
 
 void zd_settings_init(struct zd_settings *settings);
+/* Register a schema key. Overlong key/default strings are refused
+ * rather than truncated: lookup and persistence are by exact key, so a
+ * schema definition that cannot fit in the store is not a schema this
+ * store can safely own. The default value must also validate against
+ * the declared type/range/enum set: the store must never start with a
+ * value that later writes would reject. */
 int zd_settings_register(struct zd_settings *settings,
                          const struct zd_setting_def *def);
 const struct zd_setting_def *zd_settings_def(const struct zd_settings *settings,

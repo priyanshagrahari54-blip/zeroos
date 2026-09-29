@@ -384,6 +384,82 @@ static void test_import_int64_bounds(void) {
     ZD_CHECK_EQ(value, 100); /* default survives the rejected import */
 }
 
+static void test_string_default_is_store_owned(void) {
+    struct zd_settings settings;
+    struct zd_setting_def def;
+    char default_text[ZD_SETTINGS_STRING_CAP];
+    char out[ZD_SETTINGS_STRING_CAP];
+
+    zd_settings_init(&settings);
+    snprintf(default_text, sizeof(default_text), "original");
+    memset(&def, 0, sizeof(def));
+    def.key = "string.default";
+    def.type = ZD_SETTING_STRING;
+    def.scope = ZD_SCOPE_USER;
+    def.default_string = default_text;
+    ZD_CHECK_OK(zd_settings_register(&settings, &def));
+
+    /* The schema may be stack-built. Mutating the caller's buffer after
+     * registration must not change what reset() considers the default. */
+    snprintf(default_text, sizeof(default_text), "mutated");
+    ZD_CHECK_OK(zd_settings_set(&settings, "string.default", 0, "custom",
+                                0, 0));
+    ZD_CHECK_OK(zd_settings_reset(&settings, "string.default", 0));
+    ZD_CHECK_OK(zd_settings_get(&settings, "string.default", 0, out,
+                                sizeof(out)));
+    ZD_CHECK(strcmp(out, "original") == 0);
+    ZD_CHECK(strcmp(settings.defs[0].default_string, "original") == 0);
+}
+
+static void test_two_stores_keep_their_own_keys(void) {
+    struct zd_settings first;
+    struct zd_settings second;
+    struct zd_setting_def def;
+    int64_t value = 0;
+
+    /* Two stores alive at once. Registering in the second must not
+     * rename what the first is holding, so the key storage has to
+     * belong to a store rather than to the module: one array indexed by
+     * slot is shared by every store in the process. */
+    zd_settings_init(&first);
+    zd_settings_init(&second);
+
+    memset(&def, 0, sizeof(def));
+    def.key = "store.one";
+    def.type = ZD_SETTING_INT;
+    def.scope = ZD_SCOPE_USER;
+    def.default_value = 1;
+    def.min_value = 0;
+    def.max_value = 10;
+    ZD_CHECK_OK(zd_settings_register(&first, &def));
+
+    memset(&def, 0, sizeof(def));
+    def.key = "store.two";
+    def.type = ZD_SETTING_INT;
+    def.scope = ZD_SCOPE_USER;
+    def.default_value = 2;
+    def.min_value = 0;
+    def.max_value = 10;
+    ZD_CHECK_OK(zd_settings_register(&second, &def));
+
+    /* Each store still answers for its own key, by name. */
+    ZD_CHECK_OK(zd_settings_get(&first, "store.one", &value, 0, 0));
+    ZD_CHECK_EQ(value, 1);
+    ZD_CHECK_OK(zd_settings_get(&second, "store.two", &value, 0, 0));
+    ZD_CHECK_EQ(value, 2);
+    ZD_CHECK(zd_settings_def(&first, "store.one") != 0);
+    ZD_CHECK(zd_settings_def(&second, "store.two") != 0);
+    /* And neither store claims the other's key. */
+    ZD_CHECK(zd_settings_def(&first, "store.two") == 0);
+    ZD_CHECK(zd_settings_def(&second, "store.one") == 0);
+    /* A write through the first store lands on the first store's key. */
+    ZD_CHECK_OK(zd_settings_set_number(&first, "store.one", 7, 0, 0));
+    ZD_CHECK_OK(zd_settings_get(&first, "store.one", &value, 0, 0));
+    ZD_CHECK_EQ(value, 7);
+    ZD_CHECK_OK(zd_settings_get(&second, "store.two", &value, 0, 0));
+    ZD_CHECK_EQ(value, 2);
+}
+
 static void test_register_negatives(void) {
     struct zd_settings settings;
     struct zd_setting_def def;
@@ -396,6 +472,58 @@ static void test_register_negatives(void) {
     ZD_CHECK_ERR(zd_settings_register(&settings, &def), ZD_EBUSY);
     ZD_CHECK(zd_settings_def(&settings, "missing") == 0);
     ZD_CHECK(zd_settings_def(&settings, "x") != 0);
+
+    /* The store owns exact keys. A key that has to be truncated cannot
+     * be looked up or exported under the name the caller registered, so
+     * it is refused rather than accepted under a different name. */
+    {
+        char long_key[ZD_SETTINGS_KEY_CAP + 4];
+        uint32_t i;
+        for (i = 0; i + 1 < sizeof(long_key); ++i)
+            long_key[i] = 'k';
+        long_key[sizeof(long_key) - 1] = 0;
+        def.key = long_key;
+        ZD_CHECK_ERR(zd_settings_register(&settings, &def), ZD_EOVERFLOW);
+    }
+    memset(&def, 0, sizeof(def));
+    def.key = "long.default";
+    def.type = ZD_SETTING_STRING;
+    def.scope = ZD_SCOPE_USER;
+    {
+        char long_default[ZD_SETTINGS_STRING_CAP + 1];
+        uint32_t i;
+        for (i = 0; i + 1 < sizeof(long_default); ++i)
+            long_default[i] = 'd';
+        long_default[sizeof(long_default) - 1] = 0;
+        def.default_string = long_default;
+        ZD_CHECK_ERR(zd_settings_register(&settings, &def), ZD_EOVERFLOW);
+    }
+
+    memset(&def, 0, sizeof(def));
+    def.key = "bad.bool.default";
+    def.type = ZD_SETTING_BOOL;
+    def.scope = ZD_SCOPE_USER;
+    def.default_value = 2;
+    ZD_CHECK_ERR(zd_settings_register(&settings, &def), ZD_EINVAL);
+
+    memset(&def, 0, sizeof(def));
+    def.key = "bad.int.default";
+    def.type = ZD_SETTING_INT;
+    def.scope = ZD_SCOPE_USER;
+    def.min_value = 10;
+    def.max_value = 20;
+    def.default_value = 9;
+    ZD_CHECK_ERR(zd_settings_register(&settings, &def), ZD_EINVAL);
+
+    memset(&def, 0, sizeof(def));
+    def.key = "bad.enum.default";
+    def.type = ZD_SETTING_ENUM;
+    def.scope = ZD_SCOPE_USER;
+    def.enum_count = 2;
+    def.enum_values[0] = 1;
+    def.enum_values[1] = 2;
+    def.default_value = 3;
+    ZD_CHECK_ERR(zd_settings_register(&settings, &def), ZD_EINVAL);
 }
 
 void zd_test_settings_suite(void) {
@@ -409,4 +537,6 @@ void zd_test_settings_suite(void) {
     ZD_RUN(test_v1_migration);
     ZD_RUN(test_import_int64_bounds);
     ZD_RUN(test_register_negatives);
+    ZD_RUN(test_two_stores_keep_their_own_keys);
+    ZD_RUN(test_string_default_is_store_owned);
 }

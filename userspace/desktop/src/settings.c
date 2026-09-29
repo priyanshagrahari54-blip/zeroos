@@ -23,36 +23,58 @@ int zd_settings_register(struct zd_settings *settings,
     struct zd_setting_def *slot;
     if (!settings || !def || !def->key || !*def->key)
         return -ZD_EINVAL;
+    if (zd_str_length(def->key) >= ZD_SETTINGS_KEY_CAP)
+        return -ZD_EOVERFLOW;
     if (settings->count >= ZD_SETTINGS_MAX_KEYS)
         return -ZD_ENOSPC;
     if (settings_find(settings, def->key) >= 0)
         return -ZD_EBUSY;
     if ((int)def->type < ZD_SETTING_BOOL || (int)def->type > ZD_SETTING_STRING)
         return -ZD_EINVAL;
-    if (def->type == ZD_SETTING_INT && def->min_value > def->max_value)
+    if (def->type == ZD_SETTING_BOOL &&
+        def->default_value != 0 && def->default_value != 1)
         return -ZD_EINVAL;
-    if (def->type == ZD_SETTING_ENUM &&
-        (def->enum_count == 0 || def->enum_count > ZD_SETTINGS_MAX_ENUM))
+    if (def->type == ZD_SETTING_INT &&
+        (def->min_value > def->max_value ||
+         def->default_value < def->min_value ||
+         def->default_value > def->max_value))
         return -ZD_EINVAL;
-    if (def->type == ZD_SETTING_STRING && !def->default_string)
-        return -ZD_EINVAL;
+    if (def->type == ZD_SETTING_ENUM) {
+        uint32_t enum_index;
+        int default_found = 0;
+        if (def->enum_count == 0 || def->enum_count > ZD_SETTINGS_MAX_ENUM)
+            return -ZD_EINVAL;
+        for (enum_index = 0; enum_index < def->enum_count; ++enum_index)
+            if (def->enum_values[enum_index] == def->default_value)
+                default_found = 1;
+        if (!default_found)
+            return -ZD_EINVAL;
+    }
+    if (def->type == ZD_SETTING_STRING &&
+        (!def->default_string ||
+         zd_str_length(def->default_string) >= ZD_SETTINGS_STRING_CAP))
+        return -ZD_EOVERFLOW;
     if (def->dep_count > ZD_SETTINGS_MAX_DEPS)
         return -ZD_EINVAL;
 
     slot = &settings->defs[settings->count];
     *slot = *def;
-    /* Normalize key ownership into the store (defs may be stack copies). */
-    {
-        static char key_storage[ZD_SETTINGS_MAX_KEYS][ZD_SETTINGS_KEY_CAP];
-        zd_str_copy(key_storage[settings->count], ZD_SETTINGS_KEY_CAP, def->key);
-        slot->key = key_storage[settings->count];
-    }
+    /* Normalize key ownership into this store (defs may be stack
+     * copies) -- and into *this* store only, so a second store cannot
+     * rename the keys of the first. */
+    zd_str_copy(settings->keys[settings->count], ZD_SETTINGS_KEY_CAP,
+                def->key);
+    slot->key = settings->keys[settings->count];
     zd_memset(&settings->values[settings->count], 0,
               sizeof(settings->values[settings->count]));
     settings->values[settings->count].number = def->default_value;
-    if (def->type == ZD_SETTING_STRING)
-        zd_str_copy(settings->values[settings->count].text,
+    if (def->type == ZD_SETTING_STRING) {
+        zd_str_copy(settings->string_defaults[settings->count],
                     ZD_SETTINGS_STRING_CAP, def->default_string);
+        slot->default_string = settings->string_defaults[settings->count];
+        zd_str_copy(settings->values[settings->count].text,
+                    ZD_SETTINGS_STRING_CAP, slot->default_string);
+    }
     settings->values[settings->count].overridden = 0;
     ++settings->count;
     return 0;
