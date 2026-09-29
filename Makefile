@@ -26,7 +26,7 @@ all: iso
 
 # Reproducible local release gate: compile, ABI, core, desktop,
 # compatibility, storage-image recovery, and SIMD-safety checks before guest boot.
-check: elf userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check storage-tools-check null-sweep sanitizer-check
+check: elf userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check storage-tools-check null-sweep stats-write-check sanitizer-check
 
 storage-tools-check:
 	bash tools/storage/host_selftest.sh
@@ -37,6 +37,13 @@ storage-tools-check:
 # ones the moment they are declared -- see tools/null_arg_sweep.py.
 null-sweep:
 	@python3 tools/null_arg_sweep.py
+
+# Also generated from the headers: a `stats` field nothing increments is a
+# promise the code forgets to keep, and no suite notices because nothing
+# reads it either. Calibrated by deleting a real increment -- see
+# tools/stats_write_check.py.
+stats-write-check:
+	@python3 tools/stats_write_check.py
 
 elf: $(KERNEL)
 
