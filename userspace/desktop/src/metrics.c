@@ -48,17 +48,27 @@ uint64_t zd_metrics_get(const struct zd_metrics *m, int id) {
     return m->counters[id];
 }
 
+static uint64_t percentile_target(uint64_t count, uint32_t p) {
+    uint64_t q = count / 100U;
+    uint64_t r = count % 100U;
+    uint64_t target;
+
+    if (p > 100)
+        p = 100;
+    /* ceil(count * p / 100), without forming count * p.  Since p <= 100,
+     * (count / 100) * p cannot overflow a uint64_t. */
+    target = q * (uint64_t)p;
+    target += (r * (uint64_t)p + 99U) / 100U;
+    return target ? target : 1U;
+}
+
 uint64_t zd_metrics_percentile(const struct zd_metrics *m, uint32_t p) {
     uint64_t target, seen = 0;
     int i;
     if (!m || m->interval_count == 0)
         return 0;
-    if (p > 100)
-        p = 100;
     /* smallest interval count covering p% (at least 1 sample) */
-    target = (m->interval_count * (uint64_t)p + 99) / 100;
-    if (target == 0)
-        target = 1;
+    target = percentile_target(m->interval_count, p);
     for (i = 0; i < ZD_METRIC_BUCKETS; ++i) {
         seen += m->interval_hist[i];
         if (seen >= target)

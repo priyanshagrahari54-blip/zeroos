@@ -48,6 +48,14 @@ void zd_test_metrics_suite(void) {
         ZD_CHECK(zd_metrics_percentile(&m, 200) == 1000); /* clamp */
     }
 
+    /* Percentile target math must not overflow in a long-running recorder. */
+    zd_metrics_init(&m);
+    m.interval_count = ~0ULL;
+    m.interval_hist[ZD_METRIC_BUCKETS - 1] = ~0ULL;
+    m.interval_max = 1234;
+    ZD_CHECK(zd_metrics_percentile(&m, 100) == 1234);
+    ZD_CHECK(zd_metrics_percentile(&m, 200) == 1234);
+
     /* empty histograms read as 0, never divide by zero */
     zd_metrics_init(&m);
     ZD_CHECK(zd_metrics_percentile(&m, 50) == 0);
