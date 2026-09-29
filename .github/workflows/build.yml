@@ -188,6 +188,7 @@ jobs:
             grep -q "ZEROOS: session device ecosystem passed." build/serial.log
             grep -q "ZEROOS: session child process reaped cleanly." build/serial.log
             grep -q "ZEROOS: session credential enforcement passed." build/serial.log
+            grep -q "ZEROOS: session security scan pipeline passed." build/serial.log
             grep -q "ZEROOS: session shell process complete." build/serial.log
             grep -q "ZEROOS: session shell process reaped cleanly." build/serial.log
             if grep -q "storage.*FAILED" build/serial.log; then
@@ -292,6 +293,7 @@ jobs:
           grep -q "ZEROOS: session device ecosystem passed." build/serial-smp4.log
           grep -q "ZEROOS: session child process reaped cleanly." build/serial-smp4.log
           grep -q "ZEROOS: session credential enforcement passed." build/serial-smp4.log
+          grep -q "ZEROOS: session security scan pipeline passed." build/serial-smp4.log
           grep -q "ZEROOS: session shell process complete." build/serial-smp4.log
           grep -q "ZEROOS: session shell process reaped cleanly." build/serial-smp4.log
           grep -q "ZEROOS: shared-memory map/grant/lifecycle self-test passed." build/serial-smp4.log

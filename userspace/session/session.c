@@ -660,6 +660,7 @@ static const char *const nav_paths[ZD_NAV_URL_COUNT] = {
     "/docs", "/x", "", "", "", ""
 };
 static struct zd_vault session_vault;
+static struct zd_scan session_scan;
 static struct zd_snapshots session_snapshots;
 static struct zd_update_ops session_snap_update_ops;
 static uint8_t session_snap_buffer[64];
@@ -4610,7 +4611,56 @@ int session_main(void) {
         return fail("update slot removed", 0);
     say("ZEROOS: session update verification passed.");
 
-    /* 37. Sandbox decisions enforced by the kernel, not only by Ring-3
+    /* 37. Security scanning architecture (Stage 5 part B). The queue, the
+     * bounded incremental scheduler, the quarantine policy and the audit
+     * ring are real and driven here against files the VFS really holds;
+     * detection is a pluggable engine and this build links none, so what
+     * is certified is the property that matters: with no engine every
+     * item reports UNAVAILABLE and not one is reported CLEAN. "Not
+     * scanned" is never a clean bill of health, and no caller in this
+     * guest can read a CLEAN verdict out of a build with no detector. */
+    zd_scan_init(&session_scan);
+    if (zd_scan_available(&session_scan) != 0)
+        return fail("scan engine should be absent", 0);
+    if (session_write_file("/ram/shell/scan-one.txt", 32) != 0 ||
+        session_write_file("/ram/shell/scan-two.txt", 48) != 0)
+        return fail("scan fixture files", 0);
+    if (zd_scan_submit(&session_scan, "/ram/shell/scan-one.txt", 32) != 0 ||
+        zd_scan_submit(&session_scan, "/ram/shell/scan-two.txt", 48) != 0)
+        return fail("scan submit", 0);
+    {
+        int guard = 0;
+        while (zd_scan_step(&session_scan, 1, 4096) == 1 && guard < 64)
+            ++guard;
+        if (guard >= 64)
+            return fail("scan step bound", guard);
+    }
+    if (session_scan.stats.unavailable != 2 ||
+        session_scan.stats.clean != 0 || session_scan.stats.completed != 2)
+        return fail("scan verdict counters",
+                    (int64_t)session_scan.stats.clean);
+    {
+        const struct zd_scan_item *one =
+            zd_scan_item(&session_scan, "/ram/shell/scan-one.txt");
+        const struct zd_scan_item *two =
+            zd_scan_item(&session_scan, "/ram/shell/scan-two.txt");
+        if (!one || !two)
+            return fail("scan items present", 0);
+        if (one->verdict != ZD_SCAN_UNAVAILABLE ||
+            two->verdict != ZD_SCAN_UNAVAILABLE)
+            return fail("scan fails closed", (int64_t)one->verdict);
+        if (one->state != ZD_SCAN_DONE || one->quarantined != 0)
+            return fail("scan item state", (int64_t)one->state);
+    }
+    {
+        struct zd_scan_audit_row rows[4];
+        uint32_t rows_out = zd_scan_audit(&session_scan, rows, 4);
+        if (rows_out != 2U || rows[0].verdict != ZD_SCAN_UNAVAILABLE)
+            return fail("scan audit ring", (int64_t)rows_out);
+    }
+    say("ZEROOS: session security scan pipeline passed.");
+
+    /* 38. Sandbox decisions enforced by the kernel, not only by Ring-3
      * policy. The confined profile denies writes, so the session really
      * drops its identity: after SETCRED the VFS itself refuses the
      * owner-only file with EACCES while a world-readable file still
