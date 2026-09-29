@@ -53,6 +53,17 @@ void zd_test_clipboard_suite(void) {
         for (i = 0; i < ZD_CLIP_MAX; ++i)
             ZD_CHECK(strcmp(cb.slots[i].text, "hunter2") != 0 || i == ZD_CLIP_MAX - 1);
     }
+    /* Replacing a sensitive current with a normal copy must wipe the reserved
+     * transient slot. It is not returned by history, but the secret must not
+     * remain resident once it is no longer current. */
+    ZD_CHECK_OK(zd_clipboard_copy(&cb, "editor", "ordinary",
+                                  ZD_CLIP_FMT_TEXT, 0));
+    ZD_CHECK(cb.current != &cb.slots[ZD_CLIP_MAX - 1]);
+    ZD_CHECK(cb.slots[ZD_CLIP_MAX - 1].text[0] == 0);
+    ZD_CHECK(cb.slots[ZD_CLIP_MAX - 1].app[0] == 0);
+    ZD_CHECK_EQ(cb.slots[ZD_CLIP_MAX - 1].in_use, 0U);
+    ZD_CHECK_EQ(cb.slots[ZD_CLIP_MAX - 1].sensitive, 0U);
+    ZD_CHECK_EQ(zd_clipboard_history_count(&cb), 4U);
 
     /* overlong text rejected */
     {
