@@ -166,11 +166,15 @@ struct zd_input_delivery zd_input_pointer_button(struct zd_input_router *router,
     }
 
     if (pressed) {
-        target = zd_wm_hit_test(router->wm, router->pointer_x,
+        target = router->pointer_grab != ZD_INVALID_WINDOW ?
+                 router->pointer_grab :
+                 zd_wm_hit_test(router->wm, router->pointer_x,
                                 router->pointer_y);
         if (target != ZD_INVALID_WINDOW) {
             /* Click-to-focus + raise is window-system policy, executed
-             * exactly here so every input source behaves identically. */
+             * exactly here so every input source behaves identically. A
+             * secondary press during an existing grab keeps delivering to the
+             * grab target rather than re-hit-testing under the pointer. */
             (void)zd_wm_focus(router->wm, target);
             (void)zd_wm_raise(router->wm, target);
             router->pointer_focus = target;
@@ -189,7 +193,8 @@ struct zd_input_delivery zd_input_pointer_button(struct zd_input_router *router,
     target = router->pointer_grab != ZD_INVALID_WINDOW ?
              router->pointer_grab :
              zd_wm_hit_test(router->wm, router->pointer_x, router->pointer_y);
-    router->pointer_grab = ZD_INVALID_WINDOW;
+    if (router->buttons_down == 0)
+        router->pointer_grab = ZD_INVALID_WINDOW;
     if (target == ZD_INVALID_WINDOW) {
         ++router->stats.dropped_events;
         return delivery(ZD_INPUT_DROPPED, ZD_INVALID_WINDOW, 0,
