@@ -32,7 +32,11 @@ enum zd_privacy_risk {
 struct zd_privacy_breakdown {
     uint32_t filesystem;   /* sandbox fs-class denials (approx: all
                             * sandbox denials attributed to policy) */
-    uint32_t network;      /* firewall denials + sandbox net-class */
+    uint32_t network;      /* firewall denials only. The sandbox keeps a
+                            * single denial counter with no per-class
+                            * split, so its count is attributed whole to
+                            * `filesystem` rather than being guessed
+                            * apart between the two domains here. */
     uint32_t content;      /* media refusals (drm/rights/origin) */
     uint32_t sync;         /* eco refusals (perm/offline/pairing) */
 };
