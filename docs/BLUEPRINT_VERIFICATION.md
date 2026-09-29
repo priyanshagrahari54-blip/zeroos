@@ -129,3 +129,24 @@ A correct continuation should:
 4. verify actual CI
 5. continue implementation rather than rebuilding the project from scratch
 6. verify the latest scheduler stress certification and update implementation status before advancing to the next subsystem
+
+
+## 10-stage synchronization rule
+
+The repository now uses the 10-stage master execution plan in `ZEROOS_MASTER_ROADMAP.md` and the reusable execution prompt in `ZEROOS_MASTER_PROMPT_10_STAGE.md`.
+
+Verification must distinguish:
+- **implemented**: code path exists and is integrated;
+- **host-tested**: deterministic host tests exercise the contract;
+- **QEMU-tested**: guest boot/integration evidence exists;
+- **hardware-tested**: real hardware evidence exists;
+- **supported**: only when the relevant validation matrix explicitly says so.
+
+Stages 0-5 remain the existing foundation. Stages 6-10 are the next execution block:
+6 security/update/recovery;
+7 GPU/media/browser/native apps;
+8 Windows/Android compatibility and gaming;
+9 ZERO AI/ecosystem/performance;
+10 hardware certification and release.
+
+A later stage may not bypass an earlier blocking dependency. Every stage follows AUDIT -> DESIGN -> IMPLEMENT -> TEST -> STRESS -> MEASURE -> DOCUMENT -> INTEGRATE.
