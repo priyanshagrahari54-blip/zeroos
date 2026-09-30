@@ -2032,6 +2032,12 @@ int task_scheduler_ready(void) {
     return __atomic_load_n(&scheduler_ready,__ATOMIC_ACQUIRE)!=0;
 }
 
+void task_panic_diagnostics_self_test(void) {
+#ifdef ZEROOS_TEST_SCHEDULER_PANIC_DIAGNOSTICS
+    task_context_panic("scheduler panic diagnostics self-test", current_task);
+#endif
+}
+
 int task_debug_validate(void) {
     uint64_t flags=spin_lock_irqsave(&task_lock);
     task_validate_table("ZEROOS PANIC: explicit scheduler checkpoint failed.\n");
