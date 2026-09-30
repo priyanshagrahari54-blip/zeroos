@@ -242,9 +242,10 @@ The implemented scheduler/SMP boundary covers:
 - coordinated CPU hot-offline queue evacuation, AP TLB/CPU-local withdrawal,
   idle parking, bounded acknowledgement and scheduler validation.
 
-Per-task x87/MMX/SSE state is now saved/restored at the common `dispatch_locked()`
-boundary, before scheduler ownership is released. This covers both cooperative
-`context_switch_ex()` handoffs and interrupt-frame/`iretq` handoffs. Every task
+Per-task x87/MMX/SSE state is saved/restored before scheduler ownership is
+released in both `dispatch_locked()` and `task_reschedule_from_interrupt()`.
+This covers cooperative `context_switch_ex()` handoffs and interrupt-frame/
+`iretq` handoffs. Every task
 (including bootstrap and per-CPU idle contexts) owns a 16-byte-aligned 512-byte
 FXSAVE64 image; new/reused slots receive a clean template. AVX/XSAVE remains
 disabled, and compiler-generated kernel SIMD remains prohibited. A runtime

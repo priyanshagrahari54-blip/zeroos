@@ -655,8 +655,8 @@ A roadmap statement is never evidence of implementation.
 
 ## Stage 1 implementation update — FPU/SIMD context ownership (2026-09-30)
 
-Per-task x87/MMX/SSE2 save/restore has been implemented in the common scheduler
-handoff path using aligned FXSAVE64 images. Compiler-generated kernel SIMD
+Per-task x87/MMX/SSE2 save/restore has been implemented in both cooperative and IRQ-exit scheduler
+handoff paths using aligned FXSAVE64 images. Compiler-generated kernel SIMD
 remains prohibited; AVX/XSAVE is not enabled. The local host FPU helper test,
 linked instruction audit, and complete `make check` pass. A two-task XMM
 regression is now required by the CI QEMU scheduler certification. The local

@@ -196,8 +196,8 @@ Every result records implementation status, test type (host/QEMU/hardware), hard
 
 ## Stage 1 scheduler/FPU implementation delta (2026-09-30)
 
-- Implemented aligned per-task FXSAVE64 state and save/restore in the shared
-dispatch path, covering cooperative and interrupt-frame switches; included
+- Implemented aligned per-task FXSAVE64 state and save/restore in both cooperative and IRQ-exit
+dispatch paths, covering saved-stack and interrupt-frame switches; included
 clean state initialization/reset and kept AVX disabled.
 - Local `make check`: **PASS**, including `fpu-host-check` (hardware execution
 of save/restore helper on the sandbox CPU), linked `kernel-simd-check`,

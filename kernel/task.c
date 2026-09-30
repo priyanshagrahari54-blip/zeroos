@@ -1655,6 +1655,7 @@ uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
                            handoff_tasks[cpu]);
     handoff_tasks[cpu]=previous;
     task_validate_table_at("ZEROOS PANIC: IRQ dispatch invariant failed.\n",previous);
+    fpu_context_switch(&previous->fpu_state,&target->fpu_state);
     spin_unlock(&task_lock);
 
     if (target_frame)
