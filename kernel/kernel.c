@@ -175,6 +175,22 @@ static void vmm_self_test(void) {
 
     if (vmm_unmap_page(VMM_SELF_TEST_VA)!=0) kernel_panic("VMM unmap failed");
 
+    /* A fresh PML4 branch must return all three intermediate tables to the
+     * allocator after its final leaf is unmapped. */
+    const uint64_t reclaim_va=0x00007e0000000000ULL;
+    void *reclaim_page=page_alloc();
+    if (!reclaim_page) kernel_panic("VMM reclamation test allocation failed");
+    uint64_t reclaim_free_before=memory_free_pages();
+    if (vmm_map_page(reclaim_va,(uint64_t)reclaim_page,
+                     VMM_WRITABLE|VMM_NO_EXECUTE)!=0 ||
+        memory_page_references((uint64_t)reclaim_page)!=2)
+        kernel_panic("VMM reclamation test map failed");
+    if (vmm_unmap_page(reclaim_va)!=0 || vmm_translate(reclaim_va)!=0 ||
+        memory_page_references((uint64_t)reclaim_page)!=1 ||
+        memory_free_pages()!=reclaim_free_before)
+        kernel_panic("VMM root page-table reclamation failed");
+    page_free(reclaim_page);
+
     /* Device registers are not allocator-owned RAM: exercise the dedicated
      * supervisor MMIO mapping contract without dereferencing a fake device. */
     const uint64_t mmio_va=VMM_MMIO_BASE+0x100000ULL;
@@ -205,6 +221,16 @@ static void vmm_space_self_test(void) {
         kernel_panic("address-space creation failed");
     if (vmm_space_translate(&space,VMM_SPACE_TEST_VA)!=0)
         kernel_panic("fresh address-space is not empty");
+    /* Add a new lower-level MMIO branch after this root copied the stable
+     * kernel MMIO slot; the mapping must be immediately visible to it. */
+    const uint64_t late_mmio_va=VMM_MMIO_BASE+0x40000000ULL;
+    const uint64_t late_mmio_pa=0xfed00000ULL;
+    if (vmm_map_mmio_page(late_mmio_va,late_mmio_pa,
+                          VMM_WRITABLE|VMM_CACHE_DISABLE|VMM_NO_EXECUTE)!=0 ||
+        vmm_space_translate(&space,late_mmio_va)!=late_mmio_pa ||
+        vmm_unmap_mmio_page(late_mmio_va)!=0 ||
+        vmm_space_translate(&space,late_mmio_va)!=0)
+        kernel_panic("shared MMIO page-table propagation failed");
     uint64_t space_free_before_map=memory_free_pages();
     if (vmm_space_map_page(&space,VMM_SPACE_TEST_VA,(uint64_t)physical,
                            VMM_USER|VMM_WRITABLE|VMM_NO_EXECUTE)!=0)

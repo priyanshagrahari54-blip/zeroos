@@ -17,18 +17,53 @@ static uint64_t *root_table;
 static uint64_t root_physical;
 static uint64_t active_root_physical[ZEROOS_MAX_CPUS];
 
-static uint64_t active_root_for_cpu(void) {
-    uint32_t cpu=cpu_current_id();
-    if (cpu>=ZEROOS_MAX_CPUS)
-        return root_physical;
-    return __atomic_load_n(&active_root_physical[cpu],__ATOMIC_ACQUIRE);
-}
 
 static int root_active_on_any_cpu(uint64_t root) {
     for (uint32_t cpu=0; cpu<ZEROOS_MAX_CPUS; ++cpu)
         if (__atomic_load_n(&active_root_physical[cpu],__ATOMIC_ACQUIRE)==root)
             return 1;
     return 0;
+}
+
+static int page_table_empty(const uint64_t *table);
+static uint64_t *table_from_entry(uint64_t entry);
+
+/* Kernel-root slot 0 (identity/direct map) and the MMIO slot are copied into
+ * every process root. Their changes need a shootdown even when no CPU currently
+ * has the kernel root itself loaded. */
+static int kernel_mapping_may_be_active(uint64_t virtual_address) {
+    uint64_t pml4=(virtual_address>>39)&0x1ffULL;
+    return root_active_on_any_cpu(root_physical) || pml4==0 ||
+           pml4==VMM_MMIO_PML4_INDEX;
+}
+
+static void reclaim_empty_root_path(uint64_t pml4_index,
+                                    uint64_t pdpt_index,
+                                    uint64_t pd_index) {
+    /* These trees are shared by process roots as raw page-table pointers.
+     * Reclaiming them would leave those roots pointing into freed allocator
+     * pages; keep shared kernel subtrees stable for their lifetime. */
+    if (pml4_index==0 || pml4_index==VMM_MMIO_PML4_INDEX)
+        return;
+    uint64_t e1=root_table[pml4_index];
+    if (!(e1&VMM_PRESENT) || (e1&HUGE_PAGE_2M)) return;
+    uint64_t *pdpt=table_from_entry(e1);
+    uint64_t e2=pdpt[pdpt_index];
+    if (!(e2&VMM_PRESENT) || (e2&HUGE_PAGE_2M)) return;
+    uint64_t *pd=table_from_entry(e2);
+    uint64_t e3=pd[pd_index];
+    if (!(e3&VMM_PRESENT) || (e3&HUGE_PAGE_2M)) return;
+    uint64_t *pt=table_from_entry(e3);
+
+    if (!page_table_empty(pt)) return;
+    page_free(pt);
+    pd[pd_index]=0;
+    if (!page_table_empty(pd)) return;
+    page_free(pd);
+    pdpt[pdpt_index]=0;
+    if (!page_table_empty(pdpt)) return;
+    page_free(pdpt);
+    root_table[pml4_index]=0;
 }
 
 static int mapping_flags_valid(uint64_t flags) {
@@ -111,7 +146,8 @@ static uint64_t *ensure_table(uint64_t *parent,
  * default and pays the extra 4 KiB table only when fine-grained mapping is
  * actually required.
  */
-static int split_2m(uint64_t *pd, uint64_t index, uint64_t owner_root) {
+static int split_2m(uint64_t *pd, uint64_t index, uint64_t owner_root,
+                    uint64_t virtual_address) {
     uint64_t old = pd[index];
     if (!(old & VMM_PRESENT) || !(old & HUGE_PAGE_2M))
         return 0;
@@ -136,15 +172,19 @@ static int split_2m(uint64_t *pd, uint64_t index, uint64_t owner_root) {
      * The old entry is no longer a huge mapping.  Clear it before installing
      * the PT so no CPU can retain a stale translation for the old page size.
      */
-    pd[index] = 0;
-    if (owner_root==active_root_for_cpu()) {
+    int active=root_active_on_any_cpu(owner_root) ||
+               (owner_root==root_physical &&
+                (((virtual_address>>39)&0x1ffULL)==0 ||
+                 ((virtual_address>>39)&0x1ffULL)==VMM_MMIO_PML4_INDEX));
+    pd[index]=0;
+    if (active) {
         if (tlb_flush_all()!=0)
             for (;;) __asm__ volatile ("cli; hlt");
     }
     pd[index] = ((uint64_t)pt & PAGE_MASK) |
                 VMM_PRESENT | VMM_WRITABLE |
                 (old & VMM_USER);
-    if (owner_root==active_root_for_cpu()) {
+    if (active) {
         if (tlb_flush_all()!=0)
             for (;;) __asm__ volatile ("cli; hlt");
     }
@@ -191,6 +231,13 @@ int vmm_init(void) {
         pd[i] = i * HUGE_PAGE_SIZE | flags;
     }
 
+    /* Install a stable MMIO PML4 subtree before process roots copy it. Later
+     * MMIO mappings may add lower-level tables, but every root sees those
+     * updates through this shared PDPT pointer. */
+    uint64_t *mmio_pdpt=ensure_table(root_table,VMM_MMIO_PML4_INDEX,0);
+    if (!mmio_pdpt || !ensure_table(mmio_pdpt,0,0))
+        return -1;
+
     write_cr3(root_physical);
     for (uint32_t cpu=0; cpu<ZEROOS_MAX_CPUS; ++cpu)
         __atomic_store_n(&active_root_physical[cpu],root_physical,
@@ -224,7 +271,7 @@ int vmm_map_page(uint64_t virtual_address,
         return -1;
 
     if (pd[pd_index] & HUGE_PAGE_2M) {
-        if (split_2m(pd, pd_index, root_physical) != 0)
+        if (split_2m(pd,pd_index,root_physical,virtual_address) != 0)
             return -1;
     }
 
@@ -241,7 +288,7 @@ int vmm_map_page(uint64_t virtual_address,
                    VMM_PRESENT | VMM_INTERNAL_OWNED |
                    hardware_leaf_flags(flags);
 
-    if (active_root_for_cpu()==root_physical)
+    if (kernel_mapping_may_be_active(virtual_address))
         invalidate_page(virtual_address);
     return 0;
 }
@@ -268,7 +315,7 @@ int vmm_unmap_page(uint64_t virtual_address) {
 
     uint64_t *pd = table_from_entry(e2);
     if (pd[pd_index] & HUGE_PAGE_2M) {
-        if (split_2m(pd, pd_index, root_physical) != 0)
+        if (split_2m(pd,pd_index,root_physical,virtual_address) != 0)
             return -1;
     }
 
@@ -280,13 +327,21 @@ int vmm_unmap_page(uint64_t virtual_address) {
     uint64_t old_leaf=pt[pt_index];
     if (!(old_leaf & VMM_PRESENT))
         return -1;
-    if ((old_leaf & VMM_INTERNAL_OWNED) &&
-        memory_page_release(old_leaf & PHYS_MASK)!=0)
-        return -1;
-
-    pt[pt_index] = 0;
-    if (active_root_for_cpu()==root_physical)
+    int active=kernel_mapping_may_be_active(virtual_address);
+    pt[pt_index]=0;
+    if (active)
         invalidate_page(virtual_address);
+
+    /* Retire all stale translations before returning the mapped frame to the
+     * allocator, so no CPU can keep accessing a frame after it is reused. */
+    if ((old_leaf&VMM_INTERNAL_OWNED) &&
+        memory_page_release(old_leaf&PHYS_MASK)!=0) {
+        pt[pt_index]=old_leaf;
+        if (active)
+            invalidate_page(virtual_address);
+        return -1;
+    }
+    reclaim_empty_root_path(pml4_index,pdpt_index,pd_index);
     return 0;
 }
 
@@ -402,7 +457,7 @@ int vmm_protect_page(uint64_t virtual_address, uint64_t flags) {
     pdpt[pdpt_index] = e2;
 
     if (pd[pd_index] & HUGE_PAGE_2M) {
-        if (split_2m(pd, pd_index, root_physical) != 0) return -1;
+        if (split_2m(pd,pd_index,root_physical,virtual_address) != 0) return -1;
     }
 
     uint64_t e3 = pd[pd_index];
@@ -418,7 +473,7 @@ int vmm_protect_page(uint64_t virtual_address, uint64_t flags) {
     pt[pt_index] = (pt[pt_index] & (PHYS_MASK | VMM_INTERNAL_OWNED)) |
                    VMM_PRESENT |
                    hardware_leaf_flags(flags);
-    if (active_root_for_cpu()==root_physical)
+    if (kernel_mapping_may_be_active(virtual_address))
         invalidate_page(virtual_address);
     return 0;
 }
@@ -426,6 +481,7 @@ int vmm_protect_page(uint64_t virtual_address, uint64_t flags) {
 int vmm_map_mmio_page(uint64_t virtual_address, uint64_t physical_address,
                       uint64_t flags) {
     if (!root_table || !canonical_address(virtual_address) ||
+        ((virtual_address>>39)&0x1ffULL)!=VMM_MMIO_PML4_INDEX ||
         (virtual_address & (VMM_PAGE_SIZE-1ULL)) ||
         (physical_address & (VMM_PAGE_SIZE-1ULL)) ||
         (physical_address & ~PHYS_MASK) ||
@@ -446,13 +502,14 @@ int vmm_map_mmio_page(uint64_t virtual_address, uint64_t physical_address,
 
     pt[pt_index]=(physical_address&PHYS_MASK)|VMM_PRESENT|
                  hardware_leaf_flags(flags);
-    if (active_root_for_cpu()==root_physical)
+    if (kernel_mapping_may_be_active(virtual_address))
         invalidate_page(virtual_address);
     return 0;
 }
 
 int vmm_unmap_mmio_page(uint64_t virtual_address) {
     if (!root_table || !canonical_address(virtual_address) ||
+        ((virtual_address>>39)&0x1ffULL)!=VMM_MMIO_PML4_INDEX ||
         (virtual_address & (VMM_PAGE_SIZE-1ULL)))
         return -1;
 
@@ -473,24 +530,11 @@ int vmm_unmap_mmio_page(uint64_t virtual_address) {
     if (!(old&VMM_PRESENT) || (old&VMM_INTERNAL_OWNED)) return -1;
     pt[pt_index]=0;
 
-    int active=active_root_for_cpu()==root_physical;
+    int active=kernel_mapping_may_be_active(virtual_address);
     if (active) invalidate_page(virtual_address);
-    if (page_table_empty(pt)) {
-        page_free(pt);
-        pd[pd_index]=0;
-        if (page_table_empty(pd)) {
-            page_free(pd);
-            pdpt[pdpt_index]=0;
-            if (page_table_empty(pdpt)) {
-                page_free(pdpt);
-                root_table[pml4_index]=0;
-            }
-        }
-    }
-    if (active) {
-        if (tlb_flush_all()!=0)
-            for (;;) __asm__ volatile ("cli; hlt");
-    }
+    /* The MMIO page-table subtree is copied into each process root. Keep its
+     * now-empty intermediate tables allocated so those roots never retain a
+     * pointer to freed page-table memory. They are reused on the next mapping. */
     return 0;
 }
 
@@ -656,7 +700,7 @@ int vmm_space_map_page(struct vmm_space *space, uint64_t virtual_address,
     if (!pd) return -1;
 
     if (pd[pd_i] & HUGE_PAGE_2M) {
-        if (split_2m(pd,pd_i,space->root_physical) != 0) return -1;
+        if (split_2m(pd,pd_i,space->root_physical,virtual_address) != 0) return -1;
     }
 
     uint64_t *pt = space_ensure_table(pd,pd_i,flags);
@@ -668,7 +712,7 @@ int vmm_space_map_page(struct vmm_space *space, uint64_t virtual_address,
                VMM_PRESENT | VMM_INTERNAL_OWNED |
                hardware_leaf_flags(flags);
     ++space->mapped_pages;
-    if (space->root_physical == active_root_for_cpu())
+    if (root_active_on_any_cpu(space->root_physical))
         invalidate_page(virtual_address);
     return 0;
 }
@@ -695,17 +739,22 @@ int vmm_space_unmap_page(struct vmm_space *space, uint64_t virtual_address) {
     uint64_t *pt=table_from_entry(e3);
     uint64_t old_leaf=pt[pt_index];
     if (!(old_leaf&VMM_PRESENT)) return -1;
-    if ((old_leaf&VMM_INTERNAL_OWNED) &&
-        (space->mapped_pages==0 ||
-         memory_page_release(old_leaf&PHYS_MASK)!=0))
+    if ((old_leaf&VMM_INTERNAL_OWNED) && space->mapped_pages==0)
         return -1;
-    if (old_leaf&VMM_INTERNAL_OWNED)
-        --space->mapped_pages;
 
-    pt[pt_index]=0;
     int active=root_active_on_any_cpu(space->root_physical);
+    pt[pt_index]=0;
     if (active)
         invalidate_page(virtual_address);
+    if ((old_leaf&VMM_INTERNAL_OWNED) &&
+        memory_page_release(old_leaf&PHYS_MASK)!=0) {
+        pt[pt_index]=old_leaf;
+        if (active)
+            invalidate_page(virtual_address);
+        return -1;
+    }
+    if (old_leaf&VMM_INTERNAL_OWNED)
+        --space->mapped_pages;
 
     /* Reclaim empty private paging levels immediately. */
     if (page_table_empty(pt)) {
@@ -719,10 +768,6 @@ int vmm_space_unmap_page(struct vmm_space *space, uint64_t virtual_address) {
                 space->root[pml4_index]=0;
             }
         }
-    }
-    if (active) {
-        if (tlb_flush_all()!=0)
-            for (;;) __asm__ volatile ("cli; hlt");
     }
     return 0;
 }
