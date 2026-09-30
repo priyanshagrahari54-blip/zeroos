@@ -215,6 +215,17 @@ implementation evidence, not physical-hardware certification.
 coverage, and context-switch performance remain untested. This does not clear
 the Stage 1 gate or change the Stage 10 **BLOCKED** disposition.
 
+## Stage 1 allocator release atomicity delta (2026-09-30)
+
+`page_free_contiguous()` now validates the full page run under `memory_lock`
+before releasing any frame references. Its boot self-test frees one page of a
+two-page run, attempts to release the now-invalid run, and verifies that the
+still-owned second page and allocator count are unchanged before cleanup.
+`make check` and a freestanding GCC `-fanalyzer -Werror` syntax pass for
+`kernel/memory.c` passed locally after this change. The boot milestone is now
+an explicit CI grep gate; QEMU evidence for this exact allocator change is
+pending.
+
 ### Stage 10 release gate disposition
 
 | Gate | Evidence/result | Disposition |

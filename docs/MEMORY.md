@@ -17,7 +17,9 @@ owner reference; `memory_page_retain()` and `memory_page_release()` manage
 shared mappings, while `page_free()` releases one owner/reference. A frame is
 returned to the free pool only when its reference count reaches zero. Reserved
 pages, invalid releases and reference underflow do not mutate accounting; all
-allocation/reference operations are serialized by `memory_lock`.
+allocation/reference operations are serialized by `memory_lock`. Contiguous
+run release validates every frame before dropping any reference, so an invalid
+tail cannot partially free the valid prefix.
 
 Required mature metadata remains:
 - frame state;
@@ -163,6 +165,7 @@ Do not mislead users by treating cache as permanently unavailable memory.
 ## 19. Testing
 Current Stage 1 certification covers:
 - allocation/free churn;
+- all-or-nothing contiguous-run release with an invalid/double-released prefix;
 - reserved-page release rejection;
 - double-free accounting protection;
 - process creation;

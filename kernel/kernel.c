@@ -98,6 +98,21 @@ static void memory_self_test(void) {
     page_free(b); page_free(a);
     if (memory_free_pages()!=before) kernel_panic("physical page allocator accounting failed");
 
+    /* A contiguous release with an invalid tail must not release a valid
+     * prefix. This catches partial teardown under corrupted bounds/double
+     * release before it can silently damage another owner's page run. */
+    void *run=page_alloc_contiguous(2);
+    if (!run) kernel_panic("contiguous allocator self-test allocation failed");
+    page_free(run);
+    uint64_t before_invalid_run_release=memory_free_pages();
+    page_free_contiguous(run,2);
+    if (memory_page_references((uint64_t)run+ZEROOS_PAGE_SIZE)!=1 ||
+        memory_free_pages()!=before_invalid_run_release)
+        kernel_panic("contiguous release was not atomic on invalid run");
+    page_free((void *)((uint64_t)run+ZEROOS_PAGE_SIZE));
+    if (memory_free_pages()!=before)
+        kernel_panic("contiguous allocator release accounting failed");
+
     void *shared=page_alloc();
     if (!shared || memory_page_retain((uint64_t)shared)!=0 ||
         memory_page_references((uint64_t)shared)!=2)

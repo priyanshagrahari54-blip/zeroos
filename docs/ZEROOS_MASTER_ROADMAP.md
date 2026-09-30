@@ -666,6 +666,15 @@ physical-hardware testing, targeted cross-CPU FPU migration evidence, and
 context-switch overhead measurement remain open. This is an implementation
 increment only, not Stage 1 completion or production certification.
 
+### Stage 1 allocator ownership follow-up (2026-09-30)
+
+`page_free_contiguous()` now performs full-range validation and reference release
+under one allocator lock, preventing invalid tails from partially releasing a
+run. A kernel boot self-test covers a double-released prefix with an allocated
+tail; the CI workflow requires its allocator self-test milestone. Local
+`make check` passes. QEMU evidence for this follow-up is pending, and this does
+not complete the Stage 1 gate.
+
 
 ## Stage 10 actual execution status (2026-09-29)
 

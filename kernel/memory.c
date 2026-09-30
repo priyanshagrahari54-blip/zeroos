@@ -402,10 +402,37 @@ void *page_alloc_contiguous(uint64_t count) {
 
 void page_free_contiguous(void *address, uint64_t count) {
     uint64_t base=(uint64_t)address;
-    if (!address || count==0 || (base%ZEROOS_PAGE_SIZE)!=0)
+    if (!address || count==0 || count>ZEROOS_MAX_PAGES ||
+        (base%ZEROOS_PAGE_SIZE)!=0 || base>=ZEROOS_MAX_PHYS_MEM ||
+        count>(ZEROOS_MAX_PHYS_MEM-base)/ZEROOS_PAGE_SIZE)
         return;
-    for (uint64_t i=0; i<count; ++i)
-        (void)memory_page_release(base+i*ZEROOS_PAGE_SIZE);
+
+    uint64_t first=base/ZEROOS_PAGE_SIZE;
+    uint64_t flags=spin_lock_irqsave(&memory_lock);
+
+    /* Validate the complete run before changing a single reference. A bad
+     * tail must not free the valid prefix and leave the caller with a partly
+     * reclaimed object. The allocator lock makes validation and release one
+     * indivisible ownership transition. */
+    for (uint64_t i=0;i<count;++i) {
+        uint64_t page=first+i;
+        if (!usable_test(page) || !bitmap_test(page) ||
+            page_references[page]==0) {
+            spin_unlock_irqrestore(&memory_lock,flags);
+            return;
+        }
+    }
+
+    for (uint64_t i=0;i<count;++i) {
+        uint64_t page=first+i;
+        --page_references[page];
+        if (page_references[page]==0) {
+            bitmap_clear(page);
+            ++free_pages;
+            summary_refresh(page>>6);
+        }
+    }
+    spin_unlock_irqrestore(&memory_lock,flags);
 }
 
 void page_free(void *address) {
