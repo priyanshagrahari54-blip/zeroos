@@ -2034,7 +2034,7 @@ int task_scheduler_ready(void) {
 
 void task_panic_diagnostics_self_test(void) {
 #ifdef ZEROOS_TEST_SCHEDULER_PANIC_DIAGNOSTICS
-    task_context_panic("scheduler panic diagnostics self-test", current_task);
+    task_context_panic("ZEROOS PANIC: scheduler panic diagnostics self-test\n", current_task);
 #endif
 }
 
