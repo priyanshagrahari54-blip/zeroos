@@ -835,6 +835,8 @@ static void scheduler_probe_monitor(void *argument) {
     int per_cpu_reported=0;
     int hotplug_reported=0;
     int userspace_reported=0;
+    uint32_t deterministic_trace=0;
+    int trace_reported=0;
     uint64_t stress_start=timer_ticks();
 
     /* Keep the certification monitor on the BSP: it owns the control-plane
@@ -856,11 +858,13 @@ static void scheduler_probe_monitor(void *argument) {
 
         if (!context_reported && atomic_u64_load(&task_probe_counter)==32) {
             context_reported=1;
+            deterministic_trace |= 1U << 0;
             serial_write_public("ZEROOS: task context-switch self-test passed.\n");
         }
 
         if (!wait_reported && atomic_u64_load(&wait_probe_state)==2) {
             wait_reported=1;
+            deterministic_trace |= 1U << 1;
             serial_write_public("ZEROOS: wait queue integration verified.\n");
         }
 
@@ -871,18 +875,21 @@ static void scheduler_probe_monitor(void *argument) {
 
         if (!sleep_reported && atomic_u64_load(&sleep_probe_state)==2) {
             sleep_reported=1;
+            deterministic_trace |= 1U << 2;
             serial_write_public("ZEROOS: timed sleep integration verified.\n");
         }
 
         if (!preempt_reported && atomic_u64_load(&preempt_probe_done)==1 &&
             atomic_u64_load(&preempt_probe_b)>1) {
             preempt_reported=1;
+            deterministic_trace |= 1U << 3;
             serial_write_public("ZEROOS: timer-only preemption stress passed.\n");
         }
 
         if (!lifecycle_reported && atomic_u64_load(&lifecycle_probe_done)==1 &&
             atomic_u64_load(&lifecycle_probe_exited)>=6) {
             lifecycle_reported=1;
+            deterministic_trace |= 1U << 4;
             serial_write_public("ZEROOS: zombie reaping and slot-reuse stress passed.\n");
         }
 
@@ -899,6 +906,7 @@ static void scheduler_probe_monitor(void *argument) {
             if (minimum<64 || maximum>minimum*4ULL || max_gap>100ULL)
                 kernel_panic("scheduler fairness or latency certification failed");
             fairness_reported=1;
+            deterministic_trace |= 1U << 5;
             serial_write_public("ZEROOS: scheduler fairness and latency stress passed.\n");
         }
 
@@ -916,7 +924,13 @@ static void scheduler_probe_monitor(void *argument) {
             task_current() && task_current()->interrupt_frame==0 &&
             task_debug_validate()==0) {
             frame_invariant_reported=1;
+            deterministic_trace |= 1U << 6;
             serial_write_public("ZEROOS: interrupt-frame ownership invariant verified.\n");
+        }
+
+        if (!trace_reported && deterministic_trace==0x7fU) {
+            trace_reported=1;
+            serial_write_public("ZEROOS: scheduler deterministic trace: 01-02-04-08-10-20-40.\n");
         }
 
         /*
