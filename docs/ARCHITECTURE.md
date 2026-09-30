@@ -111,9 +111,10 @@ The current Stage 1 boundary provides:
   removal of a failing AP from the target mask;
 - AP idle/interrupt dispatch that never borrows the BSP scheduler context.
 
-Per-CPU scheduler queues, AP device-IRQ ownership, FPU state policy, lock
-contention instrumentation and full multi-vCPU stress/hardware certification
-remain production gates. The AP boundary therefore fails closed during
+AP device-IRQ ownership, lock-contention instrumentation, physical-hardware
+FPU/SIMD validation and full multi-vCPU stress/certification remain production
+gates. Per-task FXSAVE64 save/restore is implemented and has a QEMU runtime
+regression gate; this does not certify every physical CPU. The AP boundary therefore fails closed during
 startup, reports degraded mode, and never fabricates an online CPU.
 
 ## 9. Userspace Architecture

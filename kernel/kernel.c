@@ -287,6 +287,7 @@ static void sync_self_test(void) {
 }
 
 static struct atomic_u64 task_probe_counter;
+static struct atomic_u64 fpu_probe_done;
 static struct wait_queue wait_probe_queue;
 static struct atomic_u64 wait_probe_state;
 static struct atomic_u64 sleep_probe_state;
@@ -704,6 +705,41 @@ static void scheduler_tss_stack_self_check(void) {
         kernel_panic("scheduler/TSS kernel-stack handoff validation failed");
 }
 
+struct fpu_probe_vector { uint64_t lane[2]; };
+static const struct fpu_probe_vector fpu_probe_pattern_a={{
+    0x0123456789abcdefULL,0xfedcba9876543210ULL
+}};
+static const struct fpu_probe_vector fpu_probe_pattern_b={{
+    0x55aa33cc0f0ff0f0ULL,0xa55ac33cf0f00f0fULL
+}};
+
+static void scheduler_fpu_probe_worker(void *argument) {
+    const struct fpu_probe_vector *expected=(const struct fpu_probe_vector *)argument;
+    struct fpu_probe_vector observed0,observed7;
+    if (!expected)
+        kernel_panic("FPU context probe setup failed");
+
+    /* Deliberately keep live SSE2 values across cooperative and timer-driven
+     * dispatch. The kernel compiler is general-register-only; these are the
+     * probe's explicit architectural register accesses. */
+    for (uint64_t i=0;i<96;++i) {
+        __asm__ volatile ("movdqu %0, %%xmm0\n\t"
+                          "movdqu %0, %%xmm7"
+                          : : "m"(*expected) : "memory");
+        scheduler_yield();
+        __asm__ volatile ("movdqu %%xmm0, %0\n\t"
+                          "movdqu %%xmm7, %1"
+                          : "=m"(observed0),"=m"(observed7)
+                          : : "memory");
+        if (observed0.lane[0]!=expected->lane[0] ||
+            observed0.lane[1]!=expected->lane[1] ||
+            observed7.lane[0]!=expected->lane[0] ||
+            observed7.lane[1]!=expected->lane[1])
+            kernel_panic("per-task FPU/SSE state corruption");
+    }
+    atomic_u64_fetch_add(&fpu_probe_done,1);
+}
+
 static void scheduler_probe_worker(void *argument) {
     uint64_t rbx_value=0x1122334455667788ULL;
     uint64_t r12_value=0x13579bdf2468ace0ULL;
@@ -823,6 +859,7 @@ static void scheduler_probe_monitor(void *argument) {
     (void)argument;
     uint64_t last_report=0;
     int context_reported=0;
+    int fpu_reported=0;
     int wait_reported=0;
     int input_reported=0;
     int input_drained=0;
@@ -857,6 +894,11 @@ static void scheduler_probe_monitor(void *argument) {
         if (!context_reported && atomic_u64_load(&task_probe_counter)==32) {
             context_reported=1;
             serial_write_public("ZEROOS: task context-switch self-test passed.\n");
+        }
+
+        if (!fpu_reported && atomic_u64_load(&fpu_probe_done)==2) {
+            fpu_reported=1;
+            serial_write_public("ZEROOS: per-task FPU/SSE context switching passed.\n");
         }
 
         if (!wait_reported && atomic_u64_load(&wait_probe_state)==2) {
@@ -927,6 +969,7 @@ static void scheduler_probe_monitor(void *argument) {
          */
         if (!certification_reported &&
             context_reported &&
+            fpu_reported &&
             wait_reported &&
             sleep_reported &&
             preempt_reported &&
@@ -1027,11 +1070,13 @@ static void scheduler_probe_monitor(void *argument) {
 
 static void scheduler_self_test(void) {
     uint64_t worker_id, monitor_id, waiter_id, waker_id, sleeper_id;
+    uint64_t fpu_a_id, fpu_b_id;
     uint64_t preempt_a_id, preempt_b_id, lifecycle_id;
     uint64_t fairness_a_id, fairness_b_id;
     uint64_t input_waiter_id, input_waker_id;
 
     atomic_u64_init(&task_probe_counter,0);
+    atomic_u64_init(&fpu_probe_done,0);
     atomic_u64_init(&wait_probe_state,0);
     atomic_u64_init(&sleep_probe_state,0);
     atomic_u64_init(&input_probe_state,0);
@@ -1075,6 +1120,12 @@ static void scheduler_self_test(void) {
 
     if (task_create(scheduler_probe_worker,0,&worker_id)!=0)
         kernel_panic("scheduler worker creation failed");
+    if (task_create(scheduler_fpu_probe_worker,(void *)&fpu_probe_pattern_a,&fpu_a_id)!=0 ||
+        task_create(scheduler_fpu_probe_worker,(void *)&fpu_probe_pattern_b,&fpu_b_id)!=0)
+        kernel_panic("FPU context probe task creation failed");
+    if (task_set_affinity(task_lookup(fpu_a_id),1ULL)!=0 ||
+        task_set_affinity(task_lookup(fpu_b_id),1ULL)!=0)
+        kernel_panic("FPU context probe affinity setup failed");
     if (task_create(scheduler_probe_monitor,0,&monitor_id)!=0)
         kernel_panic("scheduler monitor creation failed");
     if (task_create(wait_probe_waiter,0,&waiter_id)!=0)

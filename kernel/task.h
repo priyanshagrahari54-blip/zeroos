@@ -1,6 +1,7 @@
 #ifndef ZEROOS_TASK_H
 #define ZEROOS_TASK_H
 #include "types.h"
+#include "fpu.h"
 
 #define ZEROOS_MAX_TASKS 48
 /* Four contiguous pages: storage call chains (VFS -> journal -> cache ->
@@ -66,6 +67,9 @@ struct task {
     uint64_t kernel_stack_top;
     task_entry_t entry;
     void *argument;
+
+    /* Saved on every cooperative and interrupt-frame scheduler handoff. */
+    struct fpu_state fpu_state;
 
     uint64_t runtime_ticks;
     uint64_t context_switches;

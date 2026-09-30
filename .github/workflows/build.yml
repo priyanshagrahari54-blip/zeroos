@@ -86,6 +86,7 @@ jobs:
 
             echo "===== ZEROOS scheduler certification gates ====="
             grep -q "ZEROOS: task context-switch self-test passed." build/serial.log
+            grep -q "ZEROOS: per-task FPU/SSE context switching passed." build/serial.log
             grep -q "ZEROOS: wait queue integration verified." build/serial.log
             grep -q "ZEROOS: timed sleep integration verified." build/serial.log
             grep -q "ZEROOS: scheduler policy and affinity self-test passed." build/serial.log

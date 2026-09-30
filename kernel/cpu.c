@@ -1,4 +1,5 @@
 #include "cpu.h"
+#include "fpu.h"
 
 #define CPUID_VENDOR 0x00000000U
 #define CPUID_FEATURES 0x00000001U
@@ -161,6 +162,9 @@ int cpu_init(void) {
     uint64_t cr4=read_cr4();
     cr4 |= CR4_OSFXSR | CR4_OSXMMEXCPT;
     write_cr4(cr4);
+
+    if (fpu_system_init()!=0)
+        return -1;
 
     /* Enable execute-disable only after CPUID has proved NX support. */
     if (boot_cpu.features & ZEROOS_CPU_FEATURE_NX) {

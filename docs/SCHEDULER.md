@@ -242,13 +242,22 @@ The implemented scheduler/SMP boundary covers:
 - coordinated CPU hot-offline queue evacuation, AP TLB/CPU-local withdrawal,
   idle parking, bounded acknowledgement and scheduler validation.
 
-The remaining Stage 1 scheduler work is not hidden: per-thread FPU/SIMD state
-switching (kernel code is general-purpose-register only and enforced by
-`kernel-simd-check`, see CPU_ARCHITECTURE.md) and supported-hardware multi-vCPU validation remain required before
-the Stage 1 exit gate. Equal-priority fairness/latency stress, the AP late-
-token/failed-dispatch recovery contract, and the per-AP local LAPIC clock-
-event contract (with an explicit targeted-IPI fallback) are now exercised by
-the runtime certification, including a separate fault-injected QEMU boot that
-must complete the bounded retry.
+Per-task x87/MMX/SSE state is now saved/restored at the common `dispatch_locked()`
+boundary, before scheduler ownership is released. This covers both cooperative
+`context_switch_ex()` handoffs and interrupt-frame/`iretq` handoffs. Every task
+(including bootstrap and per-CPU idle contexts) owns a 16-byte-aligned 512-byte
+FXSAVE64 image; new/reused slots receive a clean template. AVX/XSAVE remains
+disabled, and compiler-generated kernel SIMD remains prohibited. A runtime
+probe keeps distinct XMM0/XMM7 values live in two yielding tasks; its QEMU boot
+marker is a required CI gate. Host FXSAVE/FXRSTOR helper tests and the linked
+instruction audit are separate build gates, not substitutes for QEMU or
+physical-hardware evidence.
+
+Supported-hardware multi-vCPU validation remains required before the Stage 1
+exit gate. Equal-priority fairness/latency stress, the AP late-token/failed-
+dispatch recovery contract, and the per-AP local LAPIC clock-event contract
+(with an explicit targeted-IPI fallback) are exercised by the runtime
+certification, including a separate fault-injected QEMU boot that must
+complete the bounded retry.
 Higher-level synchronization continues to use the existing wait-queue and
 preemption contracts.

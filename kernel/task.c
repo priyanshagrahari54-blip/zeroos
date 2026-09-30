@@ -1,4 +1,5 @@
 #include "task.h"
+#include "fpu.h"
 #include "thread.h"
 #include "memory.h"
 #include "gdt.h"
@@ -700,6 +701,8 @@ static void reap_zombies_locked(void) {
         task->sleep_next=0;
         task->wake_tick=0;
         task->sleep_armed=0;
+        if (fpu_state_init(&task->fpu_state)!=0)
+            task_context_panic("ZEROOS PANIC: FPU state reset failed during task reclaim.\n",task);
         continue;
 
     defer_zombie_reclaim:
@@ -999,6 +1002,7 @@ static void dispatch_locked(struct task *previous, struct task *target,
                            handoff_tasks[cpu]);
     handoff_tasks[cpu]=previous;
     task_validate_table_at(where,previous);
+    fpu_context_switch(&previous->fpu_state,&target->fpu_state);
     spin_unlock(&task_lock);
 
     context_switch_ex(&previous->saved_stack,
@@ -1018,6 +1022,8 @@ int task_system_init(void) {
         return -1;
 
     for (int i=0;i<ZEROOS_MAX_TASKS;++i) {
+        if (fpu_state_init(&tasks[i].fpu_state)!=0)
+            return -1;
         tasks[i].id=0;
         tasks[i].state=TASK_UNUSED;
         tasks[i].saved_stack=0;
@@ -1062,6 +1068,8 @@ int task_system_init(void) {
             cpu_local_for_id(cpu)->scheduler_epoch=0;
         }
         ap_idle_tasks[cpu]=(struct task){0};
+        if (fpu_state_init(&ap_idle_tasks[cpu].fpu_state)!=0)
+            return -1;
     }
 
     tasks[0].id=0;
@@ -1146,6 +1154,13 @@ static int task_create_owned_internal(task_entry_t entry, void *argument,
 
     struct task *task=&tasks[slot];
     task->id=next_task_id++;
+    if (fpu_state_init(&task->fpu_state)!=0) {
+        page_free_contiguous(stack,ZEROOS_TASK_STACK_PAGES);
+        task->id=0;
+        task->state=TASK_UNUSED;
+        spin_unlock_irqrestore(&task_lock,flags);
+        return -1;
+    }
     /* Staged owned tasks are blocked but have no wait-queue membership. They
      * cannot execute until the caller has published every higher-level link. */
     task->state=publish ? TASK_RUNNABLE : TASK_BLOCKED;

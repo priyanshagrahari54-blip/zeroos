@@ -193,6 +193,25 @@ Every result records implementation status, test type (host/QEMU/hardware), hard
 - A package-install retry could not reach Debian mirrors, so GRUB/QEMU were not installed locally.
 - The local environment exposes a KVM virtualized Linux host, 2 logical CPUs, approximately 3.85 GiB `MemTotal`, and a 21.8 GB virtual `vda` marked rotational by the guest. This is not the target machine and does not constitute the 2 GB/HDD/G560 profile. GPU, panel, adapters, firmware, battery and physical thermal data were not available.
 
+
+## Stage 1 scheduler/FPU implementation delta (2026-09-30)
+
+- Implemented aligned per-task FXSAVE64 state and save/restore in the shared
+dispatch path, covering cooperative and interrupt-frame switches; included
+clean state initialization/reset and kept AVX disabled.
+- Local `make check`: **PASS**, including `fpu-host-check` (hardware execution
+of save/restore helper on the sandbox CPU), linked `kernel-simd-check`,
+desktop 120,907/0, compatibility 107/0, hardware-core tests and storage host
+recovery checks.
+- Runtime integration coverage now has two tasks hold distinct XMM0/XMM7
+patterns over repeated yields; CI is required to observe the serial milestone
+`ZEROOS: per-task FPU/SSE context switching passed.` No CI run has yet tested
+this worktree revision.
+- Local QEMU/boot evidence: **not run**; `qemu-system-x86_64` and
+`grub-mkrescue` are absent. Physical hardware, multi-vCPU migration, and
+context-switch performance remain untested. This does not clear the Stage 1
+gate or change the Stage 10 **BLOCKED** disposition.
+
 ### Stage 10 release gate disposition
 
 | Gate | Evidence/result | Disposition |

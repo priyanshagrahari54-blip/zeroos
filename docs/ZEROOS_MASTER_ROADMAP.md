@@ -462,7 +462,7 @@ Global product constraints:
 | Stage | Scope | Primary exit gate |
 |---|---|---|
 | 0 | Reproducible engineering, CI, build/release foundations | deterministic builds/tests, CI evidence |
-| 1 | Kernel execution, scheduler/context/SMP certification | scheduler lifecycle stable under stress |
+| 1 | Kernel execution, scheduler/context/SMP certification | scheduler lifecycle stable under stress, including per-task FPU/SIMD ownership and both context-handoff forms |
 | 2 | Process/thread, ring-3, syscall, IPC, userspace execution | first reliable user process + syscall ABI |
 | 3 | VFS, filesystem, block/storage, HDD-aware persistence | crash-consistent persistent storage |
 | 4 | Driver model, PCI/ACPI/DMA/IRQ, network, audio, power/thermal | detected vs operational support is explicit |
@@ -651,6 +651,20 @@ The following documents must remain synchronized:
 - docs/ZEROOS_MASTER_PROMPT_10_STAGE.md — reusable execution prompt
 
 A roadmap statement is never evidence of implementation.
+
+
+## Stage 1 implementation update — FPU/SIMD context ownership (2026-09-30)
+
+Per-task x87/MMX/SSE2 save/restore has been implemented in the common scheduler
+handoff path using aligned FXSAVE64 images. Compiler-generated kernel SIMD
+remains prohibited; AVX/XSAVE is not enabled. The local host FPU helper test,
+linked instruction audit, and complete `make check` pass. A two-task XMM
+regression is now required by the CI QEMU scheduler certification. The local
+environment lacks GRUB/QEMU, so this change has **not yet been QEMU runtime
+validated** in this worktree; supported physical-hardware testing, SMP
+migration evidence, and context-switch overhead measurement remain open. This
+is an implementation increment only, not Stage 1 completion or production
+certification.
 
 
 ## Stage 10 actual execution status (2026-09-29)

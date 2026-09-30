@@ -32,32 +32,31 @@ absent.
 ## Floating-point baseline
 
 The kernel clears CR0.EM and reset cache-disable/NW state, sets CR0.MP,
-CR0.NE and CR0.WP, and enables CR4.OSFXSR and CR4.OSXMMEXCPT. APs normalize
-the same CR0 policy during their protected-mode transition. Extended XSAVE/AVX
-state is not enabled until a future per-thread FPU ownership policy is
-present; this prevents silently corrupting architectural state.
+CR0.NE and CR0.WP, and enables CR4.OSFXSR and CR4.OSXMMEXCPT on the BSP and
+AP trampoline. The bootstrap CPU captures a clean FXSAVE64 template before
+task scheduling begins. At every common scheduler dispatch, the outgoing
+thread's aligned 512-byte FXSAVE64 image is saved and the incoming image
+restored. This covers x87/MMX/SSE state for cooperative yields, blocking,
+exit, and interrupt-frame preemption. Slot reuse restores a clean image before
+a task can run. AVX/extended XSAVE state is not enabled.
 
-### Kernel code is general-purpose-register only
+### Compiler-generated SIMD remains prohibited
 
-No kernel path saves or restores x87/MMX/SSE/AVX state: the common ISR saves
-the 15 general-purpose registers plus the hardware frame, the IRQ reschedule
-path resumes a saved frame, and `context_switch_ex()` saves only the
-callee-saved general-purpose registers. The kernel is therefore compiled with
-`-mgeneral-regs-only`, and `make` runs `kernel-simd-check` after linking,
-which fails the build if the kernel image contains any x87/MMX/SSE/AVX
-instruction.
+All ordinary kernel C is compiled with `-mgeneral-regs-only`; this avoids
+implicit compiler use of SIMD in interrupt, scheduler, and kernel code. The
+small `kernel/fpu.c` assembly boundary explicitly initializes x87/MMX register payloads, clears
+XMM registers, and uses `FXSAVE64`/`FXRSTOR64`. The scheduler regression probe
+contains explicit `MOVDQU` operations only. `tools/check_kernel_simd.py`
+checks the linked image and permits exactly those audited symbols/instruction
+families while rejecting other x87/MMX/SSE/AVX instructions. Ring-3 programs
+may use x87/MMX/SSE2 under the FXSAVE task-state contract; shipped userspace is
+still built general-register-only. AVX is not enabled and remains unsupported.
 
-This is a correctness invariant, not an optimisation choice. Before the flag
-was added, GCC `-O2` emitted about 1,800 SSE instructions across 131 kernel
-functions (constant materialisation, zeroing and copies). Any interrupt or
-task switch whose code also used XMM silently replaced live values in the
-interrupted task. The visible symptoms were intermittent SMP boot failures:
-Ring-3 init code built with wrong immediates (`16 -> 0`, `12 -> 0xffffffff`,
-giving ENOSYS/EFAULT from valid syscalls), and random IPC and storage
-self-test failures. Because this state is not preserved per task, Ring-3
-images are also built with `-mgeneral-regs-only`. User code that executes SSE
-has undefined results across preemption until per-thread FPU ownership exists
-(PARTIAL, see below).
+The FPU helper has a host hardware test and the kernel includes two-task XMM
+isolation coverage gated by QEMU boot certification. Those tests establish
+implementation behavior in their tested environments, not production support
+on every physical CPU or multi-vCPU platform. Supported-hardware validation
+and performance impact measurement remain open Stage 1/production gates.
 
 ## Per-CPU state
 
@@ -128,10 +127,9 @@ The boot certification checks:
 ## Remaining Stage 1 boundary
 
 Full IOAPIC IRQ ownership beyond the timer route, CPU hot-offline evacuation,
-remote TLB-shootdown stress beyond boot certification, per-thread FPU/SIMD
-state switching (the kernel and shipped Ring-3 images are currently
-general-purpose-register only), and supported-hardware multi-vCPU validation remain required before
-claiming complete SMP hardware support. The TLB request/acknowledgement
+remote TLB-shootdown stress beyond boot certification, supported-hardware
+FPU/SIMD and multi-vCPU validation, and measured context-switch overhead remain
+required before claiming complete SMP hardware support. The TLB request/acknowledgement
 contract and AP startup handshake are implemented and fail closed when an AP
 cannot reach the published state. These capabilities are deliberately
 isolated behind explicit gates rather than represented by a fake single-CPU
