@@ -1071,6 +1071,9 @@ static void scheduler_self_test(void) {
 
     if (task_system_init()!=0)
         kernel_panic("task system initialization failed");
+#ifdef ZEROOS_TEST_SCHEDULER_PANIC_DIAGNOSTICS
+    task_panic_diagnostics_self_test();
+#endif
     if (scheduler_init()!=0)
         kernel_panic("scheduler initialization failed");
     if (process_system_init()!=0)
