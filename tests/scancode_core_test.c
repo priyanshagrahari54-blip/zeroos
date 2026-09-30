@@ -8,6 +8,34 @@ static int feed(struct scancode_decoder *d, unsigned char byte,
     return scancode_feed(d, byte, ev);
 }
 
+static void test_all_byte_values_and_stream_stress(void) {
+    struct scancode_decoder d;
+    struct zeroos_input_event ev;
+    uint32_t state = 0x5eed1234U;
+
+    /* Every possible device byte following E0 is safe, including malformed
+     * and unmapped values. Reset state between cases for reproducibility. */
+    for (uint32_t byte = 0; byte < 256U; ++byte) {
+        scancode_decoder_init(&d);
+        assert(feed(&d, 0xe0, &ev) == 0);
+        int emitted = feed(&d, (unsigned char)byte, &ev);
+        assert(emitted == 0 || emitted == 1);
+        if (emitted)
+            assert(ev.kind == ZEROOS_INPUT_KIND_KEY);
+    }
+
+    /* Exercise long mixed-prefix/make/break streams with a fixed seed. This
+     * is a bounds/lifetime stress test, not a model of keyboard semantics. */
+    scancode_decoder_init(&d);
+    for (uint32_t i = 0; i < 250000U; ++i) {
+        state = state * 1664525U + 1013904223U;
+        int emitted = feed(&d, (unsigned char)(state >> 24), &ev);
+        assert(emitted == 0 || emitted == 1);
+        if (emitted)
+            assert(ev.kind == ZEROOS_INPUT_KIND_KEY);
+    }
+}
+
 int main(void) {
     struct scancode_decoder d;
     struct zeroos_input_event ev;
@@ -99,5 +127,6 @@ int main(void) {
     scancode_decoder_init(&d);
     assert(feed(&d, 0x02, &ev) == 1 && ev.code == '1');
 
+    test_all_byte_values_and_stream_stress();
     return 0;
 }
