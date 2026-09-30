@@ -173,6 +173,8 @@ uint64_t task_stack_high_water(const struct task *task);
  * through a live hardware interrupt frame.
  */
 int task_debug_validate(void);
+/* Deliberately enters the scheduler diagnostic panic path in CI fault builds. */
+void task_panic_diagnostics_self_test(void);
 uint64_t task_frame_resume_count(void);
 /* CPUs on which a real (non-idle) task has executed since scheduler start. */
 uint64_t task_scheduler_task_cpu_mask(void);
