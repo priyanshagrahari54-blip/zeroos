@@ -203,14 +203,17 @@ clean state initialization/reset and kept AVX disabled.
 of save/restore helper on the sandbox CPU), linked `kernel-simd-check`,
 desktop 120,907/0, compatibility 107/0, hardware-core tests and storage host
 recovery checks.
-- Runtime integration coverage now has two tasks hold distinct XMM0/XMM7
-patterns over repeated yields; CI is required to observe the serial milestone
-`ZEROOS: per-task FPU/SSE context switching passed.` No CI run has yet tested
-this worktree revision.
+- Runtime integration coverage has two tasks hold distinct XMM0/XMM7 patterns
+over repeated yields and verifies the marker
+`ZEROOS: per-task FPU/SSE context switching passed.` Exact-SHA GitHub Actions
+run [36705807463](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36705807463)
+on `4e78e3f0ca064930ce895f23ce7f4a3533886dac` passed the QEMU boot block,
+including repeated 2-vCPU boots and 4-vCPU SMP certification. This is QEMU
+implementation evidence, not physical-hardware certification.
 - Local QEMU/boot evidence: **not run**; `qemu-system-x86_64` and
-`grub-mkrescue` are absent. Physical hardware, multi-vCPU migration, and
-context-switch performance remain untested. This does not clear the Stage 1
-gate or change the Stage 10 **BLOCKED** disposition.
+`grub-mkrescue` are absent. Physical hardware, cross-CPU FPU migration-specific
+coverage, and context-switch performance remain untested. This does not clear
+the Stage 1 gate or change the Stage 10 **BLOCKED** disposition.
 
 ### Stage 10 release gate disposition
 

@@ -658,13 +658,13 @@ A roadmap statement is never evidence of implementation.
 Per-task x87/MMX/SSE2 save/restore has been implemented in both cooperative and IRQ-exit scheduler
 handoff paths using aligned FXSAVE64 images. Compiler-generated kernel SIMD
 remains prohibited; AVX/XSAVE is not enabled. The local host FPU helper test,
-linked instruction audit, and complete `make check` pass. A two-task XMM
-regression is now required by the CI QEMU scheduler certification. The local
-environment lacks GRUB/QEMU, so this change has **not yet been QEMU runtime
-validated** in this worktree; supported physical-hardware testing, SMP
-migration evidence, and context-switch overhead measurement remain open. This
-is an implementation increment only, not Stage 1 completion or production
-certification.
+linked instruction audit, and complete `make check` pass. Exact-SHA GitHub
+Actions run [36705807463](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36705807463)
+on `4e78e3f0ca064930ce895f23ce7f4a3533886dac` passed QEMU boot certification,
+including the two-task XMM regression and 4-vCPU SMP job. Supported
+physical-hardware testing, targeted cross-CPU FPU migration evidence, and
+context-switch overhead measurement remain open. This is an implementation
+increment only, not Stage 1 completion or production certification.
 
 
 ## Stage 10 actual execution status (2026-09-29)
