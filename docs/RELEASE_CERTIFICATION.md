@@ -1,8 +1,8 @@
 # ZEROOS Stage 10 Release Certification
 
 - **Certification status:** BLOCKED
-- **Assessment date:** 2026-09-29
-- **Assessed source:** `a184b4ef00ee52022bd47624d5f441f14499d113`
+- **Assessment date:** 2026-09-30
+- **Assessed source:** `eff20fc7f6345a4541d04497314119f781f102aa`
 - **Recommendation:** DO NOT RELEASE as a production-ready operating system. A development/evaluation build may be circulated only with its limitations clearly stated.
 
 This report distinguishes implementation from evidence and from support. A host test is not a target-machine test; QEMU is not bare metal; detection is not operation; and passing a subset does not close unrelated release gates.
@@ -21,21 +21,23 @@ The code fix discovered by ASan/UBSan landed in `91e30eb7eae80b832f8daecdd1dee8e
 
 ## Reproducible evidence recorded
 
-1. `make check` on this checkout: PASS, exit 0 (2026-09-29). Host GCC 12.2.0, GNU ld 2.40, Python 3.11.2. The target included kernel ELF compilation and SIMD-instruction check, ABI/runtime consistency, hosted core/desktop/compatibility tests and storage GPT/ZJFS image recovery self-test. Desktop: 120,907 assertions, zero failures; compatibility core: 107 checks, zero failures. See `VALIDATION.md` for the command/output scope.
+1. `make check` on this checkout: PASS, exit 0 (2026-09-30). Host GCC 12.2.0, GNU ld 2.40, Python 3.11.2. The target included kernel ELF compilation and SIMD-instruction check, ABI/runtime consistency, hosted core/desktop/compatibility tests and storage GPT/ZJFS image recovery self-test. Desktop: 120,907 assertions, zero failures; compatibility core: 107 checks, zero failures. See `VALIDATION.md` for the command/output scope.
 2. GitHub Actions [run 36651886021](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36651886021): SUCCESS on source/test commit `a184b4ef00ee52022bd47624d5f441f14499d113`, including the scancode bounds fix and malformed-stream regression. Reported successful steps: kernel/ISO build, `make check`, ELF verification, QEMU boot tests (repeated 2-vCPU, 4-vCPU, NX-disabled), and AHCI/NVMe persistence certification. Emulated CI only.
-3. Earlier documentation run [36611709655](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36611709655) also passed. Current code/test run 36651886021 on `a184b4ef00ee52022bd47624d5f441f14499d113` is the source verification for this assessment.
+3. Earlier documentation run [36611709655](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36611709655) also passed. For the current VMM changes, see exact-code run 36747020237 and the VMM-marker-gated follow-up 36748022072 in item 8.
 4. GCC `-fanalyzer`: kernel/hardware-core ELF build and SIMD gate passed; source-only desktop/compatibility/scancode checks passed. Full desktop analyzer test compilation emits cross-translation-unit aggregate-return warnings in test call sites; with that warning downgraded, host suites pass. See `STAGE_10_REPORT.md`; this does not establish absence of defects.
 5. Local `make`: BLOCKED at ISO packaging with exit 2 because `grub-mkrescue` is missing. This environment also has no `qemu-system-x86_64` or `xorriso`. An attempt to install CI-equivalent packages failed because Debian mirror connections were unavailable; local boot was instead covered by CI. The kernel ELF had been built by `make check`; local guest boot not run.
 6. A workflow dispatch on `arena/01a0ee2b-zeroos` initially returned HTTP 403 (`Resource not accessible by integration`); no run was created by that request. Pushing the session branch subsequently triggered the passing runs above.
 7. No physical G560/reference machine, physical sensors, or production workload equipment was available. See `HARDWARE.md` and `PERFORMANCE_BASELINE.md`.
+8. VMM teardown and shared-MMIO lifetime changes were implemented in `4f6df30457b51dc9dbb6679b1afd4ab6931fe21b`; local `make check` passed. CI run [36747020237](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36747020237) passed on that exact code commit, including QEMU boot/SMP and q35 AHCI/NVMe two-boot storage. The workflow was then strengthened to require both VMM boot-self-test markers; run [36748022072](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36748022072) passed on `eff20fc7f6345a4541d04497314119f781f102aa`, including those serial gates. This is QEMU evidence, not physical hardware or production certification.
 
 ## Release gates
 
 | Gate | Current evidence | Status |
 |---|---|---|
 | Reproducible release build | ELF build and exact-SHA CI build pass; no independent bit-for-bit rebuild comparison in this assessment | Partial |
-| CI | Exact-code GitHub run 36651886021 PASS; dispatch API restricted but branch push trigger worked | Tested (CI) |
-| Kernel / scheduler / SMP | CI QEMU milestones and stress assertions pass at 2/4 vCPU; no physical SMP certification | Tested (emulation) |
+| CI | Exact-code GitHub run 36747020237 and VMM-marker-gated run 36748022072 PASS; dispatch API restricted but branch push trigger worked | Tested (CI) |
+| Kernel / scheduler / SMP | Exact-code VMM run 36747020237 and gated follow-up 36748022072 pass QEMU boot/SMP at 2/4 vCPU; no physical SMP certification | Tested (emulation) |
+| VMM unmap/TLB/frame lifetime and page-table reclamation | Boot tests assert owned-frame refcounts, empty private table reclamation, and shared MMIO propagation; CI requires both VMM self-test markers | Tested (QEMU); physical SMP lifetime stress and production readiness open |
 | Memory pressure / 2 GB behavior | No measured 2 GB machine run, reclaim/OOM/desktop/browser scenario | Open |
 | Filesystem recovery | Host image fsck/recovery plus QEMU persistence evidence | Partial; no real power-loss/HDD validation |
 | HDD stress | No identified physical HDD, queue/latency/throughput/temperature measurements | Open |

@@ -1,8 +1,8 @@
 # ZEROOS Performance Baseline
 
 **Status: NO PRODUCTION PERFORMANCE BASELINE**
-**Assessment date:** 2026-09-29
-**Source SHA:** `a184b4ef00ee52022bd47624d5f441f14499d113`
+**Assessment date:** 2026-09-30
+**Source SHA:** `eff20fc7f6345a4541d04497314119f781f102aa`
 
 ## Measurement policy
 
@@ -12,7 +12,7 @@ A valid performance result must include the physical hardware profile, kernel co
 
 | Field | Observed value | Caveat |
 |---|---|---|
-| Source | `a184b4ef00ee52022bd47624d5f441f14499d113` | Checked-out source SHA |
+| Source | `eff20fc7f6345a4541d04497314119f781f102aa` | Checked-out source SHA |
 | Compiler | GCC 12.2.0 | Local sandbox |
 | Linker | GNU ld 2.40 | Local sandbox |
 | Python | 3.11.2 | Storage tooling |
@@ -30,7 +30,8 @@ A valid performance result must include the physical hardware profile, kernel co
 | Desktop host suite | 120,907 assertions, 0 failures | No frame-time/FPS or real desktop residency measurement |
 | Compatibility host suite | 107 checks, 0 failures | No application runtime performance |
 | Storage host self-test | PASS, including 3,000,000-byte fixture and fsck checks | Not HDD throughput, IOPS, seek latency, queue depth, CPU cost or power-loss behavior |
-| GitHub Actions | Exact-SHA build/QEMU/storage workflow PASS | Emulated timings are not recorded here and are not hardware performance data |
+| GitHub Actions | Exact-SHA runs 36747020237 and 36748022072 PASS; second run gates the VMM reclamation/MMIO self-test markers | Emulated timings are not recorded here and are not hardware performance data |
+| VMM teardown self-tests | Owned-page lifetime, page-table reclamation and shared-MMIO visibility assertions are included in the boot test | Functional checks only; no TLB latency, allocator, RSS or workload-performance measurement |
 
 ## Certified workload results
 
