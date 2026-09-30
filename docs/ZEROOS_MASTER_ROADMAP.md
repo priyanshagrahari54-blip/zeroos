@@ -672,8 +672,12 @@ increment only, not Stage 1 completion or production certification.
 under one allocator lock, preventing invalid tails from partially releasing a
 run. A kernel boot self-test covers a double-released prefix with an allocated
 tail; the CI workflow requires its allocator self-test milestone. Local
-`make check` passes. QEMU evidence for this follow-up is pending, and this does
-not complete the Stage 1 gate.
+`make check` and a freestanding GCC `-fanalyzer -Werror` syntax pass for
+`kernel/memory.c` pass. Exact-SHA CI run
+[36733533696](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36733533696)
+on `7e08366ce65e8fa7e6c175d4a051a690e3b22a91` passed the QEMU boot, SMP, and
+storage gates, including this allocator self-test. Physical hardware and other
+Stage 1 gates remain open; this does not complete Stage 1.
 
 
 ## Stage 10 actual execution status (2026-09-29)

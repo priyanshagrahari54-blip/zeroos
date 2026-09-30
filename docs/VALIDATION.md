@@ -222,9 +222,11 @@ before releasing any frame references. Its boot self-test frees one page of a
 two-page run, attempts to release the now-invalid run, and verifies that the
 still-owned second page and allocator count are unchanged before cleanup.
 `make check` and a freestanding GCC `-fanalyzer -Werror` syntax pass for
-`kernel/memory.c` passed locally after this change. The boot milestone is now
-an explicit CI grep gate; QEMU evidence for this exact allocator change is
-pending.
+`kernel/memory.c` passed locally after this change. Exact-SHA CI run
+[36733533696](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36733533696)
+on `7e08366ce65e8fa7e6c175d4a051a690e3b22a91` passed, including the new boot
+self-test grep and the workflow's QEMU boot/SMP/storage gates. This is QEMU
+coverage, not physical-hardware evidence.
 
 ### Stage 10 release gate disposition
 
