@@ -71,5 +71,7 @@ int ipc_pipe_read_timeout(struct process *owner, zeroos_ipc_handle_t handle,
                           uint64_t *length_out, uint64_t timeout_ticks);
 int ipc_process_revoke(struct process *owner);
 int ipc_debug_validate(void);
+/* Deterministic byte-stream pipe contract certification; no blocking waits. */
+int ipc_pipe_contract_self_test(void);
 
 #endif

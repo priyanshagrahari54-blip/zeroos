@@ -774,6 +774,101 @@ int ipc_process_revoke(struct process *owner) {
     return (int)revoked;
 }
 
+int ipc_pipe_contract_self_test(void) {
+    /*
+     * This is deliberately a non-blocking kernel contract probe. It exercises
+     * the real capability/pipe implementation, not a model of the ring.
+     * Blocking wake/close races remain covered by the scheduler/userspace
+     * integration probes.
+     */
+    static struct process probe;
+    static uint8_t source[ZEROOS_IPC_PIPE_CAPACITY + 16U];
+    static uint8_t readback[ZEROOS_IPC_PIPE_CAPACITY + 16U];
+    zeroos_ipc_handle_t local=0;
+    zeroos_ipc_handle_t peer=0;
+    uint64_t length=0;
+
+    probe.pid=0x5a504950ULL;
+    probe.generation=1;
+    probe.state=PROCESS_RUNNING;
+
+    for (uint32_t i=0; i<ZEROOS_IPC_PIPE_CAPACITY+16U; ++i)
+        source[i]=(uint8_t)(i&0xffU);
+
+    if (ipc_create_pipe(&probe,&local,&peer)!=0)
+        return -1;
+
+    /* Leave five bytes free, then request ten: exactly five must transfer. */
+    if (ipc_pipe_write_timeout(&probe,local,source,
+                               ZEROOS_IPC_PIPE_CAPACITY-5U,0,
+                               ZEROOS_IPC_TIMEOUT_FOREVER)
+            !=ZEROOS_IPC_PIPE_CAPACITY-5U)
+        goto fail;
+    if (ipc_pipe_write_timeout(&probe,local,
+                               source+ZEROOS_IPC_PIPE_CAPACITY-5U,10U,0,
+                               ZEROOS_IPC_TIMEOUT_FOREVER)!=5)
+        goto fail;
+
+    if (ipc_pipe_read_timeout(&probe,peer,readback,
+                              ZEROOS_IPC_PIPE_CAPACITY,
+                              ZEROOS_IPC_FLAG_PEEK,&length,
+                              ZEROOS_IPC_TIMEOUT_FOREVER)
+            !=ZEROOS_IPC_PIPE_CAPACITY ||
+        length!=ZEROOS_IPC_PIPE_CAPACITY)
+        goto fail;
+    for (uint32_t i=0; i<ZEROOS_IPC_PIPE_CAPACITY; ++i)
+        if (readback[i]!=source[i])
+            goto fail;
+
+    /* PEEK is non-consuming: a second read sees the same first byte. */
+    if (ipc_pipe_read_timeout(&probe,peer,readback,1U,
+                              ZEROOS_IPC_FLAG_PEEK,&length,
+                              ZEROOS_IPC_TIMEOUT_FOREVER)!=1 ||
+        length!=1 || readback[0]!=source[0])
+        goto fail;
+
+    if (ipc_pipe_read_timeout(&probe,peer,readback,
+                              ZEROOS_IPC_PIPE_CAPACITY,0,&length,
+                              ZEROOS_IPC_TIMEOUT_FOREVER)
+            !=ZEROOS_IPC_PIPE_CAPACITY ||
+        length!=ZEROOS_IPC_PIPE_CAPACITY)
+        goto fail;
+    for (uint32_t i=0; i<ZEROOS_IPC_PIPE_CAPACITY; ++i)
+        if (readback[i]!=source[i])
+            goto fail;
+
+    if (ipc_pipe_write_timeout(&probe,local,source,
+                               ZEROOS_IPC_PIPE_CAPACITY,0,
+                               ZEROOS_IPC_TIMEOUT_FOREVER)
+            !=ZEROOS_IPC_PIPE_CAPACITY)
+        goto fail;
+    if (ipc_pipe_write_timeout(&probe,local,source,1U,
+                               ZEROOS_IPC_FLAG_NONBLOCK,
+                               ZEROOS_IPC_TIMEOUT_FOREVER)
+            !=-ZEROOS_EAGAIN)
+        goto fail;
+    if (ipc_pipe_write_timeout(&probe,local,source,1U,0,0)
+            !=-ZEROOS_ETIMEDOUT)
+        goto fail;
+
+    if (ipc_close(&probe,peer)!=0)
+        goto fail;
+    if (ipc_pipe_write_timeout(&probe,local,source,1U,
+                               ZEROOS_IPC_FLAG_NONBLOCK,
+                               ZEROOS_IPC_TIMEOUT_FOREVER)
+            !=-ZEROOS_EPIPE)
+        goto fail;
+    if (ipc_close(&probe,local)!=0)
+        return -1;
+
+    return ipc_debug_validate();
+
+fail:
+    (void)ipc_close(&probe,peer);
+    (void)ipc_close(&probe,local);
+    return -1;
+}
+
 int ipc_debug_validate(void) {
     uint64_t flags=spin_lock_irqsave(&ipc_lock);
     for (uint32_t i=0; i<ZEROOS_IPC_MAX_ENDPOINTS; ++i) {

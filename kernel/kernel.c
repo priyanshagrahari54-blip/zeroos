@@ -990,7 +990,10 @@ static void scheduler_self_test(void) {
     if (ipc_system_init()!=0 || ipc_debug_validate()!=0 ||
         shmem_system_init()!=0 || shmem_debug_validate()!=0)
         kernel_panic("IPC/shared-memory capability core initialization failed");
+    if (ipc_pipe_contract_self_test()!=0)
+        kernel_panic("pipe byte-stream contract certification failed");
     serial_write_public("ZEROOS: bounded capability IPC core initialized.\n");
+    serial_write_public("ZEROOS: pipe byte-stream contract certification passed.\n");
     if (userspace_system_init()!=0)
         kernel_panic("userspace core initialization failed");
     serial_write_public("ZEROOS: Ring-3 GDT and versioned syscall ABI initialized.\n");
