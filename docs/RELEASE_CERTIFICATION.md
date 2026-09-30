@@ -2,7 +2,7 @@
 
 - **Certification status:** BLOCKED
 - **Assessment date:** 2026-09-29
-- **Assessed source:** `91e30eb7eae80b832f8daecdd1dee8e43424a2f9`
+- **Assessed source:** `a184b4ef00ee52022bd47624d5f441f14499d113`
 - **Recommendation:** DO NOT RELEASE as a production-ready operating system. A development/evaluation build may be circulated only with its limitations clearly stated.
 
 This report distinguishes implementation from evidence and from support. A host test is not a target-machine test; QEMU is not bare metal; detection is not operation; and passing a subset does not close unrelated release gates.
@@ -17,13 +17,13 @@ This report distinguishes implementation from evidence and from support. A host 
 
 These labels are independent. No hardware combination has Stage 10 hardware certification in this assessment.
 
-The code fix discovered by ASan/UBSan is included in source commit `91e30eb7eae80b832f8daecdd1dee8e43424a2f9`; GitHub Actions run 36610649336 passed at that commit. The remaining certification blockers concern physical hardware and production-scope evidence, not an unvalidated local-only code fix.
+The code fix discovered by ASan/UBSan landed in `91e30eb7eae80b832f8daecdd1dee8e43424a2f9`; the decoder stress-test follow-up is in `a184b4ef00ee52022bd47624d5f441f14499d113`. GitHub Actions run 36651886021 passed on that exact source/test commit. The remaining certification blockers concern physical hardware and production-scope evidence.
 
 ## Reproducible evidence recorded
 
 1. `make check` on this checkout: PASS, exit 0 (2026-09-29). Host GCC 12.2.0, GNU ld 2.40, Python 3.11.2. The target included kernel ELF compilation and SIMD-instruction check, ABI/runtime consistency, hosted core/desktop/compatibility tests and storage GPT/ZJFS image recovery self-test. Desktop: 120,907 assertions, zero failures; compatibility core: 107 checks, zero failures. See `VALIDATION.md` for the command/output scope.
-2. GitHub Actions [run 36610649336](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36610649336): SUCCESS on source commit `91e30eb7eae80b832f8daecdd1dee8e43424a2f9`, including the scancode table bounds fix. Reported successful steps: kernel/ISO build, `make check`, ELF verification, QEMU boot tests (repeated 2-vCPU, 4-vCPU, NX-disabled), and AHCI/NVMe persistence certification. Emulated CI only.
-3. Latest branch run [36611709655](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36611709655) on documentation-only commit `fd118ae1e2a141fe25e9df54bc949ac34d06ac3c`: SUCCESS across build, release checks, QEMU and emulated AHCI/NVMe jobs; implementation sources are unchanged from the source-tested commit.
+2. GitHub Actions [run 36651886021](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36651886021): SUCCESS on source/test commit `a184b4ef00ee52022bd47624d5f441f14499d113`, including the scancode bounds fix and malformed-stream regression. Reported successful steps: kernel/ISO build, `make check`, ELF verification, QEMU boot tests (repeated 2-vCPU, 4-vCPU, NX-disabled), and AHCI/NVMe persistence certification. Emulated CI only.
+3. Earlier documentation run [36611709655](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36611709655) also passed. Current code/test run 36651886021 on `a184b4ef00ee52022bd47624d5f441f14499d113` is the source verification for this assessment.
 4. GCC `-fanalyzer`: kernel/hardware-core ELF build and SIMD gate passed; source-only desktop/compatibility/scancode checks passed. Full desktop analyzer test compilation emits cross-translation-unit aggregate-return warnings in test call sites; with that warning downgraded, host suites pass. See `STAGE_10_REPORT.md`; this does not establish absence of defects.
 5. Local `make`: BLOCKED at ISO packaging with exit 2 because `grub-mkrescue` is missing. This environment also has no `qemu-system-x86_64` or `xorriso`. An attempt to install CI-equivalent packages failed because Debian mirror connections were unavailable; local boot was instead covered by CI. The kernel ELF had been built by `make check`; local guest boot not run.
 6. A workflow dispatch on `arena/01a0ee2b-zeroos` initially returned HTTP 403 (`Resource not accessible by integration`); no run was created by that request. Pushing the session branch subsequently triggered the passing runs above.
@@ -34,7 +34,7 @@ The code fix discovered by ASan/UBSan is included in source commit `91e30eb7eae8
 | Gate | Current evidence | Status |
 |---|---|---|
 | Reproducible release build | ELF build and exact-SHA CI build pass; no independent bit-for-bit rebuild comparison in this assessment | Partial |
-| CI | Exact-code GitHub run 36610649336 and latest branch run 36611709655 PASS; dispatch API restricted | Tested (CI) |
+| CI | Exact-code GitHub run 36651886021 PASS; dispatch API restricted but branch push trigger worked | Tested (CI) |
 | Kernel / scheduler / SMP | CI QEMU milestones and stress assertions pass at 2/4 vCPU; no physical SMP certification | Tested (emulation) |
 | Memory pressure / 2 GB behavior | No measured 2 GB machine run, reclaim/OOM/desktop/browser scenario | Open |
 | Filesystem recovery | Host image fsck/recovery plus QEMU persistence evidence | Partial; no real power-loss/HDD validation |

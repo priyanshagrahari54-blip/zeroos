@@ -1,7 +1,7 @@
 # ZEROOS Compatibility Matrix
 
 **Assessment date:** 2026-09-29
-**Source SHA:** `91e30eb7eae80b832f8daecdd1dee8e43424a2f9`
+**Source SHA:** `a184b4ef00ee52022bd47624d5f441f14499d113`
 **Rule:** parser/policy presence is not runtime support. Each row distinguishes implemented, tested and operational status. Compatibility is per exact application, runtime build, hardware, driver and workload; no universal claim is made.
 
 ## Application/runtime matrix

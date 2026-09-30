@@ -2,7 +2,7 @@
 
 **Status: NO PRODUCTION PERFORMANCE BASELINE**
 **Assessment date:** 2026-09-29
-**Source SHA:** `91e30eb7eae80b832f8daecdd1dee8e43424a2f9`
+**Source SHA:** `a184b4ef00ee52022bd47624d5f441f14499d113`
 
 ## Measurement policy
 
@@ -12,7 +12,7 @@ A valid performance result must include the physical hardware profile, kernel co
 
 | Field | Observed value | Caveat |
 |---|---|---|
-| Source | `91e30eb7eae80b832f8daecdd1dee8e43424a2f9` | Checked-out source SHA |
+| Source | `a184b4ef00ee52022bd47624d5f441f14499d113` | Checked-out source SHA |
 | Compiler | GCC 12.2.0 | Local sandbox |
 | Linker | GNU ld 2.40 | Local sandbox |
 | Python | 3.11.2 | Storage tooling |

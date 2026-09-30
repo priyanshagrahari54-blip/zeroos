@@ -2,7 +2,7 @@
 
 **Status: BLOCKED**
 **Assessment date:** 2026-09-29
-**Source SHA:** `91e30eb7eae80b832f8daecdd1dee8e43424a2f9`
+**Source SHA:** `a184b4ef00ee52022bd47624d5f441f14499d113`
 **Recommendation:** DO NOT RELEASE as production-ready.
 **Scope:** source/host tests, existing exact-SHA CI evidence, and available build environment. No physical target hardware was present. The source commit includes the scancode bounds fix described below; the linked GitHub run validates this exact source commit.
 
@@ -27,10 +27,10 @@ The only Stage 10 hardware profile recorded is the sandbox environment profile i
 | `make check` | PASS, exit 0, 2026-09-29, on the current working tree. GCC 12.2.0; GNU ld 2.40; Python 3.11.2. Kernel ELF/SIMD, userspace ABI/runtime, core tests, desktop, compatibility, and storage host self-test all ran |
 | Desktop host tests | 120,907 assertions, 0 failures; includes bounded host stress/soak suites, not a long-duration OS soak |
 | Compatibility host tests | 107 checks, 0 failures; compatibility-core tests, not Windows application execution |
-| Sanitizer follow-up | Initial ASan/UBSan run exposed the E0-prefixed PS/2 table overflow (index 200 into 128 entries). Expanded to 256 slots. The broad desktop/compat/hardware-core sanitizer suites passed after the fix; then the focused scancode test was extended to exhaust all E0-following bytes and 250,000 deterministic mixed-stream bytes and passed under ASan/UBSan. The additional stream test is local-only; CI validates the table-size fix and original extended-key tests. |
+| Sanitizer follow-up | Initial ASan/UBSan run exposed the E0-prefixed PS/2 table overflow (index 200 into 128 entries). Expanded to 256 slots. The broad desktop/compat/hardware-core sanitizer suites passed after the fix; the focused scancode test was then extended to exhaust all E0-following bytes and 250,000 deterministic mixed-stream bytes and passed under ASan/UBSan. The extended test is included in source commit `a184b4ef00ee52022bd47624d5f441f14499d113` and CI run 36651886021. |
 | Storage host tools | GPT/ZJFS fixture create, checksum and fsck/recovery scenarios PASS; not a physical HDD or actual power-loss test |
-| Exact-SHA CI | [Workflow run 36610649336](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36610649336), SUCCESS at source commit `91e30eb7eae80b832f8daecdd1dee8e43424a2f9`. Build, `make check`, kernel verification, 2-vCPU repeated QEMU, 4-vCPU QEMU, NX-disabled QEMU and AHCI/NVMe persistence job all reported success; this run includes the scancode bounds fix. |
-| Latest branch CI | [Workflow run 36611709655](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36611709655), SUCCESS on documentation-only commit `fd118ae1e2a141fe25e9df54bc949ac34d06ac3c`; same implementation SHA as the tested code commit above. |
+| Exact-source CI | [Workflow run 36651886021](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36651886021), SUCCESS at source commit `a184b4ef00ee52022bd47624d5f441f14499d113`. Build, `make check`, kernel verification, repeated 2-vCPU QEMU, 4-vCPU QEMU, NX-disabled QEMU, AHCI/NVMe persistence, and the exhaustive/randomized decoder test all passed. |
+| Earlier docs CI | [Workflow run 36611709655](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36611709655), SUCCESS on documentation-only commit `fd118ae1e2a141fe25e9df54bc949ac34d06ac3c`; superseded by the exact-source run above. |
 | Local ISO packaging | BLOCKED, `grub-mkrescue` missing; no local ISO/QEMU boot |
 | New CI dispatch | Attempted for session branch; HTTP 403 `Resource not accessible by integration`, so no new run |
 | Physical target | Not available; no Lenovo G560, 2 GB machine or actual network/display/media adapter tested |
@@ -39,7 +39,7 @@ The only Stage 10 hardware profile recorded is the sandbox environment profile i
 
 A supplementary host run used `make -j3 CC='gcc -fsanitize=address,undefined -fno-omit-frame-pointer' desktop-check compat-check hardware-core-test`. The first run stopped in `tests/scancode_core_test.c`: the E0-prefixed PS/2 key index is `0x80 | scancode`, but `SCANCODER_TABLE_SIZE` was only 128. An extended key (index 200) therefore caused out-of-bounds reads/writes in `kernel/scancode_core.c` and an AddressSanitizer stack-buffer-overflow. Existing functional tests exercised this path but did not detect the memory error.
 
-The fix changes the decoder table to 256 entries (the full base + E0-prefixed index space) and asserts the size in the test. The test now also exercises all 256 possible bytes after E0 and a deterministic 250,000-byte mixed stream. ASan/UBSan passed on that expanded scancode stress test; the broader desktop, compatibility and hardware-core suites passed under ASan/UBSan before that final test-only extension, and `make check` passed after it. The memory-safety fix is committed in `91e30eb7eae80b832f8daecdd1dee8e43424a2f9` and validated by run 36610649336; the newer stream-stress test is local-only and is not in that CI run. The sandbox cannot install QEMU/GRUB packages because Debian mirror connections failed; guest boot was validated by CI, not locally.
+The fix changes the decoder table to 256 entries (the full base + E0-prefixed index space) and asserts the size in the test. The test now also exercises all 256 possible bytes after E0 and a deterministic 250,000-byte mixed stream. ASan/UBSan passed on that expanded scancode stress test; the broader desktop, compatibility and hardware-core suites passed under ASan/UBSan before that final test-only extension, and `make check` passed after it. The memory-safety fix is committed in `91e30eb7eae80b832f8daecdd1dee8e43424a2f9`; the expanded stream test is in `a184b4ef00ee52022bd47624d5f441f14499d113` and passed in CI run 36651886021. The sandbox cannot install QEMU/GRUB packages because Debian mirror connections failed; guest boot was validated by CI, not locally.
 
 ## GCC static-analysis follow-up
 
@@ -103,7 +103,7 @@ This is an evidence classification, not a claim that every failure mode has been
 6. Windows code is partial compatibility-core/PE work; no Windows application is demonstrated. Android runtime is absent. No game compatibility or production media playback is certified.
 7. ZERO AI has tested broker policy components but no backend linked; it must remain optional and dormant.
 8. No thermal, battery, long-duration system soak, or published target performance baseline/regression comparison.
-9. Local ISO packaging could not be completed in the sandbox because GRUB/QEMU packages could not be installed from unreachable Debian mirrors. GitHub workflow dispatch was denied by API permissions, but pushing the session branch triggered the passing exact-source run 36610649336.
+9. Local ISO packaging could not be completed in the sandbox because GRUB/QEMU packages could not be installed from unreachable Debian mirrors. GitHub workflow dispatch was denied by API permissions, but pushing the session branch triggered the passing exact-source run 36651886021.
 
 These are release blockers due to missing evidence and incomplete production scope, not claims that a specific defect was reproduced. No user impact may be represented as safe based on absence of a test.
 
@@ -121,4 +121,4 @@ These are release blockers due to missing evidence and incomplete production sco
 - **RECOVERY RESULTS:** Host filesystem recovery and emulated guest recovery/persistence subsets pass; physical recovery/update rollback not certified.
 - **KNOWN LIMITATIONS:** See this report and `COMPATIBILITY_MATRIX.md`.
 - **RELEASE RECOMMENDATION:** DO NOT RELEASE as production-ready.
-- **COMMIT SHA (tested code):** `91e30eb7eae80b832f8daecdd1dee8e43424a2f9`
+- **COMMIT SHA (tested code):** `a184b4ef00ee52022bd47624d5f441f14499d113`
