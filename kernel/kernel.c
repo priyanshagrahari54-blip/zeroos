@@ -734,8 +734,22 @@ static void scheduler_fpu_probe_worker(void *argument) {
         if (observed0.lane[0]!=expected->lane[0] ||
             observed0.lane[1]!=expected->lane[1] ||
             observed7.lane[0]!=expected->lane[0] ||
-            observed7.lane[1]!=expected->lane[1])
+            observed7.lane[1]!=expected->lane[1]) {
+            serial_write_public("ZEROOS: FPU probe mismatch expected=");
+            serial_write_u64(expected->lane[0]);
+            serial_write_public(",");
+            serial_write_u64(expected->lane[1]);
+            serial_write_public(" xmm0=");
+            serial_write_u64(observed0.lane[0]);
+            serial_write_public(",");
+            serial_write_u64(observed0.lane[1]);
+            serial_write_public(" xmm7=");
+            serial_write_u64(observed7.lane[0]);
+            serial_write_public(",");
+            serial_write_u64(observed7.lane[1]);
+            serial_write_public("\n");
             kernel_panic("per-task FPU/SSE state corruption");
+        }
     }
     atomic_u64_fetch_add(&fpu_probe_done,1);
 }
