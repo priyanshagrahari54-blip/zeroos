@@ -117,8 +117,8 @@ gates. Per-CPU interrupt nesting and count are tracked in `struct cpu_local`.
 |---|---|
 | 8259 PIC fallback or validated LAPIC + IOAPIC timer route | Full Local APIC + IOAPIC IRQ ownership |
 | PIT + invariant-TSC clocksource | APIC/HPET/TSC clock-event layer |
-| Global periodic tick | Per-CPU event scheduling / idle tick suppression |
-| AP startup boundary with per-CPU shape | Per-CPU event scheduling and full SMP interrupt routing |
+| Global PIT tick with bounded AP tick distribution and LAPIC clock-event contract | Per-CPU deadline programming / idle tick suppression |
+| AP startup plus QEMU-tested per-CPU scheduler | Full non-timer SMP IRQ routing and managed device-IRQ ownership |
 | Single IRQ owner | Shared/managed device IRQ registration where required |
 | Hard IRQ handler | Deferred work / threaded device handling |
 | Fail-closed TLB request/ack boundary | SMP invalidation stress and policy integration |

@@ -509,20 +509,18 @@ proof of absence.
 
 #### Latest CI reliability signal (2026-10-01)
 
-Exact-SHA run [36861689464](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36861689464)
-failed the q35 AHCI + NVMe two-boot persistence gate. The available failure
-annotations show the first disk-backed serial tail repeating timer milestones;
-the second reaches `ZEROOS: task context-switch worker completed.` No scheduler
-certification, Ring-3/init, storage discovery, or persistence marker appears
-in the available tails, and no panic marker was observed there. This does not
-establish a storage-code failure or a root cause; it is consistent with the
-known pre-storage scheduler/boot reliability family, but the relationship is
-unproven.
+Exact-SHA run [36873757374](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36873757374)
+passed the standalone Boot test but failed the q35 AHCI + NVMe two-boot
+persistence gate. Disk 2's serial tail ends after the process lifetime pin,
+wait-queue, and context-switch worker markers, without a scheduler heartbeat
+or panic marker. Disk 1 reports scheduler progress through tick 8865 with
+process phase 3, workers 1/1/1, hotplug=1, userspace=1, failures=0, but no
+storage-manager marker. This divergence does not establish a common cause,
+prove storage driver code was reached, or implicate storage itself.
 
-To make the next failure classifiable, the scheduler now emits a bounded
-progress record every 100 timer ticks with independent context/FPU/wait/sleep/
-input/preemption/lifecycle/fairness/process-phase/hotplug/userspace states.
-The storage CI failure trap also surfaces recent non-timer milestones for each
-boot. This instrumentation is diagnostic only: it does not fix the residual
-race or close Stage 1–5. Repeated oversubscribed q35 runs and a cause-specific
-fix are still required.
+The scheduler telemetry and per-disk failure trap made these different
+progress boundaries visible. Follow-up source instrumentation adds process
+probe substeps and messages around storage-task launch to isolate the next
+boundary. This is diagnostic only: it does not fix the residual reliability
+failure or close Stage 1–5. Repeated oversubscribed q35 runs and a
+cause-specific fix are still required.

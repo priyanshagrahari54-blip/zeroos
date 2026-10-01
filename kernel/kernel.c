@@ -467,10 +467,12 @@ static void process_thread_probe_monitor_step(void) {
             serial_write_public("ZEROOS: process lifetime pin self-test passed.\n");
         }
 
+        serial_write_public("ZEROOS: process probe creating child thread.\n");
         if (thread_create_kernel(process_probe_child,
                                   process_thread_probe_child_entry,0,
                                   &thread_probe_child_tid)!=0)
             process_thread_probe_fail("child kernel thread creation failed");
+        serial_write_public("ZEROOS: process probe child thread created.\n");
         thread_probe_child=thread_lookup(thread_probe_child_tid);
         if (!thread_probe_child ||
             thread_probe_child->process!=process_probe_child)
@@ -492,13 +494,18 @@ static void process_thread_probe_monitor_step(void) {
 
         /* Process-owned mapping wrappers must enforce the address-space quota
          * and keep process accounting identical to VMM ownership accounting. */
+        serial_write_public("ZEROOS: process probe address-space test started.\n");
         void *probe_page=page_alloc_zero();
-        if (!probe_page ||
-            process_address_space_map_page(process_probe_parent,
+        if (!probe_page)
+            process_thread_probe_fail("process address-space test page allocation failed");
+        serial_write_public("ZEROOS: process probe page allocated.\n");
+        if (process_address_space_map_page(process_probe_parent,
                                            VMM_SPACE_TEST_VA,
                                            (uint64_t)probe_page,
-                                           VMM_USER|VMM_WRITABLE|VMM_NO_EXECUTE)!=0 ||
-            process_address_space_mapped_pages(process_probe_parent)!=1 ||
+                                           VMM_USER|VMM_WRITABLE|VMM_NO_EXECUTE)!=0)
+            process_thread_probe_fail("process address-space mapping failed");
+        serial_write_public("ZEROOS: process probe page mapped.\n");
+        if (process_address_space_mapped_pages(process_probe_parent)!=1 ||
             !process_address_space_is_user_range(process_probe_parent,
                                                  VMM_SPACE_TEST_VA,
                                                  VMM_PAGE_SIZE,1) ||
@@ -506,17 +513,26 @@ static void process_thread_probe_monitor_step(void) {
                                            VMM_SPACE_TEST_VA,
                                            (uint64_t)probe_page,
                                            VMM_USER|VMM_WRITABLE|VMM_NO_EXECUTE)!=-1) {
-            if (probe_page) page_free(probe_page);
+            page_free(probe_page);
             process_thread_probe_fail("process address-space ownership/quota validation failed");
         }
+        serial_write_public("ZEROOS: process probe mapping ownership checks passed.\n");
         if (process_set_limits(process_probe_parent,4,2,1)!=0 ||
             process_address_space_map_page(process_probe_parent,
                                            VMM_SPACE_TEST_VA+VMM_PAGE_SIZE,
                                            (uint64_t)probe_page,
-                                           VMM_USER|VMM_WRITABLE|VMM_NO_EXECUTE)!=-1 ||
-            process_address_space_unmap_page(process_probe_parent,
-                                             VMM_SPACE_TEST_VA)!=0 ||
-            process_address_space_mapped_pages(process_probe_parent)!=0 ||
+                                           VMM_USER|VMM_WRITABLE|VMM_NO_EXECUTE)!=-1) {
+            page_free(probe_page);
+            process_thread_probe_fail("process address-space quota limit validation failed");
+        }
+        serial_write_public("ZEROOS: process probe quota limit checks passed.\n");
+        if (process_address_space_unmap_page(process_probe_parent,
+                                             VMM_SPACE_TEST_VA)!=0) {
+            page_free(probe_page);
+            process_thread_probe_fail("process address-space unmap failed");
+        }
+        serial_write_public("ZEROOS: process probe page unmapped.\n");
+        if (process_address_space_mapped_pages(process_probe_parent)!=0 ||
             process_set_limits(process_probe_parent,4,2,1024)!=0) {
             page_free(probe_page);
             process_thread_probe_fail("process address-space limit transition failed");
@@ -1107,7 +1123,9 @@ static void scheduler_probe_monitor(void *argument) {
                     kernel_panic("display present readback mismatch");
                 serial_write_public("ZEROOS: display present contract verified.\n");
                 /* Stage 3: storage bring-up runs in its own task. */
+                serial_write_public("ZEROOS: storage manager launch requested.\n");
                 storage_start();
+                serial_write_public("ZEROOS: storage manager launch returned.\n");
                 /* Stage 5: the session/shell process certifies the
                  * display service, compositor and input paths. */
                 session_start();

@@ -16,7 +16,7 @@ does not exist yet, the row says so — no claim is made without it.
 | SOAK | Long-duration idle residency (AI dormancy, 0 resident bytes idle, event-driven automation) + seeded 64-epoch churn with generation-isolation and steady-state bounds (clipboard, downloads FIFO totals, notify caps, lifecycle storms, settings schema isolation, perfcenter rings) | desktop suites | Green |
 | SECURITY | Permission gates (AI grants, automation permission-first ordering), crypto AEAD/ChaCha20 vectors, constant-time MAC compare, denied counters | crypto tests + desktop suites | Green |
 | RECOVERY | Browser crash recovery, service watchdog, display attach/detach, init recovery in guest, rollback contracts | desktop suites + CI boot milestones | Green (host), guest init recovery in CI |
-| QEMU | Boot certification block in CI: panic detection, session milestones, storage certification | `build.yml` on every push/PR | Historical runs listed below include both passes and failures; latest run 36861689464 failed the q35 two-boot storage job before scheduler certification. See the open reliability blocker and do not infer production readiness from prior greens. |
+| QEMU | Boot certification block in CI: panic detection, session milestones, storage certification | `build.yml` on every push/PR | Run 36873757374 passed the build, host gate, image verification and Boot test, but failed q35 AHCI/NVMe two-boot persistence. Disk-backed serial evidence is mixed; the reliability blocker remains open. Do not infer production readiness from prior greens. |
 | REAL-HARDWARE | Physical run of the certified ISO on bare metal | Not available in this environment | **Not run — no claim** |
 
 | PERFORMANCE | Frame pacing/vsync accounting (display tests), governor tier/pressure/effects (governor tests), metrics recorder with interval histogram + percentiles wired into `zd_display_service_present`, FPS monitor frame-time percentiles and budget breaches | desktop suite + session link | Green (host); on-device percentiles pending |
@@ -106,7 +106,8 @@ persistence certification. A green
 | `19ce0fa`, `eaac99c`, `d0bfc0c`, `d294b66`, `ef384d7` (both contexts each) | Batch 8–11 wave: roadmap docs, filemgr+formula+OCR, overview model, binding inventory, stress volume, roadmap batch 11 | SUCCESS |
 | `98ba0ca` | PR context only (push same SHA SUCCESS): `ZEROOS PANIC: CPU hot-offline evacuation failed` during SMP teardown after all milestones | FAILED — same-code context diverged; this remains a release risk until stress-reproduced or root-caused |
 | `a634746` | Push QEMU persistence run: `task owned by multiple CPUs` while storage was active | FAILED — root-caused: `context.S` cleared the outgoing CPU's handoff quarantine before switching RSP to the destination frame; the fix moves the clear after the stack switch and is being re-certified |
-| `7582a9a` / run [36861689464](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36861689464) | q35 AHCI + NVMe, two-boot persistence gate; available serial tails stop at timer progress / `task context-switch worker completed`, before scheduler certification; no panic observed in the supplied tails | FAILED — pre-storage boot-progress failure; root cause not established. Consistent with, but not proven to be, the known oversubscribed-SMP failure family |
+| `7582a9a` / run [36861689464](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36861689464) | q35 AHCI + NVMe, two-boot persistence gate; available serial tails stop at timer progress / `task context-switch worker completed`, before scheduler certification; no panic observed in the supplied tails | FAILED — pre-storage boot-progress failure; root cause not established |
+| `8e02c48` / run [36873757374](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36873757374) | Build, host release gate, image verification and Boot test PASS; q35 AHCI/NVMe two-boot persistence FAILED. Disk 2 tail stops after `process lifetime pin self-test passed`, `wait queue block/wakeup self-test passed`, and `task context-switch worker completed`, without a panic. Disk 1 reaches scheduler progress tick 8865 with process/hotplug/userspace counters complete and zero reported failures, but no storage-manager markers. | FAILED — scheduler/storage-boundary completion failure. Evidence localizes the missing progress to different points across two boots but does not establish a shared or specific root cause; do not infer that storage code itself ran. |
 
 The session milestone strings are grepped by the workflow, so a green
 run is machine-verified evidence, not a log skim.
@@ -268,21 +269,16 @@ recent non-timer milestones as well as the serial tail. The intent is to
 classify the already-observed pre-storage stalls; this is diagnostics, not a
 scheduler/storage fix and does not establish the failure's cause.
 
-Local `make check`: **PASS**, exit 0 on this source, including kernel build and
-SIMD audit, host FPU context helper, desktop 120,907/0, compatibility 107/0,
-hardware-core and storage host recovery checks. Exact-SHA QEMU run
-[36873757374](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36873757374)
-is **in progress** at documentation time. Do not count that run as a pass until
-it completes; use its scheduler progress records to guide any targeted fix.
+Local `make check`: **PASS**, exit 0 on source `8e02c4804b84922fb50ee075e55e2a0a18d42c07`, including kernel build and SIMD audit, host FPU context helper, desktop 120,907/0, compatibility 107/0, hardware-core and storage host recovery checks. Exact-SHA QEMU run [36873757374](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36873757374) completed **FAILURE** at q35 AHCI/NVMe two-boot persistence after Boot test passed. Disk 2 serial ended after process lifetime pin, wait-queue, and context-switch-worker markers, with no panic marker or later scheduler heartbeat. Disk 1 continued to tick 8865 with process phase 3, process workers 1/1/1, hotplug=1, userspace=1, failures=0, but emitted no storage-manager milestones. These distinct tails do not identify a common root cause and do not prove storage driver code was reached. The source used here only adds progress/failure diagnostics; it is not a fix. Further fine-grained phase instrumentation is being added before any cause-specific change.
 
 ### Stage 10 release gate disposition
 
 | Gate | Evidence/result | Disposition |
 |---|---|---|
 | Build + host release checks | Local `make check` PASS; exact-SHA GitHub build PASS | Tested (host/CI), reproducible artifact comparison not shown |
-| Guest boot / kernel / scheduler / SMP | Exact-SHA VMM runs 36747020237 / 36748022072: QEMU boot, 2-vCPU repeated + 4-vCPU assertions PASS | Tested in emulation; not hardware-certified |
+| Guest boot / kernel / scheduler / SMP | Runs 36747020237 / 36748022072 and 36860832315 passed QEMU boot/SMP; run 36873757374 passed the standalone Boot test but its q35 persistence boot tails diverged (disk 2 stops before the scheduler heartbeat; disk 1 reaches userspace markers but not storage-manager milestones) | Mixed emulation results; not hardware-certified |
 | VMM teardown / page-table reclamation / shared MMIO / protect permissions | Runs 36748022072, 36855983261, 36857163730 and 36859092757 gate frame/refcount, free-page, MMIO propagation, failed-protect isolation and unlink-before-free assertions; runs 36858051968 and 36860017977 record unresolved storage-step and boot-step failures | Tested in QEMU; not hardware-certified or production-ready |
-| Storage crash/recovery | Host ZJFS/GPT recovery PASS; CI AHCI/NVMe persistence step PASS | Tested in host tools/emulation; physical HDD and power-loss certification open |
+| Storage crash/recovery | Host ZJFS/GPT recovery PASS; prior CI persistence runs passed, but latest run 36873757374 failed q35 AHCI/NVMe two-boot persistence without reaching storage-manager milestones in the disk-1 tail | Host-tested; QEMU reliability unresolved; physical HDD and power-loss certification open |
 | 2 GB memory pressure / OOM / reclaim | No 2 GB target run or measured process workloads in this environment | Not tested |
 | Network adapters / throughput / packet loss | Host protocol-core suites only; no actual NIC/link measurement | Not hardware-tested |
 | Graphics / media / GPU / display | Host policy/core suites and QEMU display milestones only; no physical GPU, panel, decoder or media soak | Not hardware-tested |
