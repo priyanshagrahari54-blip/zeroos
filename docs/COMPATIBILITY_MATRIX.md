@@ -1,12 +1,12 @@
 # ZEROOS Compatibility Matrix
 
-**Assessment date:** 2026-09-30
-**Source SHA:** `eff20fc7f6345a4541d04497314119f781f102aa`
+**Assessment date:** 2026-10-01
+**Source SHA:** `206ba31a73fa33836c378a198912e3bc84347836`
 **Rule:** parser/policy presence is not runtime support. Each row distinguishes implemented, tested and operational status. Compatibility is per exact application, runtime build, hardware, driver and workload; no universal claim is made.
 
-## Latest source/evidence note (2026-09-30)
+## Latest source/evidence note (2026-10-01)
 
-This matrix is synchronized to `eff20fc7f6345a4541d04497314119f781f102aa`. The VMM lifecycle changes and QEMU boot evidence do not expand any application, hardware, graphics, network, or media support claim below. Physical hardware remains uncertified.
+This matrix is synchronized to `206ba31a73fa33836c378a198912e3bc84347836`. VMM lifecycle, failed-protect and unlink-before-free hardening plus QEMU boot evidence do not expand any application, hardware, graphics, network, or media support claim below. Physical hardware remains uncertified.
 
 ## Application/runtime matrix
 
@@ -25,7 +25,7 @@ This matrix is synchronized to `eff20fc7f6345a4541d04497314119f781f102aa`. The V
 
 | Profile | Classification | Evidence |
 |---|---|---|
-| `sandbox-kvm-2026-09-30` | TEST ENVIRONMENT ONLY, not supported hardware | Build host reported KVM, 2 logical CPUs, ~3.85 GiB MemTotal and a 21.8 GB virtual `vda`; no target GPU/panel/network/sensors exposed |
+| `sandbox-kvm-2026-10-01` | TEST ENVIRONMENT ONLY, not supported hardware | Build host reported KVM, 2 logical CPUs, ~3.85 GiB MemTotal and a 21.8 GB virtual `vda`; no target GPU/panel/network/sensors exposed |
 | Lenovo G560-class | NOT TESTED / NOT CERTIFIED | Exact machine configuration unknown; no physical unit attached or profile recorded |
 | 2 GB RAM target | NOT TESTED | No 2 GB boot/idle/application/memory-pressure run |
 | Native 1366x768 panel | NOT TESTED | No panel identified; 1366x768 is a target only if that is the actual panel |

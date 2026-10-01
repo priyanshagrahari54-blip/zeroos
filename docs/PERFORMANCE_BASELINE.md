@@ -1,8 +1,8 @@
 # ZEROOS Performance Baseline
 
 **Status: NO PRODUCTION PERFORMANCE BASELINE**
-**Assessment date:** 2026-09-30
-**Source SHA:** `eff20fc7f6345a4541d04497314119f781f102aa`
+**Assessment date:** 2026-10-01
+**Source SHA:** `206ba31a73fa33836c378a198912e3bc84347836`
 
 ## Measurement policy
 
@@ -12,7 +12,7 @@ A valid performance result must include the physical hardware profile, kernel co
 
 | Field | Observed value | Caveat |
 |---|---|---|
-| Source | `eff20fc7f6345a4541d04497314119f781f102aa` | Checked-out source SHA |
+| Source | `206ba31a73fa33836c378a198912e3bc84347836` | Checked-out source SHA |
 | Compiler | GCC 12.2.0 | Local sandbox |
 | Linker | GNU ld 2.40 | Local sandbox |
 | Python | 3.11.2 | Storage tooling |
@@ -30,8 +30,8 @@ A valid performance result must include the physical hardware profile, kernel co
 | Desktop host suite | 120,907 assertions, 0 failures | No frame-time/FPS or real desktop residency measurement |
 | Compatibility host suite | 107 checks, 0 failures | No application runtime performance |
 | Storage host self-test | PASS, including 3,000,000-byte fixture and fsck checks | Not HDD throughput, IOPS, seek latency, queue depth, CPU cost or power-loss behavior |
-| GitHub Actions | Exact-SHA runs 36747020237 and 36748022072 PASS; second run gates the VMM reclamation/MMIO self-test markers | Emulated timings are not recorded here and are not hardware performance data |
-| VMM teardown self-tests | Owned-page lifetime, page-table reclamation and shared-MMIO visibility assertions are included in the boot test | Functional checks only; no TLB latency, allocator, RSS or workload-performance measurement |
+| GitHub Actions | Exact-SHA runs 36747020237, 36748022072, 36855983261 and 36857163730 PASS; VMM runs gate reclamation/MMIO, failed-protect permission and unlink-before-free tests | Emulated timings are not recorded here and are not hardware performance data |
+| VMM self-tests | Owned-page lifetime, page-table reclamation, shared-MMIO visibility and failed-protect permission-isolation assertions are included in QEMU boot tests | Functional checks only; no TLB latency, allocator, RSS or workload-performance measurement |
 
 ## Certified workload results
 

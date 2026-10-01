@@ -35,7 +35,7 @@ Already substantially implemented:
 - QEMU CI boot path
 
 Current priority:
-Scheduler/context lifecycle must be proven stable before moving to unrelated major kernel work.
+Finish and validate Stages 1–5 in order before starting Stage 6. Scheduler/context, memory/VMM, userspace, storage, hardware/network, and desktop/platform gaps remain subject to their stage acceptance evidence; passing CI subsets do not complete a stage. Track the live evidence in `VALIDATION.md` and do not infer physical-hardware support.
 
 Previous failure:
 invalid opcode at RIP 0x1bf and impossible task id 0x21 after scheduler activity.
@@ -683,3 +683,13 @@ Stage 1 gates remain open; this does not complete Stage 1.
 ## Stage 10 actual execution status (2026-09-29)
 
 **BLOCKED.** On source SHA `a184b4ef00ee52022bd47624d5f441f14499d113`, local `make check` and the ASan/UBSan host suites passed after fixing an E0-prefixed scancode table out-of-bounds bug. The exact-SHA GitHub Actions run 36651886021 passed its build, host gates, QEMU boot/SMP/NX-off and AHCI/NVMe persistence jobs. Local ISO creation could not run because `grub-mkrescue` is absent and package mirrors were unreachable; workflow dispatch was denied (HTTP 403), but a branch push triggered the passing run. No physical target, hardware profile, measured performance baseline, thermal soak or long-duration operational soak was available. This does not satisfy the Stage 10 exit evidence above. Gate-by-gate results are in `VALIDATION.md` and `STAGE_10_REPORT.md`; Stage 10 must not be marked complete.
+
+
+### Stage 1 VMM permission-isolation follow-up (2026-10-01)
+
+`vmm_protect_page()` now validates the target leaf before promoting hierarchical USER permissions, rejects user permission changes outside the dedicated user PML4 slot, and has a negative boot test for unchanged parent bits on failure. Local `make check` and exact-SHA QEMU run 36855983261 passed. This closes only that specific implementation/test gap; Stage 1 remains in progress, Stages 2–5 remain in order, and hardware/concurrency certification is open.
+
+
+### Stage 1 VMM frame/table retirement follow-up (2026-10-01)
+
+Kernel-root and address-space unmaps now broadcast TLB invalidation before data-frame release. Empty table paths are unlinked before table frames are freed, with a synchronous page-walk-cache flush at each link removal. Local `make check` and QEMU CI run 36857163730 passed. This does not prove same-address concurrent-writer safety: mapping mutation serialization and physical cross-CPU lifetime stress remain open; Stage 1 remains in progress.

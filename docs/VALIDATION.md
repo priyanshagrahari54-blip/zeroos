@@ -175,7 +175,7 @@ Validation maps to the 10-stage master plan. Stages 6-10 require explicit eviden
 
 Every result records implementation status, test type (host/QEMU/hardware), hardware/configuration, commit, command, measured result, and unsupported conditions. Roadmap intent is never validation evidence. Detection is never operational support.
 
-## Stage 10 certification status (2026-09-30)
+## Stage 10 certification status (2026-10-01)
 
 **Status: BLOCKED — not a production certification.** This evidence update is deliberately separate from implementation/Stage-5 host-suite claims above. A passing host test, QEMU boot, feature detector, or design document is not hardware certification. Release gates that require Lenovo G560-class hardware, real sensors/adapters, real media/runtime workloads, or sustained soak remain open. See `RELEASE_CERTIFICATION.md`, `STAGE_10_REPORT.md`, `HARDWARE.md`, and `PERFORMANCE_BASELINE.md` for evidence and limitations.
 
@@ -194,7 +194,7 @@ Every result records implementation status, test type (host/QEMU/hardware), hard
 - The local environment exposes a KVM virtualized Linux host, 2 logical CPUs, approximately 3.85 GiB `MemTotal`, and a 21.8 GB virtual `vda` marked rotational by the guest. This is not the target machine and does not constitute the 2 GB/HDD/G560 profile. GPU, panel, adapters, firmware, battery and physical thermal data were not available.
 
 
-## Stage 1 scheduler/FPU implementation delta (2026-09-30)
+## Stage 1 scheduler/FPU implementation delta (2026-10-01)
 
 - Implemented aligned per-task FXSAVE64 state and save/restore in both cooperative and IRQ-exit
 dispatch paths, covering saved-stack and interrupt-frame switches; included
@@ -215,7 +215,7 @@ implementation evidence, not physical-hardware certification.
 coverage, and context-switch performance remain untested. This does not clear
 the Stage 1 gate or change the Stage 10 **BLOCKED** disposition.
 
-## Stage 1 allocator release atomicity delta (2026-09-30)
+## Stage 1 allocator release atomicity delta (2026-10-01)
 
 `page_free_contiguous()` now validates the full page run under `memory_lock`
 before releasing any frame references. Its boot self-test frees one page of a
@@ -228,13 +228,31 @@ on `7e08366ce65e8fa7e6c175d4a051a690e3b22a91` passed, including the new boot
 self-test grep and the workflow's QEMU boot/SMP/storage gates. This is QEMU
 coverage, not physical-hardware evidence.
 
-## Stage 1 VMM teardown and shared-MMIO delta (2026-09-30)
+## Stage 1 VMM teardown and shared-MMIO delta (2026-10-01)
 
-- `kernel/vmm.c` invalidates active translations before releasing an owned physical-page reference in kernel-root and address-space unmaps. Empty private page-table levels are reclaimed only after shootdown; shared slot-0/MMIO tables remain allocated. Active-root tracking covers address spaces on any CPU, and huge-page splits account for shared mappings.
+- `kernel/vmm.c` broadcasts TLB invalidation before releasing an owned physical-page reference in kernel-root and address-space unmaps, including roots that appear inactive to close a CR3-transition race. Empty private page-table levels are unlinked, followed by a synchronous full TLB/page-walk-cache flush, before their backing pages are freed; shared slot-0/MMIO tables remain allocated. Huge-page splits account for shared mappings.
 - The MMIO PML4 subtree is created during VMM initialization. A boot self-test adds an MMIO PDPT child after an address space has copied the kernel slot, verifies translation visibility in that existing root, then unmaps the leaf without freeing shared tables. A separate boot check verifies frame references and free-page accounting after reclaiming a fresh private PML4 path.
-- Local `make check`: **PASS**, exit 0 after these VMM changes. This builds the ELF and runs ABI, hosted core/desktop/compatibility/storage/SIMD checks; it is not guest or hardware certification.
+- Local `make check`: **PASS**, exit 0 after these VMM changes (including unlink-before-free and unconditional pre-release shootdown). This builds the ELF and runs ABI, hosted core/desktop/compatibility/storage/SIMD checks; it is not guest or hardware certification.
 - Exact-code CI run [36747020237](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36747020237) passed on `4f6df30457b51dc9dbb6679b1afd4ab6931fe21b`, including build, `make check`, QEMU boot/SMP and q35 AHCI/NVMe two-boot persistence. The workflow now requires the virtual-memory and per-address-space VMM self-test serial markers. Run [36748022072](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36748022072) on `eff20fc7f6345a4541d04497314119f781f102aa` passed those gates plus QEMU SMP and storage.
 - Disposition: **IMPLEMENTED** and **TESTED (host build + QEMU)** for the stated paths. Not **HARDWARE TESTED**, not evidence of general **SUPPORTED** hardware, and not **PRODUCTION READY**. Physical cross-CPU lifetime stress, concurrent page-table mutation stress, and target-hardware testing remain open. Stage 10 remains **BLOCKED**.
+
+### VMM permission-isolation follow-up (2026-10-01)
+
+A failed `vmm_protect_page(..., VMM_USER|...)` previously promoted U/S bits in
+ancestor entries before proving the requested leaf existed. A failed update
+could therefore broaden access to user leaves sharing those ancestors. The
+fix validates the full mapping first, then commits hierarchical permission
+changes; global-root USER mappings/protection are restricted to the dedicated
+user PML4 slot. The boot self-test verifies an absent-leaf protect leaves
+PML4/PDPT permission bits unchanged and that USER changes in the shared direct
+map are rejected. CI requires the explicit
+`ZEROOS: VMM failed-protect permission isolation passed.` marker.
+
+`make check` passed locally. Exact-SHA GitHub Actions run
+[36855983261](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36855983261)
+on `1070b3ab950092edd9aab93be789f9e4a842c7fd` passed build, host release checks, QEMU boot/SMP and q35 AHCI/NVMe
+persistence. This is **IMPLEMENTED** and **TESTED in QEMU**, not hardware-tested
+or production-ready. Exact-SHA CI run [36857163730](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36857163730) on `206ba31a73fa33836c378a198912e3bc84347836` also passed QEMU boot/SMP, storage, and allocator/page-table self-tests. Same-address concurrent map/unmap serialization and physical SMP stress remain unproven; Stage 1–5 completion is not claimed.
 
 ### Stage 10 release gate disposition
 
@@ -242,7 +260,7 @@ coverage, not physical-hardware evidence.
 |---|---|---|
 | Build + host release checks | Local `make check` PASS; exact-SHA GitHub build PASS | Tested (host/CI), reproducible artifact comparison not shown |
 | Guest boot / kernel / scheduler / SMP | Exact-SHA VMM runs 36747020237 / 36748022072: QEMU boot, 2-vCPU repeated + 4-vCPU assertions PASS | Tested in emulation; not hardware-certified |
-| VMM teardown / page-table reclamation / shared MMIO | Run 36748022072 requires both VMM self-test markers; owned-frame references, free-page accounting and MMIO propagation asserted | Tested in QEMU; not hardware-certified or production-ready |
+| VMM teardown / page-table reclamation / shared MMIO / protect permissions | Runs 36748022072, 36855983261 and 36857163730 gate frame/refcount, free-page, MMIO propagation, failed-protect isolation and unlink-before-free assertions | Tested in QEMU; not hardware-certified or production-ready |
 | Storage crash/recovery | Host ZJFS/GPT recovery PASS; CI AHCI/NVMe persistence step PASS | Tested in host tools/emulation; physical HDD and power-loss certification open |
 | 2 GB memory pressure / OOM / reclaim | No 2 GB target run or measured process workloads in this environment | Not tested |
 | Network adapters / throughput / packet loss | Host protocol-core suites only; no actual NIC/link measurement | Not hardware-tested |

@@ -948,6 +948,16 @@ The following documents must remain synchronized:
 A roadmap statement is never evidence of implementation.
 
 
-## Stage 10 certification addendum (2026-09-29)
+## Stage 10 certification addendum (2026-10-01)
 
 Stage 10 is **BLOCKED**, not complete. Exact-SHA CI and host checks are evidence for build/host/QEMU subsets only. No physical Lenovo G560-class profile, physical HDD/GPU/network/display test, 2 GB pressure run, thermal/battery run, installed-update recovery test, or qualifying long-duration soak was available. Do not elevate subsystem implementation or documented intent to SUPPORTED or PRODUCTION READY. The evidence ledger and gate disposition are in `VALIDATION.md` and `RELEASE_CERTIFICATION.md`.
+
+
+### Stage 1 VMM permission-isolation evidence (2026-10-01)
+
+The failed-protect ancestor-permission regression is implemented and gated in QEMU CI run 36855983261. This evidence does not change support claims, does not establish hardware testing, and does not close Stages 1–5 or Stage 10. Follow the ordered stage gate in `ZEROOS_MASTER_ROADMAP.md`.
+
+
+### Stage 1 VMM frame/table retirement evidence (2026-10-01)
+
+The page-table unlink-before-free and unconditional frame-retirement shootdown changes pass local checks and QEMU CI run 36857163730. This narrows a kernel-memory safety gap but does not establish physical SMP or concurrent-writer correctness, nor does it close Stages 1–5.

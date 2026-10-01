@@ -1,8 +1,8 @@
 # ZEROOS Stage 10 Production Certification Report
 
 **Status: BLOCKED**
-**Assessment date:** 2026-09-30
-**Source SHA:** `eff20fc7f6345a4541d04497314119f781f102aa`
+**Assessment date:** 2026-10-01
+**Source SHA:** `206ba31a73fa33836c378a198912e3bc84347836`
 **Recommendation:** DO NOT RELEASE as production-ready.
 **Scope:** source/host tests, existing exact-SHA CI evidence, and available build environment. No physical target hardware was present. The source includes the scancode fix and later VMM changes; see the exact-SHA run records below for the commits each run validates.
 
@@ -24,7 +24,7 @@ The only Stage 10 hardware profile recorded is the sandbox environment profile i
 
 | Evidence | Result |
 |---|---|
-| `make check` | PASS, exit 0, 2026-09-30, on the current working tree. GCC 12.2.0; GNU ld 2.40; Python 3.11.2. Kernel ELF/SIMD, userspace ABI/runtime, core tests, desktop, compatibility, and storage host self-test all ran |
+| `make check` | PASS, exit 0, 2026-10-01, on the current working tree. GCC 12.2.0; GNU ld 2.40; Python 3.11.2. Kernel ELF/SIMD, userspace ABI/runtime, core tests, desktop, compatibility, and storage host self-test all ran |
 | Desktop host tests | 120,907 assertions, 0 failures; includes bounded host stress/soak suites, not a long-duration OS soak |
 | Compatibility host tests | 107 checks, 0 failures; compatibility-core tests, not Windows application execution |
 | Sanitizer follow-up | Initial ASan/UBSan run exposed the E0-prefixed PS/2 table overflow (index 200 into 128 entries). Expanded to 256 slots. The broad desktop/compat/hardware-core sanitizer suites passed after the fix; the focused scancode test was then extended to exhaust all E0-following bytes and 250,000 deterministic mixed-stream bytes and passed under ASan/UBSan. The extended test is included in source commit `a184b4ef00ee52022bd47624d5f441f14499d113` and CI run 36651886021. |
@@ -54,7 +54,7 @@ A broader hosted build that also analyzes `userspace/desktop/tests/test_input.c`
 | Kernel / syscall / user boundary | Kernel ELF and boot milestones; CI checks negative syscall/fault/malformed-ELF probes | No | Tested in host/emulation; target security review open |
 | Scheduler / interrupts / timers | CI asserts scheduler fairness/latency, timer preemption, process lifecycle and wake/wait paths | No | Tested in QEMU assertions only; longer physical saturation soak open |
 | SMP / TLB | CI QEMU 2-vCPU and 4-vCPU milestones, per-CPU ownership and remote TLB self-tests | No | Emulated tests pass; no hardware SMP cert |
-| Physical/virtual memory | Host/build and boot allocator self-tests; QEMU VMM owned-frame/refcount, private table-reclaim and shared-MMIO tests (runs 36747020237 / 36748022072) | No | QEMU-only VMM coverage; no 2 GB pressure, COW, swap, OOM, sustained-memory, or physical SMP lifetime certification |
+| Physical/virtual memory | Host/build and boot allocator self-tests; QEMU VMM owned-frame/refcount, private table-reclaim and shared-MMIO tests (runs 36747020237 / 36748022072 / 36855983261 / 36857163730) | No | QEMU-only VMM coverage; no 2 GB pressure, COW, swap, OOM, sustained-memory, or physical SMP lifetime certification |
 | Storage / VFS / ZJFS | Host GPT/ZJFS image recovery and CI guest storage/persistence milestones | No | Partial; physical HDD latency/queue/load and safe real power-loss testing absent |
 | Drivers / PCI / DMA | Host driver/DMA core suites; CI emulated AHCI/NVMe | No | Adapter-specific hardware matrix absent; IOMMU containment/BAR risk remains per architecture |
 | Network | Host protocol/parser/socket core suites | No | No physical NIC, link, packet loss, DNS/DHCP/reconnect or throughput test |
@@ -71,7 +71,7 @@ A broader hosted build that also analyzes `userspace/desktop/tests/test_input.c`
 | Thermal / power | Governor policy unit tests only | No | Not tested: no temperature/fan/frequency/throttle/battery/suspend data |
 | Long-duration stability | Bounded deterministic host churn tests | No | Not tested: no declared-duration OS-level idle, mixed-workload or media/network/storage soak |
 
-## Stage 1 VMM teardown and shared-MMIO delta (2026-09-30)
+## Stage 1 VMM teardown and shared-MMIO delta (2026-10-01)
 
 The implementation in `4f6df30457b51dc9dbb6679b1afd4ab6931fe21b` orders
 active-CPU invalidation before releasing mapped frame references in both
@@ -85,8 +85,31 @@ and [run 36748022072](https://github.com/priyanshagrahari54-blip/zeroos/actions/
 on `eff20fc7f6345a4541d04497314119f781f102aa` passed those gates, QEMU SMP,
 and storage persistence. This is IMPLEMENTED and TESTED in host build/QEMU;
 not HARDWARE TESTED, not a production support claim, and not PRODUCTION READY.
-Physical cross-CPU lifetime stress, concurrent page-table mutation stress,
-2 GB/HDD behavior, and target-hardware evidence remain open.
+Unconditional shootdowns and unlink-before-free ordering reduce the CR3-transition/recycled-table risk, but concurrent map/unmap serialization and physical cross-CPU lifetime stress remain open. 2 GB/HDD behavior and target-hardware evidence remain open.
+
+### VMM permission-isolation follow-up (2026-10-01)
+
+`vmm_protect_page()` now validates the entire leaf path before promoting any
+ancestor U/S permissions, and global-root user changes are restricted to the
+dedicated user PML4 slot. A boot regression checks failed absent-leaf protect
+leaves ancestor permission bits unchanged and rejects attempts to mark a
+shared direct-map page as user-accessible. Local `make check` passed; exact-SHA
+CI run [36855983261](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36855983261)
+on `1070b3ab950092edd9aab93be789f9e4a842c7fd` passed the explicit serial gate, QEMU boot/SMP and storage tests.
+This is QEMU-tested only; no physical hardware or production certification is
+implied. Stage 10 remains **BLOCKED**.
+
+### VMM table unlink and frame-retirement ordering (2026-10-01)
+
+Page-table parents are now cleared before table frames are returned to the
+allocator; each unlink is followed by a synchronous full TLB/page-walk-cache
+flush. Root and address-space unmap broadcast invalidation before releasing an
+owned data-frame reference, rather than trusting a possibly stale active-root
+snapshot during CR3 transition. Local `make check` passed and exact-SHA CI run
+[36857163730](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36857163730)
+on `206ba31a73fa33836c378a198912e3bc84347836` passed QEMU boot/SMP and storage gates. This is QEMU evidence only.
+Concurrent page-table writers are not yet serialized/stress-tested, and no
+physical-hardware or production-readiness claim follows.
 
 ## Workload and test gaps
 
@@ -120,7 +143,7 @@ This is an evidence classification, not a claim that every failure mode has been
 6. Windows code is partial compatibility-core/PE work; no Windows application is demonstrated. Android runtime is absent. No game compatibility or production media playback is certified.
 7. ZERO AI has tested broker policy components but no backend linked; it must remain optional and dormant.
 8. No thermal, battery, long-duration system soak, or published target performance baseline/regression comparison.
-9. Local ISO packaging could not be completed in the sandbox because GRUB/QEMU packages could not be installed from unreachable Debian mirrors. GitHub workflow dispatch was denied by API permissions, but pushing the session branch triggered the passing exact-source run 36651886021 and later VMM-gated runs 36747020237 and 36748022072.
+9. Local ISO packaging could not be completed in the sandbox because GRUB/QEMU packages could not be installed from unreachable Debian mirrors. GitHub workflow dispatch was denied by API permissions, but pushing the session branch triggered the passing exact-source run 36651886021 and later VMM-gated runs 36747020237, 36748022072 and 36855983261.
 
 These are release blockers due to missing evidence and incomplete production scope, not claims that a specific defect was reproduced. No user impact may be represented as safe based on absence of a test.
 
@@ -138,4 +161,4 @@ These are release blockers due to missing evidence and incomplete production sco
 - **RECOVERY RESULTS:** Host filesystem recovery and emulated guest recovery/persistence subsets pass; physical recovery/update rollback not certified.
 - **KNOWN LIMITATIONS:** See this report and `COMPATIBILITY_MATRIX.md`.
 - **RELEASE RECOMMENDATION:** DO NOT RELEASE as production-ready.
-- **COMMIT SHA (tested code):** `eff20fc7f6345a4541d04497314119f781f102aa`
+- **COMMIT SHA (tested code):** `206ba31a73fa33836c378a198912e3bc84347836`
