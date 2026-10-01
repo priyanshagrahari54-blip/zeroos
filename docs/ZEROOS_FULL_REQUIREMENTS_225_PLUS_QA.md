@@ -1585,4 +1585,8 @@ The repository state is authoritative for implementation. Executable evidence is
 
 For the granular implementation/validation checklist from boot through release, see `docs/ZEROOS_MICRO_REQUIREMENTS_FROM_START.md`. It is intentionally checklist-based and does not mark requirements complete merely because they are documented.
 
+## 48. REMAINING GAP CLOSURE
+
+Cross-cutting details that are easy to miss are tracked in `docs/ZEROOS_REMAINING_GAP_CLOSURE.md`, including toolchain/reproducibility, firmware edge cases, CPU/RAS, locking/memory ordering, crash forensics, time/locale, users/sessions, IPC/filesystem/network security, randomness, graphics robustness, UX reliability, package sandboxing, browser untrusted-content handling, compatibility runtime details, gaming measurement, ZERO AI agent safety/privacy, backups, observability, test infrastructure, formal invariants, documentation consistency, supply-chain security, installer/first boot, shutdown/reboot, and final repository-wide gap searches.
+
 ## End of exhaustive retained context.
