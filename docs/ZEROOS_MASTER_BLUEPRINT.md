@@ -971,3 +971,5 @@ A q35 storage CI gate failed once on run 36858051968 after the earlier full-flus
 ### Stage 1 CI boot reliability signal (2026-10-01)
 
 Exact-SHA workflow run 36860017977 on docs-only commit `64f78779e3581bee45999f29a804b898b6fef09d` failed the Boot test before q35 storage; its serial tail ended during scheduler timer output without a panic marker. The exact failed assertion is unknown. The q35 storage failure in 36858051968 and boot failure in 36860017977 remain open; run 36859092757 is a passing datapoint, not proof of stable behavior. Workflow diagnostics were expanded to show recent non-timer milestones and missing boot markers.
+
+Exact-SHA run 36860832315 on `647f84d2ec494123b964c16bb9f6997cf7e3b7a4` passed boot/SMP and q35 AHCI/NVMe two-boot persistence after adding diagnostics. This is another passing datapoint, but the 36860017977 boot failure remains unresolved and must not be waived.
