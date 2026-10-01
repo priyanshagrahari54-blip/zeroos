@@ -7,9 +7,10 @@ This document defines physical memory, virtual memory, process memory, caches, d
 ## 2. Physical Memory
 The physical allocator owns only firmware-reported available page frames.
 Boot-reserved memory includes the kernel image, boot information and required
-early structures. The current supported matrix bounds the bootstrap allocator
+early structures. The current implementation bounds the bootstrap allocator
 to the first 512 MiB and reports that boundary explicitly rather than treating
-higher memory as usable.
+higher memory as usable. This is an implementation limit, not a certified
+physical-memory support claim.
 
 The allocator maintains separate usable and allocation bitmaps plus a summary
 bitmap and a per-frame reference count. `page_alloc()` creates the initial
@@ -36,14 +37,18 @@ User mappings have explicit read/write/execute permissions. Explicit leaf
 mapping APIs reject writable-and-executable mappings, reject physical pages
 outside the usable allocator range and validate range arithmetic before any
 partial mapping is attempted.
-Page faults are classified as:
+The target fault policy distinguishes:
 - valid lazy allocation,
 - copy-on-write,
-- mapped file,
+- mapped-file faults,
 - stack growth,
 - invalid access.
 
-Invalid faults terminate the offending process where safe; kernel faults produce diagnostic panic/recovery behavior according to context.
+Only fail-closed handling of invalid user faults is currently implemented for
+the bounded Ring-3 path; demand allocation, COW, mapped-file fault-in,
+and stack-growth recovery are not implemented. Invalid user faults terminate
+the offending thread where safe; kernel faults produce diagnostic panic
+behavior according to context.
 
 ## 4. Memory Classes
 ### Active
@@ -172,7 +177,9 @@ Current Stage 1 certification covers:
 - address-space destruction;
 - W^X mapping rejection;
 - mapping range-overflow rejection;
-- repeated QEMU scheduler/process boots.
+- QEMU scheduler/process boot probes; intermittent oversubscribed-q35
+  pre-storage failures remain an open reliability gate (see `STORAGE.md` and
+  `VALIDATION.md`).
 
 The following remain later production gates:
 - page-fault demand allocation;

@@ -4,7 +4,7 @@
 **Assessment date:** 2026-10-01
 **Source SHA:** `8e02c4804b84922fb50ee075e55e2a0a18d42c07`
 **Recommendation:** DO NOT RELEASE as production-ready.
-**Scope:** source/host tests, existing exact-SHA CI evidence, and available build environment. No physical target hardware was present. The source includes the scancode fix and later VMM changes; see the exact-SHA run records below for the commits each run validates.
+**Scope:** source/host tests, exact-SHA CI evidence, and the available build environment. No physical target hardware was present. The assessed code includes the scancode fix, VMM lifecycle/permission changes, and scheduler progress telemetry; see the exact-SHA run records below for the commits each run validates.
 
 ## Executive determination
 
