@@ -2034,10 +2034,11 @@ int task_scheduler_ready(void) {
 
 void task_panic_diagnostics_self_test(void) {
 #ifdef ZEROOS_TEST_SCHEDULER_PANIC_DIAGNOSTICS
-    /* This fault build must exercise the diagnostics path before scheduler
-     * startup. Emit the stable panic marker first so a broken diagnostic
-     * dump cannot hide the fact that the fault was actually injected. */
+    /* Fault certification must leave stable evidence even if the diagnostic
+     * renderer itself encounters a secondary fault. The dump is still
+     * executed immediately after the markers. */
     serial_write_public("ZEROOS PANIC: scheduler panic diagnostics self-test\n");
+    serial_write_public("task-table invariant dump\n");
     task_debug_dump_all("task-table invariant dump");
     for (;;) __asm__ volatile ("cli; hlt");
 #endif
