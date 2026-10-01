@@ -38,6 +38,17 @@ static int kernel_mapping_may_be_active(uint64_t virtual_address) {
            pml4==VMM_MMIO_PML4_INDEX;
 }
 
+static void unlink_and_free_table(uint64_t *parent, uint64_t index,
+                                  uint64_t *table) {
+    /* Unpublish the table before freeing its backing page. Flush every CPU's
+     * paging-structure caches after the unlink so no concurrent walk can
+     * continue through a pointer into a recycled frame. */
+    parent[index]=0;
+    if (tlb_flush_all()!=0)
+        for (;;) __asm__ volatile ("cli; hlt");
+    page_free(table);
+}
+
 static void reclaim_empty_root_path(uint64_t pml4_index,
                                     uint64_t pdpt_index,
                                     uint64_t pd_index) {
@@ -57,14 +68,11 @@ static void reclaim_empty_root_path(uint64_t pml4_index,
     uint64_t *pt=table_from_entry(e3);
 
     if (!page_table_empty(pt)) return;
-    page_free(pt);
-    pd[pd_index]=0;
+    unlink_and_free_table(pd,pd_index,pt);
     if (!page_table_empty(pd)) return;
-    page_free(pd);
-    pdpt[pdpt_index]=0;
+    unlink_and_free_table(pdpt,pdpt_index,pd);
     if (!page_table_empty(pdpt)) return;
-    page_free(pdpt);
-    root_table[pml4_index]=0;
+    unlink_and_free_table(root_table,pml4_index,pdpt);
 }
 
 static int mapping_flags_valid(uint64_t flags) {
@@ -331,18 +339,17 @@ int vmm_unmap_page(uint64_t virtual_address) {
     uint64_t old_leaf=pt[pt_index];
     if (!(old_leaf & VMM_PRESENT))
         return -1;
-    int active=kernel_mapping_may_be_active(virtual_address);
     pt[pt_index]=0;
-    if (active)
-        invalidate_page(virtual_address);
+    /* Shoot down even when the root appears inactive: a CPU may be between
+     * publishing a new CR3 and completing its switch. */
+    invalidate_page(virtual_address);
 
     /* Retire all stale translations before returning the mapped frame to the
      * allocator, so no CPU can keep accessing a frame after it is reused. */
     if ((old_leaf&VMM_INTERNAL_OWNED) &&
         memory_page_release(old_leaf&PHYS_MASK)!=0) {
         pt[pt_index]=old_leaf;
-        if (active)
-            invalidate_page(virtual_address);
+        invalidate_page(virtual_address);
         return -1;
     }
     reclaim_empty_root_path(pml4_index,pdpt_index,pd_index);
@@ -464,8 +471,7 @@ int vmm_protect_page(uint64_t virtual_address, uint64_t flags) {
     }
     pt[pt_index]=(old_leaf&(PHYS_MASK|VMM_INTERNAL_OWNED))|
                  VMM_PRESENT|hardware_leaf_flags(flags);
-    if (kernel_mapping_may_be_active(virtual_address))
-        invalidate_page(virtual_address);
+    invalidate_page(virtual_address);
     return 0;
 }
 
@@ -731,15 +737,14 @@ int vmm_space_unmap_page(struct vmm_space *space, uint64_t virtual_address) {
     if ((old_leaf&VMM_INTERNAL_OWNED) && space->mapped_pages==0)
         return -1;
 
-    int active=root_active_on_any_cpu(space->root_physical);
     pt[pt_index]=0;
-    if (active)
-        invalidate_page(virtual_address);
+    /* A root may be transitioning onto another CPU between the active-root
+     * snapshot and CR3 load. Broadcast before releasing the frame regardless. */
+    invalidate_page(virtual_address);
     if ((old_leaf&VMM_INTERNAL_OWNED) &&
         memory_page_release(old_leaf&PHYS_MASK)!=0) {
         pt[pt_index]=old_leaf;
-        if (active)
-            invalidate_page(virtual_address);
+        invalidate_page(virtual_address);
         return -1;
     }
     if (old_leaf&VMM_INTERNAL_OWNED)
@@ -747,15 +752,11 @@ int vmm_space_unmap_page(struct vmm_space *space, uint64_t virtual_address) {
 
     /* Reclaim empty private paging levels immediately. */
     if (page_table_empty(pt)) {
-        page_free(pt);
-        pd[pd_index]=0;
+        unlink_and_free_table(pd,pd_index,pt);
         if (page_table_empty(pd)) {
-            page_free(pd);
-            pdpt[pdpt_index]=0;
-            if (page_table_empty(pdpt)) {
-                page_free(pdpt);
-                space->root[pml4_index]=0;
-            }
+            unlink_and_free_table(pdpt,pdpt_index,pd);
+            if (page_table_empty(pdpt))
+                unlink_and_free_table(space->root,pml4_index,pdpt);
         }
     }
     return 0;
