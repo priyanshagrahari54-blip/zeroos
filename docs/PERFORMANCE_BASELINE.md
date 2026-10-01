@@ -2,7 +2,7 @@
 
 **Status: NO PRODUCTION PERFORMANCE BASELINE**
 **Assessment date:** 2026-10-01
-**Source SHA:** `73275f51df3922d94d5073497942e3f2e6756113`
+**Source SHA:** `8e02c4804b84922fb50ee075e55e2a0a18d42c07`
 
 ## Measurement policy
 
@@ -12,7 +12,7 @@ A valid performance result must include the physical hardware profile, kernel co
 
 | Field | Observed value | Caveat |
 |---|---|---|
-| Source | `73275f51df3922d94d5073497942e3f2e6756113` | Checked-out source SHA |
+| Source | `8e02c4804b84922fb50ee075e55e2a0a18d42c07` | Exact code/diagnostic source SHA for this evidence snapshot; later documentation-only changes do not alter the tested code |
 | Compiler | GCC 12.2.0 | Local sandbox |
 | Linker | GNU ld 2.40 | Local sandbox |
 | Python | 3.11.2 | Storage tooling |
@@ -26,11 +26,11 @@ A valid performance result must include the physical hardware profile, kernel co
 
 | Test | Result | What it does not measure |
 |---|---|---|
-| `make check` | PASS, exit 0; observed tool wall duration 41.9 s on this run | Not a controlled kernel boot-time or performance benchmark; concurrent environment and workload variance are uncontrolled |
+| `make check` | PASS, exit 0 on the current code/diagnostic source; two observed tool wall durations were 42.3 s and 33.1 s | Not a controlled kernel boot-time or performance benchmark; concurrent environment and workload variance are uncontrolled |
 | Desktop host suite | 120,907 assertions, 0 failures | No frame-time/FPS or real desktop residency measurement |
 | Compatibility host suite | 107 checks, 0 failures | No application runtime performance |
 | Storage host self-test | PASS, including 3,000,000-byte fixture and fsck checks | Not HDD throughput, IOPS, seek latency, queue depth, CPU cost or power-loss behavior |
-| GitHub Actions | Exact-SHA runs 36747020237, 36748022072, 36855983261, 36857163730, 36859092757 and 36860832315 PASS; run 36858051968 failed q35 storage and later run 36860017977 failed Boot test (storage skipped). Runs 36859092757 and 36860832315 passed targeted unlink invalidation | Emulated timings are not recorded here and are not hardware performance data |
+| GitHub Actions | Exact-SHA runs 36747020237, 36748022072, 36855983261, 36857163730, 36859092757 and 36860832315 PASS; runs 36858051968 and 36861689464 failed q35 storage, while 36860017977 failed Boot test (storage skipped). Run 36873757374, which adds scheduler progress telemetry, is in progress as this entry is drafted. | Emulated timings are not recorded here and are not hardware performance data |
 | VMM self-tests | Owned-page lifetime, page-table reclamation, shared-MMIO visibility and failed-protect permission-isolation assertions are included in QEMU boot tests | Functional checks only; no TLB latency, allocator, RSS or workload-performance measurement |
 
 ## Certified workload results

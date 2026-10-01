@@ -258,6 +258,23 @@ on `1070b3ab950092edd9aab93be789f9e4a842c7fd` passed build, host release checks,
 persistence. This is **IMPLEMENTED** and **TESTED in QEMU**, not hardware-tested
 or production-ready. Exact-SHA run [36857163730](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36857163730) on `206ba31a73fa33836c378a198912e3bc84347836` also passed QEMU boot/SMP, storage, and allocator/page-table self-tests. The following table-unlink implementation and storage-step failure/follow-up are recorded above. Same-address concurrent map/unmap serialization and physical SMP stress remain unproven; Stage 1–5 completion is not claimed.
 
+## Stage 1 scheduler progress diagnostics (2026-10-01)
+
+Commit `8e02c4804b84922fb50ee075e55e2a0a18d42c07` adds a bounded scheduler
+progress line every 100 ticks with context-switch, FPU, wait/sleep/input,
+preemption, task-lifecycle/fairness, process-thread phase, hotplug, userspace,
+and failure counters. The q35 storage failure trap now emits each boot's
+recent non-timer milestones as well as the serial tail. The intent is to
+classify the already-observed pre-storage stalls; this is diagnostics, not a
+scheduler/storage fix and does not establish the failure's cause.
+
+Local `make check`: **PASS**, exit 0 on this source, including kernel build and
+SIMD audit, host FPU context helper, desktop 120,907/0, compatibility 107/0,
+hardware-core and storage host recovery checks. Exact-SHA QEMU run
+[36873757374](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36873757374)
+is **in progress** at documentation time. Do not count that run as a pass until
+it completes; use its scheduler progress records to guide any targeted fix.
+
 ### Stage 10 release gate disposition
 
 | Gate | Evidence/result | Disposition |

@@ -69,7 +69,7 @@ The detailed product plan remains in ZEROOS_MASTER_ROADMAP.md.
     Note: the ZEROOS AI platform broker (permission grants, backend
     selection with remote downgrade, wipe-on-drain, dormant-until-
     submit) is already host-tested and follows this rule.
-14. SMP/per-CPU scheduling, high-resolution timers, advanced memory management.
+14. SMP/per-CPU scheduler reliability and support hardening, APIC clock-event evolution, advanced memory management. Per-CPU scheduling, remote TLB invalidation, and bounded CPU hot-offline are implemented and QEMU-tested; intermittent oversubscribed-q35 boot failures, broader device IRQ routing, hardware validation, and long-duration stress remain open.
 15. Release engineering: reproducible builds, compatibility matrix, recovery media, long-duration stress and performance certification.
 
 ## Definition of done

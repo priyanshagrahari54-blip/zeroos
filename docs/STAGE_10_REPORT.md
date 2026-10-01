@@ -2,7 +2,7 @@
 
 **Status: BLOCKED**
 **Assessment date:** 2026-10-01
-**Source SHA:** `73275f51df3922d94d5073497942e3f2e6756113`
+**Source SHA:** `8e02c4804b84922fb50ee075e55e2a0a18d42c07`
 **Recommendation:** DO NOT RELEASE as production-ready.
 **Scope:** source/host tests, existing exact-SHA CI evidence, and available build environment. No physical target hardware was present. The source includes the scancode fix and later VMM changes; see the exact-SHA run records below for the commits each run validates.
 
@@ -52,8 +52,8 @@ A broader hosted build that also analyzes `userspace/desktop/tests/test_input.c`
 | Subsystem | Implemented / tested evidence | Hardware-tested | Assessment |
 |---|---|---:|---|
 | Kernel / syscall / user boundary | Kernel ELF and boot milestones; CI checks negative syscall/fault/malformed-ELF probes | No | Tested in host/emulation; target security review open |
-| Scheduler / interrupts / timers | CI asserts scheduler fairness/latency, timer preemption, process lifecycle and wake/wait paths; run 36860017977 failed the 2-vCPU Boot test with exact missing marker unknown; run 36860832315 passed after diagnostics were improved | No | Intermittent emulated boot failure remains open; longer physical saturation soak also open |
-| SMP / TLB | Passing QEMU 2-vCPU and 4-vCPU milestones, per-CPU ownership and remote TLB self-tests; run 36860017977 failed Boot test before storage; run 36860832315 passed after diagnostic instrumentation | No | Emulated evidence includes both passes and an unresolved boot failure; no hardware SMP certification |
+| Scheduler / interrupts / timers | CI asserts scheduler fairness/latency, timer preemption, process lifecycle and wake/wait paths; run 36860017977 failed the 2-vCPU Boot test with exact missing marker unknown; run 36860832315 passed after diagnostics; run 36861689464 failed the q35 job before scheduler certification; telemetry follow-up run 36873757374 is in progress | No | Intermittent emulated boot failure remains open; telemetry is diagnostic only; longer physical saturation soak also open |
+| SMP / TLB | Passing QEMU 2-vCPU and 4-vCPU milestones, per-CPU ownership and remote TLB self-tests; runs 36860017977 and 36861689464 failed boot gates before storage/scheduler certification; run 36860832315 passed; telemetry follow-up run 36873757374 is in progress | No | Emulated evidence includes passes and unresolved boot failures; no hardware SMP certification |
 | Physical/virtual memory | Host/build and boot allocator self-tests; QEMU VMM owned-frame/refcount, private table-reclaim and shared-MMIO tests (runs 36747020237 / 36748022072 / 36855983261 / 36857163730 / 36858051968 / 36859092757 / 36860017977 / 36860832315) | No | QEMU-only VMM coverage; no 2 GB pressure, COW, swap, OOM, sustained-memory, or physical SMP lifetime certification |
 | Storage / VFS / ZJFS | Host GPT/ZJFS image recovery and CI guest storage/persistence milestones | No | Partial; physical HDD latency/queue/load and safe real power-loss testing absent |
 | Drivers / PCI / DMA | Host driver/DMA core suites; CI emulated AHCI/NVMe | No | Adapter-specific hardware matrix absent; IOMMU containment/BAR risk remains per architecture |
@@ -113,7 +113,7 @@ then failed the q35 storage gate before storage discovery (no panic marker).
 Commit `73275f51df3922d94d5073497942e3f2e6756113` changed the hierarchy-unlink
 flush to targeted invalidation; exact-SHA run
 [36859092757](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36859092757)
-passed boot/SMP and both AHCI/NVMe persistence boots. Exact-SHA run 36860832315 on `647f84d2ec494123b964c16bb9f6997cf7e3b7a4` also passed the full workflow after diagnostic instrumentation was added. Both earlier failures remain unresolved reliability signals: run 36858051968 failed q35 storage persistence, and run 36860017977 failed Boot test before storage; the latter's serial tail stopped during scheduler timer output without a panic marker, and its missed assertion is unknown. The workflow now reports recent non-timer milestones on boot failure. Repeated stress is still needed. This is QEMU evidence only.
+passed boot/SMP and both AHCI/NVMe persistence boots. Exact-SHA run 36860832315 on `647f84d2ec494123b964c16bb9f6997cf7e3b7a4` also passed the full workflow after diagnostic instrumentation was added. Runs 36858051968 and 36860017977 remain unresolved reliability signals; the latter failed Boot test before storage and its serial tail stopped during scheduler timer output without a panic marker, with the missed assertion unknown. Newer run 36861689464 failed the q35 AHCI/NVMe persistence job before scheduler certification: available tails stopped at timer progress or `task context-switch worker completed`, without a panic marker. The root cause is unconfirmed and the job label does not show that storage code ran. Commit `8e02c4804b84922fb50ee075e55e2a0a18d42c07` adds a scheduler progress record every 100 ticks and enriches the q35 failure annotations; run 36873757374 is in progress. Repeated stress and a cause-specific fix are still needed. This is QEMU evidence only.
 Concurrent page-table writers are not yet serialized/stress-tested, and no
 physical-hardware or production-readiness claim follows.
 
@@ -167,4 +167,4 @@ These are release blockers due to missing evidence and incomplete production sco
 - **RECOVERY RESULTS:** Host filesystem recovery and emulated guest recovery/persistence subsets pass; physical recovery/update rollback not certified.
 - **KNOWN LIMITATIONS:** See this report and `COMPATIBILITY_MATRIX.md`.
 - **RELEASE RECOMMENDATION:** DO NOT RELEASE as production-ready.
-- **COMMIT SHA (tested code):** `73275f51df3922d94d5073497942e3f2e6756113`
+- **COMMIT SHA (tested code):** `8e02c4804b84922fb50ee075e55e2a0a18d42c07` (host-tested; latest QEMU run 36873757374 still in progress)

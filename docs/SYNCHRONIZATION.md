@@ -58,11 +58,12 @@ context switch.
 
 ## Design boundary
 
-Mutexes, semaphores and wait queues are not faked here. They will be introduced
-with task blocking/wakeup so a waiter can actually sleep instead of polling.
-
-Linux similarly distinguishes spinning from sleeping locks and connects wait
-queues to task sleep/wakeup. citeturn0search1turn0search0turn0search2
+Spinlocks and rwlocks are non-sleeping primitives. Scheduler-backed wait
+queues and owner-tracked kernel mutexes are implemented separately in
+`wait.c` and `ksync.c`; they block through task state transitions rather than
+busy-waiting. Semaphores and general condition-variable APIs are not currently
+provided. Lock order and blocking behavior are documented here and in
+`SCHEDULER.md`.
 
 ## Cost
 

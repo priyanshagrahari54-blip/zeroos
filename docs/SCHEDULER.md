@@ -166,9 +166,8 @@ handoff quarantine described below: a task still published in any CPU's
 handoff slot is left queued and is not selected by any CPU until its
 previous CPU has left its stack.
 
-The design follows the same architectural principle used by mature kernels:
-interrupt entry/exit and scheduling state are explicit boundaries, and the
-scheduler does not corrupt an in-flight interrupt frame. citeturn3search1turn2search13
+Interrupt entry/exit and scheduling state are explicit ownership boundaries;
+the scheduler must not overwrite or resume an in-flight interrupt frame.
 
 ## Timed sleep and deadlines
 

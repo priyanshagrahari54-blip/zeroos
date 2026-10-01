@@ -90,8 +90,8 @@ so scheduler accounting remains bounded and non-sleeping. Wall-clock changes
 never affect monotonic timeout ordering.
 
 Keeping interrupt work small and separating interrupt-context synchronization
-from task-context sleeping is consistent with established kernel designs.
-citeturn0search1turn0search4
+from task-context blocking bounds the work that runs at elevated interrupt
+priority.
 
 ## Controller capability boundary
 

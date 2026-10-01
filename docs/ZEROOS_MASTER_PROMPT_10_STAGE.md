@@ -158,7 +158,7 @@ Never let the roadmap claim more than the code and validation evidence support.
 
 ## Current execution rule
 
-The next work begins at Stage 6, but Stage 6 may be blocked by an unresolved dependency from Stages 1-5. In that case, finish the blocking dependency first and document the reason. Do not bypass scheduler, userspace, storage, driver or security invariants just to advance the stage number.
+Execution remains in Stages 1–5 until each applicable earlier-stage implementation and evidence gate is closed to the required production-readiness standard. Do not begin Stage 6 before that gate is met. Once Stages 1–5 are closed, proceed through Stages 6–10 in order. If later-stage work exposes an earlier-stage dependency, stop and resolve that dependency first; never bypass scheduler, userspace, storage, driver, or security invariants to advance the stage number.
 
 When a stage is completed, record:
 1. what changed;

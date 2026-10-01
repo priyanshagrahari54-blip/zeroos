@@ -118,9 +118,9 @@ AUDIT -> DESIGN -> IMPLEMENT -> TEST -> STRESS -> MEASURE -> DOCUMENT -> INTEGRA
 
 ## New-chat context check
 
-In a new ChatGPT conversation, paste the master handoff context from the previous conversation, then ask:
+In a new coding-agent session, provide the current handoff/evidence notes, then ask:
 
-CONTINUE ZEROOS FROM CURRENT REPOSITORY STATE. FIRST VERIFY THE REPOSITORY AND CURRENT CI, THEN CONTINUE THE HIGHEST-PRIORITY WORK WITHOUT RESTARTING.
+CONTINUE ZEROOS FROM CURRENT REPOSITORY STATE. FIRST VERIFY THE FIXED WORKING BRANCH, PRESERVE EXISTING WORKTREE CHANGES, CHECK THE LATEST CI, AND CONTINUE THE HIGHEST-PRIORITY OPEN GATE WITHOUT RESTARTING.
 
 A correct continuation should:
 1. inspect the repository
