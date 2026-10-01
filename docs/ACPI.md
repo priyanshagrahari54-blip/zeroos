@@ -4,8 +4,11 @@
 
 ZEROOS consumes ACPI only as a validated firmware description during the
 bootstrap phase. It does not treat a discovered table as permission to enable
-an interrupt controller. The active Stage 1 delivery backend remains the
-8259 PIC until all MMIO and routing ownership contracts are installed.
+an interrupt controller. The active Stage 1 delivery path is a validated,
+timer-only LAPIC/IOAPIC route after the VMM and routing ownership contracts are
+installed. The 8259
+PIC remains an explicit fail-safe fallback whenever APIC validation or route
+activation fails; topology discovery alone never publishes hardware ownership.
 
 ## Discovery path
 

@@ -499,10 +499,30 @@ Attribution:
   IPC/child-wait IF-restore, AP idle-stack size and cross-CPU handoff
   validation bugs that cause that hang.
 
-These are treated as residual Stage 1 SMP races and are **not fixed**.
-The mount-after-abort case is suspected to be a race between the 500-tick
-periodic commit and the fault injection. It is also not yet fixed.
-`userspace_start_init` now reports the failing stage, error, entry check and
-free-page count so that CI triage can classify failures. Boots at `-smp 1/2`
-and single runs at `-smp 4` pass. A single green CI run is therefore not
+These are treated as residual Stage 1 SMP reliability failures and are
+**not fixed**. The mount-after-abort case is suspected to be a race between
+the 500-tick periodic commit and fault injection; it is also not fixed.
+`userspace_start_init` reports the failing stage, error, entry check and
+free-page count so CI can classify userspace failures. Boots at `-smp 1/2`
+and individual `-smp 4` runs have passed, but a single green CI run is not
 proof of absence.
+
+#### Latest CI reliability signal (2026-10-01)
+
+Exact-SHA run [36861689464](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36861689464)
+failed the q35 AHCI + NVMe two-boot persistence gate. The available failure
+annotations show the first disk-backed serial tail repeating timer milestones;
+the second reaches `ZEROOS: task context-switch worker completed.` No scheduler
+certification, Ring-3/init, storage discovery, or persistence marker appears
+in the available tails, and no panic marker was observed there. This does not
+establish a storage-code failure or a root cause; it is consistent with the
+known pre-storage scheduler/boot reliability family, but the relationship is
+unproven.
+
+To make the next failure classifiable, the scheduler now emits a bounded
+progress record every 100 timer ticks with independent context/FPU/wait/sleep/
+input/preemption/lifecycle/fairness/process-phase/hotplug/userspace states.
+The storage CI failure trap also surfaces recent non-timer milestones for each
+boot. This instrumentation is diagnostic only: it does not fix the residual
+race or close Stage 1–5. Repeated oversubscribed q35 runs and a cause-specific
+fix are still required.

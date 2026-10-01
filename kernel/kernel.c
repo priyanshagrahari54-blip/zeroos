@@ -1117,6 +1117,45 @@ static void scheduler_probe_monitor(void *argument) {
         if (now>=last_report+100) {
             last_report=now;
             serial_write_public("ZEROOS: timer tick 100.\n");
+            serial_write_public("ZEROOS: scheduler progress tick=");
+            serial_write_u64(now);
+            serial_write_public(" context=");
+            serial_write_u64((uint64_t)context_reported);
+            serial_write_public(" fpu=");
+            serial_write_u64(atomic_u64_load(&fpu_probe_done));
+            serial_write_public(" wait=");
+            serial_write_u64(atomic_u64_load(&wait_probe_state));
+            serial_write_public(" sleep=");
+            serial_write_u64(atomic_u64_load(&sleep_probe_state));
+            serial_write_public(" input=");
+            serial_write_u64(atomic_u64_load(&input_probe_state));
+            serial_write_public(" preempt=");
+            serial_write_u64(atomic_u64_load(&preempt_probe_done));
+            serial_write_public(" lifecycle=");
+            serial_write_u64(atomic_u64_load(&lifecycle_probe_created));
+            serial_write_public("/");
+            serial_write_u64(atomic_u64_load(&lifecycle_probe_exited));
+            serial_write_public("/");
+            serial_write_u64(atomic_u64_load(&lifecycle_probe_done));
+            serial_write_public(" fairness=");
+            serial_write_u64(atomic_u64_load(&fairness_probe_done));
+            serial_write_public(" frame_resumes=");
+            serial_write_u64(task_frame_resume_count());
+            serial_write_public(" process_phase=");
+            serial_write_u64(atomic_u64_load(&process_thread_probe_phase));
+            serial_write_public(" process_workers=");
+            serial_write_u64(atomic_u64_load(&process_thread_probe_parent_ran));
+            serial_write_public("/");
+            serial_write_u64(atomic_u64_load(&process_thread_probe_child_ran));
+            serial_write_public("/");
+            serial_write_u64(atomic_u64_load(&process_thread_probe_reuse_ran));
+            serial_write_public(" hotplug=");
+            serial_write_u64((uint64_t)hotplug_reported);
+            serial_write_public(" userspace=");
+            serial_write_u64((uint64_t)userspace_reported);
+            serial_write_public(" failures=");
+            serial_write_u64(atomic_u64_load(&scheduler_stress_failures));
+            serial_write_public("\n");
         }
 
         /*

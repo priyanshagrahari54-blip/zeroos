@@ -36,9 +36,9 @@ fault identity, retires the owning thread with a deterministic fault status,
 and never publishes the IST frame as a scheduler-owned task context. Thread
 and process lifetime code then performs the normal zombie/reap transition. A
 missing thread owner, malformed frame, double fault, NMI or machine check
-remains fatal. The policy is armed now; Ring-3 entry and executable fault
-injection are later Stage 2 validation gates. Malformed normalized frames are
-rejected before dispatch.
+remains fatal. The policy is exercised by the bounded Ring-3 boot probes under QEMU; broader
+fault-injection, adversarial concurrency and physical-hardware validation
+remain open. Malformed normalized frames are rejected before dispatch.
 
 ## IRQ ownership and dispatch
 
@@ -65,9 +65,9 @@ irq_register() installs one owner for each legacy PIC/IOAPIC timer IRQ. irq_unre
 requires the same handler/context pair, preventing accidental removal of a
 different binding.
 
-The interface is controller-independent enough for later Local APIC/IOAPIC
-routing to replace the current 8259 implementation without making drivers own
-PIC details.
+The IRQ binding interface is controller-independent. The current active path
+uses the validated timer-only LAPIC/IOAPIC route when available and retains the
+8259 PIC as a fail-safe fallback; drivers do not own controller details.
 
 ## Timer
 
@@ -106,9 +106,10 @@ A guessed APIC route is never considered support.
 The active Stage 1 matrix therefore has an explicit legacy-PIC fallback and a
 validated LAPIC/IOAPIC timer path. The SMP boundary also uses Local-APIC IPIs
 for AP startup, fail-closed TLB shootdowns and the bounded scheduler CPU
-hot-offline IPI; non-timer IRQ ownership, per-CPU device-controller state and
-multi-CPU scheduling/routing remain separate gates. Per-CPU interrupt nesting
-and count are tracked in `struct cpu_local`.
+hot-offline IPI. Per-CPU scheduler ownership, remote TLB shootdown and CPU
+hot-offline have QEMU boot coverage; non-timer IRQ ownership, broader
+multi-device routing, hardware validation and SMP stress/soak remain separate
+gates. Per-CPU interrupt nesting and count are tracked in `struct cpu_local`.
 
 ## Production direction
 

@@ -26,7 +26,7 @@ ZEROOS uses the x86-64 four-level paging hierarchy:
           v
       Physical memory
 
-The Intel architecture defines a PDE with PS=1 as a 2 MiB mapping; ordinary PTEs map 4 KiB pages. citeturn2search12turn2search14
+A PDE with PS=1 maps a 2 MiB page; ordinary PTEs map 4 KiB pages.
 
 ## Current implementation
 
@@ -38,7 +38,8 @@ The Intel architecture defines a PDE with PS=1 as a 2 MiB mapping; ordinary PTEs
 - Supports 4 KiB map, unmap and software translation for isolated address-space objects.
 - Automatically splits a 2 MiB mapping into a 4 KiB PT when a fine-grained mapping is requested.
 - Tracks the root loaded in CR3, exposes an explicit kernel-root activation path and rejects destruction of the active address space.
-- Uses INVLPG for active leaf mapping changes and a CR3 reload after active unmap/pruning.
+- Uses the TLB service for synchronous page invalidation across registered CPUs before a mapped frame is released; address-space roots are tracked per CPU.
+- Unlinks empty private page-table levels only after the leaf shootdown, then invalidates the affected VA again before freeing the table page, preventing stale page-walk references to recycled tables.
 - Uses a CR3 reload when changing a paging-structure level during huge-page splitting, so stale translations cannot survive the page-size transition.
 - Reclaims empty private PT, PD and PDPT pages after an unmap; the root is retained until the address space is destroyed.
 - Address-space destruction is an explicit success/failure operation; callers must activate the kernel root before destroying an active space.
@@ -48,7 +49,7 @@ The Intel architecture defines a PDE with PS=1 as a 2 MiB mapping; ordinary PTEs
 - Isolated user-range validation walks the space's own page tables and checks present, user and writable permissions without trusting the active kernel root.
 - Validated supervisor MMIO pages can be mapped without pretending device registers are allocator-owned RAM; the reserved high-half MMIO window is used by the LAPIC/IOAPIC activation path and is unmapped on failed setup.
 
-Hierarchical page tables avoid allocating a flat table for unused virtual address space, while large mappings reduce page-table depth and TLB pressure. citeturn3search3turn3search7
+Hierarchical page tables avoid allocating a flat table for unused virtual address space, while large mappings can reduce page-table depth and TLB pressure.
 
 ## Huge-page policy
 
@@ -62,19 +63,26 @@ ZEROOS does not blindly use 4 KiB pages for everything.
 | Partial huge-page mapping | Split only the affected 2 MiB region |
 | User address spaces | 4 KiB isolated mappings through process-owned quota wrappers |
 
-Intel documents 2 MiB and 1 GiB x86 page sizes and notes their TLB/page-walk benefits, while also warning that large mappings must respect memory-type boundaries. citeturn0search0turn6search13
+Large mappings must respect alignment and memory-type boundaries; ZEROOS currently uses 2 MiB pages where its validated layout permits and does not enable 1 GiB pages.
 
 ## TLB discipline
 
-Changing a page-table entry without invalidating cached translations can leave the processor using stale mappings. ZEROOS tracks the active CR3 root: active leaf changes use the TLB service's INVLPG path, active unmaps use a full TLB flush after page-table pruning, and active root switches update the tracker only after loading CR3. Non-active address spaces are modified without local TLB invalidation; they must be activated before execution.
+Changing a page-table entry without invalidating cached translations can leave
+a CPU using stale mappings. ZEROOS tracks active CR3 roots per CPU and routes
+mapping changes through the sequence-numbered TLB service. A page invalidation
+executes local `INVLPG`, sends a bounded IPI request to every other registered
+CPU, and waits for each acknowledgement before the caller can release a mapped
+frame. Address-space activation publishes the root only after loading CR3.
 
-The TLB service owns a sequence-numbered shootdown request and acknowledgement
-protocol. The bootstrap CPU is registered locally; additional CPUs are refused
-unless an IPI sender is installed, and an unacknowledged remote flush is a
-hard failure rather than a silent stale-translation risk. The SMP startup gate
-now exercises a remote full flush after AP publication; longer shootdown
-stress/soak and address-space concurrency remain separate gates. Intel documents
-INVLPG and CR3 reloads as TLB/page-structure invalidation mechanisms. citeturn4search14turn4search15
+Unmap first removes the leaf entry and completes the synchronous shootdown,
+then releases the retained frame reference. If private page-table levels
+become empty, each parent entry is unlinked and the affected VA is invalidated
+again before the page-table backing page is freed. Address-space destruction
+is rejected while any registered CPU still has that root active. A missing IPI
+sender or unacknowledged remote invalidation is a hard failure, never a silent
+stale-translation risk. QEMU boot tests cover remote invalidation and the
+frame/table retirement boundaries; longer concurrent shootdown stress, soak
+and physical-hardware validation remain open.
 
 ## Current limits
 
@@ -82,12 +90,11 @@ Still intentionally not implemented:
 
 - page-fault-driven demand allocation
 - copy-on-write
-- memory-mapped files
 - swap/reclaim
 - PCID/INVPCID
-- SMP TLB shootdown stress/soak coverage beyond the startup acknowledgement
+- long-duration concurrent SMP TLB shootdown stress/soak and physical-hardware validation
 - 1 GiB mapping policy
 - user/kernel higher-half layout
-- complete per-process VM lifetime integration and fault recovery
+- broader user-fault recovery beyond the bounded fail-closed process path
 
 These are the next advanced VM layers, not replacements for the current page-table interface.

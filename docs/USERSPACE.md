@@ -319,8 +319,9 @@ yet claim a general dynamic service registry.
 
 This is not the Stage 2 exit claim. The remaining production gates are:
 
-- ELF process construction with argv/env/auxv, executable identity and a
-  defined relocation/dynamic-loader policy;
+- General executable identity and relocation/dynamic-loader/`PT_INTERP`
+  policy beyond the bounded static ELF `SPAWN` path (which already constructs
+  argv/envp/auxv and supports the documented static ET_EXEC/ET_DYN subset);
 - a general service registry beyond the bounded manager image, including
   dependency graphs, health checks, crash diagnostics, shutdown policy and
   multi-service resource accounting;

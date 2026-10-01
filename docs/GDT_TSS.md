@@ -7,7 +7,8 @@ Segment installed by the kernel after physical memory initialization.
 
 The runtime GDT is separate from the bootstrap GDT in boot/boot.S. The
 bootstrap GDT is only responsible for entering long mode. The runtime GDT is
-the long-lived descriptor table used by the kernel and future Ring-3 entry.
+the long-lived descriptor table used by the kernel and the bounded Stage 2
+Ring-3 bootstrap process.
 
 ## Descriptor layout
 
@@ -42,32 +43,30 @@ kernel-entry stack.
 
 Every scheduler task owns one allocator-backed, guard-checked kernel stack
 page. The scheduler publishes the selected task's aligned stack top through
-`gdt_set_kernel_stack()` before the context handoff, so a privilege transition
-can never land on the previously running task's stack. This is the protected
-kernel-stack layer; a future user thread will add a separate user stack and
-user-mode frame without reusing the kernel stack page.
+`gdt_set_kernel_stack()` before a context handoff. Each CPU has its own runtime
+GDT/TSS, and user entry is implemented for the bounded Stage 2 bootstrap
+process; this does not by itself establish general-purpose or hardware support.
 
 ## User transition boundary
 
-Future Ring-3 execution will require:
+Ring-3 execution is implemented for the bounded Stage 2 bootstrap process:
 
-    Ring 3
+    validated user RIP/RSP
        |
-       | interrupt/exception
+       | IRETQ / syscall / interrupt
        v
-    CPU loads TSS.RSP0
-       |
-       v
-    kernel entry stack
+    CPU loads the current CPU's TSS.RSP0
        |
        v
-    normalized ISR / fault path
+    owning task's protected kernel stack
+       |
+       v
+    normalized ISR / syscall / fault path
 
-The scheduler now allocates and owns the protected kernel stack for every
-schedulable task and updates TSS.RSP0 at each context transition. Actual
-Ring-3 privilege entry, separate user stacks, user interrupt entry and user
-fault containment remain later Stage 2/Stage 1-boundary work; this module does
-not claim that Ring 3 is active.
+`zeroos_user_enter()` constructs the architectural IRET frame. The user stack
+is never reused as a kernel stack. The bootstrap image is static and bounded;
+general dynamic loading, demand paging, adversarial isolation stress, and
+physical-hardware support remain separate validation gates.
 
 ## Kernel/user selectors
 
@@ -79,7 +78,7 @@ The runtime GDT exposes stable selector constants through:
 - gdt_tss_selector()
 
 Keeping these selectors in one architecture module prevents duplicated magic
-constants in future interrupt and Ring-3 code.
+constants in interrupt and Ring-3 code.
 
 ## Initialization contract
 
@@ -111,7 +110,8 @@ The runtime self-test verifies:
 - user selectors differ from kernel selectors;
 - TSS.RSP0 is non-zero and 16-byte aligned.
 
-The self-test does not claim Ring-3 execution yet. Scheduler validation now
-also checks per-task kernel-stack metadata and publishes each selected stack to
-TSS.RSP0. Actual privilege transition, separate user stacks, user interrupt
-entry and user fault containment remain subsequent user-mode milestones.
+This descriptor self-test is not itself the Ring-3 certificate. The QEMU boot
+gate separately exercises the bounded user transition, syscall ABI, task-owned
+kernel-stack return path, and fail-closed user-fault handling. Broader user
+workloads, adversarial fault/concurrency testing and physical-hardware support
+remain open.

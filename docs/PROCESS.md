@@ -89,8 +89,10 @@ provide permission-aware `process_address_space_is_user_range()` validation
 for future syscall and fault paths. Reaping refuses an accounting mismatch and
 tears down the private root only after the process is no longer running.
 
-Demand paging, page-fault recovery, and user stack construction are deliberately
-implemented in later Stage 1 work.
+The bounded static ELF path already creates and validates a user stack and
+contains user faults through the thread-exit path. Demand paging, copy-on-write,
+and a general dynamic-loader/exec policy remain open Stage 2/VM production
+gates.
 
 ## Resource limits
 
@@ -216,28 +218,29 @@ The current creation path deliberately releases thread_lock before acquiring
 process_lock, so the two table locks do not form a lock cycle. The scheduler
 task lock remains owned by the task subsystem.
 
-The architecture is currently single-CPU, but the ownership boundaries are
-chosen so that the eventual SMP conversion can add per-CPU state without
-merging process and scheduler policy.
+Process and thread tables are shared across the SMP scheduler and protected
+by their respective spinlocks. QEMU boot certification exercises process/thread
+creation, exit, wait/reap, and scheduler activity with multiple vCPUs. This is
+implementation/runtime evidence only: concurrent lifetime stress, physical
+hardware, and production SMP support remain open gates. The process model
+stays separate from per-CPU scheduler ownership.
 
 ## Current limitations
 
-This subsystem is intentionally not the complete process ABI yet. Still
-missing are:
-- blocking wait() semantics
-- parent-directed child wait
-- process groups and sessions
-- signals/events
-- file-descriptor tables
-- security credentials/capabilities
-- ELF loading and exec
-- blocking wait() and cancellation semantics
-- file-descriptor tables and secure capability handles
-- user fault reporting/signals beyond deterministic fault termination
+This is a bounded process/userspace foundation, not a complete POSIX process
+model. Still missing or limited are:
+- process groups, sessions, orphan adoption, and general signal semantics;
+- general-purpose dynamic linking/`PT_INTERP`, demand paging and `exec` policy
+  beyond the bounded static ELF `SPAWN` path;
+- a general service registry and complete credentials/capability policy;
+- stronger concurrent lifetime/cancellation stress across multiple CPUs;
+- broader user-fault reporting/recovery beyond deterministic thread
+  termination.
 
-The interrupt layer already has a fail-closed Ring-3 exception termination
-policy; these remaining ABI features are subsequent dependencies, not hidden
-inside the current process object model.
+Basic parent-child wait/reap, per-process descriptor tables, generation-checked
+capability handles, static ELF loading, and fail-closed Ring-3 fault
+containment are implemented and exercised in QEMU. They are not thereby
+production-certified on physical hardware.
 
 ## Certification
 

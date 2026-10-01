@@ -262,3 +262,22 @@ certification, including a separate fault-injected QEMU boot that must
 complete the bounded retry.
 Higher-level synchronization continues to use the existing wait-queue and
 preemption contracts.
+
+## Open reliability blocker — oversubscribed SMP boot
+
+QEMU runtime coverage demonstrates scheduler implementation paths, but Stage 1
+is not closed. Historical testing on a 2-core host with a 4-vCPU q35 TCG guest
+recorded intermittent scheduler-validator and stress-timeout failures; the
+current storage/validation ledgers record the signatures and scope. The latest
+CI run, [36861689464](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36861689464),
+failed before the scheduler certificate in the q35 storage job: available
+serial tails stopped at timer progress or the cooperative context-switch
+worker, with no panic marker in those tails. This is a boot-progress signal,
+not a root-cause diagnosis.
+
+The monitor now logs separate probe states every 100 ticks so the next failed
+run can identify whether work is stuck in FPU, wait/sleep/input, preemption,
+lifecycle/fairness, process/thread, hotplug, or userspace setup. Do not mark
+SMP **SUPPORTED** or Stage 1 **PRODUCTION READY** on this basis; close the
+reliability blocker only with a cause-specific fix and repeated oversubscribed
+QEMU runs, followed by the required physical-hardware evidence.

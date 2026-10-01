@@ -2,12 +2,13 @@
 
 ## Scope
 
-The current Stage 1 supported matrix is x86-64 QEMU/PC hardware with a GRUB
-Multiboot2 handoff. The CPU layer has a bounded per-CPU record array and an AP
+The Stage 1 implementation target is x86-64 QEMU/PC hardware with a GRUB
+Multiboot2 handoff. No physical PC hardware profile is certified yet. The CPU layer has a bounded per-CPU record array and an AP
 startup boundary; an AP is published only after it installs its own GS base,
-GDT/TSS, IDT, interrupt-controller state and TLB registration. Multi-vCPU
-runtime certification is still a separate gate, and this document does not
-claim universal hardware support.
+GDT/TSS, IDT, interrupt-controller state and TLB registration. QEMU boot
+certification exercises multi-vCPU scheduler ownership, remote TLB shootdown,
+and bounded CPU hot-offline; longer stress/soak and physical-hardware support
+remain separate gates. This document does not claim universal hardware support.
 
 ## Capability discovery
 
@@ -74,8 +75,9 @@ its per-CPU GDT/TSS and IDT, enables its Local APIC state, and registers with
 the TLB protocol before the SMP startup boundary acknowledges it. The BSP
 waits only for a bounded interval, retries a failed AP at most once with a
 new generation token, and removes failed APs from the TLB target mask before
-entering BSP-only recovery. APs remain out of the BSP scheduler until
-per-CPU scheduling and device-IRQ ownership have passed their own gates.
+entering BSP-only recovery. A successfully published AP participates in the
+per-CPU scheduler and QEMU boot certification; non-timer device IRQ ownership
+and broader SMP hardware support remain separate gates.
 
 ## Time source
 

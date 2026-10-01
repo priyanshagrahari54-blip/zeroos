@@ -49,15 +49,12 @@ Future evolution:
 bootstrap bitmap -> scalable allocator -> per-CPU caches -> object/slab allocator -> reclaim.
 
 ### Virtual
-Four-level x86-64 page tables with explicit mapping permissions.
-Support planned for:
-- user/kernel separation,
-- demand paging,
-- copy-on-write,
-- memory-mapped files,
-- shared mappings,
-- page reclaim,
-- optional swap.
+Four-level x86-64 page tables with explicit mapping permissions. The current
+implementation has private process roots, an isolated user mapping slot, W^X
+permissions, process-owned mapping accounting, bounded shared-memory maps and
+file-backed mmap/msync through the VFS ABI. Demand paging, copy-on-write,
+page reclaim, optional swap, and a higher-half kernel layout remain planned
+work.
 
 ### Ownership
 Every physical page and major kernel object needs ownership/lifetime semantics.
@@ -65,12 +62,15 @@ Every physical page and major kernel object needs ownership/lifetime semantics.
 ## 5. CPU Architecture
 `CPU_ARCHITECTURE.md` defines capability discovery, the SSE2/FPU baseline,
 NX enablement, invariant-TSC measurement and the per-CPU ownership record.
-The current supported matrix is x86-64 QEMU/PC with a capability-probed
-legacy PIC fallback or a validated LAPIC/IOAPIC timer path. When valid MADT
+The current implementation targets x86-64 QEMU/PC with a capability-probed
+legacy PIC fallback or a validated LAPIC/IOAPIC timer path. No physical PC
+hardware profile is certified. When valid MADT
 processor records and the Local APIC path are available, the SMP boundary
 prepares and handshakes bounded AP records; otherwise it selects an explicit
-BSP-only recovery mode rather than fabricating online CPUs. Multi-vCPU
-scheduling and hardware certification remain later gates.
+BSP-only recovery mode rather than fabricating online CPUs. QEMU boot
+certification covers multi-vCPU scheduler execution, remote TLB shootdown and
+bounded AP hot-offline. Longer stress/soak, complete device IRQ routing and
+physical-hardware certification remain open gates.
 
 ## 6. Execution Architecture
 ### Tasks
@@ -92,8 +92,10 @@ Interrupt-return context and voluntary context-switch context must not be confla
 IDT dispatches exceptions and IRQs.
 PIC is the validated rollback path; the current APIC/IOAPIC implementation
 owns the validated timer route and the IPI mechanisms used by the SMP boundary.
-Full modern multiprocessor support still requires non-timer routing, per-CPU
-scheduler execution and complete SMP coordination.
+QEMU boot certification exercises per-CPU scheduler execution and bounded SMP
+coordination. Broader production support still requires non-timer device IRQ
+routing, more complete SMP coordination, sustained stress/soak and physical-
+hardware validation.
 Timer interrupts drive scheduling/timers.
 IRQ registration must separate hardware delivery from device-driver work.
 
@@ -109,13 +111,19 @@ The current Stage 1 boundary provides:
   recovery when an AP cannot complete initialization;
 - inter-processor TLB shootdown request/acknowledgement plumbing, including
   removal of a failing AP from the target mask;
-- AP idle/interrupt dispatch that never borrows the BSP scheduler context.
+- per-CPU current-task ownership, runqueues, scheduler handoff validation,
+  interrupt-frame resumption and bounded task migration;
+- QEMU coverage for scheduler certification, remote TLB shootdown and AP
+  hot-offline/queue evacuation.
 
-AP device-IRQ ownership, lock-contention instrumentation, physical-hardware
-FPU/SIMD validation and full multi-vCPU stress/certification remain production
-gates. Per-task FXSAVE64 save/restore is implemented and has a QEMU runtime
-regression gate; this does not certify every physical CPU. The AP boundary therefore fails closed during
-startup, reports degraded mode, and never fabricates an online CPU.
+AP device-IRQ ownership, longer stress/soak, lock-contention analysis,
+physical-hardware FPU/SIMD validation and complete multi-vCPU production
+certification remain open gates. Per-task FXSAVE64 save/restore is implemented
+and has a QEMU runtime regression gate; this does not certify every physical
+CPU. The AP boundary fails closed during startup, reports degraded mode, and
+never fabricates an online CPU. The intermittent oversubscribed q35 boot
+failures documented in `STORAGE.md` and the live validation ledger are an open
+reliability blocker, not an accepted pass.
 
 ## 9. Userspace Architecture
 Userspace begins with an init/bootstrap process.

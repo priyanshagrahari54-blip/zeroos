@@ -9,14 +9,14 @@ does not exist yet, the row says so — no claim is made without it.
 | Class | How it is exercised | Where it runs | Status |
 |---|---|---|---|
 | UNIT | Host unit suites: desktop (ZD_CHECK assertions), compat, hardware cores, crypto RFC vectors | `make desktop-check compat-check hardware-core-test` | Green on demand; counts in section 2 |
-| INTEGRATION | Full guest boot: kernel + session + storage/init lifecycles on QEMU | CI workflow `build.yml` (push + pull_request) | Green on recorded commits, section 3 |
+| INTEGRATION | Full guest boot: kernel + session + storage/init lifecycles on QEMU | CI workflow `build.yml` (push + pull_request) | Mixed on recorded commits; recent scheduler/boot gate failure remains open, section 3 |
 | NEGATIVE | Per-suites error paths: EINVAL/ENOSPC/EPERM/ESTATE/EBUSY branches asserted, denial stats | desktop/compat suites | Green |
 | FAULT | Injected failures: display degraded present, AI hook failure, launch-hook errno, browser CRASHED/RELOAD, automation action failures + deterministic 512-round API-boundary fault suite (settings/notify/clipboard/downloads/snapshot/firewall/sandbox/lifecycle/perfcenter: errno-range invariant, wrong-state sequences, post-fault sanity, seeded) | desktop/compat suites | Green |
 | STRESS | Capacity loops (tab/app/rule/DLL caps) plus `test_stress`: 41 fill/drain browser rounds, 100 vault put/get/forget cycles with 20 lock churns, 20 000 firewall decisions, 24 snapshot turnovers, 10 000 frame recordings, 200 terminal fill/scroll rounds, 100 file-manager navigation generations (84 history evictions accounted), 500 formula re-evals, 100 overview set/remove quadruples (500 relayouts), 100 ecosystem pair/grant/queue/flush/unpair generations — exact end-state accounting | desktop suite | Green (host), guest probes in CI |
 | SOAK | Long-duration idle residency (AI dormancy, 0 resident bytes idle, event-driven automation) + seeded 64-epoch churn with generation-isolation and steady-state bounds (clipboard, downloads FIFO totals, notify caps, lifecycle storms, settings schema isolation, perfcenter rings) | desktop suites | Green |
 | SECURITY | Permission gates (AI grants, automation permission-first ordering), crypto AEAD/ChaCha20 vectors, constant-time MAC compare, denied counters | crypto tests + desktop suites | Green |
 | RECOVERY | Browser crash recovery, service watchdog, display attach/detach, init recovery in guest, rollback contracts | desktop suites + CI boot milestones | Green (host), guest init recovery in CI |
-| QEMU | Boot certification block in CI: panic detection, session milestones, storage certification | `build.yml` on every push/PR | Green on every push context since the `dedb23f` revert (`c27ad12`, `56a009f`, `c24c6b2`, `69f053c`, `c8b75ae`, `92e5729`, `fecd7a3`, `19ce0fa`, `eaac99c`, `d0bfc0c`, `d294b66`, `ef384d7`, …); PR context green except the documented `78ef9b5`/`0b2b480`/`98ba0ca` boot-flake rows below |
+| QEMU | Boot certification block in CI: panic detection, session milestones, storage certification | `build.yml` on every push/PR | Historical runs listed below include both passes and failures; latest run 36861689464 failed the q35 two-boot storage job before scheduler certification. See the open reliability blocker and do not infer production readiness from prior greens. |
 | REAL-HARDWARE | Physical run of the certified ISO on bare metal | Not available in this environment | **Not run — no claim** |
 
 | PERFORMANCE | Frame pacing/vsync accounting (display tests), governor tier/pressure/effects (governor tests), metrics recorder with interval histogram + percentiles wired into `zd_display_service_present`, FPS monitor frame-time percentiles and budget breaches | desktop suite + session link | Green (host); on-device percentiles pending |
@@ -94,7 +94,7 @@ after producing the boot ISO, then adds QEMU boot, SMP, and AHCI/NVMe
 persistence certification. A green
 `make check` is not a substitute for the guest or real-hardware gates.
 
-## 3. CI/QEMU evidence by commit (branch `arena/01a0d3b0-zeroos`)
+## 3. CI/QEMU evidence by commit (session branch `arena/01a0ee2b-zeroos`)
 
 | Commit | Evidence | Result |
 |---|---|---|
@@ -106,6 +106,7 @@ persistence certification. A green
 | `19ce0fa`, `eaac99c`, `d0bfc0c`, `d294b66`, `ef384d7` (both contexts each) | Batch 8–11 wave: roadmap docs, filemgr+formula+OCR, overview model, binding inventory, stress volume, roadmap batch 11 | SUCCESS |
 | `98ba0ca` | PR context only (push same SHA SUCCESS): `ZEROOS PANIC: CPU hot-offline evacuation failed` during SMP teardown after all milestones | FAILED — same-code context diverged; this remains a release risk until stress-reproduced or root-caused |
 | `a634746` | Push QEMU persistence run: `task owned by multiple CPUs` while storage was active | FAILED — root-caused: `context.S` cleared the outgoing CPU's handoff quarantine before switching RSP to the destination frame; the fix moves the clear after the stack switch and is being re-certified |
+| `7582a9a` / run [36861689464](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36861689464) | q35 AHCI + NVMe, two-boot persistence gate; available serial tails stop at timer progress / `task context-switch worker completed`, before scheduler certification; no panic observed in the supplied tails | FAILED — pre-storage boot-progress failure; root cause not established. Consistent with, but not proven to be, the known oversubscribed-SMP failure family |
 
 The session milestone strings are grepped by the workflow, so a green
 run is machine-verified evidence, not a log skim.
@@ -116,12 +117,14 @@ Streak analysis (RESOLVED): the last green run before the streak was
 with storage-cert/blocking-IPC panic families.  The revert (`4a282bd`,
 landed in `c27ad12`) restored BOTH contexts to green on its first
 run, and `ec2d1ce` push stayed green — a clean single-variable
-experiment proving the guard caused the streak by swallowing wakes
-without the runqueue/kick step.  The guard's intent (no remote steal
-during the wait transition) remains valid; it must re-land with the
-owner-cancel path actually kicking the owner CPU.  Earlier `772a923`
-remains on record as proof that both-red *can* be pure flake — 0/24
-versus an immediate return to green is what separated the two.
+experiment proving the guard caused that historical streak by swallowing
+wakes without the runqueue/kick step. The no-remote-steal intent was later
+implemented on the picker side with the owner-cancel path described below;
+this current implementation does not swallow wakes and does not require an
+owner kick because the owner is already executing with interrupts disabled.
+Earlier `772a923` remains evidence that same-code red runs can also be
+intermittent; the distinct 0/24 streak was separated by its immediate
+single-variable revert.
 
 Follow-up (re-land without swallowing wakes): the guard's goal, no remote
 pick of a task inside its prepare→commit window, is now met on the picker
