@@ -966,3 +966,8 @@ The page-table unlink-before-free and unconditional frame-retirement shootdown c
 ### Stage 1 VMM q35 storage regression signal (2026-10-01)
 
 A q35 storage CI gate failed once on run 36858051968 after the earlier full-flush table-reclamation change; the serial tail ended before storage milestones and contained no panic marker. The targeted invalidation follow-up passed run 36859092757. Do not dismiss the failure: repeated q35 runs and physical storage testing remain open.
+
+
+### Stage 1 CI boot reliability signal (2026-10-01)
+
+Exact-SHA workflow run 36860017977 on docs-only commit `64f78779e3581bee45999f29a804b898b6fef09d` failed the Boot test before q35 storage; its serial tail ended during scheduler timer output without a panic marker. The exact failed assertion is unknown. The q35 storage failure in 36858051968 and boot failure in 36860017977 remain open; run 36859092757 is a passing datapoint, not proof of stable behavior. Workflow diagnostics were expanded to show recent non-timer milestones and missing boot markers.

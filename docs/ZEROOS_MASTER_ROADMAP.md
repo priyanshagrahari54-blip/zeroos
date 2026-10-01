@@ -698,3 +698,8 @@ Kernel-root and address-space unmaps now broadcast TLB invalidation before data-
 ### Stage 1 VMM targeted unlink shootdown follow-up (2026-10-01)
 
 Full TLB reloads at every paging-level unlink were replaced with synchronous address-specific invalidation after each unlink, then page-table memory is reclaimed. A q35 storage gate failed on run 36858051968 after boot passed; its logs stop before storage discovery without a panic. Exact-SHA run 36859092757 passed the full q35 storage workflow on the targeted invalidation change. The failure is retained as a reliability signal; repeat stress is required before considering this path stable.
+
+
+### Stage 1 CI boot reliability signal (2026-10-01)
+
+Exact-SHA workflow run 36860017977 on docs-only commit `64f78779e3581bee45999f29a804b898b6fef09d` failed the Boot test before q35 storage; its serial tail ended during scheduler timer output without a panic marker. The exact failed assertion is unknown. The q35 storage failure in 36858051968 and boot failure in 36860017977 remain open; run 36859092757 is a passing datapoint, not proof of stable behavior. Workflow diagnostics were expanded to show recent non-timer milestones and missing boot markers.
