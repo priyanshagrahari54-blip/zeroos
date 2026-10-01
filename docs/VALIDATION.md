@@ -139,6 +139,44 @@ Fixed in the same change: an idle AP could acknowledge CPU-offline from
 its idle loop before withdrawing TLB/cpu-local/SMP online state, which
 is the `98ba0ca` `evacuation failed (stage=7)` row.
 
+Local A/B stress evidence for these fixes (2026-09-27; harness in
+`tools/stress/`, QEMU 11.0.2 TCG on a 2-core host, Limine BIOS ISO,
+sequential boots, one QEMU at a time):
+
+| Build | q35 `-smp 4` AHCI+NVMe storage boot | plain `-smp 4` boot (all Boot-test patterns) | Total |
+|---|---|---|---|
+| `e5fdc31` (before `ac5ed3d`/`2731c7c`) | 1 fail / 100 (`task owned by multiple CPUs`) | 5 fail / 100 (4× `task owned by multiple CPUs`, 1× `recursive kmutex acquisition`) | **6 / 200 failed** |
+| `2855b2a` (with both fixes) | 0 fail / 100 | 0 fail / 100 | **0 / 200 failed** |
+
+One-sided Fisher exact test that the 0-vs-6 split is chance: p ≈ 0.015.
+This is strong evidence that the fixes remove the dominant race. It is
+not proof that no rarer SMP race remains, and it is not a hardware claim.
+`e5fdc31` smp2 with two concurrent QEMUs also passed 100/100.
+Oversubscribing the host hides the race, so the harness boots sequentially.
+CI since the fixes: `ac5ed3d`, `2731c7c`, `6b84ec1` (push+PR),
+`2855b2a` (push+PR), `8f3b373`, `65a604d` (push+PR) and `22ed225`
+(push+PR). Every run was green.
+
+Reproduce:
+
+    make build/zeroos.elf
+    LIMINE_DIR=/path/to/limine-v8-binary python3 tools/stress/mkiso-limine.py build/zeroos.elf build/zeroos-limine.iso
+    tools/stress/boot-loop.sh smp4 build/zeroos-limine.iso 100
+    tools/stress/boot-loop.sh storage build/zeroos-limine.iso 100
+
+Orderly shutdown / ACPI S5 and the CI SMP gate (`22ed225`, 2026-09-28):
+
+| Evidence | Result |
+|---|---|
+| CI `22ed225` push (run 36362586895) and PR (run 36362589939) | green, including the new steps "Clean shutdown certification" (QEMU must exit by itself; both ZJFS volumes `state=CLEAN journal=clean`; fsck clean without repair) and "SMP race regression gate" (8 sequential `-smp 4` boots) |
+| Local q35 `-smp 4` AHCI+NVMe, `zeroos.shutdown=poweroff-after-cert`, 3 consecutive boots on the same disks | QEMU exit 0 each time; boot counter 1→2→3; both volumes CLEAN/clean journal; fsck clean without repair |
+| Local `-machine pc,acpi=off` | S5 reported unavailable; probe sees ENOTSUP; automatic power-off refused (`-95`) with zero unmounts; boot completes |
+| Local regression on this change | plain smp4 40/40 and q35 storage 30/30 passed all CI boot patterns |
+
+Reproduce the power-off boot with a Limine ISO:
+
+    python3 tools/stress/mkiso-limine.py build/zeroos.elf build/p.iso "zeroos.shutdown=poweroff-after-cert"
+
 ## 4. Stage 5 part support matrix
 
 | Part | Capability | Evidence | Support status |

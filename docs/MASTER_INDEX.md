@@ -159,6 +159,7 @@ Before merging a major subsystem:
 - USERSPACE.md
 - STORAGE.md (Stage 3 storage stack: block layer, drivers, GPT, page cache, security, recovery)
 - VFS.md (VFS objects, semantics, file syscall ABI)
+- POWER.md (orderly shutdown, ACPI S5 power-off, reboot, SYS_POWER ABI)
 - ZJFS.md (initial filesystem format, journaling, fsck)
 
 ## Final rule

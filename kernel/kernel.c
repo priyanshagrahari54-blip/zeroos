@@ -20,6 +20,7 @@
 #include "session.h"
 #include "fb.h"
 #include "input.h"
+#include "power.h"
 
 #define COM1 0x3F8
 #define VMM_SELF_TEST_VA 0x00007f0000000000ULL
@@ -1015,6 +1016,9 @@ static void scheduler_probe_monitor(void *argument) {
             serial_write_public("ZEROOS: timer tick 100.\n");
         }
 
+        power_monitor_step(storage_certification_complete() &&
+                           session_finished());
+
         /*
          * Certification deadline: all stress probes must complete within a
          * bounded tick budget. This prevents a broken scheduler from hanging
@@ -1236,6 +1240,8 @@ void kernel_main(uint64_t multiboot_info, uint64_t multiboot_magic) {
         serial_write_public(", error=");
         serial_write_u64(firmware->error);
         serial_write_public(").\n");
+        power_parse_boot_options(multiboot_info);
+        power_report_capability();
         serial_write_public("ZEROOS: IRQ controller capability: ");
         serial_write_public(info->local_apic_present ?
                             "LAPIC detected, IOAPIC activation pending.\n" :

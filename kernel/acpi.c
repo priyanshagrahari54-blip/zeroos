@@ -112,8 +112,10 @@ static int table_valid(uint64_t physical, const char *signature,
     return 1;
 }
 
-static int find_madt(uint64_t root_physical, uint8_t xsdt,
-                     uint64_t *madt_out) {
+/* Locate a table by signature. Every root entry must be a valid table:
+ * a malformed root fails closed rather than skipping entries. */
+static int find_table(uint64_t root_physical, uint8_t xsdt,
+                      const char *signature, uint64_t *table_out) {
     const struct acpi_sdt_header *root;
     if (!table_valid(root_physical,xsdt ? "XSDT" : "RSDT",&root))
         return 0;
@@ -135,11 +137,203 @@ static int find_madt(uint64_t root_physical, uint8_t xsdt,
         const struct acpi_sdt_header *header;
         if (!table_valid(table_physical,0,&header))
             return 0;
-        if (signature_is(header->signature,"APIC")) {
-            *madt_out=table_physical;
+        if (signature_is(header->signature,signature)) {
+            *table_out=table_physical;
             return 1;
         }
     }
+    return 0;
+}
+
+static int find_madt(uint64_t root_physical, uint8_t xsdt,
+                     uint64_t *madt_out) {
+    return find_table(root_physical,xsdt,"APIC",madt_out);
+}
+
+/* ------------------------------------------------------------- S5 / FADT */
+
+static uint32_t read_u32(const uint8_t *p) {
+    return (uint32_t)p[0]|((uint32_t)p[1]<<8)|((uint32_t)p[2]<<16)|
+           ((uint32_t)p[3]<<24);
+}
+
+static uint64_t read_u64(const uint8_t *p) {
+    return (uint64_t)read_u32(p)|((uint64_t)read_u32(p+4)<<32);
+}
+
+/* Integer data objects allowed in the S5 package: ZeroOp, OneOp,
+ * BytePrefix, WordPrefix and DWordPrefix (ACPI 6.5 §20.2.3). */
+static int aml_integer(const uint8_t *aml, uint32_t length, uint32_t *cursor,
+                       uint32_t *value) {
+    uint32_t p=*cursor;
+    if (p>=length)
+        return 0;
+    switch (aml[p]) {
+    case 0x00: *value=0; *cursor=p+1U; return 1;
+    case 0x01: *value=1; *cursor=p+1U; return 1;
+    case 0x0A:
+        if (length-p<2U) return 0;
+        *value=aml[p+1U]; *cursor=p+2U; return 1;
+    case 0x0B:
+        if (length-p<3U) return 0;
+        *value=(uint32_t)aml[p+1U]|((uint32_t)aml[p+2U]<<8);
+        *cursor=p+3U; return 1;
+    case 0x0C:
+        if (length-p<5U) return 0;
+        *value=read_u32(aml+p+1U); *cursor=p+5U; return 1;
+    default:
+        return 0;
+    }
+}
+
+uint8_t acpi_parse_s5(const uint8_t *aml, uint32_t length,
+                      uint16_t *slp_typ_a, uint16_t *slp_typ_b) {
+    if (!aml || length<5U)
+        return ZEROOS_ACPI_S5_NO_OBJECT;
+    for (uint32_t i=1; i+4U<length; ++i) {
+        if (aml[i]!='_' || aml[i+1U]!='S' || aml[i+2U]!='5' || aml[i+3U]!='_')
+            continue;
+        /* NameOp directly before the NameSeg, optionally via a root prefix. */
+        if (!(aml[i-1U]==0x08 ||
+              (i>=2U && aml[i-1U]=='\\' && aml[i-2U]==0x08)))
+            continue;
+        uint32_t p=i+4U;
+        if (aml[p]!=0x12)                        /* PackageOp */
+            return ZEROOS_ACPI_S5_BAD_OBJECT;
+        ++p;
+        if (p>=length)
+            return ZEROOS_ACPI_S5_BAD_OBJECT;
+        uint32_t follow=(uint32_t)(aml[p]>>6);   /* PkgLength extra bytes */
+        uint32_t pkg_length=follow ? (uint32_t)(aml[p]&0x0FU) : (uint32_t)(aml[p]&0x3FU);
+        if (length-p<follow+2U)
+            return ZEROOS_ACPI_S5_BAD_OBJECT;
+        for (uint32_t k=0; k<follow; ++k)
+            pkg_length|=(uint32_t)aml[p+1U+k]<<(4U+8U*k);
+        uint32_t package_end=p+pkg_length;       /* PkgLength counts itself */
+        if (pkg_length<2U || package_end>length)
+            return ZEROOS_ACPI_S5_BAD_OBJECT;
+        p+=1U+follow;
+        uint32_t elements=aml[p++];
+        uint32_t a=0, b=0;
+        if (elements<1U || !aml_integer(aml,package_end,&p,&a) || a>7U)
+            return ZEROOS_ACPI_S5_BAD_OBJECT;
+        b=a;
+        if (elements>=2U && (!aml_integer(aml,package_end,&p,&b) || b>7U))
+            return ZEROOS_ACPI_S5_BAD_OBJECT;
+        *slp_typ_a=(uint16_t)a;
+        *slp_typ_b=(uint16_t)b;
+        return ZEROOS_ACPI_S5_OK;
+    }
+    return ZEROOS_ACPI_S5_NO_OBJECT;
+}
+
+/* Generic Address Structure in system I/O space with a 16-bit port. */
+static int gas_io_port(const uint8_t *gas, uint16_t *port) {
+    uint64_t address=read_u64(gas+4);
+    if (gas[0]!=1U || address==0 || address>0xFFFFULL)
+        return 0;
+    *port=(uint16_t)address;
+    return 1;
+}
+
+static void parse_power(uint64_t root_physical, uint8_t xsdt) {
+    uint64_t fadt_physical=0;
+    const struct acpi_sdt_header *fadt;
+    state.s5_error=ZEROOS_ACPI_S5_NO_FADT;
+    if (!find_table(root_physical,xsdt,"FACP",&fadt_physical) ||
+        !table_valid(fadt_physical,"FACP",&fadt) || fadt->length<116U)
+        return;
+    state.fadt_physical=fadt_physical;
+    const uint8_t *f=(const uint8_t *)(uint64_t)fadt_physical;
+    uint32_t length=fadt->length;
+    uint32_t flags=read_u32(f+112);
+
+    if (length>=129U && (flags&(1U<<10)) && gas_io_port(f+116,&state.reset_port)) {
+        state.reset_value=f[128];
+        state.reset_supported=1;
+    }
+    if (flags&(1U<<20)) {                        /* HW_REDUCED_ACPI */
+        state.s5_error=ZEROOS_ACPI_S5_HW_REDUCED;
+        return;
+    }
+
+    uint32_t smi=read_u32(f+48);
+    state.smi_command_port=smi<=0xFFFFU ? (uint16_t)smi : 0;
+    state.acpi_enable_value=f[52];
+    uint32_t pm1a=read_u32(f+64), pm1b=read_u32(f+68);
+    uint16_t port=0;
+    if (length>=184U && gas_io_port(f+172,&port))
+        state.pm1a_control_port=port;
+    else if (pm1a && pm1a<=0xFFFFU)
+        state.pm1a_control_port=(uint16_t)pm1a;
+    if (length>=196U && gas_io_port(f+184,&port))
+        state.pm1b_control_port=port;
+    else if (pm1b && pm1b<=0xFFFFU)
+        state.pm1b_control_port=(uint16_t)pm1b;
+    if (!state.pm1a_control_port || f[89]<2U) {  /* PM1_CNT_LEN */
+        state.s5_error=ZEROOS_ACPI_S5_NO_PM1A;
+        return;
+    }
+
+    uint64_t dsdt=read_u32(f+40);
+    if (length>=148U && read_u64(f+140))
+        dsdt=read_u64(f+140);
+    const struct acpi_sdt_header *dsdt_header;
+    if (!dsdt || !table_valid(dsdt,"DSDT",&dsdt_header)) {
+        state.s5_error=ZEROOS_ACPI_S5_NO_DSDT;
+        return;
+    }
+    state.dsdt_physical=dsdt;
+    state.s5_error=acpi_parse_s5((const uint8_t *)(uint64_t)dsdt+ACPI_HEADER_SIZE,
+                                 dsdt_header->length-ACPI_HEADER_SIZE,
+                                 &state.slp_typ_a,&state.slp_typ_b);
+    state.s5_supported=state.s5_error==ZEROOS_ACPI_S5_OK;
+}
+
+const char *acpi_s5_error_name(uint8_t error) {
+    switch (error) {
+    case ZEROOS_ACPI_S5_OK: return "ok";
+    case ZEROOS_ACPI_S5_NO_FADT: return "no FADT";
+    case ZEROOS_ACPI_S5_HW_REDUCED: return "hardware-reduced ACPI";
+    case ZEROOS_ACPI_S5_NO_PM1A: return "no PM1a control block";
+    case ZEROOS_ACPI_S5_NO_DSDT: return "no valid DSDT";
+    case ZEROOS_ACPI_S5_NO_OBJECT: return "no _S5_ object";
+    case ZEROOS_ACPI_S5_BAD_OBJECT: return "malformed _S5_ object";
+    default: return "ACPI not discovered";
+    }
+}
+
+int acpi_s5_self_test(void) {
+    /* Name(_S5_, Package(4){0x05, 0x05, Zero, Zero}) */
+    static const uint8_t good[]={0x10,0x08,'_','S','5','_',0x12,0x08,0x04,
+                                 0x0A,0x05,0x0A,0x05,0x00,0x00};
+    /* Name(\_S5_, Package(2){One, Zero}) */
+    static const uint8_t rooted[]={0x08,'\\','_','S','5','_',0x12,0x04,0x02,
+                                   0x01,0x00};
+    /* NameSeg without NameOp (e.g. a method reference) must be ignored. */
+    static const uint8_t no_nameop[]={0x70,'_','S','5','_',0x12,0x04,0x02,
+                                      0x01,0x00};
+    /* PkgLength runs past the table end. */
+    static const uint8_t truncated[]={0x08,'_','S','5','_',0x12,0x3F,0x02,
+                                      0x0A,0x05};
+    /* SLP_TYP wider than 3 bits. */
+    static const uint8_t wide[]={0x08,'_','S','5','_',0x12,0x05,0x02,
+                                 0x0A,0x09,0x00};
+    uint16_t a=0xFFFF, b=0xFFFF;
+    if (acpi_parse_s5(good+1,sizeof(good)-1U,&a,&b)!=ZEROOS_ACPI_S5_OK ||
+        a!=5U || b!=5U)
+        return -1;
+    if (acpi_parse_s5(rooted,sizeof(rooted),&a,&b)!=ZEROOS_ACPI_S5_OK ||
+        a!=1U || b!=0U)
+        return -2;
+    if (acpi_parse_s5(no_nameop,sizeof(no_nameop),&a,&b)!=ZEROOS_ACPI_S5_NO_OBJECT)
+        return -3;
+    if (acpi_parse_s5(truncated,sizeof(truncated),&a,&b)!=ZEROOS_ACPI_S5_BAD_OBJECT)
+        return -4;
+    if (acpi_parse_s5(wide,sizeof(wide),&a,&b)!=ZEROOS_ACPI_S5_BAD_OBJECT)
+        return -5;
+    if (acpi_parse_s5(0,0,&a,&b)!=ZEROOS_ACPI_S5_NO_OBJECT)
+        return -6;
     return 0;
 }
 
@@ -262,6 +456,7 @@ static const uint8_t *find_rsdp(uint64_t multiboot_info,
 int acpi_discover(uint64_t multiboot_info) {
     state=(struct acpi_info){0};
     state.initialized=1;
+    state.s5_error=ZEROOS_ACPI_S5_NOT_DISCOVERED;
 
     if (multiboot_info==0 || !physical_range_valid(multiboot_info,8U)) {
         state.error=ZEROOS_ACPI_ERROR_NO_HANDOFF;
@@ -308,6 +503,7 @@ int acpi_discover(uint64_t multiboot_info) {
         return 0;
     }
     state.madt_physical=madt_physical;
+    parse_power(root_physical,xsdt);
     if (!parse_madt(madt_physical)) {
         state.error=ZEROOS_ACPI_ERROR_BAD_MADT;
         return 0;

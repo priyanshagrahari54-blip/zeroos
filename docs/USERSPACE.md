@@ -110,6 +110,9 @@ The initial v1 calls are:
 | 25–50 | file/VFS calls | Stage 3, additive, gated by `ZEROOS_ABI_FEATURE_FILES` (bit 7). Semantics, structures and migration notes are in [VFS.md](VFS.md) §7; wrappers are in `userspace/include/zeroos/storage.h` |
 | 51 | `DISPLAY_INFO` | Stage 5, gated by `ZEROOS_ABI_FEATURE_DISPLAY` (bit 8): copy the read-only `struct zeroos_display_info` geometry record (see TECHSPEC.md) |
 | 52 | `DISPLAY_PRESENT` | Stage 5, gated by `ZEROOS_ABI_FEATURE_PRESENT` (bit 9): pixel-mapping scanout submit (see TECHSPEC.md) |
+| 53–54 | `INPUT_POLL`, `INPUT_WAIT` | Stage 5, gated by `ZEROOS_ABI_FEATURE_INPUT` (bit 10) (see TECHSPEC.md) |
+| 55–56 | reserved | Held for `SYSTEM_INFO`/`CHILD_IMAGE` (feature bits 11/12, in review). Return `ENOSYS` |
+| 57 | `POWER` | Gated by `ZEROOS_ABI_FEATURE_POWER` (bit 13). `zeroos_power(action, flags)`: orderly power-off/reboot. uid 0 only (`EPERM`). `ZEROOS_POWER_FLAG_CHECK` validates without acting. `ENOTSUP` without ACPI S5, `EBUSY` during shutdown. A successful request does not return (see POWER.md) |
 
 The public freestanding wrapper surface is
 `userspace/include/zeroos/syscall.h`. It contains the fixed-width ABI

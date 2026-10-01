@@ -713,7 +713,8 @@ int nvme_probe_all(void) {
     return found;
 }
 
-void nvme_shutdown_all(void) {
+int nvme_shutdown_all(void) {
+    int timeouts=0;
     for (uint32_t i=0; i<nvme_count; ++i) {
         struct nvme_controller *c=&nvme_controllers[i];
         if (c->gone)
@@ -724,9 +725,12 @@ void nvme_shutdown_all(void) {
         while (((nvme_read32(c,NVME_REG_CSTS)>>2)&3U)!=2U &&
                timer_ticks()<deadline)
             task_yield();
-        klog("ZEROOS: nvme%u: shutdown %s.",c->index,
-             ((nvme_read32(c,NVME_REG_CSTS)>>2)&3U)==2U ? "complete" : "timed out");
+        int done=((nvme_read32(c,NVME_REG_CSTS)>>2)&3U)==2U;
+        if (!done)
+            ++timeouts;
+        klog("ZEROOS: nvme%u: shutdown %s.",c->index,done ? "complete" : "timed out");
     }
+    return timeouts;
 }
 
 int nvme_is_nvme_device(struct block_device *device) {

@@ -180,6 +180,12 @@ Stage 5 implemented contracts:
   nonblocking (-EAGAIN when empty); WAIT accepts `ZEROOS_WAIT_FLAG_NONBLOCK`
   and a scheduler-tick timeout (0 = forever) with -ETIMEDOUT/-EINTR, using
   the same wait-queue and tick-deadline discipline as the IPC syscalls.
+- `ZEROOS_SYS_POWER` (ID 57, feature bit 13) requests orderly power-off
+  (`ZEROOS_POWER_POWEROFF`) or reboot (`ZEROOS_POWER_REBOOT`), in this
+  order: sync, unmount, device cache flush, NVMe CC.SHN, then ACPI S5 or
+  reset. uid 0 only. `ZEROOS_POWER_FLAG_CHECK` validates without acting.
+  IDs 55–56 and bits 11–12 are reserved and return `ENOSYS`. This is an
+  additive ABI v1 change and needs no migration (POWER.md §4).
   Events come from the PS/2 i8042 driver (`kernel/input.c`): keyboard on
   IRQ1 (set-1 decoding via `scancode_core`) and mouse on IRQ12 (3-byte
   auxiliary packets via `mouse_core`), both host-tested and routed on

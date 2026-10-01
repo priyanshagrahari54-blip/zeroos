@@ -170,10 +170,12 @@ tick-resolution measurements, not performance claims.
   5. re-enable and recreate the I/O queues.
 
   If CSTS reads all-ones, the controller has been removed (GONE).
-- `nvme_shutdown_all()` performs the CC.SHN normal-shutdown handshake. It
-  is exported for the power-off path. ZEROOS has no power-off path yet
-  (**PARTIAL**, see §12), so every power-off is unclean and is recovered by
-  the journal. CI exercises this on every boot.
+- `nvme_shutdown_all()` performs the CC.SHN normal-shutdown handshake and
+  returns the number of controllers that did not report SHST=complete in
+  time. It is step 5 of the orderly shutdown in `storage_shutdown()`, after
+  sync, unmount and device cache flush ([POWER.md](POWER.md)). Unclean
+  power cuts are still certified separately: the persistence boots below
+  are killed, and the journal recovers them.
 - Only namespace 1 is used (**PARTIAL**: multiple namespaces). Surprise
   removal cannot be simulated in QEMU (PCIe `device_del` is cooperative),
   so the removal path is certified through the block-layer DISAPPEAR
@@ -431,6 +433,14 @@ total) with no lost request.
     readable, and the boot counter must equal the boot number;
   - finally `fsck --repair` replays the journal and the superblock must
     be CLEAN.
+- **Clean shutdown certification:** q35 with AHCI and NVMe disks, -smp 4,
+  booted with `zeroos.shutdown=poweroff-after-cert` and **without**
+  `-no-shutdown`:
+  - QEMU must exit by itself (ACPI S5);
+  - the log must show sync/unmount results 0, `disks=2, failed=0`, NVMe
+    CC.SHN complete and `storage quiesced cleanly`;
+  - both filesystems must be `state=CLEAN journal=clean` and pass host
+    fsck without repair ([POWER.md](POWER.md) §5).
 
 ## 11. Evidence (this change set)
 
@@ -457,8 +467,9 @@ images, two consecutive boots:
   - TRIM/discard; front-merges; readahead.
   - File-data checksums.
   - Snapshots and rollback, encryption (architecture only).
-  - Kernel power-off path (so no clean-shutdown flush or NVMe CC.SHN at
-    power-off).
+  - Orderly shutdown does not freeze user tasks first, and AHCI disks get
+    no STANDBY IMMEDIATE. Hardware-reduced ACPI and `_PTS` are unsupported
+    ([POWER.md](POWER.md) §6).
   - Mount selection by label/UUID.
 - **mmap** stores are made dirty only at `msync`, `munmap` or process exit.
   There is no hardware dirty-bit scan.
@@ -475,34 +486,42 @@ images, two consecutive boots:
   drain before CC.EN=0 avoids that window. The crash is a host emulator
   defect, not guest-visible behavior.
 
-### Intermittent SMP failures under host oversubscription (open, pre-existing)
+### Intermittent SMP failures (resolved)
 
-These were measured after the Stage 3/Stage 5 merge, on a 2-core host
-running a 4-vCPU q35 TCG guest with AHCI + NVMe. The configuration is
-deliberately oversubscribed. Across about 150 consecutive boots, roughly
-4–5% failed before completion. Every failure was fail-stop (PANIC or a
-failed gate), never a silent success:
+After the Stage 3/Stage 5 merge, about 4–5% of oversubscribed 4-vCPU q35
+TCG boots failed fail-stop, with these signatures:
+- `malformed interrupt frame`;
+- `task owned by multiple CPUs`;
+- `recursive kmutex`;
+- scheduler certification timeout;
+- `elf-load error=22`;
+- `mount after abort`.
 
-| Signature | Phase |
-|---|---|
-| `malformed interrupt frame` | Stage 1 scheduler validator |
-| `task owned by multiple CPUs` | Stage 1 scheduler validator |
-| `scheduler stress certification timed out` | Stage 1, before storage starts |
-| `userspace init setup failed (stage=elf-load, error=22)` | Stage 2: the static init image failed validation. Happens before storage starts |
-| `storage fs test FAILED: mount after abort` | Stage 3 self-test |
+The storage stack was not the cause. The root causes were:
 
-Attribution:
-- The scheduler timeout also reproduces on the pre-merge Stage 3 commit.
-- The ELF and scheduler signatures occur before any storage code runs.
-- The untouched `main` base cannot be compared, because it does not get
-  past `userspace init process published` under Limine. Stage 3 fixed the
-  IPC/child-wait IF-restore, AP idle-stack size and cross-CPU handoff
-  validation bugs that cause that hang.
+1. **Kernel built with SSE allowed.** Interrupt entry and the context
+   switch do not save XMM state, so compiler-generated SSE (memcpy/struct
+   copies) was silently clobbered across interrupts and task switches.
+   Fixed by building the kernel with `-mgeneral-regs-only` (66fdcab). The
+   `kernel-simd-check` gate fails the build if any FP/SIMD instruction
+   appears in the image.
+2. **Scheduler handoff races:**
+   - picking a task that was still current on another CPU;
+   - the offline park acknowledging before it withdrew ownership;
+   - ending the SMP handoff quarantine before the stack switch.
 
-These are treated as residual Stage 1 SMP races and are **not fixed**.
-The mount-after-abort case is suspected to be a race between the 500-tick
-periodic commit and the fault injection. It is also not yet fixed.
-`userspace_start_init` now reports the failing stage, error, entry check and
-free-page count so that CI triage can classify failures. Boots at `-smp 1/2`
-and single runs at `-smp 4` pass. A single green CI run is therefore not
-proof of absence.
+   Fixed in ac5ed3d and 2731c7c.
+
+Evidence (docs/VALIDATION.md §3; harness `tools/stress/boot-loop.sh`),
+local A/B, same host, sequential boots:
+
+| Build | q35 smp4 storage | plain smp4 |
+|---|---|---|
+| e5fdc31 (before) | 1/100 failed | 5/100 failed |
+| 2855b2a (after) | 0/100 | 0/100 |
+
+One-sided Fisher p ≈ 0.015. CI now runs 8 sequential 4-vCPU boots on
+every push (step "SMP race regression gate"), so a regression is likely,
+though not certain, to be caught. Absence of races is not proven. Per-task
+FPU/SIMD state is not implemented, so kernel code must stay
+general-register-only.

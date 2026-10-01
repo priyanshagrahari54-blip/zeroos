@@ -370,6 +370,60 @@ jobs:
           python3 tools/storage/zjfs.py --part 1 build/disks/sata.img fsck --repair
           python3 tools/storage/zjfs.py --part 1 build/disks/sata.img info | grep -q "state=CLEAN"
 
+      - name: Clean shutdown certification (sync, unmount, cache flush, NVMe CC.SHN, ACPI S5)
+        run: |
+          set -e
+          L=build/serial-poweroff.log
+          trap 'echo "clean shutdown gate failed; log end:"; test -f $L && tail -c 3000 $L | tr "\r\n" "  "; echo' ERR
+          make iso-poweroff
+          D=build/disks-poweroff
+          rm -rf $D; mkdir -p $D
+          for d in sata nvme; do
+            truncate -s 64M $D/$d.img
+            python3 tools/storage/gpt.py create $D/$d.img --part zjfs:40:data --part scratch:rest:scratch
+            python3 tools/storage/zjfs.py --part 1 $D/$d.img mkfs --label $d
+          done
+          echo "hello from the host" > $D/hello.txt
+          python3 tools/storage/zjfs.py --part 1 $D/sata.img put $D/hello.txt /hello.txt
+          # No -no-shutdown: QEMU must exit by itself when the guest enters S5.
+          # A timeout (exit 124) means the power-off path did not complete.
+          rc=0
+          timeout 90s qemu-system-x86_64 -machine q35 -smp 4 -m 256M \
+            -cdrom build/zeroos-poweroff.iso -boot d \
+            -drive file=$D/sata.img,if=none,id=d0,format=raw -device ide-hd,drive=d0,bus=ide.0 \
+            -drive file=$D/nvme.img,if=none,id=n0,format=raw -device nvme,serial=zeroos1,drive=n0 \
+            -serial file:$L -display none -no-reboot || rc=$?
+          echo "QEMU exit status: $rc"
+          test "$rc" = 0
+          if grep -qE "ZEROOS PANIC:|FAILED" $L; then grep -E "ZEROOS PANIC:|FAILED" $L; exit 1; fi
+          grep -q "ZEROOS: ACPI power: S5 soft-off available" $L
+          grep -q "ZEROOS: boot option: power off after certification." $L
+          grep -q "ZEROOS: storage userspace probe: power ABI checks passed (S5 available)." $L
+          grep -q "ZEROOS: storage Stage 3 certification complete." $L
+          grep -q "ZEROOS: shutdown: power-off requested" $L
+          grep -q "ZEROOS: shutdown: filesystems synced (result 0) and unmounted (result 0" $L
+          grep -q "ZEROOS: shutdown: device write caches flushed (disks=2, failed=0)." $L
+          grep -q "ZEROOS: nvme0: shutdown complete." $L
+          grep -q "ZEROOS: shutdown: storage quiesced cleanly." $L
+          grep -q "ZEROOS: shutdown: entering ACPI S5" $L
+          # A clean shutdown needs no journal replay and no repair.
+          for d in sata nvme; do
+            python3 tools/storage/zjfs.py --part 1 $D/$d.img info | tee $D/$d.info
+            grep -q "state=CLEAN" $D/$d.info
+            grep -q "journal=clean" $D/$d.info
+            python3 tools/storage/zjfs.py --part 1 $D/$d.img fsck
+          done
+          python3 tools/storage/zjfs.py --part 1 $D/sata.img cat /user-probe.txt | grep -q "written from ring 3"
+
+      - name: SMP race regression gate (8 sequential four-vCPU boots)
+        run: |
+          # Repeated boots with the same Boot-test serial patterns; a single
+          # green boot cannot show absence of a cross-CPU race (docs/VALIDATION.md).
+          tools/stress/boot-loop.sh smp4 build/zeroos.iso 8 build/stress-smp4 || {
+            cat build/stress-smp4/results.txt
+            for f in build/stress-smp4/*.log; do echo "== $f"; tail -c 2500 "$f" | tr "\r\n" "  "; echo; done
+            exit 1; }
+
       - name: Serial summary
         if: always()
         run: |
@@ -490,3 +544,5 @@ jobs:
             build/qemu-smp4.log
             build/serial-disk1.log
             build/serial-disk2.log
+            build/serial-poweroff.log
+            build/stress-smp4/

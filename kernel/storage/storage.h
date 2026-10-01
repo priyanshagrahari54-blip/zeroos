@@ -9,6 +9,23 @@
 void storage_start(void);
 /* 1 once the storage manager finished (success or reported failure). */
 int storage_finished(void);
+/* 1 once the full Stage 3 certification (including the Ring-3 probe)
+ * completed. */
+int storage_certification_complete(void);
+
+/* Orderly storage quiesce for shutdown (called by power_request only):
+ * sync every mount, unmount all (journal commit + CLEAN superblock), flush
+ * the write cache of every AHCI/NVMe disk, then NVMe CC.SHN. Every step runs
+ * even if an earlier one failed; the report carries each result. */
+struct storage_shutdown_report {
+    int sync_result;
+    int unmount_result;
+    uint32_t mounts;
+    uint32_t disks_flushed;
+    uint32_t flush_failures;
+    int nvme_timeouts;
+};
+void storage_shutdown(struct storage_shutdown_report *report);
 /* Periodic hook from the boot monitor (non-blocking). */
 void storage_service_step(void);
 
