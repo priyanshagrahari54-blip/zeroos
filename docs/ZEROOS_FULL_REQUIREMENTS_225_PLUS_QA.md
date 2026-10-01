@@ -848,3 +848,737 @@ A. Must be proven by soak testing on the relevant evidence class.
 ## 28. FINAL ONE-LINE PRODUCT DEFINITION
 
 ZEROOS is a real native x86-64, low-overhead, secure, recoverable, modern desktop OS designed as a daily driver, with original UI, efficient graphics/media, Windows and Android compatibility, modern gaming capability, and a permission-brokered deeply integrated ZERO AI—where every production claim must be backed by executable evidence.
+
+
+# 29. REMAINING DETAILED ENGINEERING INVENTORY
+
+This section preserves additional engineering details that are easy to lose when the product requirements are summarized.
+
+## 29.1 Boot and early kernel
+
+- Multiboot2 is the bootstrap contract.
+- x86-64 long mode must be entered before normal kernel execution.
+- Bootstrap page tables must be validated before higher-level memory management takes over.
+- Kernel entry must establish a known execution environment.
+- Serial/debug output must remain available during early bring-up.
+- Boot diagnostics must be deterministic enough to identify the last successful initialization phase.
+- QEMU boot is a repeatable certification path, not the final hardware proof.
+- Boot failures must produce bounded diagnostics rather than silent hangs.
+- Reset/reboot loops must be detectable during stress testing.
+- Early allocation must not depend on uninitialized higher-level allocators.
+
+## 29.2 Physical and virtual memory
+
+- Physical page ownership must be explicit.
+- Bitmap allocation/free operations require invariant checks.
+- Double-free, invalid-free, alignment, and out-of-range page operations must be tested.
+- Virtual mappings require explicit permission state.
+- MMIO mappings must not accidentally become ordinary cacheable RAM mappings.
+- Huge-page splitting must preserve permissions and ownership.
+- Address-space teardown must reclaim page-table structures safely.
+- Page faults must distinguish not-present, permission, user/kernel, and malformed-address conditions.
+- Copy-on-write must preserve reference counts and write-fault semantics.
+- Guard pages should be used around critical stacks/buffers where practical.
+- User mappings must never expose kernel-only pages.
+- TLB invalidation/shootdown must be tied to actual mapping lifecycle.
+- PCID optimization is conditional on CPU support.
+- Higher-half/direct-map decisions must be documented and benchmarked.
+- Swap is optional only if the chosen memory architecture explicitly provides another bounded pressure policy; no accidental overcommit is allowed.
+
+## 29.3 Allocators
+
+- Early boot allocator and production allocator have separate contracts.
+- Slab/object allocation should minimize metadata overhead.
+- Per-CPU caches can reduce lock contention but must have bounded memory retention.
+- Reference counting requires overflow/underflow protection.
+- Higher-order allocations need fragmentation/failure diagnostics.
+- Allocation failures must be deterministic and recoverable where possible.
+- No allocator may silently corrupt state on exhaustion.
+- Stress tests must cover allocation/free churn and memory pressure.
+
+## 29.4 Scheduler and context
+
+- Scheduler entities need explicit ownership.
+- Runqueue membership must have one authoritative state.
+- A task cannot simultaneously be in incompatible states.
+- Context-switch paths must document which stack/frame is authoritative at each transition.
+- Interrupt return must never consume a stale frame.
+- Yield and preemption must share well-defined lifecycle rules.
+- Wait queues must not wake already-dead tasks.
+- Timeout cancellation must not race with timeout firing.
+- Zombie reaping must have a single owner/lifecycle rule.
+- Idle tasks must never be treated as ordinary runnable user work.
+- CPU offline paths must migrate or terminate runnable state safely.
+- Scheduler diagnostics should include sequence numbers and transition counters.
+- Deterministic traces should identify the certification checkpoint order.
+- A full event trace remains stronger than the current seven-bit certification marker and can be added later for forensic debugging.
+
+## 29.5 SMP
+
+- Per-CPU data must be initialized before use.
+- AP startup must have timeout/error handling.
+- CPU online/offline transitions need ownership rules.
+- Cross-CPU wakeups need memory-ordering guarantees.
+- TLB shootdowns require acknowledgement/liveness rules.
+- Scheduler load balancing must not migrate a task whose state is changing without synchronization.
+- Interrupt affinity must be explicit.
+- SMP tests must include uneven CPU load and CPU shutdown/restart paths where supported.
+
+# 30. REMAINING STORAGE DETAILS
+
+- Block devices need a common request abstraction.
+- Requests should support merge/coalesce where safe.
+- Queue depth must be bounded.
+- HDD policy should consider seek locality and starvation.
+- SSD/NVMe policy should avoid unnecessary seek-oriented heuristics.
+- Read-ahead must adapt to sequentiality instead of blindly prefetching.
+- Write-back must be bounded and pressure-aware.
+- Dirty-page accounting must prevent uncontrolled cache growth.
+- Direct I/O must bypass or coordinate with page cache according to explicit semantics.
+- Async I/O needs cancellation/error reporting.
+- Filesystem metadata needs integrity checks.
+- Journaling must define transaction boundaries.
+- Recovery must be idempotent where possible.
+- Snapshot references must not leak indefinitely.
+- Encryption must integrate with key lifecycle and recovery.
+- File timestamps/permissions/ownership semantics must be stable.
+- Path parsing must reject malformed/unsafe traversal cases.
+- Mount/unmount must not invalidate live references.
+- Device removal/error must propagate to waiting I/O.
+- Filesystem tests need random crash injection, not only clean shutdown tests.
+
+# 31. REMAINING NETWORK DETAILS
+
+- Network buffers require ownership/lifetime rules.
+- Packet parsing must validate every length before access.
+- Ethernet frame bounds must be checked.
+- ARP/ND state needs timeout and cache limits.
+- IPv4/IPv6 parsing needs extension/header validation.
+- UDP socket lifecycle must be race-safe.
+- TCP requires sequence/ack/window/congestion state correctness.
+- DNS cache needs TTL/size limits.
+- DHCP renewal must not block the entire network stack.
+- Firewall rules need deterministic ordering and logging policy.
+- TLS should use a well-defined cryptographic implementation and certificate-validation model.
+- Network failure must not spin CPU indefinitely.
+- Reconnect/backoff must be bounded.
+- Wi-Fi drivers must expose capability profiles rather than claiming universal adapter support.
+- Throughput tests must distinguish LAN capability from Internet/ISP capability.
+
+# 32. REMAINING DRIVER DETAILS
+
+- Every device driver needs probe, initialize, operate, error, reset, suspend, resume, and remove lifecycle definitions where applicable.
+- MMIO regions must be validated and mapped with correct permissions.
+- DMA buffers need alignment, ownership, lifetime, and mapping state.
+- IRQ handlers should do minimal work and defer expensive processing.
+- Interrupt storms need detection and mitigation.
+- Unsupported devices must fail cleanly.
+- Device hotplug must not leave dangling references.
+- USB descriptors must be length-validated.
+- HID reports must be bounds-checked.
+- Storage completion paths must tolerate device errors.
+- GPU reset/failure needs recovery or safe fallback.
+- Audio device loss needs graceful stream shutdown/reopen.
+- Thermal sensor failure must not result in unsafe assumptions.
+- ACPI parsing must validate table lengths/checksums/addresses.
+
+# 33. REMAINING GRAPHICS DETAILS
+
+- Display discovery must handle firmware-provided framebuffer information safely.
+- Mode setting must validate dimensions/stride/pixel format.
+- Surface ownership must be explicit.
+- Damage regions must be merged/bounded.
+- Occlusion must prevent work on fully hidden surfaces.
+- Frame pacing must avoid busy waiting.
+- Vsync/presentation behavior must be capability-dependent.
+- GPU command buffers require validation before submission.
+- GPU memory must have bounded accounting.
+- GPU reset must not corrupt user-space state.
+- Software framebuffer fallback must remain functional for unsupported hardware.
+- Fonts should use efficient caching.
+- UI text rendering must be resolution-aware.
+- Scaling must avoid repeated expensive resampling.
+- Screenshots should capture the compositor state without unnecessary copies where possible.
+- Fullscreen applications should trigger desktop background suppression.
+- Lock screen must stop unnecessary background rendering.
+
+# 34. REMAINING MEDIA DETAILS
+
+- Hardware decoder discovery must be capability-based.
+- Codec profile/level limits must be checked.
+- Unsupported codec must use explicit fallback/error behavior.
+- Decoder buffers must have bounded lifetime.
+- Audio/video synchronization must use a stable clock model.
+- Dropped-frame policy should preserve responsiveness under pressure.
+- 1080p is a target workload, not a universal guarantee.
+- Thermal throttling must be observable during sustained playback.
+- Hardware decode should be preferred when it reduces CPU/thermal cost.
+
+# 35. REMAINING UI / UX DETAILS
+
+- UI animations must have a global reduced-motion/low-power mode.
+- Animation timers should stop when the surface is not visible.
+- Notifications need priority, grouping, and suppression rules.
+- Search indexing must be lazy/background and throttled.
+- File manager must not recursively scan huge trees synchronously on the UI thread.
+- Settings should expose resource/performance profiles.
+- Performance Center should expose CPU/RAM/disk/network/GPU/thermal telemetry.
+- Diagnostics should expose unsupported hardware and driver state clearly.
+- Accessibility must include keyboard navigation, scaling, contrast, and reduced motion where implemented.
+- Internationalization must avoid hard-coded layout assumptions.
+- Input handling must separate hardware events from UI interpretation.
+- Window lifecycle must survive minimize/restore/fullscreen transitions.
+- UI crash must not imply kernel crash.
+
+# 36. REMAINING NATIVE APPLICATION DETAILS
+
+### ZERO Files
+- Directory navigation
+- Copy/move/delete
+- Rename
+- Search
+- Hidden/system file policy
+- Progress reporting
+- Cancellation
+- Permission errors
+- Large-directory performance
+- Crash-safe file operations
+
+### ZERO Terminal
+- PTY/terminal abstraction
+- Process launch
+- stdin/stdout/stderr
+- signal/termination semantics
+- resize handling
+- history
+- bounded scrollback
+- secure privilege boundaries
+
+### Settings
+- Hardware profile
+- Display
+- Network
+- Audio
+- Power
+- Security
+- Updates
+- Permissions
+- AI controls
+- Compatibility controls
+
+### Diagnostics / Performance Center
+- CPU utilization
+- memory pressure
+- disk latency/queue depth
+- network throughput
+- GPU utilization where available
+- thermal sensors
+- service state
+- recent failures
+- boot/recovery state
+- benchmark execution
+
+# 37. REMAINING WINDOWS RUNTIME DETAILS
+
+- PE/COFF parser is only the beginning.
+- Loader must establish process address space correctly.
+- Imports/exports require deterministic resolution.
+- Relocations require architecture-aware validation.
+- Thread-local storage needs explicit semantics.
+- Exception/unwind behavior needs compatibility planning.
+- Win32 handles need translation to ZEROOS resources.
+- Registry operations require a controlled persistence model.
+- Windows paths need translation without security traversal.
+- DLL search paths must be controlled to reduce hijacking risk.
+- Process/thread priority mapping must be documented.
+- Synchronization primitives need semantic compatibility.
+- Named objects/IPC need an isolated namespace.
+- Windows filesystem behavior must not bypass ZEROOS permissions.
+- Network APIs need translation to the native socket layer.
+- DirectX APIs need a tested graphics translation layer.
+- Unsupported API calls must return documented errors rather than silently doing something different.
+- Application compatibility must be recorded by actual application/workload.
+
+# 38. REMAINING ANDROID DETAILS
+
+- APK parser must validate ZIP/package boundaries.
+- Manifest parsing must be safe.
+- Signature verification must be explicit.
+- Permission declarations must map to ZEROOS capability policy.
+- Application UID/identity isolation must be maintained.
+- Binder-like IPC needs lifetime and transaction limits.
+- Runtime memory must be bounded.
+- Android graphics must map to the ZEROOS graphics/GPU stack safely.
+- Android filesystem access must be sandboxed.
+- Background Android processes should be suspended/terminated according to lifecycle policy.
+- Play Services-dependent features need explicit compatibility status.
+- APK updates must be transactional and reversible.
+- Uninstall must remove app-owned state according to documented policy.
+
+# 39. REMAINING GAMING DETAILS
+
+- Game process priority must be controlled without starving system safety tasks.
+- Background indexing/download/update work should pause or throttle.
+- Desktop compositor should minimize unnecessary work.
+- Shader/cache storage must be bounded.
+- GPU memory pressure must be visible.
+- Game crashes must return to desktop without kernel failure.
+- Compatibility layers must expose reproducible configuration profiles.
+- Frame pacing matters in addition to peak FPS.
+- Sustained thermal behavior matters more than short benchmark bursts.
+- Memory leaks must be detected in long sessions.
+- Network gaming latency must be measured separately from raw throughput.
+- AAA support is a target, not a claim for every title until tested.
+
+# 40. REMAINING SECURITY DETAILS
+
+- Trust boundaries must be documented.
+- Kernel/user boundary must be explicit.
+- Service-to-service permissions must be explicit.
+- Capability handles should be non-forgeable.
+- Privileged syscalls need argument validation.
+- Secrets must not appear in ordinary logs.
+- Crash dumps need sensitive-data policy.
+- Package verification must fail closed.
+- Update rollback must protect against boot loops.
+- Recovery tools must have controlled privilege.
+- Debug builds must not accidentally weaken release security.
+- Fault-injection builds must be clearly separated from production configurations.
+- Security telemetry must be low-overhead and privacy-conscious.
+- Fuzzing should target parsers, syscalls, IPC, filesystems, device descriptors, packages, and compatibility loaders.
+
+# 41. REMAINING PERFORMANCE TECHNOLOGY INVENTORY
+
+The following technologies/concepts were previously discussed as candidates or engineering targets. They are not all automatically adopted; each must pass architecture, correctness, benchmark, and maintenance gates.
+
+| Area | Technology / concept | Intended ZEROOS use |
+|---|---|---|
+| Scheduling | EEVDF-style scheduling | Fair latency-sensitive CPU scheduling |
+| Scheduling | Tickless operation | Reduce timer wakeups |
+| Scheduling | Per-CPU runqueues | Reduce contention |
+| Scheduling | CPU affinity | Predictable placement |
+| Scheduling | Load balancing | Spread runnable work |
+| Scheduling | RT/deadline classes | Special latency/deadline workloads |
+| Scheduling | Wakeup preemption | Reduce interactive latency |
+| Scheduling | Scheduler tracing | Diagnose latency/invariants |
+| Memory | Demand paging | Load pages only when needed |
+| Memory | COW | Efficient process/address-space duplication |
+| Memory | MGLRU-style reclaim | Better working-set reclaim |
+| Memory | Page cache | Avoid repeated storage reads |
+| Memory | Adaptive read-ahead | Improve sequential I/O |
+| Memory | Slab/object allocator | Efficient kernel object allocation |
+| Memory | Per-CPU allocator caches | Reduce allocator lock contention |
+| Memory | PCID | Reduce TLB flush cost where supported |
+| Memory | Huge pages | Reduce page-table/TLB overhead where beneficial |
+| Memory | Guard pages | Detect stack/buffer overrun |
+| Storage | Request merging | Reduce device operations |
+| Storage | HDD-aware elevator | Reduce seek overhead |
+| Storage | Priority/aging | Balance latency and starvation |
+| Storage | Bounded queues | Prevent runaway memory/latency |
+| Storage | Write coalescing | Reduce write amplification |
+| Storage | Journaling | Crash consistency |
+| Storage | Checksums | Detect corruption |
+| Storage | Snapshots | Recovery/update safety |
+| Storage | Encryption | Data-at-rest protection |
+| Network | NAPI-style polling/deferred processing | Avoid interrupt overload |
+| Network | GRO | Aggregate receive packets |
+| Network | GSO | Aggregate transmit work |
+| Network | Zero/low-copy buffers | Reduce packet copies where safe |
+| Network | Connection backoff | Avoid reconnect storms |
+| Network | DNS cache | Reduce repeated resolution |
+| Network | Firewall | Network policy enforcement |
+| Graphics | Vulkan | Modern GPU rendering |
+| Graphics | Damage tracking | Render only changed regions |
+| Graphics | Occlusion culling | Avoid hidden rendering |
+| Graphics | Retained scene graph | Reduce rebuild work |
+| Graphics | Frame pacing | Stable presentation |
+| Graphics | Surface caching | Reduce repeated allocation |
+| Graphics | Fullscreen suppression | Stop desktop work behind games |
+| Graphics | Hardware decode | Reduce CPU media cost |
+| Graphics | Software fallback | Compatibility on weak hardware |
+| UI | Vector assets | Resolution independence |
+| UI | Font caching | Reduce text rendering cost |
+| UI | Reduced-motion mode | Lower visual work/accessibility |
+| Power | Device power states | Reduce idle energy |
+| Power | CPU idle states | Reduce idle consumption |
+| Power | Thermal governor | Protect sustained stability |
+| Power | Background throttling | Reduce contention |
+| Security | Secure Boot | Trust boot chain where supported |
+| Security | Measured Boot | Attestation/measurement where supported |
+| Security | NX/W^X | Reduce executable-memory abuse |
+| Security | ASLR | Randomize layout |
+| Security | Stack protection | Detect stack corruption |
+| Security | CFI-style protection | Restrict invalid control flow |
+| Security | IOMMU | DMA isolation where supported |
+| Security | Sandboxing | Contain untrusted applications |
+| Security | Capabilities | Least privilege |
+| Security | Signed packages | Authentic software |
+| Security | Atomic updates | Prevent partial activation |
+| Security | Rollback | Recover from bad updates |
+| Security | Fuzzing | Find parser/boundary bugs |
+| Security | Sanitizers in test builds | Find memory/UB issues |
+| Browser | Process isolation | Contain renderer failures |
+| Browser | Site/content isolation | Reduce cross-content risk |
+| Compatibility | PE/COFF loader | Windows application loading |
+| Compatibility | API translation | Win32/Win64 compatibility |
+| Compatibility | DX-to-Vulkan-style translation | Windows graphics |
+| Compatibility | Android runtime isolation | Android application execution |
+| Compatibility | Binder-like IPC | Android service/app communication |
+| AI | Permission broker | Controlled ZERO AI actions |
+| AI | Dormant backend | Low idle overhead |
+| AI | Cancellable automation | Bounded system actions |
+| AI | Audit log | Explain/track privileged actions |
+| Recovery | Snapshot rollback | Known-good restore |
+| Recovery | Safe mode | Minimal recovery environment |
+| Recovery | Recovery terminal | Repair operations |
+| Observability | Counters | Resource measurements |
+| Observability | Structured logs | Machine-readable diagnostics |
+| Observability | Tracepoints | Latency/debugging |
+| Observability | Fault injection | Recovery validation |
+| Testing | QEMU certification | Deterministic virtual validation |
+| Testing | Hardware certification | Real-device validation |
+| Testing | Soak tests | Long-duration stability |
+| Testing | Regression CI | Prevent reintroduction of bugs |
+
+## 41.1 Approximate performance targets previously discussed
+
+These numbers are engineering targets/hypotheses, not guaranteed results:
+
+- EEVDF-style scheduling: roughly 1.1–1.3x improvement in suitable fairness/latency workloads.
+- MGLRU-style reclaim: roughly 1.1–1.5x under memory pressure in favorable workloads.
+- HDD scheduling: roughly 1.2–2x in favorable seek/locality workloads.
+- Sequential read-ahead: roughly 1.2–2x in suitable workloads.
+- Vulkan/modern GPU path: roughly 1.1–2x in suitable graphics workloads.
+- Hardware video decode: potentially 2–10x CPU-work reduction for suitable codecs/hardware.
+- Overall unnecessary background/OS overhead: earlier target was roughly 2–4x lower than naive designs.
+- None of these numbers may be presented as universal benchmarks until measured on defined hardware/workloads.
+
+# 42. CURRENT IMPLEMENTATION / AUDIT SNAPSHOT TO PRESERVE
+
+From the retained repository audit:
+
+- Boot: Multiboot2 -> long mode -> paging -> kernel entry.
+- Physical memory: bitmap allocator + tests.
+- VMM: 4-level mappings, map/unmap, permissions, MMIO, huge-page splitting.
+- GDT/TSS, interrupts, timer, IRQ paths exist.
+- Scheduler is substantial but certification/hardening is a major gate.
+- SMP has AP discovery/startup, GS/per-CPU, TLB shootdown plumbing, but requires complete certification.
+- FPU/SSE/AVX context switching was not complete in the audited state.
+- Process/thread, Ring-3, ELF, syscall, IPC/shared-memory pieces exist but require production certification.
+- Storage has AHCI/NVMe/block/page-cache/VFS/ZJFS-related work and HDD scheduling features.
+- Legacy IDE was detected but not fully driven.
+- AHCI legacy INTx/polling fallback had limitations.
+- Network has Ethernet/ARP/IPv4/IPv6/UDP/TCP/DNS/DHCP/socket pieces.
+- Full Wi-Fi stack was not established.
+- USB/audio cores existed.
+- Display framebuffer discovery/MMIO mapping existed; boot target was 1024x768x32 in the audited path, while product certification target is 1366x768.
+- Real GPU/Vulkan driver/runtime was not yet complete in the audit.
+- Compositor had retained scene, damage, occlusion, pacing, and cache host tests.
+- Window/input core existed; desktop shell chrome rendering was pending in the audit.
+- Browser lifecycle/state existed; complete modern browser engine was not.
+- File Manager/Terminal/Settings/Notifications/Accessibility/i18n/Performance Center cores existed.
+- Security crypto such as ChaCha20/Poly1305/AEAD had verification, but complete policy enforcement/integration was incomplete.
+- Windows compatibility foundation existed, but PE loader/Win32/DirectX runtime was not complete.
+- Android runtime was absent in the audited state.
+- ZERO AI permission/dormancy/broker contracts had host-tested pieces, but actual inference/backend was incomplete.
+- Package/update/recovery architecture existed with transaction/rollback and recovery/snapshot test work.
+- Thermal/power hardware implementation was incomplete.
+- G560 certification was not complete.
+- 1080p hardware media pipeline was not complete.
+- Gaming was not implemented in the audited state.
+- 100 Mbps Wi-Fi was not established by physical measurement.
+
+# 43. CURRENT 10-STAGE EXECUTION DETAIL
+
+Stage 0 — Reproducible engineering/CI:
+- reproducible build
+- pinned/known toolchain
+- build artifacts
+- boot smoke
+- deterministic test entry
+- regression preservation
+- documentation/evidence format
+
+Stage 1 — Kernel:
+- scheduler
+- context lifecycle
+- interrupts
+- task state
+- wait/sleep
+- preemption
+- zombie/reaping
+- SMP
+- deterministic trace
+- panic diagnostics
+- register preservation
+- stress/soak
+- QEMU certification
+
+Stage 2 — Userspace:
+- process/thread
+- PID/TID
+- parent/child
+- exec/exit/wait
+- Ring-3
+- syscall ABI
+- safe copies
+- page faults
+- credentials
+- permissions
+- resource limits
+- IPC
+- pipe exact semantics
+- concurrent stress
+- recovery
+
+Stage 3 — Storage:
+- block layer
+- request queues
+- merge
+- HDD elevator
+- VFS
+- filesystem
+- journal
+- page cache
+- async/direct I/O
+- fsck
+- snapshots
+- checksums
+- encryption
+- power-cut tests
+
+Stage 4 — Drivers/platform:
+- device model
+- PCI/PCIe
+- ACPI
+- DMA
+- IRQ
+- USB/HID
+- storage
+- Ethernet/Wi-Fi
+- audio
+- power
+- thermal
+- malformed-device/fault tests
+
+Stage 5 — Graphics/desktop:
+- framebuffer
+- display
+- GPU abstraction
+- compositor
+- surfaces
+- window manager
+- input
+- shell
+- taskbar/launcher
+- search
+- notifications
+- workspaces
+- settings
+- accessibility
+- damage/occlusion/pacing
+- low-power rendering
+
+Stage 6 — Security/update/recovery:
+- privilege separation
+- capabilities
+- permissions
+- sandbox
+- memory protections
+- secure boot/TPM where supported
+- package signatures
+- update transaction
+- rollback
+- recovery
+- fuzz/fault injection
+- security regression
+
+Stage 7 — GPU/media/browser/apps:
+- real GPU path
+- Vulkan
+- fallback
+- hardware decode
+- 1080p workload
+- browser engine
+- renderer isolation
+- native apps
+- performance/thermal validation
+
+Stage 8 — Windows/Android/gaming:
+- PE loader
+- Win32/Win64 APIs
+- DLL/import
+- registry/filesystem translation
+- graphics translation
+- Android runtime
+- APK installer
+- permissions/isolation
+- gaming profile
+- AAA workload matrix
+- thermal/memory pressure
+- controller remains out of scope
+
+Stage 9 — ZERO AI:
+- permission broker
+- file/app/terminal/settings capabilities
+- automation
+- diagnostics
+- coding/study
+- audit
+- cancellation
+- offline behavior
+- resource limits
+- crash isolation
+- security tests
+- dormant behavior
+
+Stage 10 — Hardware/release:
+- G560 physical boot
+- 1366x768
+- HDD persistence
+- 1080p playback where capable
+- Wi-Fi measurements
+- thermal sensors
+- cold/warm reboot
+- recovery
+- rollback
+- security regression
+- long-duration soak
+- performance/resource measurements
+- release documentation
+
+# 44. RELEASE GATE TRUTH TABLE
+
+| Claim | Minimum evidence |
+|---|---|
+| boots | QEMU + target hardware as applicable |
+| scheduler stable | focused stress + CI + QEMU |
+| SMP stable | multi-vCPU + SMP stress + hardware where required |
+| userspace stable | Ring-3/process/syscall/IPC stress |
+| filesystem stable | crash/power-cut/replay/recovery |
+| Wi-Fi supported | real adapter test |
+| 100 Mbps target met | real adapter/network measurement |
+| GPU acceleration | real supported GPU driver path |
+| Vulkan support | actual Vulkan runtime/driver test |
+| 1080p playback | sustained target hardware workload |
+| browser support | real engine + isolation tests |
+| Windows support | actual application/workload matrix |
+| Android support | actual APK install/run matrix |
+| gaming support | actual game/runtime matrix |
+| secure update | signature + transactional + rollback test |
+| recovery | realistic fault -> known-good restore |
+| ZERO AI system action | permission-broker end-to-end test |
+| low idle overhead | measured idle benchmark |
+| long-term stability | soak test |
+| release ready | all applicable stages + physical certification |
+
+# 45. QUESTIONS THAT MUST NOT BE LOST IN FUTURE AI HANDOFFS
+
+1. Is this implementation or only a contract?
+2. Has the code actually executed?
+3. On host, QEMU, or real hardware?
+4. What exact commit was tested?
+5. What exact command was run?
+6. What was expected?
+7. What was observed?
+8. What happens under failure?
+9. Is recovery tested?
+10. Is the resource cost measured?
+11. Is the feature dormant when unused?
+12. Is there a polling loop that can become event-driven?
+13. Can an invisible UI surface avoid rendering?
+14. Can a background task be throttled?
+15. Can a queue become unbounded?
+16. Can a race leave duplicate ownership?
+17. Can malformed input cross a trust boundary?
+18. Can an update leave the machine unbootable?
+19. Can compatibility code gain more privilege than required?
+20. Can ZERO AI bypass permissions?
+21. Is a performance multiplier measured or merely estimated?
+22. Is a compatibility claim based on actual workload execution?
+23. Does a QEMU result falsely imply hardware support?
+24. Does a host test falsely imply kernel/hardware behavior?
+25. Is the current checkbox genuinely backed by evidence?
+26. Is there a missing negative test?
+27. Is there a missing stress test?
+28. Is there a missing long-duration test?
+29. Is there a missing recovery test?
+30. Is there a missing thermal/power test?
+31. Is there a missing security regression?
+32. Is there a missing documentation/evidence record?
+33. Is the implementation advanced enough to avoid throwaway work?
+34. Is an unsupported feature being honestly marked unsupported?
+35. Does a fallback exist?
+36. Does fallback have its own correctness/performance gate?
+37. Does failure degrade predictably?
+38. Does the feature increase idle CPU?
+39. Does it increase idle RAM?
+40. Does it increase disk writes?
+41. Does it increase network traffic?
+42. Does it increase GPU work?
+43. Does it increase thermal load?
+44. Does it interfere with foreground responsiveness?
+45. Can it be suspended?
+46. Can it be cancelled?
+47. Can it be rolled back?
+48. Can it be fuzzed?
+49. Can it be fault-injected?
+50. Can the exact failure be reproduced?
+51. Does the diagnostic identify the invariant violation?
+52. Is ownership/lifetime documented?
+53. Is concurrency documented?
+54. Is ABI behavior documented?
+55. Are error codes deterministic?
+56. Are timeouts bounded?
+57. Are retries bounded?
+58. Are caches bounded?
+59. Are logs bounded?
+60. Are telemetry costs bounded?
+61. Is security fail-closed?
+62. Is the capability scope minimal?
+63. Are secrets protected?
+64. Are crash dumps handled safely?
+65. Is the update path atomic?
+66. Is rollback automatic where required?
+67. Is recovery independently bootable?
+68. Does the browser isolate crashes?
+69. Does Windows compatibility isolate crashes?
+70. Does Android compatibility isolate crashes?
+71. Does ZERO AI isolate crashes?
+72. Does a GPU fault recover/fallback?
+73. Does a network fault avoid CPU spin?
+74. Does a storage fault propagate correctly?
+75. Does a device removal leave dangling references?
+76. Does a process exit wake the right waiters?
+77. Does a timeout race remain correct?
+78. Does a pipe close wake blocked operations?
+79. Does partial pipe write report exact bytes?
+80. Does a full nonblocking pipe return EAGAIN?
+81. Does a timed-out pipe return ETIMEDOUT?
+82. Does producer/consumer ordering remain exact?
+83. Does scheduler context preserve all required state?
+84. Does interrupt return use a valid owned frame?
+85. Does SMP migration preserve task ownership?
+86. Does page reclaim preserve active data?
+87. Does COW preserve shared-page correctness?
+88. Does filesystem replay preserve transaction semantics?
+89. Does power-cut recovery preserve defined invariants?
+90. Does the UI stop rendering hidden content?
+91. Does wallpaper stop when covered/fullscreen?
+92. Does weak hardware get a lower-cost profile?
+93. Does 1080p playback remain stable over time?
+94. Does gaming suppress unnecessary desktop work?
+95. Does Wi-Fi target depend on external network conditions?
+96. Does Android Play Services absence break documented app classes?
+97. Does Windows API coverage match actual application requirements?
+98. Does ZERO AI require network for the claimed function?
+99. Is ZERO AI permission denial tested?
+100. Is the entire release claim backed by evidence rather than documentation alone?
+
+# 46. HANDOFF COMPLETENESS RULE
+
+This document plus the linked master blueprint, roadmap, architecture, hardware, validation, hardening, and AI handoff documents should be treated as the retained engineering context. If a future AI finds a conflict, it must inspect the repository's current code/tests and newest evidence rather than assuming older chat statements are still true.
+
+The repository state is authoritative for implementation. Executable evidence is authoritative for certification. The product requirements are authoritative for intended behavior. When these differ, report the difference explicitly and do not silently rewrite history.
+
+## End of exhaustive retained context.
