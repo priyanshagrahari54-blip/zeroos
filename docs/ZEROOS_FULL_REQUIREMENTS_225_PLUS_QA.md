@@ -1581,4 +1581,8 @@ This document plus the linked master blueprint, roadmap, architecture, hardware,
 
 The repository state is authoritative for implementation. Executable evidence is authoritative for certification. The product requirements are authoritative for intended behavior. When these differ, report the difference explicitly and do not silently rewrite history.
 
+## 47. MICRO-TO-MICRO CONTINUATION
+
+For the granular implementation/validation checklist from boot through release, see `docs/ZEROOS_MICRO_REQUIREMENTS_FROM_START.md`. It is intentionally checklist-based and does not mark requirements complete merely because they are documented.
+
 ## End of exhaustive retained context.
