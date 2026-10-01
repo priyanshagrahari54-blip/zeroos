@@ -12,6 +12,7 @@
 #define VMM_LEAF_FLAGS 0x00000000000001ffULL
 /* Software-only ownership marker; bit 9 is ignored by x86 page walkers. */
 #define VMM_INTERNAL_OWNED 0x0000000000000200ULL
+#define VMM_USER_PML4_INDEX 254ULL
 
 static uint64_t *root_table;
 static uint64_t root_physical;
@@ -262,6 +263,9 @@ int vmm_map_page(uint64_t virtual_address,
     uint64_t pd_index = (virtual_address >> 21) & 0x1ff;
     uint64_t pt_index = (virtual_address >> 12) & 0x1ff;
 
+    if ((flags&VMM_USER) && pml4_index!=VMM_USER_PML4_INDEX)
+        return -1;
+
     uint64_t *pdpt = ensure_table(root_table, pml4_index, flags);
     if (!pdpt)
         return -1;
@@ -423,56 +427,43 @@ int vmm_unmap_range(uint64_t virtual_address, uint64_t page_count) {
 
 int vmm_protect_page(uint64_t virtual_address, uint64_t flags) {
     if (!root_table || !canonical_address(virtual_address) ||
-        (virtual_address & (VMM_PAGE_SIZE - 1)) != 0 ||
+        (virtual_address & (VMM_PAGE_SIZE-1))!=0 ||
         !mapping_flags_valid(flags))
         return -1;
 
-    uint64_t pml4_index = (virtual_address >> 39) & 0x1ff;
-    uint64_t pdpt_index = (virtual_address >> 30) & 0x1ff;
-    uint64_t pd_index = (virtual_address >> 21) & 0x1ff;
-    uint64_t pt_index = (virtual_address >> 12) & 0x1ff;
+    uint64_t pml4_index=(virtual_address>>39)&0x1ffULL;
+    uint64_t pdpt_index=(virtual_address>>30)&0x1ffULL;
+    uint64_t pd_index=(virtual_address>>21)&0x1ffULL;
+    uint64_t pt_index=(virtual_address>>12)&0x1ffULL;
+    if ((flags&VMM_USER) && pml4_index!=VMM_USER_PML4_INDEX)
+        return -1;
 
-    uint64_t e1 = root_table[pml4_index];
-    if (!(e1 & VMM_PRESENT)) return -1;
-    uint64_t *pdpt = table_from_entry(e1);
+    uint64_t e1=root_table[pml4_index];
+    if (!(e1&VMM_PRESENT)) return -1;
+    uint64_t *pdpt=table_from_entry(e1);
+    uint64_t e2=pdpt[pdpt_index];
+    if (!(e2&VMM_PRESENT) || (e2&HUGE_PAGE_2M)) return -1;
+    uint64_t *pd=table_from_entry(e2);
 
-    /*
-     * x86-64 user accessibility is hierarchical: a leaf U/S bit is not
-     * sufficient when any ancestor entry remains supervisor-only.  A page
-     * protected as user therefore has to promote every paging level that
-     * contains it.  This is safe here because the explicit user-space test
-     * address lives in the dedicated user PML4 slot; kernel mappings remain
-     * supervisor-only.
-     */
-    if (flags & VMM_USER)
-        e1 |= VMM_USER;
-    root_table[pml4_index] = e1;
-
-    uint64_t e2 = pdpt[pdpt_index];
-    if (!(e2 & VMM_PRESENT)) return -1;
-    uint64_t *pd = table_from_entry(e2);
-
-    if (flags & VMM_USER)
-        e2 |= VMM_USER;
-    pdpt[pdpt_index] = e2;
-
-    if (pd[pd_index] & HUGE_PAGE_2M) {
-        if (split_2m(pd,pd_index,root_physical,virtual_address) != 0) return -1;
+    if (pd[pd_index]&HUGE_PAGE_2M) {
+        if (split_2m(pd,pd_index,root_physical,virtual_address)!=0)
+            return -1;
     }
+    uint64_t e3=pd[pd_index];
+    if (!(e3&VMM_PRESENT) || (e3&HUGE_PAGE_2M)) return -1;
+    uint64_t *pt=table_from_entry(e3);
+    uint64_t old_leaf=pt[pt_index];
+    if (!(old_leaf&VMM_PRESENT)) return -1;
 
-    uint64_t e3 = pd[pd_index];
-    if (!(e3 & VMM_PRESENT)) return -1;
-    if (flags & VMM_USER) {
-        e3 |= VMM_USER;
-        pd[pd_index] = e3;
+    /* Permission promotion is hierarchical. Commit it only after validating
+     * the leaf, so a failed protect can never broaden sibling mappings. */
+    if (flags&VMM_USER) {
+        root_table[pml4_index]=e1|VMM_USER;
+        pdpt[pdpt_index]=e2|VMM_USER;
+        pd[pd_index]=e3|VMM_USER;
     }
-    if (!(e3 & VMM_PRESENT)) return -1;
-    uint64_t *pt = table_from_entry(e3);
-    if (!(pt[pt_index] & VMM_PRESENT)) return -1;
-
-    pt[pt_index] = (pt[pt_index] & (PHYS_MASK | VMM_INTERNAL_OWNED)) |
-                   VMM_PRESENT |
-                   hardware_leaf_flags(flags);
+    pt[pt_index]=(old_leaf&(PHYS_MASK|VMM_INTERNAL_OWNED))|
+                 VMM_PRESENT|hardware_leaf_flags(flags);
     if (kernel_mapping_may_be_active(virtual_address))
         invalidate_page(virtual_address);
     return 0;
@@ -588,8 +579,6 @@ int vmm_is_user_range(uint64_t virtual_address, uint64_t length, uint64_t write)
  * The space root itself is independent, so CR3 switching never mutates the
  * kernel root.
  */
-#define VMM_USER_PML4_INDEX 254ULL
-
 static int space_canonical(uint64_t address) {
     return canonical_address(address);
 }

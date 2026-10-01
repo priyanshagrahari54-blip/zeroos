@@ -152,6 +152,26 @@ static void vmm_self_test(void) {
         kernel_panic("VMM map failed");
     if (vmm_translate(VMM_SELF_TEST_VA)!=(uint64_t)physical)
         kernel_panic("VMM translation mismatch");
+
+    /* Failed permission updates must not promote USER on parent entries, and
+     * the global kernel root may never expose shared kernel/MMIO slots. */
+    uint64_t *test_root=(uint64_t *)vmm_root();
+    uint64_t test_pml4=(VMM_SELF_TEST_VA>>39)&0x1ffULL;
+    uint64_t *test_pdpt=(uint64_t *)(test_root[test_pml4]&0x000ffffffffff000ULL);
+    uint64_t test_pdpt_i=(VMM_SELF_TEST_VA>>30)&0x1ffULL;
+    uint64_t root_user_before=test_root[test_pml4]&VMM_USER;
+    uint64_t pdpt_user_before=test_pdpt[test_pdpt_i]&VMM_USER;
+    if (vmm_protect_page(VMM_SELF_TEST_VA+VMM_PAGE_SIZE,
+                         VMM_USER|VMM_NO_EXECUTE)!=-1 ||
+        (test_root[test_pml4]&VMM_USER)!=root_user_before ||
+        (test_pdpt[test_pdpt_i]&VMM_USER)!=pdpt_user_before ||
+        vmm_protect_page(0x1000ULL,VMM_USER|VMM_NO_EXECUTE)!=-1 ||
+        vmm_map_page(0x40000000ULL,(uint64_t)physical,
+                     VMM_USER|VMM_NO_EXECUTE)!=-1 ||
+        (test_root[0]&VMM_USER)!=0)
+        kernel_panic("VMM failed protect changed parent permissions");
+    serial_write_public("ZEROOS: VMM failed-protect permission isolation passed.\n");
+
     if (vmm_protect_page(VMM_SELF_TEST_VA,VMM_USER|VMM_NO_EXECUTE)!=0)
         kernel_panic("VMM protection update failed");
     if (!vmm_is_user_range(VMM_SELF_TEST_VA,VMM_PAGE_SIZE,0))
