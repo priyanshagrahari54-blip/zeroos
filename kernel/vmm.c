@@ -28,6 +28,7 @@ static int root_active_on_any_cpu(uint64_t root) {
 
 static int page_table_empty(const uint64_t *table);
 static uint64_t *table_from_entry(uint64_t entry);
+static inline void invalidate_page(uint64_t address);
 
 /* Kernel-root slot 0 (identity/direct map) and the MMIO slot are copied into
  * every process root. Their changes need a shootdown even when no CPU currently
@@ -39,19 +40,20 @@ static int kernel_mapping_may_be_active(uint64_t virtual_address) {
 }
 
 static void unlink_and_free_table(uint64_t *parent, uint64_t index,
-                                  uint64_t *table) {
-    /* Unpublish the table before freeing its backing page. Flush every CPU's
-     * paging-structure caches after the unlink so no concurrent walk can
-     * continue through a pointer into a recycled frame. */
+                                  uint64_t *table, uint64_t virtual_address) {
+    /* Unpublish the empty table before freeing its backing page. The previous
+     * synchronous leaf shootdown retired its mappings; invalidate this VA
+     * again after unlink so no CPU retains a paging-structure walk into the
+     * recycled table page. */
     parent[index]=0;
-    if (tlb_flush_all()!=0)
-        for (;;) __asm__ volatile ("cli; hlt");
+    invalidate_page(virtual_address);
     page_free(table);
 }
 
 static void reclaim_empty_root_path(uint64_t pml4_index,
                                     uint64_t pdpt_index,
-                                    uint64_t pd_index) {
+                                    uint64_t pd_index,
+                                    uint64_t virtual_address) {
     /* These trees are shared by process roots as raw page-table pointers.
      * Reclaiming them would leave those roots pointing into freed allocator
      * pages; keep shared kernel subtrees stable for their lifetime. */
@@ -68,11 +70,11 @@ static void reclaim_empty_root_path(uint64_t pml4_index,
     uint64_t *pt=table_from_entry(e3);
 
     if (!page_table_empty(pt)) return;
-    unlink_and_free_table(pd,pd_index,pt);
+    unlink_and_free_table(pd,pd_index,pt,virtual_address);
     if (!page_table_empty(pd)) return;
-    unlink_and_free_table(pdpt,pdpt_index,pd);
+    unlink_and_free_table(pdpt,pdpt_index,pd,virtual_address);
     if (!page_table_empty(pdpt)) return;
-    unlink_and_free_table(root_table,pml4_index,pdpt);
+    unlink_and_free_table(root_table,pml4_index,pdpt,virtual_address);
 }
 
 static int mapping_flags_valid(uint64_t flags) {
@@ -352,7 +354,7 @@ int vmm_unmap_page(uint64_t virtual_address) {
         invalidate_page(virtual_address);
         return -1;
     }
-    reclaim_empty_root_path(pml4_index,pdpt_index,pd_index);
+    reclaim_empty_root_path(pml4_index,pdpt_index,pd_index,virtual_address);
     return 0;
 }
 
@@ -752,11 +754,11 @@ int vmm_space_unmap_page(struct vmm_space *space, uint64_t virtual_address) {
 
     /* Reclaim empty private paging levels immediately. */
     if (page_table_empty(pt)) {
-        unlink_and_free_table(pd,pd_index,pt);
+        unlink_and_free_table(pd,pd_index,pt,virtual_address);
         if (page_table_empty(pd)) {
-            unlink_and_free_table(pdpt,pdpt_index,pd);
+            unlink_and_free_table(pdpt,pdpt_index,pd,virtual_address);
             if (page_table_empty(pdpt))
-                unlink_and_free_table(space->root,pml4_index,pdpt);
+                unlink_and_free_table(space->root,pml4_index,pdpt,virtual_address);
         }
     }
     return 0;
