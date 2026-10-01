@@ -230,10 +230,11 @@ coverage, not physical-hardware evidence.
 
 ## Stage 1 VMM teardown and shared-MMIO delta (2026-10-01)
 
-- `kernel/vmm.c` broadcasts TLB invalidation before releasing an owned physical-page reference in kernel-root and address-space unmaps, including roots that appear inactive to close a CR3-transition race. Empty private page-table levels are unlinked, followed by a synchronous full TLB/page-walk-cache flush, before their backing pages are freed; shared slot-0/MMIO tables remain allocated. Huge-page splits account for shared mappings.
+- `kernel/vmm.c` broadcasts TLB invalidation before releasing an owned physical-page reference in kernel-root and address-space unmaps, including roots that appear inactive to close a CR3-transition race. Empty private page-table levels are unlinked, followed by synchronous address-specific invalidation on every CPU before their backing pages are freed; shared slot-0/MMIO tables remain allocated. Huge-page splits account for shared mappings.
 - The MMIO PML4 subtree is created during VMM initialization. A boot self-test adds an MMIO PDPT child after an address space has copied the kernel slot, verifies translation visibility in that existing root, then unmaps the leaf without freeing shared tables. A separate boot check verifies frame references and free-page accounting after reclaiming a fresh private PML4 path.
 - Local `make check`: **PASS**, exit 0 after these VMM changes (including unlink-before-free and unconditional pre-release shootdown). This builds the ELF and runs ABI, hosted core/desktop/compatibility/storage/SIMD checks; it is not guest or hardware certification.
 - Exact-code CI run [36747020237](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36747020237) passed on `4f6df30457b51dc9dbb6679b1afd4ab6931fe21b`, including build, `make check`, QEMU boot/SMP and q35 AHCI/NVMe two-boot persistence. The workflow now requires the virtual-memory and per-address-space VMM self-test serial markers. Run [36748022072](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36748022072) on `eff20fc7f6345a4541d04497314119f781f102aa` passed those gates plus QEMU SMP and storage.
+- A subsequent exact-SHA run [36858051968](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36858051968) passed QEMU boot but failed the q35 AHCI/NVMe storage-persistence step before its storage discovery/Stage 3 markers; serial tails ended around scheduler timer output without a panic marker. The previous full flush at each removed paging level was narrowed to synchronous `INVLPG` for the unmapped address after the parent unlink. Exact-SHA run [36859092757](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36859092757) then passed the full build, host, QEMU and two-boot q35 storage workflow. Treat the isolated failure as a reliability signal; a single follow-up pass is not repeated stress evidence.
 - Disposition: **IMPLEMENTED** and **TESTED (host build + QEMU)** for the stated paths. Not **HARDWARE TESTED**, not evidence of general **SUPPORTED** hardware, and not **PRODUCTION READY**. Physical cross-CPU lifetime stress, concurrent page-table mutation stress, and target-hardware testing remain open. Stage 10 remains **BLOCKED**.
 
 ### VMM permission-isolation follow-up (2026-10-01)
@@ -252,7 +253,7 @@ map are rejected. CI requires the explicit
 [36855983261](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36855983261)
 on `1070b3ab950092edd9aab93be789f9e4a842c7fd` passed build, host release checks, QEMU boot/SMP and q35 AHCI/NVMe
 persistence. This is **IMPLEMENTED** and **TESTED in QEMU**, not hardware-tested
-or production-ready. Exact-SHA CI run [36857163730](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36857163730) on `206ba31a73fa33836c378a198912e3bc84347836` also passed QEMU boot/SMP, storage, and allocator/page-table self-tests. Same-address concurrent map/unmap serialization and physical SMP stress remain unproven; Stage 1–5 completion is not claimed.
+or production-ready. Exact-SHA run [36857163730](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36857163730) on `206ba31a73fa33836c378a198912e3bc84347836` also passed QEMU boot/SMP, storage, and allocator/page-table self-tests. The following table-unlink implementation and storage-step failure/follow-up are recorded above. Same-address concurrent map/unmap serialization and physical SMP stress remain unproven; Stage 1–5 completion is not claimed.
 
 ### Stage 10 release gate disposition
 
@@ -260,7 +261,7 @@ or production-ready. Exact-SHA CI run [36857163730](https://github.com/priyansha
 |---|---|---|
 | Build + host release checks | Local `make check` PASS; exact-SHA GitHub build PASS | Tested (host/CI), reproducible artifact comparison not shown |
 | Guest boot / kernel / scheduler / SMP | Exact-SHA VMM runs 36747020237 / 36748022072: QEMU boot, 2-vCPU repeated + 4-vCPU assertions PASS | Tested in emulation; not hardware-certified |
-| VMM teardown / page-table reclamation / shared MMIO / protect permissions | Runs 36748022072, 36855983261 and 36857163730 gate frame/refcount, free-page, MMIO propagation, failed-protect isolation and unlink-before-free assertions | Tested in QEMU; not hardware-certified or production-ready |
+| VMM teardown / page-table reclamation / shared MMIO / protect permissions | Runs 36748022072, 36855983261, 36857163730 and 36859092757 gate frame/refcount, free-page, MMIO propagation, failed-protect isolation and unlink-before-free assertions; run 36858051968 records an unresolved q35 storage-step failure | Tested in QEMU; not hardware-certified or production-ready |
 | Storage crash/recovery | Host ZJFS/GPT recovery PASS; CI AHCI/NVMe persistence step PASS | Tested in host tools/emulation; physical HDD and power-loss certification open |
 | 2 GB memory pressure / OOM / reclaim | No 2 GB target run or measured process workloads in this environment | Not tested |
 | Network adapters / throughput / packet loss | Host protocol-core suites only; no actual NIC/link measurement | Not hardware-tested |

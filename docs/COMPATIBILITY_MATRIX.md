@@ -1,12 +1,12 @@
 # ZEROOS Compatibility Matrix
 
 **Assessment date:** 2026-10-01
-**Source SHA:** `206ba31a73fa33836c378a198912e3bc84347836`
+**Source SHA:** `73275f51df3922d94d5073497942e3f2e6756113`
 **Rule:** parser/policy presence is not runtime support. Each row distinguishes implemented, tested and operational status. Compatibility is per exact application, runtime build, hardware, driver and workload; no universal claim is made.
 
 ## Latest source/evidence note (2026-10-01)
 
-This matrix is synchronized to `206ba31a73fa33836c378a198912e3bc84347836`. VMM lifecycle, failed-protect and unlink-before-free hardening plus QEMU boot evidence do not expand any application, hardware, graphics, network, or media support claim below. Physical hardware remains uncertified.
+This matrix is synchronized to `73275f51df3922d94d5073497942e3f2e6756113`. VMM lifecycle, failed-protect and targeted unlink-invalidation hardening plus QEMU boot evidence do not expand any application, hardware, graphics, network, or media support claim below. Physical hardware remains uncertified.
 
 ## Application/runtime matrix
 

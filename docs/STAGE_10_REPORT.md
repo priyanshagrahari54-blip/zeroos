@@ -2,7 +2,7 @@
 
 **Status: BLOCKED**
 **Assessment date:** 2026-10-01
-**Source SHA:** `206ba31a73fa33836c378a198912e3bc84347836`
+**Source SHA:** `73275f51df3922d94d5073497942e3f2e6756113`
 **Recommendation:** DO NOT RELEASE as production-ready.
 **Scope:** source/host tests, existing exact-SHA CI evidence, and available build environment. No physical target hardware was present. The source includes the scancode fix and later VMM changes; see the exact-SHA run records below for the commits each run validates.
 
@@ -54,7 +54,7 @@ A broader hosted build that also analyzes `userspace/desktop/tests/test_input.c`
 | Kernel / syscall / user boundary | Kernel ELF and boot milestones; CI checks negative syscall/fault/malformed-ELF probes | No | Tested in host/emulation; target security review open |
 | Scheduler / interrupts / timers | CI asserts scheduler fairness/latency, timer preemption, process lifecycle and wake/wait paths | No | Tested in QEMU assertions only; longer physical saturation soak open |
 | SMP / TLB | CI QEMU 2-vCPU and 4-vCPU milestones, per-CPU ownership and remote TLB self-tests | No | Emulated tests pass; no hardware SMP cert |
-| Physical/virtual memory | Host/build and boot allocator self-tests; QEMU VMM owned-frame/refcount, private table-reclaim and shared-MMIO tests (runs 36747020237 / 36748022072 / 36855983261 / 36857163730) | No | QEMU-only VMM coverage; no 2 GB pressure, COW, swap, OOM, sustained-memory, or physical SMP lifetime certification |
+| Physical/virtual memory | Host/build and boot allocator self-tests; QEMU VMM owned-frame/refcount, private table-reclaim and shared-MMIO tests (runs 36747020237 / 36748022072 / 36855983261 / 36857163730 / 36858051968 / 36859092757) | No | QEMU-only VMM coverage; no 2 GB pressure, COW, swap, OOM, sustained-memory, or physical SMP lifetime certification |
 | Storage / VFS / ZJFS | Host GPT/ZJFS image recovery and CI guest storage/persistence milestones | No | Partial; physical HDD latency/queue/load and safe real power-loss testing absent |
 | Drivers / PCI / DMA | Host driver/DMA core suites; CI emulated AHCI/NVMe | No | Adapter-specific hardware matrix absent; IOMMU containment/BAR risk remains per architecture |
 | Network | Host protocol/parser/socket core suites | No | No physical NIC, link, packet loss, DNS/DHCP/reconnect or throughput test |
@@ -101,13 +101,21 @@ implied. Stage 10 remains **BLOCKED**.
 
 ### VMM table unlink and frame-retirement ordering (2026-10-01)
 
-Page-table parents are now cleared before table frames are returned to the
-allocator; each unlink is followed by a synchronous full TLB/page-walk-cache
-flush. Root and address-space unmap broadcast invalidation before releasing an
-owned data-frame reference, rather than trusting a possibly stale active-root
-snapshot during CR3 transition. Local `make check` passed and exact-SHA CI run
-[36857163730](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36857163730)
-on `206ba31a73fa33836c378a198912e3bc84347836` passed QEMU boot/SMP and storage gates. This is QEMU evidence only.
+Page-table parents are cleared before table frames are returned to the
+allocator; each unlink is followed by synchronous address-specific invalidation
+on every CPU before freeing the frame. Root and address-space unmap broadcast
+invalidation before releasing an owned data-frame reference, rather than
+trusting a possibly stale active-root snapshot during CR3 transition. Local
+`make check` passed. Run [36857163730](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36857163730)
+on `206ba31a73fa33836c378a198912e3bc84347836` passed with the earlier full
+flush. Run [36858051968](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36858051968)
+then failed the q35 storage gate before storage discovery (no panic marker).
+Commit `73275f51df3922d94d5073497942e3f2e6756113` changed the hierarchy-unlink
+flush to targeted invalidation; exact-SHA run
+[36859092757](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36859092757)
+passed boot/SMP and both AHCI/NVMe persistence boots. The single failure remains
+an unresolved reliability signal; repeated stress is still needed. This is
+QEMU evidence only.
 Concurrent page-table writers are not yet serialized/stress-tested, and no
 physical-hardware or production-readiness claim follows.
 
@@ -161,4 +169,4 @@ These are release blockers due to missing evidence and incomplete production sco
 - **RECOVERY RESULTS:** Host filesystem recovery and emulated guest recovery/persistence subsets pass; physical recovery/update rollback not certified.
 - **KNOWN LIMITATIONS:** See this report and `COMPATIBILITY_MATRIX.md`.
 - **RELEASE RECOMMENDATION:** DO NOT RELEASE as production-ready.
-- **COMMIT SHA (tested code):** `206ba31a73fa33836c378a198912e3bc84347836`
+- **COMMIT SHA (tested code):** `73275f51df3922d94d5073497942e3f2e6756113`

@@ -961,3 +961,8 @@ The failed-protect ancestor-permission regression is implemented and gated in QE
 ### Stage 1 VMM frame/table retirement evidence (2026-10-01)
 
 The page-table unlink-before-free and unconditional frame-retirement shootdown changes pass local checks and QEMU CI run 36857163730. This narrows a kernel-memory safety gap but does not establish physical SMP or concurrent-writer correctness, nor does it close Stages 1–5.
+
+
+### Stage 1 VMM q35 storage regression signal (2026-10-01)
+
+A q35 storage CI gate failed once on run 36858051968 after the earlier full-flush table-reclamation change; the serial tail ended before storage milestones and contained no panic marker. The targeted invalidation follow-up passed run 36859092757. Do not dismiss the failure: repeated q35 runs and physical storage testing remain open.

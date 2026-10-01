@@ -693,3 +693,8 @@ Stage 1 gates remain open; this does not complete Stage 1.
 ### Stage 1 VMM frame/table retirement follow-up (2026-10-01)
 
 Kernel-root and address-space unmaps now broadcast TLB invalidation before data-frame release. Empty table paths are unlinked before table frames are freed, with a synchronous page-walk-cache flush at each link removal. Local `make check` and QEMU CI run 36857163730 passed. This does not prove same-address concurrent-writer safety: mapping mutation serialization and physical cross-CPU lifetime stress remain open; Stage 1 remains in progress.
+
+
+### Stage 1 VMM targeted unlink shootdown follow-up (2026-10-01)
+
+Full TLB reloads at every paging-level unlink were replaced with synchronous address-specific invalidation after each unlink, then page-table memory is reclaimed. A q35 storage gate failed on run 36858051968 after boot passed; its logs stop before storage discovery without a panic. Exact-SHA run 36859092757 passed the full q35 storage workflow on the targeted invalidation change. The failure is retained as a reliability signal; repeat stress is required before considering this path stable.
