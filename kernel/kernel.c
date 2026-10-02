@@ -807,7 +807,7 @@ static void scheduler_tss_stack_self_check(void) {
 
 struct fpu_probe_state {
     uint64_t xmm[16][2];
-    uint64_t x87_value;
+    uint64_t x87[8];
     uint32_t mxcsr;
 };
 
@@ -822,7 +822,11 @@ static const struct fpu_probe_state fpu_probe_pattern_a={
      FPU_PROBE_VECTOR_A(10),FPU_PROBE_VECTOR_A(11),
      FPU_PROBE_VECTOR_A(12),FPU_PROBE_VECTOR_A(13),
      FPU_PROBE_VECTOR_A(14),FPU_PROBE_VECTOR_A(15)},
-    0x3ff8000000000000ULL,0x9f80U
+    {0x3ff0000000000000ULL,0x3ff4000000000000ULL,
+     0x3ff8000000000000ULL,0x3ffc000000000000ULL,
+     0x4000000000000000ULL,0x4004000000000000ULL,
+     0x4008000000000000ULL,0x4010000000000000ULL},
+    0x9f80U
 };
 static const struct fpu_probe_state fpu_probe_pattern_b={
     {FPU_PROBE_VECTOR_B(0),FPU_PROBE_VECTOR_B(1),
@@ -833,7 +837,11 @@ static const struct fpu_probe_state fpu_probe_pattern_b={
      FPU_PROBE_VECTOR_B(10),FPU_PROBE_VECTOR_B(11),
      FPU_PROBE_VECTOR_B(12),FPU_PROBE_VECTOR_B(13),
      FPU_PROBE_VECTOR_B(14),FPU_PROBE_VECTOR_B(15)},
-    0xc004000000000000ULL,0x1f80U
+    {0xbff0000000000000ULL,0xbff4000000000000ULL,
+     0xbff8000000000000ULL,0xbffc000000000000ULL,
+     0xc000000000000000ULL,0xc004000000000000ULL,
+     0xc008000000000000ULL,0xc010000000000000ULL},
+    0x1f80U
 };
 #undef FPU_PROBE_VECTOR_A
 #undef FPU_PROBE_VECTOR_B
@@ -860,39 +868,53 @@ static const struct fpu_probe_state fpu_probe_pattern_b={
     FPU_PROBE_STORE_XMM(10,160) FPU_PROBE_STORE_XMM(11,176) \
     FPU_PROBE_STORE_XMM(12,192) FPU_PROBE_STORE_XMM(13,208) \
     FPU_PROBE_STORE_XMM(14,224) FPU_PROBE_STORE_XMM(15,240)
+#define FPU_PROBE_LOAD_X87(offset) "fldl " #offset "(%0)\n\t"
+#define FPU_PROBE_STORE_X87(offset) "fstpl " #offset "(%0)\n\t"
+#define FPU_PROBE_LOAD_ALL_X87 \
+    FPU_PROBE_LOAD_X87(56) FPU_PROBE_LOAD_X87(48) \
+    FPU_PROBE_LOAD_X87(40) FPU_PROBE_LOAD_X87(32) \
+    FPU_PROBE_LOAD_X87(24) FPU_PROBE_LOAD_X87(16) \
+    FPU_PROBE_LOAD_X87(8) FPU_PROBE_LOAD_X87(0)
+#define FPU_PROBE_STORE_ALL_X87 \
+    FPU_PROBE_STORE_X87(0) FPU_PROBE_STORE_X87(8) \
+    FPU_PROBE_STORE_X87(16) FPU_PROBE_STORE_X87(24) \
+    FPU_PROBE_STORE_X87(32) FPU_PROBE_STORE_X87(40) \
+    FPU_PROBE_STORE_X87(48) FPU_PROBE_STORE_X87(56)
 
 static void scheduler_fpu_probe_worker(void *argument) {
     const struct fpu_probe_state *expected=(const struct fpu_probe_state *)argument;
     uint64_t observed[16][2];
-    uint64_t observed_x87;
+    uint64_t observed_x87[8];
     uint32_t observed_mxcsr;
     if (!expected)
         kernel_panic("FPU context probe setup failed");
 
-    /* Cover all architectural SSE2 registers and the x87/MXCSR portions of
-     * the FXSAVE image. The kernel compiler is general-register-only; these
-     * are explicit probe instructions. */
+    /* Cover all architectural SSE2 registers and all eight x87 stack entries
+     * plus MXCSR in the FXSAVE image. The kernel compiler is general-register-
+     * only; these are explicit probe instructions. */
     for (uint64_t iteration=0;iteration<96;++iteration) {
         __asm__ volatile (FPU_PROBE_LOAD_ALL_XMM
                           : : "r"(&expected->xmm[0][0]) : "memory");
-        __asm__ volatile ("fldl %0\n\t"
-                          "ldmxcsr %1"
-                          : : "m"(expected->x87_value),
-                              "m"(expected->mxcsr) : "memory");
+        __asm__ volatile (FPU_PROBE_LOAD_ALL_X87
+                          : : "r"(&expected->x87[0]) : "memory");
+        __asm__ volatile ("ldmxcsr %0"
+                          : : "m"(expected->mxcsr) : "memory");
         scheduler_yield();
         __asm__ volatile (FPU_PROBE_STORE_ALL_XMM
                           : : "r"(&observed[0][0]) : "memory");
-        __asm__ volatile ("fstpl %0\n\t"
-                          "stmxcsr %1"
-                          : "=m"(observed_x87),"=m"(observed_mxcsr)
-                          : : "memory");
+        __asm__ volatile (FPU_PROBE_STORE_ALL_X87
+                          : : "r"(&observed_x87[0]) : "memory");
+        __asm__ volatile ("stmxcsr %0"
+                          : "=m"(observed_mxcsr) : : "memory");
         for (uint32_t reg=0;reg<16;++reg)
             if (observed[reg][0]!=expected->xmm[reg][0] ||
                 observed[reg][1]!=expected->xmm[reg][1])
                 kernel_panic("per-task XMM register context corruption");
-        if (observed_x87!=expected->x87_value ||
-            observed_mxcsr!=expected->mxcsr)
-            kernel_panic("per-task x87/MXCSR context corruption");
+        for (uint32_t reg=0;reg<8;++reg)
+            if (observed_x87[reg]!=expected->x87[reg])
+                kernel_panic("per-task x87 stack context corruption");
+        if (observed_mxcsr!=expected->mxcsr)
+            kernel_panic("per-task MXCSR context corruption");
     }
 
     /* Cooperative yields above cover saved-stack handoffs. On the BSP, keep
@@ -905,25 +927,27 @@ static void scheduler_fpu_probe_worker(void *argument) {
         uint64_t deadline=self->runtime_ticks+self->timeslice_ticks+2ULL;
         __asm__ volatile (FPU_PROBE_LOAD_ALL_XMM
                           : : "r"(&expected->xmm[0][0]) : "memory");
-        __asm__ volatile ("fldl %0\n\t"
-                          "ldmxcsr %1"
-                          : : "m"(expected->x87_value),
-                              "m"(expected->mxcsr) : "memory");
+        __asm__ volatile (FPU_PROBE_LOAD_ALL_X87
+                          : : "r"(&expected->x87[0]) : "memory");
+        __asm__ volatile ("ldmxcsr %0"
+                          : : "m"(expected->mxcsr) : "memory");
         while ((long long)(deadline-self->runtime_ticks)>0)
             __asm__ volatile ("pause" ::: "memory");
         __asm__ volatile (FPU_PROBE_STORE_ALL_XMM
                           : : "r"(&observed[0][0]) : "memory");
-        __asm__ volatile ("fstpl %0\n\t"
-                          "stmxcsr %1"
-                          : "=m"(observed_x87),"=m"(observed_mxcsr)
-                          : : "memory");
+        __asm__ volatile (FPU_PROBE_STORE_ALL_X87
+                          : : "r"(&observed_x87[0]) : "memory");
+        __asm__ volatile ("stmxcsr %0"
+                          : "=m"(observed_mxcsr) : : "memory");
         for (uint32_t reg=0;reg<16;++reg)
             if (observed[reg][0]!=expected->xmm[reg][0] ||
                 observed[reg][1]!=expected->xmm[reg][1])
                 kernel_panic("timer IRQ XMM context corruption");
-        if (observed_x87!=expected->x87_value ||
-            observed_mxcsr!=expected->mxcsr)
-            kernel_panic("timer IRQ x87/MXCSR context corruption");
+        for (uint32_t reg=0;reg<8;++reg)
+            if (observed_x87[reg]!=expected->x87[reg])
+                kernel_panic("timer IRQ x87 stack context corruption");
+        if (observed_mxcsr!=expected->mxcsr)
+            kernel_panic("timer IRQ MXCSR context corruption");
         if (self->context_switches<=switches_before)
             kernel_panic("FPU timer probe did not resume after IRQ preemption");
     }
@@ -934,6 +958,10 @@ static void scheduler_fpu_probe_worker(void *argument) {
 #undef FPU_PROBE_STORE_XMM
 #undef FPU_PROBE_LOAD_ALL_XMM
 #undef FPU_PROBE_STORE_ALL_XMM
+#undef FPU_PROBE_LOAD_X87
+#undef FPU_PROBE_STORE_X87
+#undef FPU_PROBE_LOAD_ALL_X87
+#undef FPU_PROBE_STORE_ALL_X87
 
 static void scheduler_probe_worker(void *argument) {
     uint64_t rbx_value=0x1122334455667788ULL;
