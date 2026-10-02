@@ -894,6 +894,39 @@ static void scheduler_fpu_probe_worker(void *argument) {
             observed_mxcsr!=expected->mxcsr)
             kernel_panic("per-task x87/MXCSR context corruption");
     }
+
+    /* Cooperative yields above cover saved-stack handoffs. On the BSP, keep
+     * the same architectural state live for longer than one full time slice
+     * without yielding, forcing the timer IRQ/iret path to suspend and resume
+     * this task while its FPU state is live. */
+    if (cpu_current_id()==0) {
+        volatile struct task *self=task_current();
+        uint64_t switches_before=self->context_switches;
+        uint64_t deadline=self->runtime_ticks+self->timeslice_ticks+2ULL;
+        __asm__ volatile (FPU_PROBE_LOAD_ALL_XMM
+                          : : "r"(&expected->xmm[0][0]) : "memory");
+        __asm__ volatile ("fldl %0\n\t"
+                          "ldmxcsr %1"
+                          : : "m"(expected->x87_value),
+                              "m"(expected->mxcsr) : "memory");
+        while ((long long)(deadline-self->runtime_ticks)>0)
+            __asm__ volatile ("pause" ::: "memory");
+        __asm__ volatile (FPU_PROBE_STORE_ALL_XMM
+                          : : "r"(&observed[0][0]) : "memory");
+        __asm__ volatile ("fstpl %0\n\t"
+                          "stmxcsr %1"
+                          : "=m"(observed_x87),"=m"(observed_mxcsr)
+                          : : "memory");
+        for (uint32_t reg=0;reg<16;++reg)
+            if (observed[reg][0]!=expected->xmm[reg][0] ||
+                observed[reg][1]!=expected->xmm[reg][1])
+                kernel_panic("timer IRQ XMM context corruption");
+        if (observed_x87!=expected->x87_value ||
+            observed_mxcsr!=expected->mxcsr)
+            kernel_panic("timer IRQ x87/MXCSR context corruption");
+        if (self->context_switches<=switches_before)
+            kernel_panic("FPU timer probe did not resume after IRQ preemption");
+    }
     atomic_u64_fetch_add(&fpu_probe_done,1);
 }
 

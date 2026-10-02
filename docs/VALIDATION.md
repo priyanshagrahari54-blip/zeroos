@@ -326,12 +326,16 @@ reliability.
 
 ## Stage 1 FPU probe expansion (2026-10-02)
 
-The scheduler FPU runtime probe now checks independent per-worker patterns in
-all 16 XMM registers, one x87 stack value, and MXCSR across 96 cooperative
-yields. Two workers remain pinned to the BSP; when an AP is online, a third
-worker is pinned to CPU 1. The host context test likewise checks all 16 XMM
-registers plus x87 and MXCSR. The 4-vCPU QEMU workflow now explicitly requires
-the FPU completion marker in addition to the repeated 2-vCPU boot markers.
+The scheduler FPU runtime probe checks independent per-worker patterns in all
+16 XMM registers, one x87 stack value, and MXCSR across 96 cooperative yields.
+The two BSP workers additionally hold that state across a forced full timer
+time-slice without yielding, then verify their task context-switch counts
+advanced; this targets IRQ-frame/`iretq` FPU preservation. When an AP is online,
+a third worker is pinned to CPU 1. The host context test checks all 16 XMM
+registers plus x87 and MXCSR. The 4-vCPU QEMU workflow requires the FPU marker
+in addition to the repeated 2-vCPU boot markers. This newest deterministic
+IRQ-FPU probe has compiled and passed the linked SIMD audit and host FPU test,
+but it has not yet run in QEMU; the earlier QEMU evidence predates this probe.
 
 `make check`: **PASS** on source `58f9c4e6197f3c70372388960efdae643d24f862`,
 including the host FPU test, linked SIMD audit, kernel build, desktop
