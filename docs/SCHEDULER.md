@@ -283,8 +283,6 @@ passed build, QEMU boot/SMP, and q35 persistence. Exact-SHA run
 on `975ad8a7ef560db329d6e5216fa6e8d9a6793ffd` also passed the full workflow,
 including boot/SMP and q35 persistence, with the process credential probe
 present. These additional passes are not a demonstrated fix or reliability
-closure. A later workflow update adds explicit greps for the credential marker
-across six guest paths and still needs CI. Do not mark SMP **SUPPORTED** or
-Stage 1 **PRODUCTION READY**; close the reliability blocker only with
+closure. Exact-SHA run [36976530176](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36976530176) passed with explicit credential-marker greps across six guest paths. Do not mark SMP **SUPPORTED** or Stage 1 **PRODUCTION READY**; close the reliability blocker only with
 cause-specific evidence, repeated oversubscribed QEMU runs, and physical-
 hardware validation.

@@ -6,7 +6,7 @@
 
 ## Latest source/evidence note (2026-10-01)
 
-This matrix is synchronized to source `975ad8a7ef560db329d6e5216fa6e8d9a6793ffd` (code and evidence). VMM lifecycle, failed-protect, targeted unlink-invalidation hardening, scheduler progress telemetry, and the limited process credential-capability probe do not expand any application, hardware, graphics, network, or media support claim below. Exact-SHA run 36975661257 passed the full build/host/Boot/SMP/q35 workflow; recent intermittent failures still prevent a stability or production claim. Physical hardware remains uncertified. Explicit workflow greps for the new credential probe are pending the next CI run.
+This matrix is synchronized to source `1936a2bdaf50bf260bf77e6635f02438be8f7a23` (code and evidence). VMM lifecycle, failed-protect, targeted unlink-invalidation hardening, scheduler progress telemetry, and the limited process credential-capability probe do not expand any application, hardware, graphics, network, or media support claim below. Exact-SHA run [36976530176](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36976530176) passed the full build/host/Boot/SMP/q35 workflow with the credential marker gated in six guest boots. Recent intermittent failures still prevent a stability or production claim. Physical hardware remains uncertified.
 
 ## Application/runtime matrix
 

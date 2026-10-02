@@ -247,8 +247,7 @@ capability handles, static ELF loading, fail-closed Ring-3 fault containment,
 and the limited credential-capability self-test are implemented and exercised
 in QEMU. Exact-SHA run [36975661257](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36975661257)
 on `975ad8a7ef560db329d6e5216fa6e8d9a6793ffd` passed the full workflow with
-that code present; its explicit marker assertions were added afterward and
-await CI. None of this is production-certified on physical hardware.
+that code present. Exact-SHA run [36976530176](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36976530176) then passed with the explicit credential-marker assertion enabled across six guest boots. None of this is production-certified on physical hardware.
 
 ## Certification
 

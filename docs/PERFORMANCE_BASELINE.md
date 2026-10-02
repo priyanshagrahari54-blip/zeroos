@@ -30,7 +30,7 @@ A valid performance result must include the physical hardware profile, kernel co
 | Desktop host suite | 120,907 assertions, 0 failures | No frame-time/FPS or real desktop residency measurement |
 | Compatibility host suite | 107 checks, 0 failures | No application runtime performance |
 | Storage host self-test | PASS, including 3,000,000-byte fixture and fsck checks | Not HDD throughput, IOPS, seek latency, queue depth, CPU cost or power-loss behavior |
-| GitHub Actions | Exact-SHA runs 36747020237, 36748022072, 36855983261, 36857163730, 36859092757, 36860832315, 36876632155 and 36975661257 PASS; runs 36858051968, 36861689464 and 36873757374 failed q35 storage, while 36860017977 failed Boot test (storage skipped) | Two later full-workflow passes do not erase intermittent failures or establish stability; emulated timings are not recorded here and are not hardware performance data. The tightened credential-marker gate is pending CI. |
+| GitHub Actions | Exact-SHA runs 36747020237, 36748022072, 36855983261, 36857163730, 36859092757, 36860832315, 36876632155, 36975661257 and 36976530176 PASS; runs 36858051968, 36861689464 and 36873757374 failed q35 storage, while 36860017977 failed Boot test (storage skipped) | Three subsequent full-workflow passes do not erase intermittent failures or establish stability; emulated timings are not performance data. The credential-marker gate passed but does not provide hardware performance evidence. |
 | VMM self-tests | Owned-page lifetime, page-table reclamation, shared-MMIO visibility and failed-protect permission-isolation assertions are included in QEMU boot tests | Functional checks only; no TLB latency, allocator, RSS or workload-performance measurement |
 
 ## Certified workload results

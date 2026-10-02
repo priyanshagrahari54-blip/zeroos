@@ -525,8 +525,4 @@ passed the full build, host, boot, and q35 persistence workflow. Exact-SHA run
 [36975661257](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36975661257)
 on `975ad8a7ef560db329d6e5216fa6e8d9a6793ffd` then passed the same workflow
 with process credential-capability probe code present; the security change
-does not alter storage behavior. Two later passes are useful but do not
-establish a cause-specific fix or repeatability. The reliability gate remains
-open; repeated oversubscribed q35 runs and cause-specific evidence are still
-required. A stricter workflow commit now requires explicit credential-probe
-markers on both q35 boots and awaits validation.
+does not alter storage behavior. Exact-SHA run [36976530176](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36976530176) also passed, with the credential marker required on both q35 persistence boots. Three passes after the earlier failure remain insufficient to establish a cause-specific fix or repeatability. The reliability gate remains open; repeated oversubscribed q35 runs and cause-specific evidence are still required.
