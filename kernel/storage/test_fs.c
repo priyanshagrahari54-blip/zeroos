@@ -407,6 +407,10 @@ static int tf_io_errors(struct block_device *device, uint8_t *a, uint8_t *b) {
     fault.lba_start=device->start_lba+spb;
     fault.lba_end=device->start_lba+spb*(1U+((struct zj_super *)sbp)->journal_blocks);
     page_free(sbp);
+    /* Drain unrelated metadata before arming the journal-sector failure. The
+     * background commit worker may otherwise win the race against this
+     * injected transaction after a slow/oversubscribed guest has aged it. */
+    TF_CHECK(vfs_sync_all()==0,"flush before journal failure injection");
     block_fault_set(device,&fault);
     int rc=vfs_mkdir(&tf_root,"/t/doomed",0755);
     struct vfs_file *d;

@@ -8,14 +8,14 @@
 /*
  * Early physical-memory policy:
  *
- * The supported Stage 1 matrix currently manages the first 512 MiB. Memory
+ * The bootstrap allocator manages physical frames in the first 2 GiB. Memory
  * outside that range is deliberately reported as unsupported rather than
  * being handed to a caller through an unchecked bitmap. The allocator keeps
  * separate usable and allocation bitmaps: a page can only be returned to the
  * free pool when firmware marked it usable. This prevents page_free() from
  * accidentally releasing kernel, boot-info or page-table reservations.
  */
-#define ZEROOS_MAX_PHYS_MEM (512ULL * 1024ULL * 1024ULL)
+#define ZEROOS_MAX_PHYS_MEM (2ULL * 1024ULL * 1024ULL * 1024ULL)
 #define ZEROOS_MAX_PAGES (ZEROOS_MAX_PHYS_MEM / ZEROOS_PAGE_SIZE)
 #define ZEROOS_BITMAP_WORDS ((ZEROOS_MAX_PAGES + 63ULL) / 64ULL)
 #define ZEROOS_SUMMARY_WORDS ((ZEROOS_BITMAP_WORDS + 63ULL) / 64ULL)
@@ -548,7 +548,16 @@ uint64_t memory_free_pages(void) {
 }
 
 uint64_t memory_max_physical(void) {
-    return ZEROOS_MAX_PHYS_MEM;
+    uint64_t limit=0;
+    uint64_t flags=spin_lock_irqsave(&memory_lock);
+    for (uint64_t page=ZEROOS_MAX_PAGES;page>0;--page) {
+        if (usable_test(page-1ULL)) {
+            limit=page*ZEROOS_PAGE_SIZE;
+            break;
+        }
+    }
+    spin_unlock_irqrestore(&memory_lock,flags);
+    return limit;
 }
 
 void memory_reserve_physical(uint64_t start, uint64_t length) {

@@ -229,6 +229,37 @@ static void vmm_self_test(void) {
         tlb_debug_validate()!=0)
         kernel_panic("TLB shootdown boundary self-test failed");
 
+    /* On >1 GiB guests, prove high physical pages are both present in the
+     * direct map and allocatable/reclaimable. This runs after the kernel has
+     * installed its complete RAM identity map, so probing the high page is
+     * safe even before process address spaces are created. */
+    const uint64_t high_memory_boundary=1ULL<<30;
+    const uint64_t high_test_pages=16;
+    if (memory_total_pages()>262144ULL &&
+        memory_is_usable_range(high_memory_boundary,
+                               high_test_pages*ZEROOS_PAGE_SIZE)) {
+        uint64_t free_before=memory_free_pages();
+        void *high_run=page_alloc_contiguous(high_test_pages);
+        uint64_t high_address=(uint64_t)high_run;
+        if (!high_run || high_address<high_memory_boundary ||
+            vmm_translate(high_memory_boundary)!=high_memory_boundary)
+            kernel_panic("high physical memory map/allocation failed");
+        for (uint64_t i=0;i<high_test_pages;++i) {
+            volatile uint64_t *words=(volatile uint64_t *)
+                (high_address+i*ZEROOS_PAGE_SIZE);
+            uint64_t expected=0x5a45524f00000000ULL|i;
+            words[0]=expected;
+            words[ZEROOS_PAGE_SIZE/sizeof(uint64_t)-1ULL]=~expected;
+            if (words[0]!=expected ||
+                words[ZEROOS_PAGE_SIZE/sizeof(uint64_t)-1ULL]!=~expected)
+                kernel_panic("high physical memory data-path validation failed");
+        }
+        page_free_contiguous(high_run,high_test_pages);
+        if (memory_free_pages()!=free_before)
+            kernel_panic("high physical memory reclaim accounting failed");
+        serial_write_public("ZEROOS: high physical memory allocation/map/reclaim passed.\n");
+    }
+
     page_free(physical);
     serial_write_public("ZEROOS: TLB shootdown boundary self-test passed.\n");
     serial_write_public("ZEROOS: virtual memory self-test passed.\n");

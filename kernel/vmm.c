@@ -224,22 +224,33 @@ int vmm_init(void) {
 
     /*
      * Keep a compact identity/direct map for the complete physical range
-     * currently managed by the physical allocator.  512 MiB needs only one
-     * 4 KiB page directory (256 x 2 MiB entries).
-     *
-     * The first 2 MiB contains the executable kernel/bootstrap area.
-     * Remaining RAM is writable and non-executable.
+     * currently managed by the physical allocator. The 2 GiB bootstrap range
+     * spans two PDPT entries, each with one 4 KiB page directory of 2 MiB
+     * leaves. The first 2 MiB contains the executable kernel/bootstrap area;
+     * all remaining managed RAM is writable and non-executable.
      */
     uint64_t tracked = memory_max_physical();
-    uint64_t entries = tracked / HUGE_PAGE_SIZE;
-    if (entries > ENTRY_COUNT)
-        entries = ENTRY_COUNT;
+    uint64_t entries = (tracked + HUGE_PAGE_SIZE - 1ULL) / HUGE_PAGE_SIZE;
+    uint64_t pdpt_count = (entries + ENTRY_COUNT - 1ULL) / ENTRY_COUNT;
+    if (pdpt_count > ENTRY_COUNT)
+        pdpt_count = ENTRY_COUNT;
 
-    for (uint64_t i = 0; i < entries; ++i) {
-        uint64_t flags = VMM_PRESENT | VMM_WRITABLE | HUGE_PAGE_2M;
-        if (i != 0)
-            flags |= hardware_leaf_flags(VMM_NO_EXECUTE);
-        pd[i] = i * HUGE_PAGE_SIZE | flags;
+    for (uint64_t pdpt_index = 0; pdpt_index < pdpt_count; ++pdpt_index) {
+        uint64_t *range_pd = pdpt_index == 0 ? pd :
+                             ensure_table(pdpt, pdpt_index, 0);
+        if (!range_pd)
+            return -1;
+        uint64_t first = pdpt_index * ENTRY_COUNT;
+        uint64_t count = entries - first;
+        if (count > ENTRY_COUNT)
+            count = ENTRY_COUNT;
+        for (uint64_t i = 0; i < count; ++i) {
+            uint64_t global_index = first + i;
+            uint64_t flags = VMM_PRESENT | VMM_WRITABLE | HUGE_PAGE_2M;
+            if (global_index != 0)
+                flags |= hardware_leaf_flags(VMM_NO_EXECUTE);
+            range_pd[i] = global_index * HUGE_PAGE_SIZE | flags;
+        }
     }
 
     /* Install a stable MMIO PML4 subtree before process roots copy it. Later

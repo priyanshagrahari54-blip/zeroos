@@ -499,11 +499,15 @@ Attribution:
   IPC/child-wait IF-restore, AP idle-stack size and cross-CPU handoff
   validation bugs that cause that hang.
 
-These are treated as residual Stage 1 SMP reliability failures and are
-**not fixed**. The mount-after-abort case is suspected to be a race between
-the 500-tick periodic commit and fault injection; it is also not fixed.
-`userspace_start_init` reports the failing stage, error, entry check and
-free-page count so CI can classify userspace failures. Boots at `-smp 1/2`
+The scheduler, interrupt-frame, stress-timeout and ELF signatures remain
+unresolved Stage 1/2 reliability failures. The mount-after-abort case was
+suspected to race the 500-tick periodic commit against fault injection. Its
+self-test now drains all mounted filesystem transactions with `vfs_sync_all()`
+before arming the journal-sector fault, so an aged unrelated transaction
+cannot consume the injected failure first. This is a targeted isolation fix,
+not proof that it caused every historical failure; guest QEMU validation is
+pending. `userspace_start_init` reports the failing stage, error, entry check
+and free-page count so CI can classify userspace failures. Boots at `-smp 1/2`
 and individual `-smp 4` runs have passed, but a single green CI run is not
 proof of absence.
 

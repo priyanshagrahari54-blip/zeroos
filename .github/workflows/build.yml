@@ -181,6 +181,23 @@ jobs:
             fi
           done
 
+          echo "===== ZEROOS 2 GiB high-memory certification ====="
+          timeout 45s qemu-system-x86_64 \
+            -machine q35 -m 2048M -smp 2 \
+            -cdrom build/zeroos.iso \
+            -serial file:build/serial-mem2g.log \
+            -display none -no-reboot -no-shutdown \
+            -debugcon file:build/debug-mem2g.log \
+            -global isa-debugcon.iobase=0xe9 || true
+          grep -q "ZEROOS: high physical memory allocation/map/reclaim passed." build/serial-mem2g.log
+          grep -q "ZEROOS: scheduler certification passed." build/serial-mem2g.log
+          grep -q "ZEROOS: storage Stage 3 certification complete." build/serial-mem2g.log
+          grep -q "ZEROOS: session shell process reaped cleanly." build/serial-mem2g.log
+          if grep -qE "ZEROOS PANIC:|FAILED" build/serial-mem2g.log; then
+            grep -E "ZEROOS PANIC:|FAILED" build/serial-mem2g.log
+            exit 1
+          fi
+
           echo "===== ZEROOS four-vCPU SMP certification ====="
           timeout 45s qemu-system-x86_64 \
             -smp 4 \
@@ -389,6 +406,12 @@ jobs:
             tail -n 30 build/serial-nx-off.log
           else
             echo "serial-nx-off.log was not produced"
+          fi
+          echo "===== ZEROOS 2 GiB serial.log tail ====="
+          if test -f build/serial-mem2g.log; then
+            tail -n 30 build/serial-mem2g.log
+          else
+            echo "2 GiB serial.log was not produced"
           fi
           echo "===== ZEROOS four-vCPU serial.log tail ====="
           if test -f build/serial-smp4.log; then

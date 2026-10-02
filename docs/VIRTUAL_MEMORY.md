@@ -32,7 +32,7 @@ A PDE with PS=1 maps a 2 MiB page; ordinary PTEs map 4 KiB pages.
 
 - Creates a dedicated PML4 and switches CR3 to it.
 - Builds missing paging levels from physical pages supplied by the allocator.
-- Establishes a compact 2 MiB identity/direct mapping for the current 512 MiB bootstrap physical range.
+- Establishes a compact 2 MiB identity/direct mapping for the managed physical range (up to 2 GiB), spanning the required PDPT entries while keeping RAM after the first 2 MiB non-executable.
 - Keeps the first 2 MiB executable for the bootstrap/kernel image.
 - Marks the remaining bootstrap RAM mappings non-executable.
 - Supports 4 KiB map, unmap and software translation for isolated address-space objects.

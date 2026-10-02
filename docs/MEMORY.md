@@ -7,10 +7,11 @@ This document defines physical memory, virtual memory, process memory, caches, d
 ## 2. Physical Memory
 The physical allocator owns only firmware-reported available page frames.
 Boot-reserved memory includes the kernel image, boot information and required
-early structures. The current implementation bounds the bootstrap allocator
-to the first 512 MiB and reports that boundary explicitly rather than treating
-higher memory as usable. This is an implementation limit, not a certified
-physical-memory support claim.
+early structures. The bootstrap allocator now manages physical frames in the
+first 2 GiB and reports that boundary explicitly rather than treating higher
+memory as usable. A QEMU 2 GiB boot gate exercises high-memory allocation,
+identity mapping, data access, and reclamation; this does not certify a physical
+2 GiB target or prove memory-pressure/OOM behavior.
 
 The allocator maintains separate usable and allocation bitmaps plus a summary
 bitmap and a per-frame reference count. `page_alloc()` creates the initial
