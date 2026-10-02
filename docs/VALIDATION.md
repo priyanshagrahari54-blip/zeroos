@@ -333,12 +333,18 @@ worker is pinned to CPU 1. The host context test likewise checks all 16 XMM
 registers plus x87 and MXCSR. The 4-vCPU QEMU workflow now explicitly requires
 the FPU completion marker in addition to the repeated 2-vCPU boot markers.
 
-`make check`: **PASS** on the current working tree, including the host FPU
-test, linked SIMD audit, kernel build, desktop 120,907/0, compatibility 107/0,
-hardware-core and storage host recovery checks. The runtime AP probe is
-**IMPLEMENTED** and its CI marker gate is **TESTED as workflow configuration**;
-execution on this exact change is pending a fresh QEMU CI run. QEMU is not
-installed locally, and package installation failed because the sandbox could
-not reach Debian mirrors. No physical-hardware validation has been performed.
-This does not establish Stage 1 production readiness, support for all hardware,
-or address the intermittent q35 persistence reliability blocker.
+`make check`: **PASS** on source `58f9c4e6197f3c70372388960efdae643d24f862`,
+including the host FPU test, linked SIMD audit, kernel build, desktop
+120,907/0, compatibility 107/0, hardware-core and storage host recovery checks.
+Exact-SHA GitHub Actions run
+[36980289437](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36980289437)
+passed the full build, host release gate, three repeated 2-vCPU boots, 4-vCPU
+SMP certification, and q35 AHCI/NVMe two-boot persistence. The QEMU workflow
+required the FPU completion marker for both 2-vCPU and 4-vCPU cases, so the
+AP-pinned worker and all-register/x87/MXCSR probe executed successfully in
+those guests. This is **IMPLEMENTED** and **TESTED in host checks and QEMU** for
+the tested configurations; it is not **HARDWARE TESTED** on physical target
+CPUs, does not establish broad hardware **SUPPORT**, and is not **PRODUCTION
+READY**. QEMU is not installed locally, and package installation failed because
+the sandbox could not reach Debian mirrors. This one passing persistence run
+does not resolve the intermittent q35 reliability blocker.
