@@ -53,11 +53,14 @@ families while rejecting other x87/MMX/SSE/AVX instructions. Ring-3 programs
 may use x87/MMX/SSE2 under the FXSAVE task-state contract; shipped userspace is
 still built general-register-only. AVX is not enabled and remains unsupported.
 
-The FPU helper has a host hardware test and the kernel includes two-task XMM
-isolation coverage gated by QEMU boot certification. Those tests establish
-implementation behavior in their tested environments, not production support
-on every physical CPU or multi-vCPU platform. Supported-hardware validation
-and performance impact measurement remain open Stage 1/production gates.
+The FPU helper has a host hardware test. The kernel runtime probe checks all
+16 XMM registers, an x87 value, and MXCSR across task yields; when an AP is
+online, a third worker is pinned to CPU 1 so the same state contract is
+exercised on a secondary scheduler CPU. QEMU certification must observe the
+probe completion marker. These tests establish implementation behavior in
+their tested environments, not production support on every physical CPU or
+multi-vCPU platform. Supported-hardware validation and performance impact
+measurement remain open Stage 1/production gates.
 
 ## Per-CPU state
 

@@ -805,54 +805,102 @@ static void scheduler_tss_stack_self_check(void) {
         kernel_panic("scheduler/TSS kernel-stack handoff validation failed");
 }
 
-struct fpu_probe_vector { uint64_t lane[2]; };
-static const struct fpu_probe_vector fpu_probe_pattern_a={{
-    0x0123456789abcdefULL,0xfedcba9876543210ULL
-}};
-static const struct fpu_probe_vector fpu_probe_pattern_b={{
-    0x55aa33cc0f0ff0f0ULL,0xa55ac33cf0f00f0fULL
-}};
+struct fpu_probe_state {
+    uint64_t xmm[16][2];
+    uint64_t x87_value;
+    uint32_t mxcsr;
+};
+
+#define FPU_PROBE_VECTOR_A(n) { 0x1000000000000000ULL+(n), 0xa000000000000000ULL+(n) }
+#define FPU_PROBE_VECTOR_B(n) { 0x5000000000000000ULL+(n), 0xe000000000000000ULL+(n) }
+static const struct fpu_probe_state fpu_probe_pattern_a={
+    {FPU_PROBE_VECTOR_A(0),FPU_PROBE_VECTOR_A(1),
+     FPU_PROBE_VECTOR_A(2),FPU_PROBE_VECTOR_A(3),
+     FPU_PROBE_VECTOR_A(4),FPU_PROBE_VECTOR_A(5),
+     FPU_PROBE_VECTOR_A(6),FPU_PROBE_VECTOR_A(7),
+     FPU_PROBE_VECTOR_A(8),FPU_PROBE_VECTOR_A(9),
+     FPU_PROBE_VECTOR_A(10),FPU_PROBE_VECTOR_A(11),
+     FPU_PROBE_VECTOR_A(12),FPU_PROBE_VECTOR_A(13),
+     FPU_PROBE_VECTOR_A(14),FPU_PROBE_VECTOR_A(15)},
+    0x3ff8000000000000ULL,0x9f80U
+};
+static const struct fpu_probe_state fpu_probe_pattern_b={
+    {FPU_PROBE_VECTOR_B(0),FPU_PROBE_VECTOR_B(1),
+     FPU_PROBE_VECTOR_B(2),FPU_PROBE_VECTOR_B(3),
+     FPU_PROBE_VECTOR_B(4),FPU_PROBE_VECTOR_B(5),
+     FPU_PROBE_VECTOR_B(6),FPU_PROBE_VECTOR_B(7),
+     FPU_PROBE_VECTOR_B(8),FPU_PROBE_VECTOR_B(9),
+     FPU_PROBE_VECTOR_B(10),FPU_PROBE_VECTOR_B(11),
+     FPU_PROBE_VECTOR_B(12),FPU_PROBE_VECTOR_B(13),
+     FPU_PROBE_VECTOR_B(14),FPU_PROBE_VECTOR_B(15)},
+    0xc004000000000000ULL,0x1f80U
+};
+#undef FPU_PROBE_VECTOR_A
+#undef FPU_PROBE_VECTOR_B
+
+#define FPU_PROBE_LOAD_XMM(reg,offset) \
+    "movdqu " #offset "(%0), %%xmm" #reg "\n\t"
+#define FPU_PROBE_STORE_XMM(reg,offset) \
+    "movdqu %%xmm" #reg ", " #offset "(%0)\n\t"
+#define FPU_PROBE_LOAD_ALL_XMM \
+    FPU_PROBE_LOAD_XMM(0,0) FPU_PROBE_LOAD_XMM(1,16) \
+    FPU_PROBE_LOAD_XMM(2,32) FPU_PROBE_LOAD_XMM(3,48) \
+    FPU_PROBE_LOAD_XMM(4,64) FPU_PROBE_LOAD_XMM(5,80) \
+    FPU_PROBE_LOAD_XMM(6,96) FPU_PROBE_LOAD_XMM(7,112) \
+    FPU_PROBE_LOAD_XMM(8,128) FPU_PROBE_LOAD_XMM(9,144) \
+    FPU_PROBE_LOAD_XMM(10,160) FPU_PROBE_LOAD_XMM(11,176) \
+    FPU_PROBE_LOAD_XMM(12,192) FPU_PROBE_LOAD_XMM(13,208) \
+    FPU_PROBE_LOAD_XMM(14,224) FPU_PROBE_LOAD_XMM(15,240)
+#define FPU_PROBE_STORE_ALL_XMM \
+    FPU_PROBE_STORE_XMM(0,0) FPU_PROBE_STORE_XMM(1,16) \
+    FPU_PROBE_STORE_XMM(2,32) FPU_PROBE_STORE_XMM(3,48) \
+    FPU_PROBE_STORE_XMM(4,64) FPU_PROBE_STORE_XMM(5,80) \
+    FPU_PROBE_STORE_XMM(6,96) FPU_PROBE_STORE_XMM(7,112) \
+    FPU_PROBE_STORE_XMM(8,128) FPU_PROBE_STORE_XMM(9,144) \
+    FPU_PROBE_STORE_XMM(10,160) FPU_PROBE_STORE_XMM(11,176) \
+    FPU_PROBE_STORE_XMM(12,192) FPU_PROBE_STORE_XMM(13,208) \
+    FPU_PROBE_STORE_XMM(14,224) FPU_PROBE_STORE_XMM(15,240)
 
 static void scheduler_fpu_probe_worker(void *argument) {
-    const struct fpu_probe_vector *expected=(const struct fpu_probe_vector *)argument;
-    struct fpu_probe_vector observed0,observed7;
+    const struct fpu_probe_state *expected=(const struct fpu_probe_state *)argument;
+    uint64_t observed[16][2];
+    uint64_t observed_x87;
+    uint32_t observed_mxcsr;
     if (!expected)
         kernel_panic("FPU context probe setup failed");
 
-    /* Deliberately keep live SSE2 values across cooperative and timer-driven
-     * dispatch. The kernel compiler is general-register-only; these are the
-     * probe's explicit architectural register accesses. */
-    for (uint64_t i=0;i<96;++i) {
-        __asm__ volatile ("movdqu %0, %%xmm0\n\t"
-                          "movdqu %0, %%xmm7"
-                          : : "m"(*expected) : "memory");
+    /* Cover all architectural SSE2 registers and the x87/MXCSR portions of
+     * the FXSAVE image. The kernel compiler is general-register-only; these
+     * are explicit probe instructions. */
+    for (uint64_t iteration=0;iteration<96;++iteration) {
+        __asm__ volatile (FPU_PROBE_LOAD_ALL_XMM
+                          : : "r"(&expected->xmm[0][0]) : "memory");
+        __asm__ volatile ("fldl %0\n\t"
+                          "ldmxcsr %1"
+                          : : "m"(expected->x87_value),
+                              "m"(expected->mxcsr) : "memory");
         scheduler_yield();
-        __asm__ volatile ("movdqu %%xmm0, %0\n\t"
-                          "movdqu %%xmm7, %1"
-                          : "=m"(observed0),"=m"(observed7)
+        __asm__ volatile (FPU_PROBE_STORE_ALL_XMM
+                          : : "r"(&observed[0][0]) : "memory");
+        __asm__ volatile ("fstpl %0\n\t"
+                          "stmxcsr %1"
+                          : "=m"(observed_x87),"=m"(observed_mxcsr)
                           : : "memory");
-        if (observed0.lane[0]!=expected->lane[0] ||
-            observed0.lane[1]!=expected->lane[1] ||
-            observed7.lane[0]!=expected->lane[0] ||
-            observed7.lane[1]!=expected->lane[1]) {
-            serial_write_public("ZEROOS: FPU probe mismatch expected=");
-            serial_write_u64(expected->lane[0]);
-            serial_write_public(",");
-            serial_write_u64(expected->lane[1]);
-            serial_write_public(" xmm0=");
-            serial_write_u64(observed0.lane[0]);
-            serial_write_public(",");
-            serial_write_u64(observed0.lane[1]);
-            serial_write_public(" xmm7=");
-            serial_write_u64(observed7.lane[0]);
-            serial_write_public(",");
-            serial_write_u64(observed7.lane[1]);
-            serial_write_public("\n");
-            kernel_panic("per-task FPU/SSE state corruption");
-        }
+        for (uint32_t reg=0;reg<16;++reg)
+            if (observed[reg][0]!=expected->xmm[reg][0] ||
+                observed[reg][1]!=expected->xmm[reg][1])
+                kernel_panic("per-task XMM register context corruption");
+        if (observed_x87!=expected->x87_value ||
+            observed_mxcsr!=expected->mxcsr)
+            kernel_panic("per-task x87/MXCSR context corruption");
     }
     atomic_u64_fetch_add(&fpu_probe_done,1);
 }
+
+#undef FPU_PROBE_LOAD_XMM
+#undef FPU_PROBE_STORE_XMM
+#undef FPU_PROBE_LOAD_ALL_XMM
+#undef FPU_PROBE_STORE_ALL_XMM
 
 static void scheduler_probe_worker(void *argument) {
     uint64_t rbx_value=0x1122334455667788ULL;
@@ -987,6 +1035,7 @@ static void scheduler_probe_monitor(void *argument) {
     int hotplug_reported=0;
     int userspace_reported=0;
     uint64_t stress_start=timer_ticks();
+    uint64_t fpu_expected=smp_online_count()>1 ? 3ULL : 2ULL;
 
     /* Keep the certification monitor on the BSP: it owns the control-plane
      * request that drains and parks a secondary scheduler CPU. */
@@ -1010,7 +1059,7 @@ static void scheduler_probe_monitor(void *argument) {
             serial_write_public("ZEROOS: task context-switch self-test passed.\n");
         }
 
-        if (!fpu_reported && atomic_u64_load(&fpu_probe_done)==2) {
+        if (!fpu_reported && atomic_u64_load(&fpu_probe_done)==fpu_expected) {
             fpu_reported=1;
             serial_write_public("ZEROOS: per-task FPU/SSE context switching passed.\n");
         }
@@ -1225,7 +1274,7 @@ static void scheduler_probe_monitor(void *argument) {
 
 static void scheduler_self_test(void) {
     uint64_t worker_id, monitor_id, waiter_id, waker_id, sleeper_id;
-    uint64_t fpu_a_id, fpu_b_id;
+    uint64_t fpu_a_id, fpu_b_id, fpu_ap_id;
     uint64_t preempt_a_id, preempt_b_id, lifecycle_id;
     uint64_t fairness_a_id, fairness_b_id;
     uint64_t input_waiter_id, input_waker_id;
@@ -1281,6 +1330,12 @@ static void scheduler_self_test(void) {
     if (task_set_affinity(task_lookup(fpu_a_id),1ULL)!=0 ||
         task_set_affinity(task_lookup(fpu_b_id),1ULL)!=0)
         kernel_panic("FPU context probe affinity setup failed");
+    if (smp_online_count()>1) {
+        if (task_create(scheduler_fpu_probe_worker,
+                        (void *)&fpu_probe_pattern_b,&fpu_ap_id)!=0 ||
+            task_set_affinity(task_lookup(fpu_ap_id),2ULL)!=0)
+            kernel_panic("AP FPU context probe setup failed");
+    }
     if (task_create(scheduler_probe_monitor,0,&monitor_id)!=0)
         kernel_panic("scheduler monitor creation failed");
     if (task_create(wait_probe_waiter,0,&waiter_id)!=0)

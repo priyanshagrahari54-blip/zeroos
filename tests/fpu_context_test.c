@@ -3,26 +3,87 @@
 static struct fpu_state host_state;
 static struct fpu_state task_a_state;
 static struct fpu_state task_b_state;
-static const struct {
-    uint64_t lane[2];
-} pattern_a={{0x0123456789abcdefULL,0xfedcba9876543210ULL}},
-  pattern_b={{0x55aa33cc0f0ff0f0ULL,0xa55ac33cf0f00f0fULL}};
 
-static void load_patterns(const void *a, const void *b) {
-    __asm__ volatile ("movdqu (%0), %%xmm0\n\t"
-                      "movdqu (%1), %%xmm7"
-                      : : "r"(a),"r"(b) : "memory");
+struct fpu_probe_pattern {
+    uint64_t xmm[16][2];
+    uint64_t x87_value;
+    uint32_t mxcsr;
+};
+
+#define FPU_PATTERN_A(n) { 0x1000000000000000ULL+(n), 0xa000000000000000ULL+(n) }
+#define FPU_PATTERN_B(n) { 0x5000000000000000ULL+(n), 0xe000000000000000ULL+(n) }
+static const struct fpu_probe_pattern pattern_a={
+    {FPU_PATTERN_A(0),FPU_PATTERN_A(1),FPU_PATTERN_A(2),FPU_PATTERN_A(3),
+     FPU_PATTERN_A(4),FPU_PATTERN_A(5),FPU_PATTERN_A(6),FPU_PATTERN_A(7),
+     FPU_PATTERN_A(8),FPU_PATTERN_A(9),FPU_PATTERN_A(10),FPU_PATTERN_A(11),
+     FPU_PATTERN_A(12),FPU_PATTERN_A(13),FPU_PATTERN_A(14),FPU_PATTERN_A(15)},
+    0x3ff8000000000000ULL,0x9f80U
+};
+static const struct fpu_probe_pattern pattern_b={
+    {FPU_PATTERN_B(0),FPU_PATTERN_B(1),FPU_PATTERN_B(2),FPU_PATTERN_B(3),
+     FPU_PATTERN_B(4),FPU_PATTERN_B(5),FPU_PATTERN_B(6),FPU_PATTERN_B(7),
+     FPU_PATTERN_B(8),FPU_PATTERN_B(9),FPU_PATTERN_B(10),FPU_PATTERN_B(11),
+     FPU_PATTERN_B(12),FPU_PATTERN_B(13),FPU_PATTERN_B(14),FPU_PATTERN_B(15)},
+    0xc004000000000000ULL,0x1f80U
+};
+#undef FPU_PATTERN_A
+#undef FPU_PATTERN_B
+
+#define FPU_LOAD_XMM(reg,offset) "movdqu " #offset "(%0), %%xmm" #reg "\n\t"
+#define FPU_STORE_XMM(reg,offset) "movdqu %%xmm" #reg ", " #offset "(%0)\n\t"
+#define FPU_LOAD_ALL_XMM \
+    FPU_LOAD_XMM(0,0) FPU_LOAD_XMM(1,16) FPU_LOAD_XMM(2,32) FPU_LOAD_XMM(3,48) \
+    FPU_LOAD_XMM(4,64) FPU_LOAD_XMM(5,80) FPU_LOAD_XMM(6,96) FPU_LOAD_XMM(7,112) \
+    FPU_LOAD_XMM(8,128) FPU_LOAD_XMM(9,144) FPU_LOAD_XMM(10,160) FPU_LOAD_XMM(11,176) \
+    FPU_LOAD_XMM(12,192) FPU_LOAD_XMM(13,208) FPU_LOAD_XMM(14,224) FPU_LOAD_XMM(15,240)
+#define FPU_STORE_ALL_XMM \
+    FPU_STORE_XMM(0,0) FPU_STORE_XMM(1,16) FPU_STORE_XMM(2,32) FPU_STORE_XMM(3,48) \
+    FPU_STORE_XMM(4,64) FPU_STORE_XMM(5,80) FPU_STORE_XMM(6,96) FPU_STORE_XMM(7,112) \
+    FPU_STORE_XMM(8,128) FPU_STORE_XMM(9,144) FPU_STORE_XMM(10,160) FPU_STORE_XMM(11,176) \
+    FPU_STORE_XMM(12,192) FPU_STORE_XMM(13,208) FPU_STORE_XMM(14,224) FPU_STORE_XMM(15,240)
+
+static void load_pattern(const struct fpu_probe_pattern *pattern) {
+    __asm__ volatile (FPU_LOAD_ALL_XMM
+                      : : "r"(&pattern->xmm[0][0]) : "memory");
+    __asm__ volatile ("fldl %0\n\t"
+                      "ldmxcsr %1"
+                      : : "m"(pattern->x87_value),"m"(pattern->mxcsr)
+                      : "memory");
 }
 
-static int check_patterns(const void *a, const void *b) {
-    uint64_t xmm0[2],xmm7[2];
-    __asm__ volatile ("movdqu %%xmm0, %0\n\t"
-                      "movdqu %%xmm7, %1"
-                      : "=m"(xmm0),"=m"(xmm7) : : "memory");
-    const uint64_t *pa=(const uint64_t *)a;
-    const uint64_t *pb=(const uint64_t *)b;
-    return xmm0[0]==pa[0] && xmm0[1]==pa[1] &&
-           xmm7[0]==pb[0] && xmm7[1]==pb[1];
+static int live_matches(const struct fpu_probe_pattern *expected) {
+    uint64_t observed[16][2];
+    uint64_t observed_x87;
+    uint32_t observed_mxcsr;
+    __asm__ volatile (FPU_STORE_ALL_XMM
+                      : : "r"(&observed[0][0]) : "memory");
+    __asm__ volatile ("fstpl %0\n\t"
+                      "stmxcsr %1"
+                      : "=m"(observed_x87),"=m"(observed_mxcsr)
+                      : : "memory");
+    for (uint32_t reg=0;reg<16;++reg)
+        if (observed[reg][0]!=expected->xmm[reg][0] ||
+            observed[reg][1]!=expected->xmm[reg][1])
+            return 0;
+    return observed_x87==expected->x87_value &&
+           observed_mxcsr==expected->mxcsr;
+}
+
+static int live_is_initial(void) {
+    uint64_t observed[16][2];
+    uint16_t control,status;
+    uint32_t mxcsr;
+    __asm__ volatile (FPU_STORE_ALL_XMM
+                      : : "r"(&observed[0][0]) : "memory");
+    __asm__ volatile ("fnstcw %0\n\t"
+                      "fnstsw %1\n\t"
+                      "stmxcsr %2"
+                      : "=m"(control),"=m"(status),"=m"(mxcsr)
+                      : : "memory");
+    for (uint32_t reg=0;reg<16;++reg)
+        if (observed[reg][0]!=0 || observed[reg][1]!=0)
+            return 0;
+    return control==0x037fU && status==0 && mxcsr==0x1f80U;
 }
 
 int main(void) {
@@ -36,22 +97,27 @@ int main(void) {
         goto restore_host;
     }
 
-    load_patterns(pattern_a.lane,pattern_a.lane);
+    load_pattern(&pattern_a);
     fpu_context_switch(&task_a_state,&task_b_state);
-    if (!check_patterns((uint64_t[2]){0,0},(uint64_t[2]){0,0}))
+    if (!live_is_initial())
         failed=1;
 
-    load_patterns(pattern_b.lane,pattern_b.lane);
+    load_pattern(&pattern_b);
     fpu_context_switch(&task_b_state,&task_a_state);
-    if (!check_patterns(pattern_a.lane,pattern_a.lane))
+    if (!live_matches(&pattern_a))
         failed=1;
 
-    load_patterns(pattern_a.lane,pattern_a.lane);
+    load_pattern(&pattern_a);
     fpu_context_switch(&task_a_state,&task_b_state);
-    if (!check_patterns(pattern_b.lane,pattern_b.lane))
+    if (!live_matches(&pattern_b))
         failed=1;
 
 restore_host:
     __asm__ volatile ("fxrstor64 (%0)" : : "r"(&host_state) : "memory");
     return failed;
 }
+
+#undef FPU_LOAD_XMM
+#undef FPU_STORE_XMM
+#undef FPU_LOAD_ALL_XMM
+#undef FPU_STORE_ALL_XMM

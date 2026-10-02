@@ -247,11 +247,12 @@ This covers cooperative `context_switch_ex()` handoffs and interrupt-frame/
 `iretq` handoffs. Every task
 (including bootstrap and per-CPU idle contexts) owns a 16-byte-aligned 512-byte
 FXSAVE64 image; new/reused slots receive a clean template. AVX/XSAVE remains
-disabled, and compiler-generated kernel SIMD remains prohibited. A runtime
-probe keeps distinct XMM0/XMM7 values live in two yielding tasks; its QEMU boot
-marker is a required CI gate. Host FXSAVE/FXRSTOR helper tests and the linked
-instruction audit are separate build gates, not substitutes for QEMU or
-physical-hardware evidence.
+disabled, and compiler-generated kernel SIMD remains prohibited. A runtime probe keeps distinct values live in all 16 XMM registers, x87, and
+MXCSR across yielding tasks. With an online AP, a third worker is pinned to
+CPU 1 and runs the same register-integrity test there. Its QEMU boot marker is
+a required CI gate. Host FXSAVE/FXRSTOR helper tests and the linked instruction
+audit are separate build gates, not substitutes for QEMU or physical-hardware
+evidence.
 
 Supported-hardware multi-vCPU validation remains required before the Stage 1
 exit gate. Equal-priority fairness/latency stress, the AP late-token/failed-

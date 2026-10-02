@@ -323,3 +323,22 @@ transition probe; it is not a general capability or sandbox enforcement model,
 not **SUPPORTED**, and not **PRODUCTION READY**. Three newer full-workflow passes
 do not resolve the prior intermittent q35 failures or establish repeatable
 reliability.
+
+## Stage 1 FPU probe expansion (2026-10-02)
+
+The scheduler FPU runtime probe now checks independent per-worker patterns in
+all 16 XMM registers, one x87 stack value, and MXCSR across 96 cooperative
+yields. Two workers remain pinned to the BSP; when an AP is online, a third
+worker is pinned to CPU 1. The host context test likewise checks all 16 XMM
+registers plus x87 and MXCSR. The 4-vCPU QEMU workflow now explicitly requires
+the FPU completion marker in addition to the repeated 2-vCPU boot markers.
+
+`make check`: **PASS** on the current working tree, including the host FPU
+test, linked SIMD audit, kernel build, desktop 120,907/0, compatibility 107/0,
+hardware-core and storage host recovery checks. The runtime AP probe is
+**IMPLEMENTED** and its CI marker gate is **TESTED as workflow configuration**;
+execution on this exact change is pending a fresh QEMU CI run. QEMU is not
+installed locally, and package installation failed because the sandbox could
+not reach Debian mirrors. No physical-hardware validation has been performed.
+This does not establish Stage 1 production readiness, support for all hardware,
+or address the intermittent q35 persistence reliability blocker.

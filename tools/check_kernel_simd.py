@@ -18,13 +18,15 @@ fp_operand = re.compile(r"%(?:[xyz]mm\d+|mm\d+|st(?:\(|\b))")
 allowed = {
     "fpu_system_init": {"fninit", "fldz", "pxor", "ldmxcsr", "fxsave64"},
     "fpu_context_switch": {"fxsave64", "fxrstor64"},
-    "scheduler_fpu_probe_worker": {"movdqu"},
+    "scheduler_fpu_probe_worker": {"movdqu", "fldl", "ldmxcsr", "fstpl", "stmxcsr"},
 }
 
 for line in text.splitlines():
     header = re.search(r"<([^>]+)>:", line)
     if header:
         current = header.group(1).split("+", 1)[0]
+        if current.startswith("scheduler_fpu_probe_worker."):
+            current = "scheduler_fpu_probe_worker"
         continue
     m = re.match(r"\s*[0-9a-f]+:\s+([a-z][a-z0-9.]*)\s*(.*)$", line)
     if not m:
@@ -44,7 +46,7 @@ for line in text.splitlines():
 required = {
     "fpu_system_init": {"fninit", "fldz", "pxor", "ldmxcsr", "fxsave64"},
     "fpu_context_switch": {"fxsave64", "fxrstor64"},
-    "scheduler_fpu_probe_worker": {"movdqu"},
+    "scheduler_fpu_probe_worker": {"movdqu", "fldl", "ldmxcsr", "fstpl", "stmxcsr"},
 }
 for symbol, instructions in required.items():
     missing = instructions - seen.get(symbol, set())
