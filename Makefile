@@ -154,6 +154,8 @@ $(BUILD)/hardware-%.o: kernel/%.c | $(BUILD)
 hardware-core-test: | $(BUILD)
 	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/net_core_test.c kernel/net_core.c -o $(BUILD)/net-core-test
 	$(BUILD)/net-core-test
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/wait_queue_test.c kernel/wait.c -o $(BUILD)/wait-queue-test
+	$(BUILD)/wait-queue-test
 	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/input_core_test.c kernel/input_core.c -o $(BUILD)/input-core-test
 	$(BUILD)/input-core-test
 	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/usb_core_test.c kernel/usb_core.c -o $(BUILD)/usb-core-test

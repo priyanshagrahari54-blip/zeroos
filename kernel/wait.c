@@ -1,6 +1,8 @@
 #include "wait.h"
 #include "task.h"
 
+extern void serial_write_public(const char *text);
+
 static void wait_queue_push_locked(struct wait_queue *queue, struct task *task) {
     task->wait_next=0;
     task->wait_queue=queue;
@@ -83,12 +85,19 @@ uint64_t wait_queue_wake_one(struct wait_queue *queue) {
 
 uint64_t wait_queue_wake_all(struct wait_queue *queue) {
     uint64_t count=0;
+    uint64_t visited=0;
     uint64_t flags;
 
     if (!queue) return 0;
 
     flags=spin_lock_irqsave(&queue->lock);
     while (queue->head) {
+        if (visited==ZEROOS_MAX_TASKS) {
+            spin_unlock_irqrestore(&queue->lock,flags);
+            serial_write_public("ZEROOS PANIC: wait queue exceeds task capacity or contains a cycle.\n");
+            for (;;) __asm__ volatile ("cli; hlt");
+        }
+        ++visited;
         struct task *task=wait_queue_pop_locked(queue);
         if (task && task_wake(task)==0)
             ++count;
@@ -105,7 +114,12 @@ uint64_t wait_queue_count(struct wait_queue *queue) {
     if (!queue) return 0;
 
     flags=spin_lock_irqsave(&queue->lock);
-    for (task=queue->head;task;task=task->wait_next)
+    /* A wait queue cannot contain more live tasks than the global task
+     * table. Bound this walk so a corrupt/cyclic wait_next chain becomes an
+     * invariant failure (count == MAX_TASKS + 1) instead of hanging the
+     * scheduler's process-table validator forever. */
+    for (task=queue->head;task && count<=ZEROOS_MAX_TASKS;
+         task=task->wait_next)
         ++count;
     spin_unlock_irqrestore(&queue->lock,flags);
     return count;

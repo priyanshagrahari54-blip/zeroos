@@ -54,7 +54,9 @@ never inverted:
 Every mutation of task lifecycle state, sleep-queue membership or context
 ownership metadata happens under `task_lock`; wait-queue membership is owned
 by the corresponding `wait_queue::lock`. A lock is never held across a
-context switch.
+context switch. Diagnostic wait-queue traversals are bounded by
+`ZEROOS_MAX_TASKS`; `wait_queue_wake_all()` fail-stops with a panic marker if
+that bound is exceeded, rather than spinning indefinitely on a cycle.
 
 ## Design boundary
 
