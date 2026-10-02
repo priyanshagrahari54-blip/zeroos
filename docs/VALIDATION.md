@@ -326,9 +326,10 @@ reliability.
 
 ## Stage 1 FPU probe expansion (2026-10-02)
 
-The scheduler FPU runtime probe checks independent per-worker patterns in all
-16 XMM registers, one x87 stack value, and MXCSR across 96 cooperative yields.
-The two BSP workers additionally hold that state across a forced full timer
+The scheduler FPU runtime probe was extended in commit `cf51b9621438e096ac34e8aa91bf08a7c2d6394a`
+from one x87 value to all eight stack entries. The current probe checks
+independent per-worker patterns in all 16 XMM registers, all eight x87 stack
+entries, and MXCSR across 96 cooperative yields. The two BSP workers additionally hold that state across a forced full timer
 time-slice without yielding, then verify their task context-switch counts
 advanced; this targets IRQ-frame/`iretq` FPU preservation. When an AP is online,
 a third worker is pinned to CPU 1. The host context test checks all 16 XMM
@@ -365,3 +366,14 @@ and all-register/x87/MXCSR probe executed successfully in those guests. This is
 tested configurations; it is not **HARDWARE TESTED** on physical target CPUs,
 does not establish broad hardware **SUPPORT**, and is not **PRODUCTION READY**.
 The following exact-SHA run [36981780463](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36981780463) passed after the q35 persistence workflow was expanded to three boots, and the same workflow passed its required FPU marker gates in the 2-vCPU and 4-vCPU guest matrix. The next exact-SHA run [36983529324](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36983529324) passed after the marker was additionally required on each q35 storage boot. QEMU is not installed locally, and package installation failed because the sandbox could not reach Debian mirrors. Eight successive full-workflow passes improve evidence but do not resolve the earlier intermittent reliability failure or establish a cause-specific fix.
+
+The follow-up on `cf51b9621438e096ac34e8aa91bf08a7c2d6394a` now fills and
+checks all eight x87 stack entries in both the cooperative-yield and forced
+BSP timer-preemption probes; the host context-switch test also checks all eight.
+Local `make check` passed (including `fpu-host-check` and the linked SIMD audit).
+Exact-SHA GitHub Actions run
+[36999951281](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36999951281)
+passed the full build, release gate, boot test, and three-boot q35 AHCI/NVMe
+persistence gate. This is additional host and QEMU evidence for the register
+coverage; it is not physical-hardware testing and does not close the intermittent
+q35 reliability or Stage 1–5 readiness gates.
