@@ -291,9 +291,10 @@ $(KERNEL): $(BUILD)/boot.o $(BUILD)/isr.o $(BUILD)/context.o $(BUILD)/ap_trampol
 	$(LD) $(LDFLAGS) -o $@ $(BUILD)/session_launch.o $(BUILD)/boot.o $(BUILD)/isr.o $(BUILD)/context.o $(BUILD)/ap_trampoline.o $(BUILD)/user_entry.o $(BUILD)/kernel.o $(BUILD)/cpu.o $(BUILD)/fpu.o $(BUILD)/apic.o $(BUILD)/smp.o $(BUILD)/acpi.o $(BUILD)/interrupts.o $(BUILD)/syscall.o $(BUILD)/ipc.o $(BUILD)/shmem.o $(BUILD)/fb.o $(BUILD)/input.o $(BUILD)/elf.o $(BUILD)/exec.o $(BUILD)/user.o $(BUILD)/pic.o $(BUILD)/timer.o $(BUILD)/sync.o $(BUILD)/memory.o $(BUILD)/gdt.o $(BUILD)/vmm.o $(BUILD)/tlb.o $(BUILD)/task.o $(BUILD)/wait.o $(BUILD)/scheduler.o $(BUILD)/thread.o $(BUILD)/process.o $(EXTRA_OBJS) $(HARDWARE_CORE_OBJS)
 	@$(MAKE) --no-print-directory kernel-simd-check
 
-# Rejects compiler-generated FP/SIMD while permitting the narrow, audited
-# context-save/restore instructions and explicit scheduler regression probe.
-kernel-simd-check:
+# Depend on the linked image so a standalone audit cannot silently accept a
+# stale ELF after kernel sources change. Reject compiler-generated FP/SIMD while
+# permitting the narrow FPU boundary and explicit scheduler regression probes.
+kernel-simd-check: $(KERNEL)
 	@test -f $(KERNEL) || { echo "kernel-simd-check: $(KERNEL) missing"; exit 1; }
 	python3 tools/check_kernel_simd.py $(KERNEL)
 

@@ -348,7 +348,10 @@ including the host FPU test, linked SIMD audit, kernel build, desktop
 120,907/0, compatibility 107/0, hardware-core and storage host recovery checks.
 The additional GCC analyzer build, `make BUILD=build-analyze
 EXTRA_CFLAGS=-fanalyzer elf`, also passed for the full freestanding image and
-linked SIMD audit. Exact-SHA GitHub Actions run
+linked SIMD audit. The standalone `kernel-simd-check` target now depends on the
+linked ELF; verified by touching `kernel/kernel.c` and observing the direct
+target rebuild and audit the fresh image rather than pass on a stale ELF.
+Exact-SHA GitHub Actions run
 [36980289437](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36980289437)
 passed the full build, host release gate, three repeated 2-vCPU boots, 4-vCPU
 SMP certification, and q35 AHCI/NVMe two-boot persistence. The subsequent
