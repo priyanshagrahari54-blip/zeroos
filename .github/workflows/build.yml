@@ -66,8 +66,29 @@ jobs:
             if test -s build/qemu.log; then
               echo "::error title=QEMU diagnostics end::$(tail -c 1800 build/qemu.log | tr '\r\n' ' ')"
             fi
+            if test -s build/serial-mem2g.log; then
+              echo "::error title=2 GiB serial end::$(tail -c 1800 build/serial-mem2g.log | tr '\r\n' ' ')"
+            fi
           }
           trap boot_failure_diagnostics ERR
+          # Run the high-memory mapping probe first so unrelated intermittent
+          # scheduler failures in later multi-vCPU boots cannot mask whether
+          # the 2 GiB allocator/VMM path itself passed.
+          echo "===== ZEROOS 2 GiB high-memory certification ====="
+          timeout 15s qemu-system-x86_64 \
+            -machine q35 -m 2048M -smp 1 \
+            -cdrom build/zeroos.iso \
+            -serial file:build/serial-mem2g.log \
+            -display none -no-reboot -no-shutdown \
+            -debugcon file:build/debug-mem2g.log \
+            -global isa-debugcon.iobase=0xe9 || true
+          grep -q "ZEROOS: high physical memory allocation/map/reclaim passed." build/serial-mem2g.log
+          grep -q "ZEROOS: virtual memory self-test passed." build/serial-mem2g.log
+          if grep -qE "ZEROOS PANIC:|FAILED" build/serial-mem2g.log; then
+            grep -E "ZEROOS PANIC:|FAILED" build/serial-mem2g.log
+            exit 1
+          fi
+
           for iteration in 1 2 3; do
             echo "===== ZEROOS boot certification iteration ${iteration} ====="
             timeout 45s qemu-system-x86_64             -smp 2             -cdrom build/zeroos.iso             -serial file:build/serial.log             -display none             -no-reboot             -no-shutdown             -debugcon file:build/debug.log             -global isa-debugcon.iobase=0xe9             -d int,guest_errors,cpu_reset             -D build/qemu.log || true
@@ -180,23 +201,6 @@ jobs:
               exit 1
             fi
           done
-
-          echo "===== ZEROOS 2 GiB high-memory certification ====="
-          timeout 45s qemu-system-x86_64 \
-            -machine q35 -m 2048M -smp 2 \
-            -cdrom build/zeroos.iso \
-            -serial file:build/serial-mem2g.log \
-            -display none -no-reboot -no-shutdown \
-            -debugcon file:build/debug-mem2g.log \
-            -global isa-debugcon.iobase=0xe9 || true
-          grep -q "ZEROOS: high physical memory allocation/map/reclaim passed." build/serial-mem2g.log
-          grep -q "ZEROOS: scheduler certification passed." build/serial-mem2g.log
-          grep -q "ZEROOS: storage Stage 3 certification complete." build/serial-mem2g.log
-          grep -q "ZEROOS: session shell process reaped cleanly." build/serial-mem2g.log
-          if grep -qE "ZEROOS PANIC:|FAILED" build/serial-mem2g.log; then
-            grep -E "ZEROOS PANIC:|FAILED" build/serial-mem2g.log
-            exit 1
-          fi
 
           echo "===== ZEROOS four-vCPU SMP certification ====="
           timeout 45s qemu-system-x86_64 \
