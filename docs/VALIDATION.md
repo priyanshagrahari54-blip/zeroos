@@ -336,15 +336,22 @@ the FPU completion marker in addition to the repeated 2-vCPU boot markers.
 `make check`: **PASS** on source `58f9c4e6197f3c70372388960efdae643d24f862`,
 including the host FPU test, linked SIMD audit, kernel build, desktop
 120,907/0, compatibility 107/0, hardware-core and storage host recovery checks.
-Exact-SHA GitHub Actions run
+The additional GCC analyzer build, `make BUILD=build-analyze
+EXTRA_CFLAGS=-fanalyzer elf`, also passed for the full freestanding image and
+linked SIMD audit. Exact-SHA GitHub Actions run
 [36980289437](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36980289437)
 passed the full build, host release gate, three repeated 2-vCPU boots, 4-vCPU
-SMP certification, and q35 AHCI/NVMe two-boot persistence. The QEMU workflow
-required the FPU completion marker for both 2-vCPU and 4-vCPU cases, so the
-AP-pinned worker and all-register/x87/MXCSR probe executed successfully in
-those guests. This is **IMPLEMENTED** and **TESTED in host checks and QEMU** for
-the tested configurations; it is not **HARDWARE TESTED** on physical target
-CPUs, does not establish broad hardware **SUPPORT**, and is not **PRODUCTION
-READY**. QEMU is not installed locally, and package installation failed because
-the sandbox could not reach Debian mirrors. This one passing persistence run
-does not resolve the intermittent q35 reliability blocker.
+SMP certification, and q35 AHCI/NVMe two-boot persistence. The subsequent
+docs-only source `128b7facd448398bea7d57d2c121ab2a1cfa8df5` also passed the full
+workflow as run
+[36980993553](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36980993553),
+including another q35 two-boot persistence test. The QEMU workflow required the
+FPU completion marker for both 2-vCPU and 4-vCPU cases, so the AP-pinned worker
+and all-register/x87/MXCSR probe executed successfully in those guests. This is
+**IMPLEMENTED** and **TESTED in host checks, static analysis and QEMU** for the
+tested configurations; it is not **HARDWARE TESTED** on physical target CPUs,
+does not establish broad hardware **SUPPORT**, and is not **PRODUCTION READY**.
+QEMU is not installed locally, and package installation failed because the
+sandbox could not reach Debian mirrors. Two consecutive green runs following the
+q35 failure improve evidence but do not resolve the intermittent reliability
+blocker or establish a cause-specific fix.
