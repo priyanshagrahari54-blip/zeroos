@@ -333,9 +333,15 @@ time-slice without yielding, then verify their task context-switch counts
 advanced; this targets IRQ-frame/`iretq` FPU preservation. When an AP is online,
 a third worker is pinned to CPU 1. The host context test checks all 16 XMM
 registers plus x87 and MXCSR. The 4-vCPU QEMU workflow requires the FPU marker
-in addition to the repeated 2-vCPU boot markers. This newest deterministic
-IRQ-FPU probe has compiled and passed the linked SIMD audit and host FPU test,
-but it has not yet run in QEMU; the earlier QEMU evidence predates this probe.
+in addition to the repeated 2-vCPU boot markers. This deterministic IRQ-FPU probe compiled and passed the linked SIMD audit,
+host FPU test, and full local `make check`. Exact-SHA QEMU run
+[36986917406](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36986917406)
+on `71882fa27510fbc7541aaa45d76467679b11932d` passed the full workflow,
+including repeated 2-vCPU boots, 4-vCPU SMP certification, and the three-boot
+q35 persistence gate. The FPU marker was required on those boot paths, so the
+cooperative, forced timer-preemption, and AP-pinned probe completed in QEMU.
+This remains QEMU evidence, not physical-hardware validation or a Stage 1
+production-readiness claim.
 
 `make check`: **PASS** on source `58f9c4e6197f3c70372388960efdae643d24f862`,
 including the host FPU test, linked SIMD audit, kernel build, desktop
@@ -355,4 +361,4 @@ and all-register/x87/MXCSR probe executed successfully in those guests. This is
 **IMPLEMENTED** and **TESTED in host checks, static analysis and QEMU** for the
 tested configurations; it is not **HARDWARE TESTED** on physical target CPUs,
 does not establish broad hardware **SUPPORT**, and is not **PRODUCTION READY**.
-The following exact-SHA run [36981780463](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36981780463) passed after the q35 persistence workflow was expanded to three boots, and the same workflow passed its required FPU marker gates in the 2-vCPU and 4-vCPU guest matrix. The next exact-SHA run [36983529324](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36983529324) passed after the marker was additionally required on each q35 storage boot. QEMU is not installed locally, and package installation failed because the sandbox could not reach Debian mirrors. Six successive full-workflow passes improve evidence but do not resolve the earlier intermittent reliability failure or establish a cause-specific fix.
+The following exact-SHA run [36981780463](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36981780463) passed after the q35 persistence workflow was expanded to three boots, and the same workflow passed its required FPU marker gates in the 2-vCPU and 4-vCPU guest matrix. The next exact-SHA run [36983529324](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36983529324) passed after the marker was additionally required on each q35 storage boot. QEMU is not installed locally, and package installation failed because the sandbox could not reach Debian mirrors. Eight successive full-workflow passes improve evidence but do not resolve the earlier intermittent reliability failure or establish a cause-specific fix.
