@@ -475,3 +475,10 @@ Rule: This file covers cross-cutting details that are easy to omit from subsyste
 
 ## MASTER COMPLETION RULE
 Nothing in this inventory becomes complete because it is written down. For each item: inspect code -> identify owner -> design contract -> implement -> negative test -> stress/fault test -> measure -> document evidence -> integrate -> re-run affected certification gates.
+
+
+---
+
+## Cross-Cutting Master Contract
+
+See [`ZEROOS_MASTER_CONTRACT_AND_FEATURE_EXPANSION.md`](./ZEROOS_MASTER_CONTRACT_AND_FEATURE_EXPANSION.md) for the mandatory cross-cutting engineering contract and the expanded ZEROOS feature/platform catalog. Applicable requirements cover ownership/lifetime/concurrency, boot/firmware, hardware certification, networking, packages, SDK, observability, accounts, backup/recovery, privacy, supply-chain security, accessibility/i18n, virtualization, power-loss certification, performance/compatibility labs, ZERO AI safety, and additional product features. This is a specification link only; implementation status remains evidence-based.
