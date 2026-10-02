@@ -12,3 +12,10 @@ All existing ZEROOS documentation files are kept here together under one directo
 - Do not delete source requirements merely because they are represented in the master.
 - Resolve conflicts deliberately and update the master plus the affected source document.
 - Implementation status is determined by code, tests and evidence, not documentation alone.
+
+
+---
+
+## Cross-Cutting Master Contract
+
+See [`ZEROOS_MASTER_CONTRACT_AND_FEATURE_EXPANSION.md`](./ZEROOS_MASTER_CONTRACT_AND_FEATURE_EXPANSION.md) for the mandatory cross-cutting engineering contract and the expanded ZEROOS feature/platform catalog. Applicable requirements cover ownership/lifetime/concurrency, boot/firmware, hardware certification, networking, packages, SDK, observability, accounts, backup/recovery, privacy, supply-chain security, accessibility/i18n, virtualization, power-loss certification, performance/compatibility labs, ZERO AI safety, and additional product features. This is a specification link only; implementation status remains evidence-based.
