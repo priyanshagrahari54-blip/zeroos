@@ -47,7 +47,7 @@ Desktop shell
         ↓
 Native applications
         ↓
-Security/update/recovery hardening
+Security/update/recovery hardening (Stage 6 implementation may proceed in parallel with Stages 1–5 hardening by current user direction; its exit gate is not waived)
         ↓
 Windows/Android compatibility
         ↓

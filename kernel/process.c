@@ -82,6 +82,7 @@ static void process_reset_locked(struct process *process) {
     process->exit_status=0;
     process->uid=0;
     process->gid=0;
+    process->capabilities=0;
     process->address_space.root=0;
     process->address_space.root_physical=0;
     process->address_space.mapped_pages=0;
@@ -110,6 +111,9 @@ int process_system_init(void) {
         processes[i].max_address_space_pages=0;
         processes[i].resident_pages=0;
         processes[i].exit_status=0;
+        processes[i].uid=0;
+        processes[i].gid=0;
+        processes[i].capabilities=0;
         processes[i].address_space.root=0;
         processes[i].address_space.root_physical=0;
         processes[i].address_space.mapped_pages=0;
@@ -162,6 +166,8 @@ int process_create(struct process *parent, process_id_t *pid_out) {
     process->parent=parent;
     process->uid=parent ? parent->uid : 0U;
     process->gid=parent ? parent->gid : 0U;
+    process->capabilities=parent ? parent->capabilities :
+                         ZEROOS_PROCESS_CAP_SET_CREDENTIALS;
     process->first_child=0;
     process->next_sibling=0;
     process->child_count=0;
@@ -189,6 +195,61 @@ int process_create(struct process *parent, process_id_t *pid_out) {
 
     spin_unlock_irqrestore(&process_lock,flags);
     return 0;
+}
+
+int process_credentials_get(const struct process *process, uint32_t *uid_out,
+                            uint32_t *gid_out) {
+    if (!process || (!uid_out && !gid_out) ||
+        !process_pointer_valid(process))
+        return -ZEROOS_EINVAL;
+    uint64_t flags=spin_lock_irqsave(&process_lock);
+    if (process_lookup_locked(process->pid)!=process ||
+        (process->state!=PROCESS_NEW && process->state!=PROCESS_RUNNING)) {
+        spin_unlock_irqrestore(&process_lock,flags);
+        return -ZEROOS_ENOENT;
+    }
+    if (uid_out)
+        *uid_out=process->uid;
+    if (gid_out)
+        *gid_out=process->gid;
+    spin_unlock_irqrestore(&process_lock,flags);
+    return 0;
+}
+
+int process_credentials_set(struct process *caller, struct process *target,
+                            uint32_t uid, uint32_t gid) {
+    if (!caller || !target || !process_pointer_valid(caller) ||
+        !process_pointer_valid(target))
+        return -ZEROOS_EINVAL;
+    uint64_t flags=spin_lock_irqsave(&process_lock);
+    if (process_lookup_locked(caller->pid)!=caller ||
+        process_lookup_locked(target->pid)!=target ||
+        (caller->state!=PROCESS_NEW && caller->state!=PROCESS_RUNNING) ||
+        (target->state!=PROCESS_NEW && target->state!=PROCESS_RUNNING)) {
+        spin_unlock_irqrestore(&process_lock,flags);
+        return -ZEROOS_ENOENT;
+    }
+    if (!(caller->capabilities&ZEROOS_PROCESS_CAP_SET_CREDENTIALS)) {
+        spin_unlock_irqrestore(&process_lock,flags);
+        return -ZEROOS_EPERM;
+    }
+    target->uid=uid;
+    target->gid=gid;
+    target->capabilities=uid==0 ? ZEROOS_PROCESS_CAP_SET_CREDENTIALS : 0;
+    spin_unlock_irqrestore(&process_lock,flags);
+    return 0;
+}
+
+int process_capability_has(const struct process *process, uint64_t capability) {
+    if (!process || !process_pointer_valid(process) || !capability ||
+        (capability&~ZEROOS_PROCESS_CAP_VALID))
+        return 0;
+    uint64_t flags=spin_lock_irqsave(&process_lock);
+    int allowed=process_lookup_locked(process->pid)==process &&
+        (process->state==PROCESS_NEW || process->state==PROCESS_RUNNING) &&
+        (process->capabilities&capability)==capability;
+    spin_unlock_irqrestore(&process_lock,flags);
+    return allowed;
 }
 
 struct process *process_lookup(process_id_t pid) {
@@ -794,7 +855,7 @@ int process_debug_validate(void) {
                 process->reaping_threads || process->max_threads || process->max_children ||
                 wait_queue_count(&process->child_waiters) ||
                 process->max_address_space_pages || process->resident_pages ||
-                process->address_space.root ||
+                process->capabilities || process->address_space.root ||
                 process->address_space.root_physical ||
                 process->address_space.mapped_pages ||
                 process->address_space.max_pages) {
@@ -811,7 +872,11 @@ int process_debug_validate(void) {
             return -1;
         }
 
-        if (process->max_threads==0 || process->max_children==0 ||
+        if ((process->capabilities&~ZEROOS_PROCESS_CAP_VALID) ||
+            (process->uid==0 &&
+             !(process->capabilities&ZEROOS_PROCESS_CAP_SET_CREDENTIALS)) ||
+            (process->uid!=0 && process->capabilities!=0) ||
+            process->max_threads==0 || process->max_children==0 ||
             process->max_address_space_pages==0 ||
             process->thread_count>process->max_threads ||
             process->reaping_threads>process->max_threads ||

@@ -60,9 +60,11 @@ struct fs_region {
 static struct fs_region regions[FS_MMAP_TOTAL];
 static struct spinlock region_lock;     /* zero-initialised = unlocked */
 
-static struct vfs_cred fs_cred(const struct process *process) {
-    struct vfs_cred cred={process->uid,process->gid};
-    return cred;
+static int fs_cred(const struct process *process, struct vfs_cred *cred) {
+    if (!process || !cred ||
+        process_credentials_get(process,&cred->uid,&cred->gid)!=0)
+        return -SE_PERM;
+    return 0;
 }
 
 /* Copies a NUL-terminated path; never reads across into an unmapped page
@@ -343,9 +345,15 @@ void fsyscall_deferred_work(void) {
 void fsyscall_dispatch(struct interrupt_frame *frame, struct process *process) {
     char path[ZEROOS_PATH_MAX];
     char path2[ZEROOS_PATH_MAX];
-    struct vfs_cred cred=fs_cred(process);
+    struct vfs_cred cred;
     struct vfs_file *file=0;
     int64_t rc;
+
+    if (!frame || fs_cred(process,&cred)!=0) {
+        if (frame)
+            frame->rax=0ULL-(uint64_t)SE_PERM;
+        return;
+    }
 
     switch (frame->rax) {
     case ZEROOS_SYS_OPEN: {
@@ -478,19 +486,19 @@ void fsyscall_dispatch(struct interrupt_frame *frame, struct process *process) {
             rc=-SE_FAULT;
         break;
     }
-    case ZEROOS_SYS_GETCRED:
-        rc=(int64_t)((uint64_t)process->uid|((uint64_t)process->gid<<32));
+    case ZEROOS_SYS_GETCRED: {
+        uint32_t uid=0,gid=0;
+        rc=process_credentials_get(process,&uid,&gid);
+        if (rc==0)
+            rc=(int64_t)((uint64_t)uid|((uint64_t)gid<<32));
         break;
+    }
     case ZEROOS_SYS_SETCRED:
-        if (process->uid!=0)
-            rc=-SE_PERM;                    /* only root may change identity */
-        else if (frame->rdi>0xffffffffULL || frame->rsi>0xffffffffULL)
+        if (frame->rdi>0xffffffffULL || frame->rsi>0xffffffffULL)
             rc=-SE_INVAL;
-        else {
-            process->uid=(uint32_t)frame->rdi;
-            process->gid=(uint32_t)frame->rsi;
-            rc=0;
-        }
+        else
+            rc=process_credentials_set(process,process,(uint32_t)frame->rdi,
+                                       (uint32_t)frame->rsi);
         break;
     case ZEROOS_SYS_MMAP: {
         uint64_t address=0;

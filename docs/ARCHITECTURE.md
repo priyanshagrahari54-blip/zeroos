@@ -590,6 +590,16 @@ Boot trust, kernel privilege separation, userspace isolation, permissions, proce
 
 Security services must remain available under ordinary load and become more conservative under suspicious activity.
 
+Stage 6 implementation has started by user direction while Stages 1–5 remain
+under hardening. The first kernel-enforced increment adds an inherited
+`SET_CREDENTIALS` capability to each process, serializes uid/gid snapshots and
+transitions under `process_lock`, and clears the capability when a process
+drops from uid 0; the process cannot restore it itself. A QEMU boot self-test
+covers inheritance, drop, and denied self-escalation. This is partial
+**IMPLEMENTED/TESTED** evidence only—not a general capability model, sandbox,
+signed-package system, or production security boundary; later security checks
+must consume real enforcement paths and pass dedicated negative/stress tests.
+
 ## 20. Update Architecture
 Use staged updates:
 download -> verify -> stage -> preflight -> activate -> health check -> commit or rollback.

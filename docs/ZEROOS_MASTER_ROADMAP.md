@@ -35,7 +35,7 @@ Already substantially implemented:
 - QEMU CI boot path
 
 Current priority:
-Finish and validate Stages 1–5 in order before starting Stage 6. Scheduler/context, memory/VMM, userspace, storage, hardware/network, and desktop/platform gaps remain subject to their stage acceptance evidence; passing CI subsets do not complete a stage. Track the live evidence in `VALIDATION.md` and do not infer physical-hardware support.
+By the user's latest direction, begin Stage 6 security implementation in parallel with ongoing Stage 1–5 hardening and evidence closure. This authorizes implementation work only: Stages 1–5 remain active, their acceptance gates are not waived, and Stage 6 cannot be called complete/supported/production-ready before dependencies and evidence close. Do not begin Stages 7–10 until Stage 6 exits. Scheduler/context, memory/VMM, userspace, storage, hardware/network, and desktop/platform gaps remain tracked in `VALIDATION.md`; passing CI subsets do not complete a stage, and physical-hardware support must not be inferred.
 
 Previous failure:
 invalid opcode at RIP 0x1bf and impossible task id 0x21 after scheduler activity.
@@ -499,6 +499,21 @@ Turn the existing security primitives and host-tested policy cores into enforced
 - recovery works without the normal desktop;
 - security failures do not silently downgrade to success.
 
+### Current Stage 6 status (2026-10-02)
+
+**IN_PROGRESS — implementation authorized in parallel with Stages 1–5 hardening.**
+The earlier Stage 1–5 gates remain open and are not waived; do not claim
+Stage 6 completion or production readiness until its dependencies and exit
+evidence pass. Initial kernel increment: process-level
+`SET_CREDENTIALS` capability is inherited under `process_lock`, uid/gid are
+read and changed as one locked pair, and dropping uid 0 clears the capability
+so that process cannot self-escalate back to root. Boot probes check
+inheritance/drop/self-escalation denial, and the Ring-3 storage probe covers
+SETCRED denial. Local `make check` passes; QEMU on this exact security change
+is pending CI. General capability/permission enforcement, sandbox hooks,
+packet-path firewall binding, package signatures, real update/rollback
+storage integration, and recovery environment remain open.
+
 # STAGE 7 — GPU, GRAPHICS ACCELERATION, MEDIA, BROWSER AND NATIVE APP FOUNDATION
 
 ### Objective
@@ -704,4 +719,4 @@ Full TLB reloads at every paging-level unlink were replaced with synchronous add
 
 Exact-SHA workflow run 36860017977 on docs-only commit `64f78779e3581bee45999f29a804b898b6fef09d` failed the Boot test before q35 storage; its serial tail ended during scheduler timer output without a panic marker. The exact failed assertion is unknown. The q35 storage failure in 36858051968 and boot failure in 36860017977 remain open; run 36859092757 is a passing datapoint, not proof of stable behavior. Workflow diagnostics were expanded to show recent non-timer milestones and missing boot markers.
 
-Exact-SHA run 36860832315 on `647f84d2ec494123b964c16bb9f6997cf7e3b7a4` passed boot/SMP and q35 AHCI/NVMe two-boot persistence after adding diagnostics. Run [36873757374](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36873757374) passed the standalone Boot test but failed q35 two-boot storage. Disk 2 ended before a scheduler heartbeat after process-lifetime/wait-queue/context-worker markers; disk 1 reached tick 8865 with scheduler/process/userspace/hotplug counters complete but no storage-manager marker. The divergent tails do not establish a common root cause or show that storage drivers ran. Per-probe progress and per-disk milestone annotations are diagnostic improvements only; follow-up adds finer process-probe and storage-launch messages, also diagnostic. Failures 36860017977, 36861689464 and 36873757374 remain unresolved and must not be waived.
+Exact-SHA run 36860832315 on `647f84d2ec494123b964c16bb9f6997cf7e3b7a4` passed boot/SMP and q35 AHCI/NVMe two-boot persistence after adding diagnostics. Run [36873757374](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36873757374) passed the standalone Boot test but failed q35 two-boot storage. Disk 2 ended before a scheduler heartbeat after process-lifetime/wait-queue/context-worker markers; disk 1 reached tick 8865 with scheduler/process/userspace/hotplug counters complete but no storage-manager marker. The divergent tails do not establish a common root cause or show that storage drivers ran. Diagnostics-only follow-up commit `c40bb03367de670e20a809e80f895ebc33faea4b` added finer process-probe and storage-launch messages; exact-SHA run [36876632155](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36876632155) passed the full build/host/boot/SMP/q35 storage workflow. One pass after a failure is not stable reliability evidence. Runs 36860017977, 36861689464 and 36873757374 remain unresolved and must not be waived.

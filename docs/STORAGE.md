@@ -511,16 +511,17 @@ proof of absence.
 
 Exact-SHA run [36873757374](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36873757374)
 passed the standalone Boot test but failed the q35 AHCI + NVMe two-boot
-persistence gate. Disk 2's serial tail ends after the process lifetime pin,
+persistence gate. Disk 2's serial tail ended after process lifetime pin,
 wait-queue, and context-switch worker markers, without a scheduler heartbeat
-or panic marker. Disk 1 reports scheduler progress through tick 8865 with
+or panic marker. Disk 1 reported scheduler progress through tick 8865 with
 process phase 3, workers 1/1/1, hotplug=1, userspace=1, failures=0, but no
-storage-manager marker. This divergence does not establish a common cause,
+storage-manager marker. This divergence did not establish a common cause,
 prove storage driver code was reached, or implicate storage itself.
 
-The scheduler telemetry and per-disk failure trap made these different
-progress boundaries visible. Follow-up source instrumentation adds process
-probe substeps and messages around storage-task launch to isolate the next
-boundary. This is diagnostic only: it does not fix the residual reliability
-failure or close Stage 1–5. Repeated oversubscribed q35 runs and a
-cause-specific fix are still required.
+A diagnostics-only follow-up added process-probe substeps and messages around
+storage-task launch. Exact-SHA run
+[36876632155](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36876632155)
+passed the full build, host, boot, and q35 persistence workflow. This is one
+pass after a failure—not a cause-specific fix or repeatability proof. The
+reliability gate remains open; repeated oversubscribed q35 runs and
+cause-specific evidence are still required.

@@ -9,6 +9,12 @@
 #define ZEROOS_PROCESS_DEFAULT_MAX_CHILDREN 16ULL
 #define ZEROOS_PROCESS_DEFAULT_MAX_ADDRESS_SPACE_PAGES (~0ULL)
 
+/* Capability bit currently enforced by the kernel credential transition.
+ * Capability sets are inherited on process creation and irreversibly cleared
+ * when a process drops from uid 0 to an unprivileged uid. */
+#define ZEROOS_PROCESS_CAP_SET_CREDENTIALS (1ULL << 0)
+#define ZEROOS_PROCESS_CAP_VALID ZEROOS_PROCESS_CAP_SET_CREDENTIALS
+
 typedef uint64_t process_id_t;
 
 enum process_state {
@@ -51,11 +57,13 @@ struct process {
 
     uint64_t exit_status;
 
-    /* Filesystem credentials (Stage 3). Inherited from the parent at
-     * creation; kernel-created processes start as uid/gid 0. Only uid 0
-     * may change them (SETCRED); the change is one-way for non-root. */
+    /* Filesystem credentials and initial privilege state. They are inherited
+     * under process_lock; kernel-created processes start as uid/gid 0. Only a
+     * process holding SET_CREDENTIALS may change identities. Dropping uid 0
+     * clears that capability and does not permit self-escalation. */
     uint32_t uid;
     uint32_t gid;
+    uint64_t capabilities;
 
     /* The process owns its private user address-space root. */
     struct vmm_space address_space;
@@ -65,6 +73,14 @@ int process_system_init(void);
 
 int process_create(struct process *parent, process_id_t *pid_out);
 struct process *process_lookup(process_id_t pid);
+/* Credential snapshots and transitions are serialized with process creation
+ * and lifetime changes. Transitions require the caller's capability and are
+ * applied atomically to a live target. */
+int process_credentials_get(const struct process *process, uint32_t *uid_out,
+                            uint32_t *gid_out);
+int process_credentials_set(struct process *caller, struct process *target,
+                            uint32_t uid, uint32_t gid);
+int process_capability_has(const struct process *process, uint64_t capability);
 /* Acquire/release a generation-checked live-process pin. A pinned process
  * cannot be published as zombie or reaped until the release. */
 int process_acquire_live(process_id_t pid, struct process **process_out);

@@ -267,19 +267,19 @@ preemption contracts.
 QEMU runtime coverage demonstrates scheduler implementation paths, but Stage 1
 is not closed. Historical testing on a 2-core host with a 4-vCPU q35 TCG guest
 recorded intermittent scheduler-validator and stress-timeout failures; the
-current storage/validation ledgers record the signatures and scope. The latest
-CI run, [36873757374](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36873757374),
+current storage/validation ledgers record the signatures and scope. Run
+[36873757374](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36873757374)
 passed the standalone Boot test but failed q35 AHCI/NVMe two-boot persistence.
-The disk-2 tail stops after process-lifetime, wait-queue, and context-switch
-worker markers without a panic or scheduler heartbeat. Disk 1 reaches
-scheduler progress tick 8865 with process phase 3, hotplug/userspace complete,
-and failures=0, but no storage-manager milestone. These divergent observations
-are not a root-cause diagnosis and do not prove storage driver code was reached.
+Disk 2 stopped after process-lifetime, wait-queue, and context-switch worker
+markers without a panic or scheduler heartbeat. Disk 1 reached scheduler tick
+8865 with process phase 3, hotplug/userspace complete, and failures=0, but no
+storage-manager milestone. The divergent tails did not establish a root cause.
 
-Run 36873757374 exercised the 100-tick progress report (FPU, wait/sleep/input,
-preemption, lifecycle/fairness, process/thread, hotplug, userspace). Follow-up
-source adds substep messages around the process probe and storage-manager launch
-to distinguish the first incomplete boundary. This remains diagnostics, not a
-fix. Do not mark SMP **SUPPORTED** or Stage 1 **PRODUCTION READY**; close the
-reliability blocker only with a cause-specific fix and repeated oversubscribed
-QEMU runs, followed by the required physical-hardware evidence.
+A diagnostics-only follow-up added substep messages around the process probe
+and storage-manager launch. Exact-SHA run
+[36876632155](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36876632155)
+passed build, QEMU boot/SMP, and q35 persistence. This single follow-up pass is
+not a demonstrated fix or stability evidence. Do not mark SMP **SUPPORTED**
+or Stage 1 **PRODUCTION READY**; close the reliability blocker only with
+cause-specific evidence, repeated oversubscribed QEMU runs, and physical-
+hardware validation.

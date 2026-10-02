@@ -219,7 +219,9 @@ process_lock, so the two table locks do not form a lock cycle. The scheduler
 task lock remains owned by the task subsystem.
 
 Process and thread tables are shared across the SMP scheduler and protected
-by their respective spinlocks. QEMU boot certification exercises process/thread
+by their respective spinlocks. Credential and capability state is read or
+changed only while `process_lock` is held; file syscalls take a consistent
+credential snapshot before authorization. QEMU boot certification exercises process/thread
 creation, exit, wait/reap, and scheduler activity with multiple vCPUs. This is
 implementation/runtime evidence only: concurrent lifetime stress, physical
 hardware, and production SMP support remain open gates. The process model
@@ -232,7 +234,10 @@ model. Still missing or limited are:
 - process groups, sessions, orphan adoption, and general signal semantics;
 - general-purpose dynamic linking/`PT_INTERP`, demand paging and `exec` policy
   beyond the bounded static ELF `SPAWN` path;
-- a general service registry and complete credentials/capability policy;
+- a general service registry and complete credentials/capability policy. The
+  current Stage 6 increment adds one kernel-enforced `SET_CREDENTIALS`
+  capability, locked credential snapshots/transitions, inheritance and
+  irreversible self-drop; it is not a general capability or sandbox model;
 - stronger concurrent lifetime/cancellation stress across multiple CPUs;
 - broader user-fault reporting/recovery beyond deterministic thread
   termination.
@@ -246,6 +251,8 @@ production-certified on physical hardware.
 
 The runtime self-test exercises:
 - process creation and PID lookup
+- root capability inheritance, atomic uid/gid snapshot/update,
+  capability clearing on uid drop, and denied self-escalation to uid 0
 - parent/child linkage
 - private per-process address-space creation
 - kernel-thread creation

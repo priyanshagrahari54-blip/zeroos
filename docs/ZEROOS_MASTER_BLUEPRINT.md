@@ -794,6 +794,19 @@ Turn the existing security primitives and host-tested policy cores into enforced
 - recovery works without the normal desktop;
 - security failures do not silently downgrade to success.
 
+### Current Stage 6 progress (2026-10-02)
+
+Stage 6 is **IN_PROGRESS** by current user authorization, in parallel with
+continued Stage 1–5 hardening. No earlier stage gate is waived, and this
+partial work is not Stage 6 **TESTED/SUPPORTED/PRODUCTION READY**. Initial
+kernel change: a `SET_CREDENTIALS` process capability is inherited under the
+process lock; credential snapshots and uid/gid transitions are serialized;
+dropping uid 0 clears the capability and blocks self-escalation. Boot probes
+test inheritance, drop and denial; the Ring-3 storage probe covers credential
+change denial. Local `make check` passes; exact-SHA QEMU validation is pending.
+General capability enforcement, sandbox integration, package signature trust,
+production update/rollback and recovery remain unimplemented.
+
 # STAGE 7 — GPU, GRAPHICS ACCELERATION, MEDIA, BROWSER AND NATIVE APP FOUNDATION
 
 ### Objective
@@ -972,4 +985,4 @@ A q35 storage CI gate failed once on run 36858051968 after the earlier full-flus
 
 Exact-SHA workflow run 36860017977 on docs-only commit `64f78779e3581bee45999f29a804b898b6fef09d` failed the Boot test before q35 storage; its serial tail ended during scheduler timer output without a panic marker. The exact failed assertion is unknown. The q35 storage failure in 36858051968 and boot failure in 36860017977 remain open; run 36859092757 is a passing datapoint, not proof of stable behavior. Workflow diagnostics were expanded to show recent non-timer milestones and missing boot markers.
 
-Exact-SHA run 36860832315 on `647f84d2ec494123b964c16bb9f6997cf7e3b7a4` passed boot/SMP and q35 AHCI/NVMe two-boot persistence after adding diagnostics. Run [36873757374](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36873757374) passed the standalone Boot test but failed q35 two-boot storage. Disk 2 ended before a scheduler heartbeat after process-lifetime/wait-queue/context-worker markers; disk 1 reached tick 8865 with scheduler/process/userspace/hotplug counters complete but no storage-manager marker. The divergent tails do not establish a common root cause or show that storage drivers ran. Per-probe progress and per-disk milestone annotations are diagnostic improvements only; follow-up adds finer process-probe and storage-launch messages, also diagnostic. Failures 36860017977, 36861689464 and 36873757374 remain unresolved and must not be waived.
+Exact-SHA run 36860832315 on `647f84d2ec494123b964c16bb9f6997cf7e3b7a4` passed boot/SMP and q35 AHCI/NVMe two-boot persistence after adding diagnostics. Run [36873757374](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36873757374) passed the standalone Boot test but failed q35 two-boot storage. Disk 2 ended before a scheduler heartbeat after process-lifetime/wait-queue/context-worker markers; disk 1 reached tick 8865 with scheduler/process/userspace/hotplug counters complete but no storage-manager marker. The divergent tails do not establish a common root cause or show that storage drivers ran. Diagnostics-only follow-up commit `c40bb03367de670e20a809e80f895ebc33faea4b` added finer process-probe and storage-launch messages; exact-SHA run [36876632155](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36876632155) passed the full build/host/boot/SMP/q35 storage workflow. One pass after a failure is not stable reliability evidence. Runs 36860017977, 36861689464 and 36873757374 remain unresolved and must not be waived.

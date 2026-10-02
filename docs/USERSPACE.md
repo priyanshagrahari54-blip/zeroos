@@ -325,8 +325,12 @@ This is not the Stage 2 exit claim. The remaining production gates are:
 - a general service registry beyond the bounded manager image, including
   dependency graphs, health checks, crash diagnostics, shutdown policy and
   multi-service resource accounting;
-- capability credentials/identity policy and a complete userspace runtime
-  library beyond the current freestanding syscall/IPC/spawn/wait layer;
+- a general capability-credential and identity policy, plus a complete
+  userspace runtime library beyond the current freestanding syscall/IPC/
+  spawn/wait layer. The kernel now has a bounded `SET_CREDENTIALS` capability
+  with locked snapshot/transition helpers, inheritance, and irreversible
+  capability clearing when uid drops from 0; this is not the general sandbox
+  or per-operation capability enforcement Stage 6 requires;
 - socket foundations built on the bounded/backpressure and cancellation
   contracts (the byte-stream pipe, coalescing-event, and page-granular
   shared-memory ABI is only the first foundation);

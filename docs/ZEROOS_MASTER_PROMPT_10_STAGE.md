@@ -158,7 +158,7 @@ Never let the roadmap claim more than the code and validation evidence support.
 
 ## Current execution rule
 
-Execution remains in Stages 1–5 until each applicable earlier-stage implementation and evidence gate is closed to the required production-readiness standard. Do not begin Stage 6 before that gate is met. Once Stages 1–5 are closed, proceed through Stages 6–10 in order. If later-stage work exposes an earlier-stage dependency, stop and resolve that dependency first; never bypass scheduler, userspace, storage, driver, or security invariants to advance the stage number.
+Per the latest user direction, Stage 6 implementation may begin in parallel with continued Stage 1–5 hardening and evidence closure. This changes when Stage 6 work may start; it does not waive any acceptance gate: Stages 1–5 remain active, unresolved blockers must still be fixed, and no Stage 6 completion/support/production claim is allowed until its dependencies and evidence are satisfied. Do not start Stages 7–10 until Stage 6 meets its exit criteria. If Stage 6 work exposes a Stage 1–5 dependency or regression, stop and resolve it first; never bypass scheduler, userspace, storage, driver, or security invariants to advance a stage number.
 
 When a stage is completed, record:
 1. what changed;

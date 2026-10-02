@@ -10,6 +10,7 @@
 #include "task.h"
 #include "thread.h"
 #include "process.h"
+#include "syscall.h"
 #include "scheduler.h"
 #include "smp.h"
 #include "wait.h"
@@ -454,6 +455,28 @@ static void process_thread_probe_monitor_step(void) {
             process_probe_child->parent!=process_probe_parent ||
             process_child_count(process_probe_parent)!=1)
             process_thread_probe_fail("parent/child relationship validation failed");
+
+        {
+            uint32_t child_uid=~0U,child_gid=~0U;
+            if (!process_capability_has(process_probe_parent,
+                                        ZEROOS_PROCESS_CAP_SET_CREDENTIALS) ||
+                !process_capability_has(process_probe_child,
+                                        ZEROOS_PROCESS_CAP_SET_CREDENTIALS) ||
+                process_credentials_get(process_probe_child,&child_uid,
+                                        &child_gid)!=0 ||
+                child_uid!=0 || child_gid!=0 ||
+                process_credentials_set(process_probe_parent,process_probe_child,
+                                       1000,1000)!=0 ||
+                process_credentials_get(process_probe_child,&child_uid,
+                                        &child_gid)!=0 ||
+                child_uid!=1000 || child_gid!=1000 ||
+                process_capability_has(process_probe_child,
+                                       ZEROOS_PROCESS_CAP_SET_CREDENTIALS) ||
+                process_credentials_set(process_probe_child,process_probe_child,
+                                       0,0)!=-ZEROOS_EPERM)
+                process_thread_probe_fail("credential drop/capability inheritance failed");
+            serial_write_public("ZEROOS: process credential capability drop passed.\n");
+        }
 
         {
             struct process *pinned_child=0;
