@@ -5,18 +5,19 @@ This file is the navigation layer for the ZEROOS documentation set.
 
 ## Source-of-truth hierarchy
 
-1. `ZEROOS_MASTER_IMPLEMENTATION_PROMPT.md` — canonical implementation-agent execution contract.
-2. `ZEROOS_MASTER_BLUEPRINT.md` — what ZEROOS is and the target system architecture.
-3. `ZEROOS_MASTER_ROADMAP.md` — execution order and current engineering priority.
-4. `PRD.md` — product requirements and feature acceptance.
-5. `ARCHITECTURE.md` — subsystem boundaries and ownership.
-6. `TECHSPEC.md` — technical contracts and implementation requirements.
-7. `RULES.md` — non-negotiable engineering rules.
-8. `AGENTS.md` — instructions for AI/human implementation agents.
-9. `PHASES.md` — phase/stage/substage development plan.
-10. `MEMORY.md` — memory/state/resource lifecycle contract.
-11. `VALIDATION.md` — Stage 5 evidence ledger and support matrix.
-12. Existing subsystem specifications — detailed contracts for boot, scheduler, processes, interrupts, synchronization, virtual memory, GDT/TSS and hardware.
+1. `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md` — canonical consolidated product, architecture, requirements, roadmap, hardening, micro-requirements, AI handoff, UI/UX and hardware-experience specification.
+2. `ZEROOS_MASTER_IMPLEMENTATION_PROMPT.md` — canonical implementation-agent execution contract.
+3. `ZEROOS_MASTER_BLUEPRINT.md` — what ZEROOS is and the target system architecture.
+4. `ZEROOS_MASTER_ROADMAP.md` — execution order and current engineering priority.
+5. `PRD.md` — product requirements and feature acceptance.
+6. `ARCHITECTURE.md` — subsystem boundaries and ownership.
+7. `TECHSPEC.md` — technical contracts and implementation requirements.
+8. `RULES.md` — non-negotiable engineering rules.
+9. `AGENTS.md` — instructions for AI/human implementation agents.
+10. `PHASES.md` — phase/stage/substage development plan.
+11. `MEMORY.md` — memory/state/resource lifecycle contract.
+12. `VALIDATION.md` — Stage 5 evidence ledger and support matrix.
+13. Existing subsystem specifications — detailed contracts for boot, scheduler, processes, interrupts, synchronization, virtual memory, GDT/TSS and hardware.
 
 ## Current implementation priority
 
