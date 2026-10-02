@@ -6561,3 +6561,1098 @@ Nothing in this inventory becomes complete because it is written down. For each 
 
 
 ---
+
+---
+
+# ZEROOS UNIFIED PRODUCT + UI + HARDWARE EXPERIENCE SPECIFICATION
+Version: 2.0 — Unified expansion of the consolidated master
+Status: Binding product/design requirement; implementation status is tracked separately by evidence.
+
+## 1. Canonical purpose
+
+This section is the authoritative product-experience expansion for the consolidated master specification. It incorporates the complete desktop UI concept, Dynamic Capsule, system surfaces, lifecycle/resource rules, accessibility, time/RTC recovery behavior, and user-visible operating-system behavior discussed for ZEROOS.
+
+A written requirement is not implementation evidence. Every item must eventually map to code, tests, measurements, and a certification record.
+
+## 2. ZEROOS product identity
+
+ZEROOS is a native x86-64 operating system with:
+- a real kernel, scheduler, memory manager, storage, drivers, networking and userspace;
+- an original desktop shell and interaction model;
+- native applications;
+- isolated Windows and Android compatibility environments;
+- recovery, update, security and diagnostics;
+- ZERO AI as an OS-specific, permission-brokered service;
+- an event-driven resource model.
+
+ZEROOS must not become a Linux skin, visual mockup, simulator, or compatibility-layer-only product.
+
+The UI may use familiar desktop conventions for usability, but its visual language, shell composition, APIs and system architecture remain ZEROOS-owned.
+
+## 3. Universal lifecycle/resource contract
+
+All long-lived UI and system features must expose an explicit lifecycle. The preferred lifecycle is:
+
+STOPPED -> DORMANT -> WARM -> ACTIVE -> THROTTLED -> SUSPENDED -> DORMANT/STOPPED
+
+Definitions:
+- STOPPED: no resident service state.
+- DORMANT: minimal controller/state exists; no continuous workload.
+- WARM: small cached state/resources retained for fast activation.
+- ACTIVE: user-visible or requested work is executing.
+- THROTTLED: work continues under constrained CPU/GPU/I/O/network/thermal budget.
+- SUSPENDED: execution is frozen and resumable.
+- STOPPED again when state no longer needs retention.
+
+Hard rule:
+Installed != loaded != running != active != maximum resource usage.
+
+No feature may use a permanent polling loop merely because polling is easier to implement. Prefer interrupts, event queues, timers, file/device notifications, compositor damage events, IPC wakeups and explicit work scheduling.
+
+Every resident service must declare:
+- minimum resident memory;
+- active memory ceiling;
+- CPU policy;
+- I/O priority;
+- GPU budget if applicable;
+- network wake policy;
+- wake events;
+- cache limits;
+- suspend/unload conditions;
+- crash/restart behavior;
+- observability counters.
+
+The engineering target is near-zero unnecessary idle work and bounded resource use, not literal zero resource consumption during active rendering, decoding, execution or transfer.
+
+## 4. ZEROOS desktop shell
+
+### 4.1 Global shell
+
+The desktop consists of:
+- ZERO Bar;
+- Universal Search;
+- Dynamic Capsule;
+- workspace manager;
+- window system/compositor;
+- notifications;
+- Quick Controls;
+- system status;
+- launcher;
+- desktop/workspace surface;
+- accessibility services;
+- optional widgets;
+- performance/resource indicators.
+
+The shell must remain functional without ZERO AI.
+
+### 4.2 ZERO Bar
+
+ZERO Bar is the persistent adaptive shell surface.
+
+It contains:
+- ZERO launcher;
+- search entry;
+- active application indicators;
+- workspace indicator;
+- notification entry;
+- network/device state;
+- power/battery state;
+- clock/calendar entry;
+- optional user-configurable shortcuts.
+
+Behavior:
+- compress on small displays;
+- adapt to DPI/scaling;
+- hide or enter minimal mode in fullscreen applications;
+- restore predictably after fullscreen;
+- never become an input/focus trap;
+- expose complete keyboard navigation;
+- avoid continuous animation when nothing changes.
+
+### 4.3 Launcher
+
+Launcher requirements:
+- keyboard-first activation;
+- pointer/touch support where hardware exists;
+- recent/favorite applications;
+- installed application discovery;
+- categorized application discovery;
+- search integration;
+- app lifecycle indicators;
+- uninstall/settings actions where permitted;
+- accessibility labels;
+- offline operation.
+
+The launcher must not index or render the entire application ecosystem continuously.
+
+## 5. Dynamic Capsule
+
+ZEROOS includes an original Dynamic Capsule: a compact, transient system-status surface near the top-center of the desktop.
+
+It is an event-driven UI surface, not a permanently animated widget.
+
+Supported event classes include:
+- downloads/uploads;
+- package installation/removal;
+- OS update staging/activation;
+- media playback;
+- recording;
+- microphone/camera activity;
+- screen sharing;
+- AI task progress;
+- file copy/move;
+- backup/snapshot activity;
+- network transfer;
+- device pairing;
+- recovery operations;
+- security alerts;
+- RTC/time synchronization;
+- important power/thermal events.
+
+Collapsed state:
+- minimal icon/status;
+- bounded display lifetime;
+- no continuous animation when idle.
+
+Expanded state:
+- title;
+- task identity;
+- progress/status;
+- relevant controls;
+- estimated information only when measured/available;
+- cancel/pause/retry where supported;
+- error/recovery state.
+
+Lifecycle:
+EVENT -> SHOW -> UPDATE ONLY ON STATE CHANGE -> AUTO-COLLAPSE -> DORMANT
+
+Accessibility:
+- screen-reader announcement policy;
+- keyboard focus only when explicitly opened;
+- reduced-motion mode;
+- high-contrast mode;
+- no information conveyed by color alone.
+
+Resource rules:
+- no polling-only progress implementation;
+- no full-screen redraw solely for capsule changes;
+- damage only the affected region;
+- coalesce high-frequency progress updates;
+- cap update frequency;
+- release transient textures/surfaces after timeout.
+
+## 6. Universal Search
+
+One search surface must find:
+- applications;
+- files/folders;
+- settings;
+- devices;
+- commands;
+- help/documentation;
+- diagnostics;
+- recent activity;
+- installed Windows/Android applications;
+- optional ZERO AI results.
+
+Pipeline:
+INPUT -> NORMALIZE -> QUERY CLASSIFY -> INDEX LOOKUP -> LIVE SOURCES -> RANK -> PRESENT
+
+Requirements:
+- incremental indexing;
+- event-driven filesystem updates;
+- bounded queues;
+- cancellation;
+- stale-result invalidation;
+- permission-aware filtering;
+- per-user indexes;
+- encrypted/private data boundary;
+- offline operation;
+- low-resource mode;
+- indexing pause under pressure;
+- no full-disk synchronous first-boot scan.
+
+Search results must distinguish:
+- local exact result;
+- metadata result;
+- system action;
+- compatibility application;
+- AI-generated explanation.
+
+AI must never bypass search permissions.
+
+## 7. Window system and workspaces
+
+Window model:
+- create;
+- map/unmap;
+- focus;
+- move;
+- resize;
+- minimize;
+- maximize;
+- close;
+- snap;
+- tile;
+- float;
+- workspace assignment;
+- monitor assignment;
+- DPI/scaling state;
+- accessibility state.
+
+Focus model must be deterministic:
+- one active keyboard focus owner per seat;
+- explicit focus transfer;
+- crash-safe focus restoration;
+- modal surfaces cannot silently steal focus;
+- focus must return sensibly after a child process exits.
+
+Workspace model:
+- create/destroy;
+- rename;
+- reorder;
+- switch;
+- move window;
+- remember window placement where permitted;
+- suspend inactive application workloads according to lifecycle policy.
+
+## 8. Compositor
+
+Compositor architecture must use:
+- retained scene representation;
+- damage tracking;
+- occlusion culling;
+- frame scheduling;
+- buffer ownership/lifetime;
+- synchronization;
+- adaptive refresh/render policy;
+- GPU accelerated path where supported;
+- software/framebuffer fallback.
+
+Do not continuously redraw an unchanged desktop.
+
+When the screen is static:
+- no animation loop;
+- no unnecessary GPU submissions;
+- no repeated full-screen composition.
+
+When a window is hidden/covered:
+- throttle or suspend rendering where semantics permit.
+
+When an application enters fullscreen:
+- reduce desktop background work;
+- suspend unnecessary widgets/animations;
+- preserve notification/security indicators required by policy.
+
+When GPU acceleration is unavailable:
+- use bounded software fallback;
+- explicitly expose capability state;
+- never claim acceleration without hardware/driver evidence.
+
+## 9. Visual design system
+
+### 9.1 Principles
+- clarity before decoration;
+- fast path before feature discovery;
+- consistent interaction grammar;
+- keyboard/pointer parity;
+- adaptive complexity;
+- near-zero idle work;
+- recovery is visible;
+- accessibility is foundational;
+- user data is understandable and controllable;
+- motion communicates state but never blocks action.
+
+### 9.2 Surfaces
+Use layered surfaces with restrained depth.
+
+Avoid:
+- permanent heavy blur;
+- always-running particle effects;
+- unnecessary transparency;
+- continuously animated backgrounds;
+- large hidden texture caches.
+
+### 9.3 Motion
+Every animation must define:
+- trigger;
+- duration range;
+- cancellation;
+- reduced-motion behavior;
+- frame-rate behavior;
+- resource budget.
+
+Reduced-motion mode:
+- removes decorative movement;
+- replaces motion with state changes;
+- prevents animation from becoming a functional dependency.
+
+### 9.4 Themes
+At minimum:
+- light;
+- dark;
+- high contrast;
+- reduced motion;
+- user accent configuration.
+
+Dynamic wallpaper is optional and must be resource-governed:
+- stop when covered/hidden/locked/fullscreen;
+- reduce FPS/resolution under pressure;
+- release unused GPU resources;
+- never compete with foreground applications.
+
+## 10. Quick Controls / Control Center
+
+Quick Controls exposes:
+- Wi-Fi;
+- Bluetooth;
+- audio output/input;
+- display brightness where supported;
+- night light/color policy where supported;
+- airplane/network isolation;
+- performance profile;
+- battery/power profile;
+- screen recording;
+- microphone/camera privacy state;
+- notification mode;
+- accessibility shortcuts;
+- device connection state.
+
+Each control must use the real service/driver API. UI toggles must not become fake state.
+
+States:
+NORMAL / LOADING / DISABLED / ERROR / OFFLINE / PERMISSION_DENIED / UNSUPPORTED / LOW_RESOURCE
+
+## 11. Notifications
+
+Notification service requirements:
+- stable notification identity;
+- grouping;
+- priority;
+- rate limiting;
+- deduplication;
+- expiration;
+- action buttons;
+- permission policy;
+- quiet hours/DND;
+- accessibility;
+- persistence policy;
+- crash-safe queue handling.
+
+Prevent notification storms with:
+- per-source rate limits;
+- aggregation;
+- backoff;
+- duplicate suppression.
+
+Critical security/recovery notifications may bypass ordinary grouping according to policy, but must remain auditable.
+
+## 12. Settings
+
+Settings are schema-driven and versioned.
+
+Categories:
+- System;
+- Display;
+- Sound;
+- Network;
+- Bluetooth;
+- Devices;
+- Power;
+- Storage;
+- Apps;
+- Privacy;
+- Security;
+- Users;
+- Accessibility;
+- AI;
+- Windows Apps;
+- Android Apps;
+- Developer;
+- Updates & Recovery.
+
+Every setting defines:
+- key;
+- type;
+- default;
+- validation;
+- persistence;
+- scope;
+- permissions;
+- migration;
+- reset behavior;
+- UI metadata;
+- error state;
+- capability/unsupported state.
+
+Settings changes requiring elevated privilege must cross the real permission boundary.
+
+## 13. File manager
+
+ZERO Files requirements:
+- hierarchical navigation;
+- search;
+- metadata;
+- copy/move/rename/delete;
+- progress;
+- cancellation;
+- conflict handling;
+- removable media;
+- permissions;
+- hidden/system objects;
+- thumbnails;
+- archive integration where supported;
+- drag/drop;
+- recent locations;
+- storage health indicators.
+
+Large operations must:
+- use bounded buffers;
+- expose progress;
+- support cancellation;
+- avoid unbounded memory;
+- respect I/O priority;
+- throttle during foreground latency pressure.
+
+Thumbnail generation:
+- asynchronous;
+- cached with bounds;
+- canceled when no longer visible;
+- disabled/reduced under resource pressure.
+
+## 14. Terminal and developer experience
+
+ZERO Terminal:
+- pseudo-terminal service;
+- process groups;
+- resize;
+- UTF-8;
+- signal/event semantics;
+- job control where supported;
+- scrollback with bounded memory;
+- copy/paste;
+- accessibility;
+- secure privilege escalation boundary.
+
+Developer mode:
+- diagnostics;
+- tracing;
+- logs;
+- package inspection;
+- syscall inspection where permitted;
+- service lifecycle tools;
+- performance counters;
+- QEMU/VM development workflow;
+- crash/support bundle generation.
+
+Developer tools must not silently weaken production security.
+
+## 15. Native applications
+
+Initial native application family:
+- ZERO Files;
+- ZERO Terminal;
+- Browser;
+- Settings;
+- Media Player;
+- PDF viewer;
+- Notes;
+- Study Center;
+- Calculator;
+- Dictionary;
+- Code Editor;
+- Diagnostics;
+- Performance Center.
+
+All applications use a common lifecycle:
+INSTALL -> STOPPED -> LAUNCH -> ACTIVE -> BACKGROUND -> DORMANT/WARM -> SUSPENDED -> EXIT
+
+Every app defines:
+- manifest;
+- permissions;
+- identity;
+- storage scope;
+- IPC endpoints;
+- resource limits;
+- lifecycle callbacks;
+- crash policy;
+- update compatibility;
+- accessibility metadata;
+- localization.
+
+## 16. Media and recording surfaces
+
+Media player:
+- local files;
+- playlists;
+- subtitles;
+- multiple audio tracks;
+- playback speed;
+- screenshots;
+- hardware decode where supported;
+- software fallback;
+- A/V synchronization;
+- codec capability reporting.
+
+Recording:
+- screen;
+- window;
+- audio;
+- microphone;
+- webcam where supported.
+
+Privacy indicators must be visible whenever microphone/camera/screen capture is active.
+
+Recording must:
+- use bounded buffers;
+- handle storage-full conditions;
+- survive transient device changes;
+- expose cancellation;
+- flush metadata safely;
+- not consume unlimited memory.
+
+## 17. Gaming mode
+
+Gaming mode is a resource-governance profile, not a claim of universal performance improvement.
+
+Possible policy:
+- foreground priority;
+- reduced background indexing;
+- notification suppression;
+- adaptive compositor work;
+- performance/thermal policy;
+- recording controls;
+- frame-time telemetry.
+
+Metrics:
+- average FPS;
+- frame-time distribution;
+- 1%/0.1% lows where meaningful;
+- CPU utilization;
+- GPU utilization;
+- temperature;
+- clocks;
+- memory pressure;
+- paging;
+- load time.
+
+No benchmark claim without hardware, workload, driver, resolution and configuration.
+
+## 18. Study Center
+
+Study workspace:
+- PDF;
+- notes;
+- annotations;
+- highlights;
+- flashcards;
+- quizzes;
+- formulas;
+- calculator;
+- dictionary;
+- focus timer;
+- revision planner;
+- OCR where supported;
+- ZERO AI study assistant.
+
+All AI-generated explanations are clearly distinguishable from source text.
+
+## 19. Browser
+
+Browser architecture:
+- UI process;
+- isolated renderer/content processes;
+- network service;
+- storage boundary;
+- download service;
+- permission service.
+
+Required controls:
+- origin identity;
+- same-origin boundary;
+- storage quotas;
+- permission persistence;
+- download quarantine;
+- executable-download handling;
+- popup/background limits;
+- renderer resource limits;
+- crash-loop handling.
+
+Untrusted web content must never gain direct kernel or privileged-service access.
+
+## 20. Windows compatibility environment
+
+Windows compatibility remains:
+- user-space;
+- isolated;
+- sandboxed;
+- resource-governed;
+- versioned.
+
+Architecture boundaries:
+PE/COFF -> loader -> API translation -> compatibility libraries -> ZEROOS user APIs -> native services
+
+Unsupported APIs must return explicit diagnostics rather than silently pretending success.
+
+Compatibility runtime lifecycle:
+STOPPED -> DORMANT -> START ON DEMAND -> ACTIVE -> THROTTLED/SUSPENDED -> CLEAN SHUTDOWN
+
+Runtime must not remain resident when no compatible workload is active.
+
+## 21. Android runtime
+
+Android support is an isolated runtime environment, loaded on demand.
+
+Requirements:
+- exact supported Android/AOSP baseline is version-pinned;
+- runtime components are isolated;
+- resource limits are explicit;
+- filesystem mapping is controlled;
+- network access is policy-controlled;
+- graphics integration is capability-dependent;
+- app lifecycle integrates with ZEROOS lifecycle;
+- runtime shutdown releases resources.
+
+No Android runtime dependency may be required for native ZEROOS operation.
+
+## 22. ZERO AI
+
+ZERO AI is an OS-native service, not a prerequisite for booting or basic desktop operation.
+
+Architecture:
+USER -> ZERO AI UI -> AI ORCHESTRATOR -> PERMISSION/CAPABILITY BROKER -> ZEROOS USER APIs -> SERVICES -> KERNEL
+
+Core functions:
+- system search;
+- file operations;
+- coding/project workflows;
+- diagnostics;
+- settings assistance;
+- study;
+- automation;
+- troubleshooting;
+- application launching;
+- system explanation;
+- optional voice/vision integrations.
+
+AI action model:
+PLAN -> AUTHORIZE -> EXECUTE -> OBSERVE -> VERIFY -> REPORT
+
+Security:
+- AI cannot grant itself capabilities;
+- authorization is checked at execution time;
+- destructive actions require confirmation unless a user policy explicitly permits them;
+- external content is untrusted;
+- prompt injection is treated as hostile input;
+- action history is auditable;
+- secrets are redacted;
+- autonomous chains have limits/timeouts;
+- emergency stop revokes pending capabilities;
+- multi-step system changes should be transactional/rollback-capable.
+
+ZERO AI must remain dormant when unused and must never be required merely to display the desktop.
+
+## 23. Search/AI/privacy boundary
+
+AI context is scoped:
+- user;
+- session;
+- application;
+- project;
+- system diagnostics.
+
+Private data must not cross user boundaries.
+
+Search indexes and AI memory must define:
+- retention;
+- deletion;
+- encryption;
+- permissions;
+- cache invalidation;
+- reindex behavior.
+
+## 24. RTC / CMOS / time recovery
+
+### 24.1 Hardware truth
+
+ZEROOS must distinguish:
+- non-rechargeable RTC/CMOS coin cell;
+- rechargeable RTC cell;
+- RTC supercapacitor;
+- motherboard-managed RTC charging;
+- externally managed RTC power;
+- unknown/unsupported hardware.
+
+ZEROOS must never blindly drive a charging voltage/current into a generic CMOS cell.
+
+A standard non-rechargeable coin cell must be treated as replaceable, not software-rechargeable.
+
+### 24.2 RTC health service
+
+Where firmware/chipset/hardware exposes sufficient telemetry, ZEROOS may report:
+- RTC availability;
+- RTC validity;
+- low-voltage indication;
+- clock drift indication;
+- last synchronization;
+- hardware capability;
+- battery/backup source status.
+
+Telemetry not exposed by hardware must be reported as UNKNOWN rather than guessed.
+
+### 24.3 Safe recovery path
+
+RTC invalid/low condition:
+1. detect;
+2. preserve monotonic time internally;
+3. warn user;
+4. obtain trusted wall-clock source when available;
+5. validate time;
+6. set system wall clock;
+7. write RTC only through the platform-supported RTC interface;
+8. record synchronization result;
+9. expose status in Dynamic Capsule/notifications.
+
+Trusted sources may include:
+- network time service;
+- user-confirmed time;
+- paired-device time where explicitly trusted;
+- other platform-provided time source.
+
+No time-source claim is valid without capability/validation evidence.
+
+### 24.4 Recharge support
+
+If a future ZEROOS-certified motherboard exposes a documented rechargeable RTC power controller:
+- firmware/hardware owns charging safety;
+- ZEROOS reads capability/status;
+- OS may request a documented safe charging state only through the platform API;
+- voltage/current limits remain hardware-enforced;
+- charge failures are reported;
+- non-rechargeable cells are never charged by software.
+
+### 24.5 UI
+
+Power/clock settings show:
+- RTC healthy;
+- time synchronized;
+- synchronization required;
+- RTC capability unknown;
+- hardware service unavailable.
+
+No false "CMOS charging" indicator may be shown when the hardware cannot support it.
+
+## 25. Clock architecture
+
+Separate:
+- monotonic time for timers/scheduling;
+- wall-clock time for user-visible dates;
+- RTC hardware time;
+- synchronized network time.
+
+Wall-clock changes must not invalidate monotonic timers.
+
+Calendar/locale support must define:
+- timezone;
+- DST rules where relevant;
+- timestamp precision;
+- locale;
+- Unicode;
+- malformed UTF-8 handling;
+- mixed-script rendering;
+- font fallback.
+
+## 26. Accessibility
+
+Required foundation:
+- keyboard navigation;
+- screen-reader semantics;
+- focus indicators;
+- high contrast;
+- reduced motion;
+- scalable text;
+- DPI-aware layout;
+- Hindi/English localization;
+- logical tab order;
+- accessible dialogs;
+- non-color-only state;
+- captions/subtitles where media provides them;
+- configurable input timing where appropriate.
+
+Every UI surface must define:
+NORMAL / LOADING / EMPTY / ERROR / OFFLINE / PERMISSION_DENIED / UNSUPPORTED / LOW_RESOURCE / REDUCED_MOTION
+
+## 27. Localization
+
+Initial languages:
+- English;
+- Hindi.
+
+Requirements:
+- UTF-8 throughout user-facing text;
+- locale-aware formatting;
+- font fallback;
+- mixed Hindi/Latin rendering;
+- keyboard layouts;
+- pluralization;
+- date/time formatting;
+- translation key versioning;
+- missing-translation fallback;
+- no hard-coded user-facing strings in privileged service code where localization is expected.
+
+## 28. Device integration
+
+UI must represent real device state:
+- displays;
+- audio devices;
+- network interfaces;
+- Bluetooth;
+- USB;
+- storage;
+- cameras;
+- microphones;
+- printers/scanners where supported.
+
+Device state transitions:
+DISCOVER -> MATCH -> PROBE -> RESOURCE ACQUIRE -> INITIALIZE -> REGISTER -> SERVE -> ERROR RECOVERY -> SUSPEND -> RESUME -> REMOVE -> CLEANUP
+
+Unsupported devices must be explicitly reported.
+
+## 29. Power and thermal UI
+
+Power profiles:
+- performance;
+- balanced;
+- power saver;
+- thermal constrained.
+
+The resource governor may:
+- reduce background work;
+- reduce animation;
+- lower indexing rate;
+- suspend inactive apps;
+- reduce media quality only when policy permits;
+- adjust scheduling priorities;
+- coordinate CPU/GPU policies.
+
+Foreground user intent must remain prioritized subject to safety/thermal limits.
+
+Thermal UI must show:
+- normal;
+- warm;
+- throttled;
+- critical/recovery.
+
+No fake temperature or battery values.
+
+## 30. Hardware capability adaptation
+
+ZEROOS must discover capabilities instead of assuming them.
+
+Capability matrix covers:
+- CPU ISA;
+- RAM;
+- display resolution/refresh;
+- GPU acceleration;
+- video decode;
+- audio;
+- network speed/features;
+- storage type;
+- ACPI power controls;
+- RTC capabilities.
+
+UI and workloads adapt:
+- low-end hardware: minimal effects/software fallback;
+- capable hardware: acceleration;
+- thermal pressure: throttle background work;
+- low memory: reclaim caches and suspend inactive workloads.
+
+## 31. Low-resource desktop contract
+
+When memory/CPU/GPU pressure crosses policy thresholds:
+1. stop decorative animation;
+2. stop hidden wallpaper rendering;
+3. reduce thumbnail generation;
+4. pause/reduce indexing;
+5. suspend dormant compatibility runtimes;
+6. reclaim caches;
+7. throttle background downloads if policy permits;
+8. reduce compositor work;
+9. preserve foreground interaction;
+10. expose diagnostics.
+
+The UI must not silently become unusable merely because optional effects are disabled.
+
+## 32. Crash/recovery UX
+
+For every long-lived service:
+- health state;
+- startup failure;
+- retry;
+- backoff;
+- restart;
+- dependency failure;
+- recovery path.
+
+Shell recovery target:
+- compositor crash must not imply kernel reboot;
+- notification/search service crash should restart independently;
+- AI crash must not affect desktop;
+- compatibility runtime crash must not terminate native applications;
+- app crash must return focus safely;
+- recovery environment must work without the normal desktop.
+
+## 33. UI state and data ownership
+
+Every visible value has a source of truth:
+UI -> service API -> authoritative state.
+
+Do not maintain independent fake copies of:
+- battery;
+- Wi-Fi;
+- Bluetooth;
+- download progress;
+- installation state;
+- update state;
+- RTC state;
+- device availability;
+- process state.
+
+Transient UI caches must carry:
+- source version/generation;
+- timestamp if meaningful;
+- invalidation rule.
+
+## 34. Performance instrumentation
+
+Measure:
+- shell startup;
+- compositor startup;
+- first frame;
+- steady-state frame time;
+- input-to-frame latency;
+- window open/close latency;
+- search latency;
+- notification latency;
+- app launch latency;
+- memory resident set;
+- cache sizes;
+- CPU wakeups;
+- GPU submissions;
+- power/thermal behavior.
+
+Measurements must record:
+- hardware;
+- resolution;
+- workload;
+- build revision;
+- configuration;
+- warm/cold state;
+- test duration.
+
+No "zero overhead" or absolute latency claim without measurement.
+
+## 35. UI test matrix
+
+Each surface should have:
+- unit tests for state machines;
+- IPC/API tests;
+- rendering/layout tests;
+- accessibility tests;
+- localization tests;
+- low-resource tests;
+- crash/restart tests;
+- input/focus tests;
+- multi-monitor tests where supported;
+- QEMU tests;
+- hardware tests where hardware is required.
+
+Critical UI flows:
+- boot -> login/session -> desktop;
+- launch -> app -> close;
+- search -> result -> action;
+- notification -> action;
+- download -> progress -> completion/failure;
+- update -> restart/recovery;
+- RTC invalid -> sync -> confirmed time;
+- low-memory -> degraded UI -> recovery;
+- compositor restart -> session recovery.
+
+## 36. Security rules for UI
+
+The UI must never be the security boundary.
+
+Examples:
+- hiding a button is not permission enforcement;
+- disabling a menu item is not privilege enforcement;
+- displaying "admin" is not granting admin rights;
+- AI confirmation UI is not authorization by itself.
+
+Authorization must occur in the underlying service/kernel boundary.
+
+## 37. Master integration rule
+
+The consolidated master is the canonical planning/design aggregation. Source documents remain useful for subsystem-local navigation and historical traceability, but any conflicting requirement must be resolved explicitly.
+
+When a requirement changes:
+1. update implementation contract;
+2. update this master;
+3. update subsystem document if applicable;
+4. update roadmap/stage;
+5. update tests/evidence;
+6. record migration impact.
+
+## 38. Feature acceptance template
+
+For every future feature, record:
+
+Feature ID
+- Name
+- User-visible behavior
+- Owning subsystem
+- API/ABI
+- Dependencies
+- Lifecycle
+- CPU budget
+- Memory budget
+- I/O budget
+- GPU budget
+- Network policy
+- Security boundary
+- Privacy boundary
+- Failure modes
+- Recovery behavior
+- Accessibility
+- Localization
+- Tests
+- Stress/fault tests
+- Hardware requirements
+- Evidence artifact
+- Status
+
+## 39. UI implementation anti-patterns
+
+Prohibited unless explicitly justified:
+- permanent busy loops;
+- unconditional 60/120 FPS animations;
+- full-screen redraw for tiny state changes;
+- unbounded notification queues;
+- unbounded thumbnail caches;
+- synchronous full-disk indexing;
+- fake hardware telemetry;
+- fake progress;
+- UI-only security;
+- always-resident Windows/Android runtimes;
+- always-loaded AI models;
+- silent privilege escalation;
+- undocumented background network activity;
+- "zero resource" claims without measurement.
+
+## 40. Final product principle
+
+ZEROOS should look feature-rich while remaining architecturally quiet when nothing needs to happen.
+
+The intended experience is:
+VISIBLE POWER + DORMANT BACKGROUND + EVENT-DRIVEN WORK + BOUNDED RESOURCES + REAL RECOVERY + MEASURABLE PERFORMANCE.
+
+---
