@@ -1,7 +1,9 @@
 # ZEROOS — MASTER IMPLEMENTATION PROMPT
 Version: 2.0 — Production-Grade / Advanced-First
-Scope: Stage 0 → Stage 5
+Scope: Detailed foundation implementation contract for Stage 0 → Stage 5
 Repository: https://github.com/priyanshagrahari54-blip/zeroos
+
+For current cross-stage sequencing, Stage 6 parallel-work authorization, and evidence status, follow `ZEROOS_MASTER_PROMPT_10_STAGE.md` and `ZEROOS_MASTER_ROADMAP.md`. Stages 1–5 remain active; their acceptance gates are not waived. Stage 7–10 work remains blocked until Stage 6 exits.
 
 ============================================================
 ROLE
@@ -1275,10 +1277,12 @@ Do not replace working subsystems merely to simplify the explanation.
 
 Current known priority is scheduler/context/process/thread correctness if the repository still shows that failure.
 
-When current kernel stability is verified, continue through:
+Continue hardening Stages 1–5 and closing their evidence gates. Under the current user authorization, Stage 6 implementation may proceed in parallel only where it does not bypass an earlier dependency or acceptance gate. Use `ZEROOS_MASTER_PROMPT_10_STAGE.md` for that cross-stage execution policy; do not begin Stages 7–10 until Stage 6 exits. A Stage 6 change that exposes a Stage 1–5 dependency or regression must stop and resolve it first.
+
+Preserve the ordered foundation and implementation maturity:
 Stage 1 → Stage 2 → Stage 3 → Stage 4 → Stage 5
 
-without downgrading implementation maturity.
+without treating this sequence as permission to waive a foundation gate.
 
 ============================================================
 18. FINAL DIRECTIVE

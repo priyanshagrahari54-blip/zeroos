@@ -142,11 +142,11 @@ Verification must distinguish:
 - **hardware-tested**: real hardware evidence exists;
 - **supported**: only when the relevant validation matrix explicitly says so.
 
-Stages 0-5 remain the existing foundation. Stages 6-10 are the next execution block:
+Stages 0-5 remain the existing foundation with active, unwaived acceptance gates. Under the latest user direction, Stage 6 security/update/recovery implementation may proceed in parallel with continued Stage 1–5 hardening and evidence closure; this is not a Stage 6 completion/support/production claim. Stages 7–10 remain blocked until Stage 6 exits:
 6 security/update/recovery;
 7 GPU/media/browser/native apps;
 8 Windows/Android compatibility and gaming;
 9 ZERO AI/ecosystem/performance;
 10 hardware certification and release.
 
-A later stage may not bypass an earlier blocking dependency. Every stage follows AUDIT -> DESIGN -> IMPLEMENT -> TEST -> STRESS -> MEASURE -> DOCUMENT -> INTEGRATE.
+A later stage may not bypass an earlier blocking dependency. Every stage follows AUDIT -> DESIGN -> IMPLEMENT -> TEST -> STRESS -> MEASURE -> DOCUMENT -> INTEGRATE. Follow `ZEROOS_MASTER_PROMPT_10_STAGE.md` for the current sequencing rule and `VALIDATION.md` for status evidence.

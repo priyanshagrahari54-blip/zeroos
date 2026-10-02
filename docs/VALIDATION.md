@@ -16,7 +16,7 @@ does not exist yet, the row says so — no claim is made without it.
 | SOAK | Long-duration idle residency (AI dormancy, 0 resident bytes idle, event-driven automation) + seeded 64-epoch churn with generation-isolation and steady-state bounds (clipboard, downloads FIFO totals, notify caps, lifecycle storms, settings schema isolation, perfcenter rings) | desktop suites | Green |
 | SECURITY | Permission gates (AI grants, automation permission-first ordering), crypto AEAD/ChaCha20 vectors, constant-time MAC compare, denied counters | crypto tests + desktop suites | Green |
 | RECOVERY | Browser crash recovery, service watchdog, display attach/detach, init recovery in guest, rollback contracts | desktop suites + CI boot milestones | Green (host), guest init recovery in CI |
-| QEMU | Boot certification block in CI: panic detection, session milestones, storage certification | `build.yml` on every push/PR | Latest run 36876632155 on `c40bb033` passed build, host gate, Boot and q35 two-boot storage after diagnostics-only changes; preceding run 36873757374 failed q35 storage. A single follow-up pass does not resolve reliability; Stage 1–5 readiness remains open. |
+| QEMU | Boot certification block in CI: panic detection, session milestones, storage certification | `build.yml` on every push/PR | Exact-SHA run [36975661257](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36975661257) on `975ad8a7` passed build, host gate, Boot/SMP and q35 two-boot storage with the credential self-test code present. A follow-up workflow change now requires its marker explicitly in six guest boots; that assertion awaits its own CI run. Earlier intermittent failures keep Stage 1–5 readiness open. |
 | REAL-HARDWARE | Physical run of the certified ISO on bare metal | Not available in this environment | **Not run — no claim** |
 
 | PERFORMANCE | Frame pacing/vsync accounting (display tests), governor tier/pressure/effects (governor tests), metrics recorder with interval histogram + percentiles wired into `zd_display_service_present`, FPS monitor frame-time percentiles and budget breaches | desktop suite + session link | Green (host); on-device percentiles pending |
@@ -109,6 +109,7 @@ persistence certification. A green
 | `7582a9a` / run [36861689464](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36861689464) | q35 AHCI + NVMe, two-boot persistence gate; available serial tails stop at timer progress / `task context-switch worker completed`, before scheduler certification; no panic observed in the supplied tails | FAILED — pre-storage boot-progress failure; root cause not established |
 | `8e02c48` / run [36873757374](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36873757374) | Build, host release gate, image verification and Boot test PASS; q35 AHCI/NVMe two-boot persistence FAILED. Disk 2 tail stops after `process lifetime pin self-test passed`, `wait queue block/wakeup self-test passed`, and `task context-switch worker completed`, without a panic. Disk 1 reaches scheduler progress tick 8865 with process/hotplug/userspace counters complete and zero reported failures, but no storage-manager markers. | FAILED — differing per-boot boot-progress tails; no established root cause. |
 | `c40bb03` / run [36876632155](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36876632155) | Diagnostic-only process-probe/storage-launch markers; full build, `make check`, Boot test and q35 AHCI/NVMe two-boot persistence all PASS after the preceding run failed. | PASS — one follow-up, not repeated stability or production evidence; Stage 1–5 gates remain open. |
+| `975ad8a7` / run [36975661257](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36975661257) | Credential capability/transition implementation; full build, reproducible host release gate, image verification, Boot/SMP and q35 two-boot storage all PASS. The workflow's explicit credential-marker greps were added afterward and await validation. | PASS on exact code SHA; QEMU-tested for this probe, not stability closure, supported hardware, or production readiness. |
 
 The session milestone strings are grepped by the workflow, so a green
 run is machine-verified evidence, not a log skim.
@@ -308,11 +309,15 @@ credential snapshot rather than unsynchronized process fields. The kernel boot
 probe checks inheritance, capability drop and denied self-escalation; the
 Ring-3 storage probe already checks SETCRED denial after dropping to uid 1000.
 
-Local `make check` **PASS** on the working source after this change (freestanding
-kernel build/SIMD audit, desktop 120,907/0, compatibility 107/0, host hardware
-and storage gates). QEMU runtime result for the new boot marker is pending the
-next exact-SHA CI run. This is **IMPLEMENTED** with host-build/test evidence;
-not yet **TESTED in QEMU** at the current SHA, not a general capability or
-sandbox enforcement model, not **SUPPORTED**, and not **PRODUCTION READY**.
-The latest full CI evidence remains run 36876632155 at `c40bb03`; the prior
-intermittent q35 failure still requires repeated reliability evidence.
+Local `make check` **PASS** on source `975ad8a7` (freestanding kernel
+build/SIMD audit, desktop 120,907/0, compatibility 107/0, host hardware and
+storage gates). Exact-SHA QEMU run [36975661257](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36975661257)
+passed the full build, host release gate, image verification, Boot/SMP, and
+q35 AHCI/NVMe two-boot workflow with the credential probe code present. The
+workflow was then strengthened to require the success marker in six guest
+boots: primary, four-vCPU, NX-disabled, failed-IPI, and both q35 storage boots.
+That explicit gate awaits its own exact-SHA CI validation. This is **IMPLEMENTED** and
+**TESTED in host checks and QEMU** for the stated credential transition probe;
+it is not a general capability or sandbox enforcement model, not **SUPPORTED**,
+and not **PRODUCTION READY**. One new full pass does not resolve the recent
+intermittent q35 failures or establish repeatable reliability.

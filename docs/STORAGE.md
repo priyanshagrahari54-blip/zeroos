@@ -507,7 +507,7 @@ free-page count so CI can classify userspace failures. Boots at `-smp 1/2`
 and individual `-smp 4` runs have passed, but a single green CI run is not
 proof of absence.
 
-#### Latest CI reliability signal (2026-10-01)
+#### Latest CI reliability signal (2026-10-02)
 
 Exact-SHA run [36873757374](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36873757374)
 passed the standalone Boot test but failed the q35 AHCI + NVMe two-boot
@@ -521,7 +521,12 @@ prove storage driver code was reached, or implicate storage itself.
 A diagnostics-only follow-up added process-probe substeps and messages around
 storage-task launch. Exact-SHA run
 [36876632155](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36876632155)
-passed the full build, host, boot, and q35 persistence workflow. This is one
-pass after a failure—not a cause-specific fix or repeatability proof. The
-reliability gate remains open; repeated oversubscribed q35 runs and
-cause-specific evidence are still required.
+passed the full build, host, boot, and q35 persistence workflow. Exact-SHA run
+[36975661257](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36975661257)
+on `975ad8a7ef560db329d6e5216fa6e8d9a6793ffd` then passed the same workflow
+with process credential-capability probe code present; the security change
+does not alter storage behavior. Two later passes are useful but do not
+establish a cause-specific fix or repeatability. The reliability gate remains
+open; repeated oversubscribed q35 runs and cause-specific evidence are still
+required. A stricter workflow commit now requires explicit credential-probe
+markers on both q35 boots and awaits validation.

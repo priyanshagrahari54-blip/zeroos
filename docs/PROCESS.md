@@ -243,9 +243,12 @@ model. Still missing or limited are:
   termination.
 
 Basic parent-child wait/reap, per-process descriptor tables, generation-checked
-capability handles, static ELF loading, and fail-closed Ring-3 fault
-containment are implemented and exercised in QEMU. They are not thereby
-production-certified on physical hardware.
+capability handles, static ELF loading, fail-closed Ring-3 fault containment,
+and the limited credential-capability self-test are implemented and exercised
+in QEMU. Exact-SHA run [36975661257](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36975661257)
+on `975ad8a7ef560db329d6e5216fa6e8d9a6793ffd` passed the full workflow with
+that code present; its explicit marker assertions were added afterward and
+await CI. None of this is production-certified on physical hardware.
 
 ## Certification
 

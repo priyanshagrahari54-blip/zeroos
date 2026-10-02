@@ -5,18 +5,19 @@ This file is the navigation layer for the ZEROOS documentation set.
 
 ## Source-of-truth hierarchy
 
-1. `MASTER_IMPLEMENTATION_PROMPT.md` — canonical implementation-agent execution contract.
-2. `ZEROOS_MASTER_BLUEPRINT.md` — what ZEROOS is and the target system architecture.
-3. `ZEROOS_MASTER_ROADMAP.md` — execution order and current engineering priority.
-4. `PRD.md` — product requirements and feature acceptance.
-5. `ARCHITECTURE.md` — subsystem boundaries and ownership.
-6. `TECHSPEC.md` — technical contracts and implementation requirements.
-7. `RULES.md` — non-negotiable engineering rules.
-8. `AGENTS.md` — instructions for AI/human implementation agents.
-9. `PHASES.md` — phase/stage/substage development plan.
-10. `MEMORY.md` — memory/state/resource lifecycle contract.
-11. `VALIDATION.md` — living stage evidence ledger and support matrix.
-12. Existing subsystem specifications — detailed contracts for boot, scheduler, processes, interrupts, synchronization, virtual memory, GDT/TSS and hardware.
+1. `ZEROOS_MASTER_PROMPT_10_STAGE.md` — canonical current execution sequence, evidence standard, and latest Stage 6 parallel-work authorization.
+2. `MASTER_IMPLEMENTATION_PROMPT.md` — detailed Stage 0–5 foundation implementation contract; its scope is limited to those stages and it does not override the current 10-stage sequence.
+3. `ZEROOS_MASTER_BLUEPRINT.md` — what ZEROOS is and the target system architecture.
+4. `ZEROOS_MASTER_ROADMAP.md` — execution order and current engineering priority.
+5. `PRD.md` — product requirements and feature acceptance.
+6. `ARCHITECTURE.md` — subsystem boundaries and ownership.
+7. `TECHSPEC.md` — technical contracts and implementation requirements.
+8. `RULES.md` — non-negotiable engineering rules.
+9. `AGENTS.md` — instructions for AI/human implementation agents.
+10. `PHASES.md` — phase/stage/substage development plan.
+11. `MEMORY.md` — memory/state/resource lifecycle contract.
+12. `VALIDATION.md` — living stage evidence ledger and support matrix.
+13. Existing subsystem specifications — detailed contracts for boot, scheduler, processes, interrupts, synchronization, virtual memory, GDT/TSS and hardware.
 
 ## Current implementation priority
 
@@ -184,6 +185,6 @@ Production status requires, where applicable:
 - CI coverage;
 - documentation synchronization.
 
-Canonical implementation prompt: `docs/MASTER_IMPLEMENTATION_PROMPT.md`.
+The current cross-stage execution contract is `docs/ZEROOS_MASTER_PROMPT_10_STAGE.md`; the Stage 0–5 detail remains in `docs/MASTER_IMPLEMENTATION_PROMPT.md`.
 
-The master prompt is the operational execution contract; this index remains the navigation/source-of-truth map.
+The prompts govern implementation at their stated scope; this index remains the navigation/source-of-truth map.

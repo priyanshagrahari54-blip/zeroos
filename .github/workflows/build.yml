@@ -116,6 +116,7 @@ jobs:
             grep -q "ZEROOS: per-CPU scheduler ownership verified." build/serial.log
             grep -q "ZEROOS: CPU hot-offline queue evacuation and parking passed." build/serial.log
             grep -q "ZEROOS: process/thread object model self-test passed." build/serial.log
+            grep -q "ZEROOS: process credential capability drop passed." build/serial.log
             grep -q "ZEROOS: process address-space ownership self-test passed." build/serial.log
             grep -q "ZEROOS: PID/TID reuse protection self-test passed." build/serial.log
             grep -q "ZEROOS: per-task kernel-stack/TSS handoff self-test passed." build/serial.log
@@ -233,6 +234,7 @@ jobs:
           grep -q "ZEROOS: session shell process reaped cleanly." build/serial-smp4.log
           grep -q "ZEROOS: shared-memory map/grant/lifecycle self-test passed." build/serial-smp4.log
           grep -q "ZEROOS: userspace negative syscall/fault/malformed-ELF probes passed." build/serial-smp4.log
+          grep -q "ZEROOS: process credential capability drop passed." build/serial-smp4.log
           grep -q "ZEROOS: Ring-3 transition, syscall ABI, and init recovery passed." build/serial-smp4.log
           if grep -q "ZEROOS PANIC:" build/serial-smp4.log; then
             echo "ZEROOS four-vCPU boot reported a panic:"
@@ -280,6 +282,7 @@ jobs:
           grep -q "ZEROOS: isolated service process setup complete." build/serial-nx-off.log
           grep -q "ZEROOS: shared-memory map/grant/lifecycle self-test passed." build/serial-nx-off.log
           grep -q "ZEROOS: userspace negative syscall/fault/malformed-ELF probes passed." build/serial-nx-off.log
+          grep -q "ZEROOS: process credential capability drop passed." build/serial-nx-off.log
           grep -q "ZEROOS: Ring-3 transition, syscall ABI, and init recovery passed." build/serial-nx-off.log
           if grep -q "ZEROOS PANIC:" build/serial-nx-off.log; then
             echo "ZEROOS NX-disabled boot reported a panic:"
@@ -322,6 +325,7 @@ jobs:
           grep -q "ZEROOS: isolated service process setup complete." build-fault/serial.log
           grep -q "ZEROOS: shared-memory map/grant/lifecycle self-test passed." build-fault/serial.log
           grep -q "ZEROOS: userspace negative syscall/fault/malformed-ELF probes passed." build-fault/serial.log
+          grep -q "ZEROOS: process credential capability drop passed." build-fault/serial.log
           grep -q "ZEROOS: Ring-3 transition, syscall ABI, and init recovery passed." build-fault/serial.log
           if grep -q "ZEROOS PANIC:" build-fault/serial.log; then
             echo "ZEROOS failed-IPI recovery boot reported a panic:"
@@ -332,7 +336,7 @@ jobs:
       - name: Storage persistence certification (q35 AHCI + NVMe, two boots)
         run: |
           set -e
-          trap 'echo "storage persistence gate failed; missing patterns + log ends:"; for p in "storage discovery: sata_disks=1 nvme_namespaces=1." "storage driver test sata0 destructive" "storage driver test nvme0n1 destructive" "vfs: mounted sata0p1" "storage persistence: /data boot counter" "storage persistence check passed" "storage userspace probe wrote" "storage Stage 3 certification complete." "ZEROOS PANIC:|FAILED"; do grep -qE "$p" build/serial-disk1.log 2>/dev/null || echo "MISSING boot1: $p"; grep -qE "$p" build/serial-disk2.log 2>/dev/null || echo "MISSING boot2: $p"; done; for f in build/serial-disk1.log build/serial-disk2.log; do if test -f "$f"; then echo "END of $f"; milestones=$(grep "^ZEROOS:" "$f" | grep -v "timer tick 100" | tail -n 16 | tr "\r\n" "  " || true); echo "::error title=$f recent milestones::$milestones"; echo "::error title=$f log end::$(tail -c 1800 "$f" | tr "\r\n" "  ")"; fi; done' ERR
+          trap 'echo "storage persistence gate failed; missing patterns + log ends:"; for p in "process credential capability drop passed." "storage discovery: sata_disks=1 nvme_namespaces=1." "storage driver test sata0 destructive" "storage driver test nvme0n1 destructive" "vfs: mounted sata0p1" "storage persistence: /data boot counter" "storage persistence check passed" "storage userspace probe wrote" "storage Stage 3 certification complete." "ZEROOS PANIC:|FAILED"; do grep -qE "$p" build/serial-disk1.log 2>/dev/null || echo "MISSING boot1: $p"; grep -qE "$p" build/serial-disk2.log 2>/dev/null || echo "MISSING boot2: $p"; done; for f in build/serial-disk1.log build/serial-disk2.log; do if test -f "$f"; then echo "END of $f"; milestones=$(grep "^ZEROOS:" "$f" | grep -v "timer tick 100" | tail -n 16 | tr "\r\n" "  " || true); echo "::error title=$f recent milestones::$milestones"; echo "::error title=$f log end::$(tail -c 1800 "$f" | tr "\r\n" "  ")"; fi; done' ERR
           mkdir -p build/disks
           for d in sata nvme; do
             rm -f build/disks/$d.img
@@ -349,6 +353,7 @@ jobs:
               -drive file=build/disks/nvme.img,if=none,id=n0,format=raw -device nvme,serial=zeroos1,drive=n0 \
               -serial file:build/serial-disk$boot.log -display none -no-reboot -no-shutdown || true
             L=build/serial-disk$boot.log
+            grep -q "ZEROOS: process credential capability drop passed." $L
             grep -q "ZEROOS: storage discovery: sata_disks=1 nvme_namespaces=1." $L
             grep -q "ZEROOS: storage driver test sata0 destructive (on sata0p2) passed." $L
             grep -q "ZEROOS: storage driver test nvme0n1 destructive (on nvme0n1p2) passed." $L

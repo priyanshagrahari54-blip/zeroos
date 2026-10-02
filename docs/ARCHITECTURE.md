@@ -595,10 +595,14 @@ under hardening. The first kernel-enforced increment adds an inherited
 `SET_CREDENTIALS` capability to each process, serializes uid/gid snapshots and
 transitions under `process_lock`, and clears the capability when a process
 drops from uid 0; the process cannot restore it itself. A QEMU boot self-test
-covers inheritance, drop, and denied self-escalation. This is partial
-**IMPLEMENTED/TESTED** evidence only—not a general capability model, sandbox,
-signed-package system, or production security boundary; later security checks
-must consume real enforcement paths and pass dedicated negative/stress tests.
+covers inheritance, drop, and denied self-escalation; exact-SHA run
+[36975661257](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36975661257)
+on `975ad8a7ef560db329d6e5216fa6e8d9a6793ffd` passed the full workflow with
+this probe present. Explicit marker greps added afterward await CI. This is
+partial **IMPLEMENTED/TESTED** evidence only—not a general capability model,
+sandbox, signed-package system, or production security boundary; later
+security checks must consume real enforcement paths and pass dedicated
+negative/stress tests.
 
 ## 20. Update Architecture
 Use staged updates:

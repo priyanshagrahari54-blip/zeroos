@@ -6,7 +6,7 @@
 
 ## Latest source/evidence note (2026-10-01)
 
-This matrix is synchronized to code/diagnostic source `c40bb03367de670e20a809e80f895ebc33faea4b`. VMM lifecycle, failed-protect, targeted unlink-invalidation hardening, and scheduler progress telemetry do not expand any application, hardware, graphics, network, or media support claim below. Run 36873757374 failed q35 two-boot storage certification with differing per-disk tails; diagnostics-only follow-up run 36876632155 passed the full workflow. One pass is not stability or production evidence. Physical hardware remains uncertified.
+This matrix is synchronized to source `975ad8a7ef560db329d6e5216fa6e8d9a6793ffd` (code and evidence). VMM lifecycle, failed-protect, targeted unlink-invalidation hardening, scheduler progress telemetry, and the limited process credential-capability probe do not expand any application, hardware, graphics, network, or media support claim below. Exact-SHA run 36975661257 passed the full build/host/Boot/SMP/q35 workflow; recent intermittent failures still prevent a stability or production claim. Physical hardware remains uncertified. Explicit workflow greps for the new credential probe are pending the next CI run.
 
 ## Application/runtime matrix
 
