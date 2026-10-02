@@ -185,6 +185,6 @@ Production status requires, where applicable:
 - CI coverage;
 - documentation synchronization.
 
-Canonical implementation prompt: `docs/MASTER_IMPLEMENTATION_PROMPT.md`.
+Canonical implementation prompt: `MASTER_IMPLEMENTATION_PROMPT.md`.
 
 The master prompt is the operational execution contract; this index remains the navigation/source-of-truth map.
