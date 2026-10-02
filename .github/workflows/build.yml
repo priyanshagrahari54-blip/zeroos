@@ -337,7 +337,7 @@ jobs:
       - name: Storage persistence certification (q35 AHCI + NVMe, three boots)
         run: |
           set -e
-          trap 'echo "storage persistence gate failed; missing patterns + log ends:"; for p in "process credential capability drop passed." "storage discovery: sata_disks=1 nvme_namespaces=1." "storage driver test sata0 destructive" "storage driver test nvme0n1 destructive" "vfs: mounted sata0p1" "storage persistence: /data boot counter" "storage persistence check passed" "storage userspace probe wrote" "storage Stage 3 certification complete." "ZEROOS PANIC:|FAILED"; do grep -qE "$p" build/serial-disk1.log 2>/dev/null || echo "MISSING boot1: $p"; grep -qE "$p" build/serial-disk2.log 2>/dev/null || echo "MISSING boot2: $p"; grep -qE "$p" build/serial-disk3.log 2>/dev/null || echo "MISSING boot3: $p"; done; for f in build/serial-disk1.log build/serial-disk2.log build/serial-disk3.log; do if test -f "$f"; then echo "END of $f"; milestones=$(grep "^ZEROOS:" "$f" | grep -v "timer tick 100" | tail -n 16 | tr "\r\n" "  " || true); echo "::error title=$f recent milestones::$milestones"; echo "::error title=$f log end::$(tail -c 1800 "$f" | tr "\r\n" "  ")"; fi; done' ERR
+          trap 'echo "storage persistence gate failed; missing patterns + log ends:"; for p in "process credential capability drop passed." "per-task FPU/SSE context switching passed." "storage discovery: sata_disks=1 nvme_namespaces=1." "storage driver test sata0 destructive" "storage driver test nvme0n1 destructive" "vfs: mounted sata0p1" "storage persistence: /data boot counter" "storage persistence check passed" "storage userspace probe wrote" "storage Stage 3 certification complete." "ZEROOS PANIC:|FAILED"; do grep -qE "$p" build/serial-disk1.log 2>/dev/null || echo "MISSING boot1: $p"; grep -qE "$p" build/serial-disk2.log 2>/dev/null || echo "MISSING boot2: $p"; grep -qE "$p" build/serial-disk3.log 2>/dev/null || echo "MISSING boot3: $p"; done; for f in build/serial-disk1.log build/serial-disk2.log build/serial-disk3.log; do if test -f "$f"; then echo "END of $f"; milestones=$(grep "^ZEROOS:" "$f" | grep -v "timer tick 100" | tail -n 16 | tr "\r\n" "  " || true); echo "::error title=$f recent milestones::$milestones"; echo "::error title=$f log end::$(tail -c 1800 "$f" | tr "\r\n" "  ")"; fi; done' ERR
           mkdir -p build/disks
           for d in sata nvme; do
             rm -f build/disks/$d.img
@@ -355,6 +355,7 @@ jobs:
               -serial file:build/serial-disk$boot.log -display none -no-reboot -no-shutdown || true
             L=build/serial-disk$boot.log
             grep -q "ZEROOS: process credential capability drop passed." $L
+            grep -q "ZEROOS: per-task FPU/SSE context switching passed." $L
             grep -q "ZEROOS: storage discovery: sata_disks=1 nvme_namespaces=1." $L
             grep -q "ZEROOS: storage driver test sata0 destructive (on sata0p2) passed." $L
             grep -q "ZEROOS: storage driver test nvme0n1 destructive (on nvme0n1p2) passed." $L
