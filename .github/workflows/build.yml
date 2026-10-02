@@ -334,10 +334,10 @@ jobs:
             exit 1
           fi
 
-      - name: Storage persistence certification (q35 AHCI + NVMe, two boots)
+      - name: Storage persistence certification (q35 AHCI + NVMe, three boots)
         run: |
           set -e
-          trap 'echo "storage persistence gate failed; missing patterns + log ends:"; for p in "process credential capability drop passed." "storage discovery: sata_disks=1 nvme_namespaces=1." "storage driver test sata0 destructive" "storage driver test nvme0n1 destructive" "vfs: mounted sata0p1" "storage persistence: /data boot counter" "storage persistence check passed" "storage userspace probe wrote" "storage Stage 3 certification complete." "ZEROOS PANIC:|FAILED"; do grep -qE "$p" build/serial-disk1.log 2>/dev/null || echo "MISSING boot1: $p"; grep -qE "$p" build/serial-disk2.log 2>/dev/null || echo "MISSING boot2: $p"; done; for f in build/serial-disk1.log build/serial-disk2.log; do if test -f "$f"; then echo "END of $f"; milestones=$(grep "^ZEROOS:" "$f" | grep -v "timer tick 100" | tail -n 16 | tr "\r\n" "  " || true); echo "::error title=$f recent milestones::$milestones"; echo "::error title=$f log end::$(tail -c 1800 "$f" | tr "\r\n" "  ")"; fi; done' ERR
+          trap 'echo "storage persistence gate failed; missing patterns + log ends:"; for p in "process credential capability drop passed." "storage discovery: sata_disks=1 nvme_namespaces=1." "storage driver test sata0 destructive" "storage driver test nvme0n1 destructive" "vfs: mounted sata0p1" "storage persistence: /data boot counter" "storage persistence check passed" "storage userspace probe wrote" "storage Stage 3 certification complete." "ZEROOS PANIC:|FAILED"; do grep -qE "$p" build/serial-disk1.log 2>/dev/null || echo "MISSING boot1: $p"; grep -qE "$p" build/serial-disk2.log 2>/dev/null || echo "MISSING boot2: $p"; grep -qE "$p" build/serial-disk3.log 2>/dev/null || echo "MISSING boot3: $p"; done; for f in build/serial-disk1.log build/serial-disk2.log build/serial-disk3.log; do if test -f "$f"; then echo "END of $f"; milestones=$(grep "^ZEROOS:" "$f" | grep -v "timer tick 100" | tail -n 16 | tr "\r\n" "  " || true); echo "::error title=$f recent milestones::$milestones"; echo "::error title=$f log end::$(tail -c 1800 "$f" | tr "\r\n" "  ")"; fi; done' ERR
           mkdir -p build/disks
           for d in sata nvme; do
             rm -f build/disks/$d.img
@@ -347,7 +347,7 @@ jobs:
           done
           echo "hello from the host" > build/disks/hello.txt
           python3 tools/storage/zjfs.py --part 1 build/disks/sata.img put build/disks/hello.txt /hello.txt
-          for boot in 1 2; do
+          for boot in 1 2 3; do
             timeout 45s qemu-system-x86_64 -machine q35 -smp 4 -m 256M \
               -cdrom build/zeroos.iso -boot d \
               -drive file=build/disks/sata.img,if=none,id=d0,format=raw -device ide-hd,drive=d0,bus=ide.0 \
