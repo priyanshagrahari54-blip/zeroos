@@ -1297,6 +1297,7 @@ static void scheduler_probe_monitor(void *argument) {
         }
 
         if (now>=last_report+100) {
+            struct task *monitor_task=task_current();
             last_report=now;
             serial_write_public("ZEROOS: timer tick 100.\n");
             serial_write_public("ZEROOS: scheduler progress tick=");
@@ -1323,6 +1324,12 @@ static void scheduler_probe_monitor(void *argument) {
             serial_write_u64(atomic_u64_load(&fairness_probe_done));
             serial_write_public(" frame_resumes=");
             serial_write_u64(task_frame_resume_count());
+            serial_write_public(" frame_invariant=");
+            serial_write_u64((uint64_t)frame_invariant_reported);
+            serial_write_public(" monitor_id=");
+            serial_write_u64(monitor_task ? monitor_task->id : 0);
+            serial_write_public(" monitor_frame=");
+            serial_write_u64(monitor_task && monitor_task->interrupt_frame ? 1 : 0);
             serial_write_public(" process_phase=");
             serial_write_u64(atomic_u64_load(&process_thread_probe_phase));
             serial_write_public(" process_workers=");

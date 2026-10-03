@@ -114,6 +114,7 @@ persistence certification. A green
 | `18aa6fe` / run [37039215350](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/37039215350) | The isolated `-m 2048M -smp 1` high-memory probe and VMM marker passed; that guest reached storage Stage 3. The later ordinary 2-vCPU Boot gate failed after scheduler initialization without a panic marker, so q35 persistence was skipped. | PARTIAL — QEMU high-page allocate/touch/reclaim exercised; overall workflow FAILED on unresolved boot reliability. No OOM stress or hardware claim. |
 | `70b66a1` / run [37039968828](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/37039968828) | New bounded wait-queue count/wake-all code and host suite compiled/passed. QEMU Boot test again failed after scheduler initialization; serial tail included storage Stage 3 and later scheduler progress, but no scheduler certification marker. QEMU's final interrupt snapshot reports RIP `0x120802` in `wait_queue_wake_all()`'s normal post-unlock path; this is a location clue, not established causality. | FAILED — wait-queue defensive bounds did not eliminate the boot failure; scheduler-stall root cause remains unknown; q35 persistence skipped. |
 | `a0b1198` / run [37136005396](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/37136005396) | Stage 6 fail-closed update policy compiled; reproducible host release gate and image verification passed. The ordinary QEMU Boot test failed again after scheduler initialization, with no scheduler certification marker; the q35 persistence gate was skipped. | HOST RELEASE GATE PASS; OVERALL CI FAILED on the pre-existing unresolved scheduler boot reliability issue. No QEMU evidence for the updater policy. |
+| `ed3e49b` / run [37136713010](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/37136713010) | Stage 6 vault nonce hardening compiled; reproducible host release gate and image verification passed. QEMU reached storage Stage 3 and later reported scheduler counters through tick 1411 (`context=1`, FPU/wait/sleep/input/preempt/lifecycle/fairness complete, `frame_resumes=495`, process phase 3, zero stress failures), but emitted no scheduler certification marker. The QEMU interrupt snapshot again locates RIP `0x120802` in `wait_queue_wake_all()`'s normal post-unlock path; this is not proof of cause. q35 persistence was skipped. | HOST RELEASE GATE PASS; OVERALL CI FAILED on unresolved intermittent scheduler progress/certification. Vault nonce change has host evidence only, not guest evidence. |
 
 The session milestone strings are grepped by the workflow, so a green
 run is machine-verified evidence, not a log skim.
@@ -351,11 +352,14 @@ That fallback is removed: writes now require an injected OS CSPRNG provider,
 observed nonce collisions are rejected, failed generation/encryption leaves
 existing ciphertext intact, and lock/forget use explicit memory erasure. The
 host tests use deterministic unique/failure fixtures only; no real entropy or
-key service is integrated. Exact-SHA CI run [37136005396](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/37136005396)
+key service is integrated. Exact-SHA CI run [37136713010](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/37136713010)
 passed the build, reproducible host release gate and image verification, then
-failed the ordinary QEMU Boot test on the unresolved scheduler stall; update
-policy has host evidence only, not guest evidence. This is host-tested policy
-logic only. `zd_update_verify_payload()` remains symmetric
+failed the ordinary QEMU Boot test without the scheduler certification marker;
+q35 persistence was skipped. Its serial output shows several scheduler probes
+complete through tick 1411 and zero reported stress failures, while the final
+QEMU snapshot again points at `wait_queue_wake_all()`'s post-unlock path without
+establishing causality. The vault nonce change has host evidence only, not guest
+evidence. This is host-tested policy logic only. `zd_update_verify_payload()` remains symmetric
 AEAD integrity support, not a public-key signature; production trust roots,
 key rotation/revocation, immutable artifact binding, a signed package format,
 installer/A-B activation, interrupted-update recovery, and physical-device
