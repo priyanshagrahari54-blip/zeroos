@@ -326,6 +326,25 @@ not **SUPPORTED**, and not **PRODUCTION READY**. Three newer full-workflow passe
 do not resolve the prior intermittent q35 failures or establish repeatable
 reliability.
 
+## Stage 6 update-policy fail-closed increment (2026-10-03)
+
+The update state machine now treats `VERIFY_OK` as a request to run an explicit
+`verify_package` trust-provider callback, never as evidence by itself. It
+requires concrete callbacks before allowing stage, preflight, activation,
+health, commit, and rollback success transitions. Missing callbacks return
+`ENOTSUP` and prevent success; health/commit failures enter rollback. Update
+version labels that would be silently truncated are rejected. Snapshot glue
+explicitly provides no verifier, so snapshots alone cannot authorize an
+update. Tests cover missing verifier, verifier denial, absent downstream
+operations, failure-to-rollback behavior, and successful test-provider flow.
+
+Local `make desktop-check` **PASS**: 120,951 assertions, zero failures. This is
+host-tested policy logic only. `zd_update_verify_payload()` remains symmetric
+AEAD integrity support, not a public-key signature; production trust roots,
+key rotation/revocation, immutable artifact binding, a signed package format,
+installer/A-B activation, interrupted-update recovery, and physical-device
+validation remain open. No Stage 6 completion/support/production claim follows.
+
 ## Stage 1 FPU probe expansion (2026-10-02)
 
 The scheduler FPU runtime probe was extended in commit `cf51b9621438e096ac34e8aa91bf08a7c2d6394a`

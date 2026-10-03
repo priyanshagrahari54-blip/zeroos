@@ -254,8 +254,14 @@ int zd_snapshots_bind_update(struct zd_snapshots *s,
                              struct zd_update_ops *out) {
     if (!s || !out)
         return -22;
+    /* Snapshot integration has no package trust store or verifier. Keep
+     * verification explicitly unavailable so the update state machine fails
+     * closed until a signed-package provider is wired in. */
+    out->verify_package = 0;
     out->stage_apply = sn_upd_stage;
+    out->preflight = 0;
     out->activate = 0;
+    out->health_check = 0;
     out->rollback = sn_upd_rollback;
     out->commit = 0;
     out->ctx = s;

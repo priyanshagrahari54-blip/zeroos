@@ -15,7 +15,7 @@ void zd_update_init(struct zd_update *u, const struct zd_update_ops *ops) {
     if (!u)
         return;
     u->state = ZD_UPD_IDLE;
-    u->ops = ops ? *ops : (struct zd_update_ops){0, 0, 0, 0, 0};
+    u->ops = ops ? *ops : (struct zd_update_ops){0, 0, 0, 0, 0, 0, 0, 0};
     u->version[0] = 0;
     u->seq = 0;
     u->stats.started = u->stats.committed = u->stats.rollbacks = 0;
@@ -55,7 +55,13 @@ static void upd_copy(char *d, unsigned cap, const char *s) {
 }
 
 int zd_update_begin(struct zd_update *u, const char *version) {
+    unsigned i;
     if (!u || !version || !version[0])
+        return -22;
+    /* Do not silently truncate a signed/versioned identity: a verifier must
+     * see exactly the label the caller supplied. */
+    for (i = 0; i < sizeof(u->version) && version[i]; ++i) {}
+    if (i == sizeof(u->version))
         return -22;
     if (upd_active(u->state))
         return -16; /* EBUSY: a lifecycle is already running */
@@ -102,6 +108,21 @@ int zd_update_event(struct zd_update *u, int event) {
     case ZD_UPD_EV_VERIFY_OK:
         if (prev != ZD_UPD_VERIFYING)
             REJECT();
+        /* The event is only a request to verify, never proof of verification.
+         * Fail closed when no configured trust provider exists. */
+        if (!u->ops.verify_package) {
+            u->stats.verify_failures++;
+            upd_fail(u);
+            return -95; /* ENOTSUP: no trust provider configured */
+        }
+        {
+            int rc = u->ops.verify_package(u->ops.ctx, u->version);
+            if (rc < 0) {
+                u->stats.verify_failures++;
+                upd_fail(u);
+                return rc;
+            }
+        }
         u->state = ZD_UPD_STAGING;
         break;
     case ZD_UPD_EV_VERIFY_FAIL:
@@ -113,9 +134,12 @@ int zd_update_event(struct zd_update *u, int event) {
     case ZD_UPD_EV_STAGE_OK:
         if (prev != ZD_UPD_STAGING)
             REJECT();
-        if (u->ops.stage_apply) {
-            /* documented hook: write payload to staging.  A failure
-             * aborts atomically here — nothing reaches preflight. */
+        if (!u->ops.stage_apply) {
+            upd_fail(u);
+            return -95;
+        }
+        /* Stage only the artifact accepted by the configured verifier. */
+        {
             int r = u->ops.stage_apply(u->ops.ctx);
             if (r < 0) {
                 upd_fail(u);
@@ -127,6 +151,17 @@ int zd_update_event(struct zd_update *u, int event) {
     case ZD_UPD_EV_PREFLIGHT_OK:
         if (prev != ZD_UPD_PREFLIGHT)
             REJECT();
+        if (!u->ops.preflight) {
+            upd_fail(u);
+            return -95;
+        }
+        {
+            int r = u->ops.preflight(u->ops.ctx);
+            if (r < 0) {
+                upd_fail(u);
+                return r;
+            }
+        }
         u->state = ZD_UPD_ACTIVATING;
         break;
     case ZD_UPD_EV_PREFLIGHT_FAIL:
@@ -137,7 +172,11 @@ int zd_update_event(struct zd_update *u, int event) {
     case ZD_UPD_EV_ACTIVATE_OK:
         if (prev != ZD_UPD_ACTIVATING)
             REJECT();
-        if (u->ops.activate) {
+        if (!u->ops.activate) {
+            upd_fail(u);
+            return -95;
+        }
+        {
             int r = u->ops.activate(u->ops.ctx);
             if (r < 0) {
                 u->state = ZD_UPD_ROLLING_BACK;
@@ -156,6 +195,21 @@ int zd_update_event(struct zd_update *u, int event) {
     case ZD_UPD_EV_HEALTH_OK:
         if (prev != ZD_UPD_HEALTH_CHECK)
             REJECT();
+        if (!u->ops.health_check) {
+            u->stats.health_failures++;
+            u->state = ZD_UPD_ROLLING_BACK;
+            u->seq++;
+            return -95;
+        }
+        {
+            int r = u->ops.health_check(u->ops.ctx);
+            if (r < 0) {
+                u->stats.health_failures++;
+                u->state = ZD_UPD_ROLLING_BACK;
+                u->seq++;
+                return r;
+            }
+        }
         u->state = ZD_UPD_COMMITTING;
         break;
     case ZD_UPD_EV_HEALTH_FAIL:
@@ -168,10 +222,16 @@ int zd_update_event(struct zd_update *u, int event) {
     case ZD_UPD_EV_COMMIT_OK:
         if (prev != ZD_UPD_COMMITTING)
             REJECT();
-        if (u->ops.commit) {
+        if (!u->ops.commit) {
+            u->state = ZD_UPD_ROLLING_BACK;
+            u->seq++;
+            return -95;
+        }
+        {
             int r = u->ops.commit(u->ops.ctx);
             if (r < 0) {
-                upd_fail(u);
+                u->state = ZD_UPD_ROLLING_BACK;
+                u->seq++;
                 return r;
             }
         }
@@ -182,7 +242,11 @@ int zd_update_event(struct zd_update *u, int event) {
     case ZD_UPD_EV_ROLLBACK_DONE:
         if (prev != ZD_UPD_ROLLING_BACK)
             REJECT();
-        if (u->ops.rollback) {
+        if (!u->ops.rollback) {
+            upd_fail(u);
+            return -95;
+        }
+        {
             int r = u->ops.rollback(u->ops.ctx);
             if (r < 0) {
                 upd_fail(u);

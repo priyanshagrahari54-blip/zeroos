@@ -514,7 +514,17 @@ SETCRED denial. Local `make check` passes; exact-SHA run
 on `975ad8a7ef560db329d6e5216fa6e8d9a6793ffd` passed the full QEMU workflow
 with the credential probe present. Explicit marker assertions were then required across six guest boots; exact-SHA run [36976530176](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36976530176) passed all of them. General capability/permission enforcement, sandbox hooks,
 packet-path firewall binding, package signatures, real update/rollback
-storage integration, and recovery environment remain open.
+storage integration, and recovery environment remain open. A new host-tested
+update-policy hardening increment makes the VERIFY_OK signal invoke an explicit
+trust-provider callback and requires real callbacks for staging, preflight,
+activation, health, commit, and rollback; absent operations fail closed and
+commit/health failures route to rollback. The snapshot adapter intentionally
+has no verifier, so it cannot authorize activation. The existing AEAD helper
+is symmetric payload integrity only, not package signature verification; the
+production verifier, trusted-key lifecycle, and installed-system transaction
+are still missing. Local `make desktop-check` passed (120,951 assertions,
+zero failures); exact-SHA CI and broader update integration evidence remain
+pending.
 
 # STAGE 7 — GPU, GRAPHICS ACCELERATION, MEDIA, BROWSER AND NATIVE APP FOUNDATION
 

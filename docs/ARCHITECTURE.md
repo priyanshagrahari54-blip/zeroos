@@ -288,10 +288,15 @@ Implemented (this stage):
   the module is part of the freestanding session link — host-tested.
 - Transactional update core (`userspace/desktop/src/update.c`):
   section 20 pipeline (download → verify → stage → preflight →
-  activate → health check → commit) as an explicit state machine with
-  injected side-effect hooks, rollback on health/activation failure,
-  verify failure that never activates, cancel only before activation,
-  and rejected-transition accounting — host-tested.
+  activate → health check → commit) as an explicit state machine. The
+  VERIFY_OK event invokes a configured package-trust callback; stage,
+  preflight, activation, health, commit and rollback success transitions
+  also require their corresponding operation. Missing hooks fail closed,
+  commit/health failures route through rollback, and overlong version labels
+  are rejected rather than silently truncated — host-tested. This is a
+  policy boundary only: the snapshot adapter has no verifier and therefore
+  cannot advance; a production public-key verifier and installed-system
+  activation/recovery integration remain open.
 - Strict URL parser (`userspace/desktop/src/url.c`): http/https/about
   only; javascript:, data:, file: and userinfo never navigate;
   control characters, label rules, port ranges and percent-escapes
@@ -460,10 +465,12 @@ Implemented (this stage):
   the diagnostics provider (bounded health lines), both honoring the
   pipeline cancellation contract; apps/files/settings providers bind
   at the shell layer — host-tested.
-- Update payload verification (`zd_update_verify_payload`): AEAD
-  with producer nonce, injected update key and the version bound as
-  AAD — tamper, cross-version replay and wrong-key all return the
-  explicit failure (section 20).
+- Update payload integrity helper (`zd_update_verify_payload`): AEAD
+  with caller-provided nonce/key and version bound as AAD — tamper,
+  cross-version replay and wrong-key are rejected. This symmetric test/prototype
+  primitive is not a public-key signature verifier or production trust store;
+  the update pipeline now fails closed until an explicit trust provider is
+  configured (section 20).
 
 Not yet implemented (contracts defined, explicit in PHASES.md):
 - Shell UI chrome (ZERO Bar, launcher, overview surfaces) on top of the

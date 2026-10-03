@@ -3,6 +3,16 @@
 #include "test_harness.h"
 #include <zeroos/desktop/snapshot.h>
 
+/* Test-only trust provider. Production snapshot glue intentionally has none. */
+static int sn_test_verify_package(void *ctx, const char *version) {
+    (void)ctx;
+    return version && version[0] ? 0 : -22;
+}
+static int sn_test_preflight(void *ctx) {
+    (void)ctx;
+    return 0;
+}
+
 struct sn_log { int capture, restore, discard; int fail_restore, fail_discard; };
 static int sn_cap(void *c, const char *n) { (void)n; ((struct sn_log *)c)->capture++; return 0; }
 static int sn_res(void *c, const char *n) {
@@ -118,6 +128,7 @@ void zd_test_snapshot_suite(void) {
         struct sn_log log2;
         struct zd_snapshot_ops ops2;
         struct zd_update u;
+        struct zd_update reject_u;
         struct zd_update_ops uops;
         int rc;
 
@@ -129,10 +140,23 @@ void zd_test_snapshot_suite(void) {
         ZD_CHECK_EQ(zd_snapshots_bind_update(NULL, &uops), -22);
         ZD_CHECK_EQ(zd_snapshots_bind_update(&sn2, NULL), -22);
         ZD_CHECK_OK(zd_snapshots_bind_update(&sn2, &uops));
+        ZD_CHECK(uops.verify_package == 0);
         ZD_CHECK(uops.stage_apply != 0);
         ZD_CHECK(uops.rollback != 0);
         ZD_CHECK(uops.activate == 0); /* A/B flips stay in block layer */
         ZD_CHECK(uops.commit == 0);
+
+        /* Snapshot integration alone is not a trust provider. */
+        zd_update_init(&reject_u, &uops);
+        ZD_CHECK_OK(zd_update_begin(&reject_u, "7.7.0"));
+        ZD_CHECK_OK(zd_update_event(&reject_u, ZD_UPD_EV_DOWNLOAD_OK));
+        ZD_CHECK_EQ(zd_update_event(&reject_u, ZD_UPD_EV_VERIFY_OK), -95);
+        ZD_CHECK_EQ(zd_update_state(&reject_u), ZD_UPD_FAILED);
+
+        /* Happy-path test injects an explicit test-only verifier. Production
+         * snapshot glue intentionally leaves this callback absent. */
+        uops.verify_package = sn_test_verify_package;
+        uops.preflight = sn_test_preflight;
 
         /* happy path: stage captures, activation fails, rollback
          * restores the captured snapshot atomically */
@@ -189,6 +213,8 @@ void zd_test_snapshot_suite(void) {
             ZD_CHECK_OK(zd_snapshots_create(&sn3, "update"));
             ZD_CHECK_OK(zd_snapshots_create_finish(&sn3, 0));
             ZD_CHECK_OK(zd_snapshots_bind_update(&sn3, &u3ops));
+            u3ops.verify_package = sn_test_verify_package;
+            u3ops.preflight = sn_test_preflight;
             zd_update_init(&u3, &u3ops);
             ZD_CHECK_OK(zd_update_begin(&u3, "9.0.0"));
             ZD_CHECK_OK(zd_update_event(&u3, ZD_UPD_EV_DOWNLOAD_OK));
