@@ -113,6 +113,7 @@ persistence certification. A green
 | `1936a2bd` / run [36976530176](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/36976530176) | Explicit credential-probe success-marker gates in primary, four-vCPU, NX-disabled, failed-IPI and both q35 storage boots; full build/host/Boot/SMP/q35 workflow PASS. | PASS — the new marker assertions were exercised on six guest boots; prior intermittent failures still leave reliability and production gates open. |
 | `18aa6fe` / run [37039215350](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/37039215350) | The isolated `-m 2048M -smp 1` high-memory probe and VMM marker passed; that guest reached storage Stage 3. The later ordinary 2-vCPU Boot gate failed after scheduler initialization without a panic marker, so q35 persistence was skipped. | PARTIAL — QEMU high-page allocate/touch/reclaim exercised; overall workflow FAILED on unresolved boot reliability. No OOM stress or hardware claim. |
 | `70b66a1` / run [37039968828](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/37039968828) | New bounded wait-queue count/wake-all code and host suite compiled/passed. QEMU Boot test again failed after scheduler initialization; serial tail included storage Stage 3 and later scheduler progress, but no scheduler certification marker. QEMU's final interrupt snapshot reports RIP `0x120802` in `wait_queue_wake_all()`'s normal post-unlock path; this is a location clue, not established causality. | FAILED — wait-queue defensive bounds did not eliminate the boot failure; scheduler-stall root cause remains unknown; q35 persistence skipped. |
+| `a0b1198` / run [37136005396](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/37136005396) | Stage 6 fail-closed update policy compiled; reproducible host release gate and image verification passed. The ordinary QEMU Boot test failed again after scheduler initialization, with no scheduler certification marker; the q35 persistence gate was skipped. | HOST RELEASE GATE PASS; OVERALL CI FAILED on the pre-existing unresolved scheduler boot reliability issue. No QEMU evidence for the updater policy. |
 
 The session milestone strings are grepped by the workflow, so a green
 run is machine-verified evidence, not a log skim.
@@ -338,8 +339,17 @@ explicitly provides no verifier, so snapshots alone cannot authorize an
 update. Tests cover missing verifier, verifier denial, absent downstream
 operations, failure-to-rollback behavior, and successful test-provider flow.
 
-Local `make desktop-check` **PASS**: 120,951 assertions, zero failures. This is
-host-tested policy logic only. `zd_update_verify_payload()` remains symmetric
+Local `make desktop-check` **PASS**: 120,951 assertions, zero failures; full
+local `make check` also **PASS**, including 23 RFC/negative crypto checks. The
+crypto layer now exposes `zeroos_secure_zero()` using volatile stores and uses
+it for ChaCha/Poly1305 work buffers, one-time Poly1305 keys, AEAD failure
+plaintext, and update-verification scratch. This is best-effort process-memory
+erasure; it does not clear registers/caches or establish secure key storage.
+Exact-SHA CI run [37136005396](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/37136005396)
+passed the build, reproducible host release gate and image verification, then
+failed the ordinary QEMU Boot test on the unresolved scheduler stall; update
+policy has host evidence only, not guest evidence. This is host-tested policy
+logic only. `zd_update_verify_payload()` remains symmetric
 AEAD integrity support, not a public-key signature; production trust roots,
 key rotation/revocation, immutable artifact binding, a signed package format,
 installer/A-B activation, interrupted-update recovery, and physical-device

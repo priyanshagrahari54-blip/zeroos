@@ -285,7 +285,7 @@ int zd_update_verify_payload(const uint8_t key[32], const uint8_t nonce[12],
                              const char *version, const uint8_t *payload,
                              uint32_t payload_len, const uint8_t tag[16]) {
     uint8_t scratch[ZD_UPDATE_VERIFY_MAX];
-    uint32_t vlen = 0, out_len;
+    uint32_t vlen = 0;
     int r;
     if (!key || !nonce || !version || !payload || !tag)
         return -22;
@@ -295,16 +295,11 @@ int zd_update_verify_payload(const uint8_t key[32], const uint8_t nonce[12],
         ++vlen;
     if (vlen == 0 || vlen >= 64u)
         return -22;
-    out_len = 0;
     r = zeroos_aead_decrypt(key, nonce, (const uint8_t *)version, vlen,
                             payload, payload_len, tag, scratch);
-    /* scratch is transient; wipe regardless of outcome */
-    {
-        uint32_t i;
-        for (i = 0; i < payload_len; ++i)
-            scratch[i] = 0;
-    }
-    (void)out_len;
+    /* The provider's key-derived plaintext is transient; use the explicit
+     * volatile-store erasure primitive on both authentication outcomes. */
+    zeroos_secure_zero(scratch,payload_len);
     if (r != ZCRYPTO_OK)
         return -3;
     return 0;

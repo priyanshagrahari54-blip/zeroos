@@ -28,6 +28,10 @@
 #define ZCRYPTO_ERR (-1)
 #define ZCRYPTO_AUTHFAIL (-2)
 
+/* Best-effort explicit erasure of sensitive memory through volatile stores.
+ * This does not promise register, cache, swap, or physical-memory sanitization. */
+void zeroos_secure_zero(void *buffer, uint32_t length);
+
 /* Streaming Poly1305 (init/update/final) for callers that build MAC data
  * from several buffers (AEAD, audit chaining). */
 struct zeroos_poly1305_ctx {

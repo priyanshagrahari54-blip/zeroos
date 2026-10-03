@@ -221,7 +221,17 @@ static void test_aead(void) {
            "aead encrypt null aad with length rejected");
 }
 
+static void test_secure_zero(void) {
+    uint8_t secret[37];
+    for (uint32_t i=0;i<sizeof(secret);++i)
+        secret[i]=(uint8_t)(i+1U);
+    zeroos_secure_zero(secret,sizeof(secret));
+    expect(all_zero(secret,sizeof(secret)),"secure zero clears requested span");
+    zeroos_secure_zero(0,0);
+}
+
 int main(void) {
+    test_secure_zero();
     test_block();
     test_cipher();
     test_poly1305();

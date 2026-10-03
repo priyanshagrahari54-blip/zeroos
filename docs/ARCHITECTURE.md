@@ -226,9 +226,11 @@ Implemented (this stage):
   built from several buffers. Host-verified against the RFC's published
   vectors (block 2.3.2, cipher 2.4.2, MAC 2.5.2, key generation 2.6.2,
   AEAD 2.8.2) plus wrong-key/tampered-tag/tampered-ciphertext/tampered-AAD
-  negatives that must fail with authenticated-output zeroing. Policy —
-  key storage, nonce generation, who may encrypt what — deliberately
-  stays with future callers (vault, updates, privacy centre).
+  negatives that must fail with authenticated-output zeroing. Ephemeral
+  ChaCha/Poly1305 state, one-time keys, and failure plaintext use the
+  best-effort volatile-store `zeroos_secure_zero()` primitive. This does not
+  sanitize registers/caches or supply a key store. Policy — key storage,
+  nonce generation, who may encrypt what — deliberately stays with callers.
 - Automation framework (`userspace/desktop/src/automation.c`): bounded
   event/rule engine (32 rules, 64-entry audit ring) with explicit
   permission grants, per-rule cooldowns, lifetime fire caps, injected

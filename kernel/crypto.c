@@ -13,6 +13,15 @@
 
 #define P26 0x3ffffffu
 
+void zeroos_secure_zero(void *buffer, uint32_t length) {
+    volatile uint8_t *bytes=(volatile uint8_t *)buffer;
+    if (!bytes)
+        return;
+    while (length--)
+        *bytes++=0;
+    __asm__ volatile ("" : : "r"(buffer) : "memory");
+}
+
 static uint32_t load32_le(const uint8_t *p) {
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) |
            ((uint32_t)p[3] << 24);
@@ -73,6 +82,8 @@ void zeroos_chacha20_block(const uint8_t key[ZEROOS_CHACHA20_KEY_LEN],
     }
     for (i = 0; i < 16; i++)
         store32_le(out + 4 * i, x[i] + s[i]);
+    zeroos_secure_zero(s,sizeof(s));
+    zeroos_secure_zero(x,sizeof(x));
 }
 
 void zeroos_chacha20_xor(const uint8_t key[ZEROOS_CHACHA20_KEY_LEN],
@@ -94,8 +105,7 @@ void zeroos_chacha20_xor(const uint8_t key[ZEROOS_CHACHA20_KEY_LEN],
         offset += n;
         block_index++;
     }
-    for (i = 0; i < 64; i++)
-        stream[i] = 0; /* wipe keystream copy */
+    zeroos_secure_zero(stream,sizeof(stream));
 }
 
 void zeroos_poly1305_key_gen(const uint8_t key[ZEROOS_CHACHA20_KEY_LEN],
@@ -107,8 +117,7 @@ void zeroos_poly1305_key_gen(const uint8_t key[ZEROOS_CHACHA20_KEY_LEN],
     zeroos_chacha20_block(key, 0u, nonce, block);
     for (i = 0; i < 32; i++)
         out[i] = block[i];
-    for (i = 0; i < 64; i++)
-        block[i] = 0; /* wipe: contains the one-time key */
+    zeroos_secure_zero(block,sizeof(block));
 }
 
 /* ------------------------------------------------------------------ */
@@ -295,14 +304,7 @@ void zeroos_poly1305_final(struct zeroos_poly1305_ctx *ctx,
     for (i = 0; i < 4; i++)
         store32_le(tag + 4 * i, w[i]);
 
-    for (i = 0; i < 5; i++) {
-        ctx->h[i] = 0;
-        ctx->r[i] = 0;
-        ctx->s[i] = 0;
-    }
-    ctx->buffered = 0;
-    for (i = 0; i < 16; i++)
-        ctx->buffer[i] = 0;
+    zeroos_secure_zero(ctx,sizeof(*ctx));
 }
 
 void zeroos_poly1305(const uint8_t key[ZEROOS_POLY1305_KEY_LEN],
@@ -385,7 +387,6 @@ int zeroos_aead_encrypt(const uint8_t key[ZEROOS_CHACHA20_KEY_LEN],
                         uint8_t *ciphertext,
                         uint8_t tag[ZEROOS_AEAD_TAG_LEN]) {
     uint8_t otk[ZEROOS_POLY1305_KEY_LEN];
-    unsigned i;
 
     if (!key || !nonce || !ciphertext ||
         !aead_check(aad, aad_len, plaintext, pt_len, tag))
@@ -393,8 +394,7 @@ int zeroos_aead_encrypt(const uint8_t key[ZEROOS_CHACHA20_KEY_LEN],
     zeroos_chacha20_xor(key, 1u, nonce, plaintext, ciphertext, pt_len);
     zeroos_poly1305_key_gen(key, nonce, otk);
     aead_mac(otk, aad, aad_len, ciphertext, pt_len, tag);
-    for (i = 0; i < sizeof(otk); i++)
-        otk[i] = 0;
+    zeroos_secure_zero(otk,sizeof(otk));
     return ZCRYPTO_OK;
 }
 
@@ -406,7 +406,6 @@ int zeroos_aead_decrypt(const uint8_t key[ZEROOS_CHACHA20_KEY_LEN],
                         uint8_t *plaintext) {
     uint8_t otk[ZEROOS_POLY1305_KEY_LEN];
     uint8_t want[ZEROOS_AEAD_TAG_LEN];
-    unsigned i;
     int ok;
 
     if (!key || !nonce || !ciphertext ||
@@ -417,20 +416,16 @@ int zeroos_aead_decrypt(const uint8_t key[ZEROOS_CHACHA20_KEY_LEN],
 
     zeroos_poly1305_key_gen(key, nonce, otk);
     aead_mac(otk, aad, aad_len, ciphertext, ct_len, want);
-    for (i = 0; i < sizeof(otk); i++)
-        otk[i] = 0;
+    zeroos_secure_zero(otk,sizeof(otk));
 
     ok = tags_equal(want, tag);
     if (!ok) {
-        /* Never hand back unauthenticated plaintext: zero output. */
-        for (i = 0; i < ct_len; i++)
-            plaintext[i] = 0;
-        for (i = 0; i < sizeof(want); i++)
-            want[i] = 0;
+        /* Never hand back unauthenticated plaintext: erase output. */
+        zeroos_secure_zero(plaintext,ct_len);
+        zeroos_secure_zero(want,sizeof(want));
         return ZCRYPTO_AUTHFAIL;
     }
     zeroos_chacha20_xor(key, 1u, nonce, ciphertext, plaintext, ct_len);
-    for (i = 0; i < sizeof(want); i++)
-        want[i] = 0;
+    zeroos_secure_zero(want,sizeof(want));
     return ZCRYPTO_OK;
 }
