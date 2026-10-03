@@ -3,12 +3,32 @@
 #include "test_harness.h"
 #include <zeroos/desktop/vault.h>
 
+struct test_nonce_state { uint64_t sequence; int fail; int repeat; };
+static int test_nonce_source(void *ctx, uint8_t nonce[12]) {
+    struct test_nonce_state *state=ctx;
+    uint64_t sequence;
+    if (!state || !nonce || state->fail)
+        return -1;
+    if (!state->repeat)
+        ++state->sequence;
+    sequence=state->sequence;
+    for (uint32_t i=0;i<8;++i)
+        nonce[i]=(uint8_t)(sequence>>(i*8U));
+    for (uint32_t i=8;i<12;++i)
+        nonce[i]=(uint8_t)(0xa0U+i);
+    return 0;
+}
+
 void zd_test_vault_suite(void) {
     struct zd_vault v;
     uint8_t key[ZD_VAULT_KEY_LEN];
     uint8_t key2[ZD_VAULT_KEY_LEN];
+    const uint8_t zero_key[ZD_VAULT_KEY_LEN]={0};
+    const uint8_t zero_entry[ZD_VAULT_CT_MAX]={0};
     uint8_t out[ZD_VAULT_SECRET_MAX];
     uint32_t out_len = 0;
+    struct test_nonce_state nonce_state={0};
+    uint8_t entry_snapshot[ZD_VAULT_CT_MAX];
     const uint8_t secret[] = "correct horse battery staple";
     int i;
 
@@ -25,9 +45,16 @@ void zd_test_vault_suite(void) {
     ZD_CHECK(zd_vault_get(&v, "wifi", out, sizeof(out), &out_len) == -1);
     ZD_CHECK_EQ(v.stats.get_denied, 1);
 
-    /* unlock + roundtrip */
+    /* Writes fail closed until an OS CSPRNG nonce source is installed. */
     ZD_CHECK(zd_vault_unlock(&v, key) == 0);
     ZD_CHECK(zd_vault_unlock(&v, 0) == -22);
+    ZD_CHECK(zd_vault_unlock(&v, key) == -16);
+    ZD_CHECK(zd_vault_put(&v, "wifi", secret, sizeof(secret) - 1) == -95);
+    ZD_CHECK(zd_vault_count(&v) == 0);
+    ZD_CHECK(zd_vault_set_nonce_source(&v,test_nonce_source,&nonce_state) == -16);
+    ZD_CHECK(zd_vault_lock(&v) == 0);
+    ZD_CHECK(zd_vault_set_nonce_source(&v,test_nonce_source,&nonce_state) == 0);
+    ZD_CHECK(zd_vault_unlock(&v, key) == 0);
     ZD_CHECK(zd_vault_put(&v, "wifi", secret, sizeof(secret) - 1) == 0);
     ZD_CHECK(zd_vault_count(&v) == 1);
     memset(out, 0xEE, sizeof(out));
@@ -58,16 +85,33 @@ void zd_test_vault_suite(void) {
     /* wrong key on a freshly unlocked vault -> auth failure */
     {
         struct zd_vault v2;
+        struct test_nonce_state nonce_state2={0};
         zd_vault_init(&v2);
+        zd_vault_set_nonce_source(&v2,test_nonce_source,&nonce_state2);
         zd_vault_unlock(&v2, key);
         zd_vault_put(&v2, "mail", secret, sizeof(secret) - 1);
-        zd_vault_unlock(&v2, key2); /* rekey */
+        zd_vault_lock(&v2);
+        zd_vault_unlock(&v2, key2); /* deliberate wrong-key test after relock */
         ZD_CHECK(zd_vault_get(&v2, "mail", out, sizeof(out), &out_len) == -3);
         ZD_CHECK_EQ(v2.stats.auth_failures, 1);
     }
 
-    /* replace value (same name) works and changes ciphertext */
+    /* Repeated and failing nonce sources cannot overwrite ciphertext. */
+    memcpy(entry_snapshot,v.entries[0].ct,sizeof(entry_snapshot));
+    nonce_state.repeat=1;
+    ZD_CHECK(zd_vault_put(&v,"wifi",(const uint8_t *)"bad",3)==-5);
+    ZD_CHECK(memcmp(entry_snapshot,v.entries[0].ct,sizeof(entry_snapshot))==0);
+    nonce_state.repeat=0;
+    nonce_state.fail=1;
+    ZD_CHECK(zd_vault_put(&v,"wifi",(const uint8_t *)"bad",3)==-5);
+    ZD_CHECK(memcmp(entry_snapshot,v.entries[0].ct,sizeof(entry_snapshot))==0);
+    nonce_state.fail=0;
+
+    /* Replacing the same entry obtains a fresh nonce and changes ciphertext. */
+    memcpy(entry_snapshot,v.entries[0].ct,sizeof(entry_snapshot));
     ZD_CHECK(zd_vault_put(&v, "wifi", (const uint8_t*)"new", 3) == 0);
+    ZD_CHECK(memcmp(entry_snapshot,v.entries[0].ct,sizeof(entry_snapshot))!=0);
+    ZD_CHECK(memcmp(entry_snapshot,v.entries[0].ct,12U)!=0);
     ZD_CHECK(zd_vault_count(&v) == 1);
     ZD_CHECK(zd_vault_get(&v, "wifi", out, sizeof(out), &out_len) == 0);
     ZD_CHECK(out_len == 3 && memcmp(out, "new", 3) == 0);
@@ -99,8 +143,9 @@ void zd_test_vault_suite(void) {
 
     /* lock wipes the key: gets denied, ciphertext untouched */
     ZD_CHECK(zd_vault_lock(&v) == 0);
+    ZD_CHECK(memcmp(v.key,zero_key,sizeof(zero_key))==0);
     ZD_CHECK(zd_vault_get(&v, "wifi", out, sizeof(out), &out_len) == -1);
-    ZD_CHECK_EQ(v.stats.wipes, 1);
+    ZD_CHECK_EQ(v.stats.wipes, 2);
     /* re-unlock decrypts existing entries again */
     ZD_CHECK(zd_vault_unlock(&v, key) == 0);
     ZD_CHECK(zd_vault_get(&v, "wifi", out, sizeof(out), &out_len) == 0);
@@ -108,6 +153,7 @@ void zd_test_vault_suite(void) {
 
     /* forget wipes entry bytes */
     ZD_CHECK(zd_vault_forget(&v, "wifi") == 0);
+    ZD_CHECK(memcmp(v.entries[0].ct,zero_entry,sizeof(zero_entry))==0);
     ZD_CHECK(zd_vault_forget(&v, "wifi") == -2);
     ZD_CHECK(zd_vault_get(&v, "wifi", out, sizeof(out), &out_len) == -2);
 }

@@ -321,10 +321,14 @@ Implemented (this stage):
   and capacity pruning that refuses when the discard hook fails —
   host-tested.
 - Encrypted vault (`userspace/desktop/src/vault.c`): AEAD
-  (ChaCha20-Poly1305) wrapping of every secret under an injected
-  32-byte master key — no plaintext at rest, explicit auth failure on
-  tamper or wrong key, key wiped on lock — host-tested against the
-  certified crypto module.
+  (ChaCha20-Poly1305) wrapping under an injected master key; stores no
+  plaintext, reports tamper/wrong-key failures, and wipes the resident key
+  on lock. Writes now require an injected CSPRNG nonce source; the previous
+  deterministic per-slot nonce (unsafe on replacement) is removed. Missing,
+  failing, or observably repeating nonce providers fail closed, and a new
+  ciphertext is committed only after encryption succeeds. Host tests use a
+  deterministic test fixture, not production entropy. A real OS key/entropy
+  service and persistent encrypted-store integration remain open.
 - Navigation controller (`userspace/desktop/src/nav.c`): strict-URL
   gated go/back/forward with bounded history and blocked-scheme
   accounting — host-tested.

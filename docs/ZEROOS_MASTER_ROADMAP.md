@@ -522,10 +522,16 @@ commit/health failures route to rollback. The snapshot adapter intentionally
 has no verifier, so it cannot authorize activation. The existing AEAD helper
 is symmetric payload integrity only, not package signature verification; the
 production verifier, trusted-key lifecycle, and installed-system transaction
-are still missing. Local `make desktop-check` passed (120,951 assertions,
+are still missing. Local `make desktop-check` passed (120,966 assertions,
 zero failures) and full `make check` passed. Exact-SHA run [37136005396](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/37136005396)
 passed the host release gate but failed the QEMU Boot test on the unresolved
-scheduler issue, so no guest update-policy evidence was produced.
+scheduler issue, so no guest update-policy evidence was produced. A subsequent Stage 6 key
+lifecycle audit removed the vault's deterministic per-slot AEAD nonce, which
+was repeated under the same key on every write. Vault writes now fail closed
+without an injected CSPRNG, reject observed nonce reuse, commit replacements
+atomically after AEAD succeeds, and explicitly wipe the resident key and
+forgotten ciphertext. Host tests use deterministic nonce fixtures, not a
+production entropy source; the OS entropy/key service remains unimplemented.
 
 # STAGE 7 — GPU, GRAPHICS ACCELERATION, MEDIA, BROWSER AND NATIVE APP FOUNDATION
 

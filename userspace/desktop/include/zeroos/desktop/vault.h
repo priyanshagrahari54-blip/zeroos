@@ -1,8 +1,8 @@
-/* Encrypted secret vault (Stage 5 part B).
- * Secrets are stored ONLY as AEAD (ChaCha20-Poly1305) ciphertext under
- * an OS-injected 32-byte master key — the vault never persists
- * plaintext.  KDF/key service stays outside this contract: the caller
- * supplies the wrapped master key.  lock() wipes key + entries. */
+/* Encrypted secret vault (Stage 5 part B / Stage 6 key-lifecycle work).
+ * Secrets are stored only as AEAD (ChaCha20-Poly1305) ciphertext under an
+ * injected master key. Writes require an OS CSPRNG nonce source; there is no
+ * deterministic or insecure fallback. This core has no KDF/key store, and
+ * host-test nonce sources are not production entropy providers. */
 #ifndef ZEROOS_DESKTOP_VAULT_H
 #define ZEROOS_DESKTOP_VAULT_H
 
@@ -11,7 +11,7 @@
 #define ZD_VAULT_MAX 16
 #define ZD_VAULT_NAME 32
 #define ZD_VAULT_SECRET_MAX 128
-#define ZD_VAULT_CT_MAX 160    /* secret + 16-byte tag */
+#define ZD_VAULT_CT_MAX 160    /* 12-byte nonce + secret + 16-byte tag */
 #define ZD_VAULT_KEY_LEN 32
 
 struct zd_vault_entry {
@@ -21,9 +21,14 @@ struct zd_vault_entry {
     uint8_t in_use;
 };
 
+typedef int (*zd_vault_nonce_source_fn)(void *ctx,
+                                        uint8_t nonce[12]);
+
 struct zd_vault {
     uint8_t key[ZD_VAULT_KEY_LEN];
     uint8_t unlocked;             /* 1 while the key is resident */
+    zd_vault_nonce_source_fn nonce_source;
+    void *nonce_source_ctx;
     struct zd_vault_entry entries[ZD_VAULT_MAX];
     struct {
         uint32_t puts, gets, get_denied, auth_failures, wipes,
@@ -31,13 +36,19 @@ struct zd_vault {
     } stats;
 };
 
-/* Lock state; key supplied later via unlock(). */
+/* Lock state; key and nonce source are supplied before writing. */
 void zd_vault_init(struct zd_vault *v);
+/* Must be configured while locked. Provider must be a cryptographically
+ * secure OS random source; a missing or failing provider makes put fail. */
+int zd_vault_set_nonce_source(struct zd_vault *v,
+                              zd_vault_nonce_source_fn source, void *ctx);
+/* Locked-only key load; already-unlocked -> -16. */
 int zd_vault_unlock(struct zd_vault *v, const uint8_t key[ZD_VAULT_KEY_LEN]);
-/* Wipe key (entries stay as ciphertext; stats.wipes++). */
+/* Wipe resident key (entries stay as ciphertext; stats.wipes++). */
 int zd_vault_lock(struct zd_vault *v);
-/* Store/replace a secret.  Locked -> -1.  Bounds -> -22.  Full -> -28.
- * Returns 0; plaintext is never retained. */
+/* Store/replace a secret. Locked -> -1; missing entropy -> -95; bounds ->
+ * -22; full -> -28; nonce/encryption failure or observed nonce reuse -> -5.
+ * Existing ciphertext is unchanged on failure; plaintext is never retained. */
 int zd_vault_put(struct zd_vault *v, const char *name,
                  const uint8_t *secret, uint32_t secret_len);
 /* Decrypt into out (cap >= secret length).  Unknown name -> -2;

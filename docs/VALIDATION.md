@@ -339,13 +339,19 @@ explicitly provides no verifier, so snapshots alone cannot authorize an
 update. Tests cover missing verifier, verifier denial, absent downstream
 operations, failure-to-rollback behavior, and successful test-provider flow.
 
-Local `make desktop-check` **PASS**: 120,951 assertions, zero failures; full
+Local `make desktop-check` **PASS**: 120,966 assertions, zero failures; full
 local `make check` also **PASS**, including 23 RFC/negative crypto checks. The
 crypto layer now exposes `zeroos_secure_zero()` using volatile stores and uses
 it for ChaCha/Poly1305 work buffers, one-time Poly1305 keys, AEAD failure
 plaintext, and update-verification scratch. This is best-effort process-memory
 erasure; it does not clear registers/caches or establish secure key storage.
-Exact-SHA CI run [37136005396](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/37136005396)
+The vault audit found that its previous deterministic per-slot nonce repeated
+for every update under a key, violating ChaCha20-Poly1305 nonce uniqueness.
+That fallback is removed: writes now require an injected OS CSPRNG provider,
+observed nonce collisions are rejected, failed generation/encryption leaves
+existing ciphertext intact, and lock/forget use explicit memory erasure. The
+host tests use deterministic unique/failure fixtures only; no real entropy or
+key service is integrated. Exact-SHA CI run [37136005396](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/37136005396)
 passed the build, reproducible host release gate and image verification, then
 failed the ordinary QEMU Boot test on the unresolved scheduler stall; update
 policy has host evidence only, not guest evidence. This is host-tested policy

@@ -40,8 +40,19 @@ static void stress_browser_cycles(void) {
     ZD_CHECK_EQ(b.stats.closed, 41u * 16);
 }
 
+static int stress_vault_nonce(void *ctx, uint8_t nonce[12]) {
+    uint64_t *sequence=ctx;
+    ++*sequence;
+    for (uint32_t i=0;i<8;++i)
+        nonce[i]=(uint8_t)(*sequence>>(i*8U));
+    for (uint32_t i=8;i<12;++i)
+        nonce[i]=(uint8_t)(0x30U+i);
+    return 0;
+}
+
 static void stress_vault_cycles(void) {
     struct zd_vault v;
+    uint64_t nonce_sequence=0;
     uint8_t key[ZD_VAULT_KEY_LEN];
     uint8_t out[ZD_VAULT_SECRET_MAX];
     uint8_t blob[32];
@@ -51,6 +62,7 @@ static void stress_vault_cycles(void) {
         key[i] = (uint8_t)(i ^ 0x5A);
     memset(blob, 0x77, sizeof(blob));
     zd_vault_init(&v);
+    zd_vault_set_nonce_source(&v,stress_vault_nonce,&nonce_sequence);
     zd_vault_unlock(&v, key);
     for (k = 0; k < 100; ++k) {
         char nm[8];
