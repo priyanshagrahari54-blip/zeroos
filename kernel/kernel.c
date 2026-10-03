@@ -381,6 +381,8 @@ static void sync_self_test(void) {
 
 static struct atomic_u64 task_probe_counter;
 static struct atomic_u64 fpu_probe_done;
+static struct atomic_u64 fpu_probe_started_cpu[ZEROOS_MAX_CPUS];
+static struct atomic_u64 fpu_probe_done_cpu[ZEROOS_MAX_CPUS];
 static struct wait_queue wait_probe_queue;
 static struct atomic_u64 wait_probe_state;
 static struct atomic_u64 sleep_probe_state;
@@ -919,6 +921,8 @@ static void scheduler_fpu_probe_worker(void *argument) {
     uint32_t observed_mxcsr;
     if (!expected)
         kernel_panic("FPU context probe setup failed");
+    if (cpu_current_id()<ZEROOS_MAX_CPUS)
+        atomic_u64_fetch_add(&fpu_probe_started_cpu[cpu_current_id()],1);
 
     /* Cover all architectural SSE2 registers and all eight x87 stack entries
      * plus MXCSR in the FXSAVE image. The kernel compiler is general-register-
@@ -983,6 +987,8 @@ static void scheduler_fpu_probe_worker(void *argument) {
             kernel_panic("FPU timer probe did not resume after IRQ preemption");
     }
     atomic_u64_fetch_add(&fpu_probe_done,1);
+    if (cpu_current_id()<ZEROOS_MAX_CPUS)
+        atomic_u64_fetch_add(&fpu_probe_done_cpu[cpu_current_id()],1);
 }
 
 #undef FPU_PROBE_LOAD_XMM
@@ -1306,6 +1312,14 @@ static void scheduler_probe_monitor(void *argument) {
             serial_write_u64((uint64_t)context_reported);
             serial_write_public(" fpu=");
             serial_write_u64(atomic_u64_load(&fpu_probe_done));
+            serial_write_public(" fpu_cpu0=");
+            serial_write_u64(atomic_u64_load(&fpu_probe_done_cpu[0]));
+            serial_write_public("/");
+            serial_write_u64(atomic_u64_load(&fpu_probe_started_cpu[0]));
+            serial_write_public(" fpu_cpu1=");
+            serial_write_u64(atomic_u64_load(&fpu_probe_done_cpu[1]));
+            serial_write_public("/");
+            serial_write_u64(atomic_u64_load(&fpu_probe_started_cpu[1]));
             serial_write_public(" wait=");
             serial_write_u64(atomic_u64_load(&wait_probe_state));
             serial_write_public(" sleep=");
@@ -1353,7 +1367,7 @@ static void scheduler_probe_monitor(void *argument) {
          * CI forever while retaining deterministic QEMU behavior.
          */
         if (now-stress_start>400 &&
-            (!preempt_reported || !lifecycle_reported ||
+            (!fpu_reported || !preempt_reported || !lifecycle_reported ||
              !fairness_reported || !frame_invariant_reported ||
              !hotplug_reported ||
              !userspace_reported ||
@@ -1380,6 +1394,10 @@ static void scheduler_self_test(void) {
 
     atomic_u64_init(&task_probe_counter,0);
     atomic_u64_init(&fpu_probe_done,0);
+    for (uint32_t cpu=0;cpu<ZEROOS_MAX_CPUS;++cpu) {
+        atomic_u64_init(&fpu_probe_started_cpu[cpu],0);
+        atomic_u64_init(&fpu_probe_done_cpu[cpu],0);
+    }
     atomic_u64_init(&wait_probe_state,0);
     atomic_u64_init(&sleep_probe_state,0);
     atomic_u64_init(&input_probe_state,0);
