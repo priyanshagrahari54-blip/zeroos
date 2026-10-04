@@ -14,7 +14,7 @@
 - `docs/BOOT_SPEC.md`
 - `docs/VALIDATION.md`
 - `docs/ZEROOS_MASTER_PROMPT_10_STAGE.md`
-- `docs/ZEROOS_10_STAGE_HARDENING.md`
+- [`ZEROOS_10_STAGE_HARDENING.md`](./ZEROOS_10_STAGE_HARDENING.md)
 - `docs/ZEROOS_AI_HANDOFF.md`
 - `docs/ZEROOS_FULL_REQUIREMENTS_225_PLUS_QA.md`
 - `docs/ZEROOS_MICRO_REQUIREMENTS_FROM_START.md`
@@ -2680,13 +2680,13 @@ later production gates.
 Status: living evidence ledger for Stage 5 and the binding evidence policy for Stages 1-10.
 
 The 10-stage hardening acceptance checklist is authoritative:
-docs/ZEROOS_10_STAGE_HARDENING.md
+[`ZEROOS_10_STAGE_HARDENING.md`](./ZEROOS_10_STAGE_HARDENING.md)
 
 Every row is backed by a command that runs in this repository or by a CI run of a recorded commit. Where evidence does not exist yet, the row says so — no claim is made without it.
 
 ## Binding 10-stage rule
 
-For Stages 1-10, a capability can move to Supported only when the corresponding item in docs/ZEROOS_10_STAGE_HARDENING.md has executable evidence at the required execution class.
+For Stages 1-10, a capability can move to Supported only when the corresponding item in [ZEROOS_10_STAGE_HARDENING.md](./ZEROOS_10_STAGE_HARDENING.md) has executable evidence at the required execution class.
 
 A host test cannot close a QEMU gate. QEMU cannot close a real-hardware gate. Detection, parsing, an architectural contract, or a mock cannot close an operational-support claim.
 
@@ -2901,7 +2901,7 @@ When a stage is completed, record:
 
 ---
 
-# SOURCE 10: docs/ZEROOS_10_STAGE_HARDENING.md
+# SOURCE 10: ZEROOS_10_STAGE_HARDENING.md
 
 # ZEROOS 10-Stage Hardening Gate
 
@@ -4163,7 +4163,7 @@ A. Must be proven by soak testing on the relevant evidence class.
 ## 27. CURRENT REPOSITORY CONTEXT TO PRESERVE
 
 - Repository: priyanshagrahari54-blip/zeroos
-- Master hardening checklist: docs/ZEROOS_10_STAGE_HARDENING.md
+- Master hardening checklist: [`ZEROOS_10_STAGE_HARDENING.md`](./ZEROOS_10_STAGE_HARDENING.md)
 - Validation source: docs/VALIDATION.md
 - AI handoff source: docs/ZEROOS_AI_HANDOFF.md
 - Core roadmap: docs/ZEROOS_MASTER_ROADMAP.md

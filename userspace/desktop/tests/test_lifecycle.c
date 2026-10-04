@@ -61,6 +61,25 @@ static void test_illegal_events(void) {
                  ZD_EINVAL);
 }
 
+static void test_corrupted_metadata_rejected(void) {
+    struct zd_lifecycle lifecycle;
+    zd_lifecycle_init(&lifecycle);
+    lifecycle.state=(enum zd_lifecycle_state)ZD_LIFECYCLE_STATE_COUNT;
+    ZD_CHECK_ERR(zd_lifecycle_dispatch(&lifecycle,ZD_LIFECYCLE_START,0),
+                 ZD_EINVAL);
+    ZD_CHECK_EQ(lifecycle.transition_count,0U);
+    lifecycle.state=ZD_LIFECYCLE_STOPPED;
+    lifecycle.listener_count=ZD_LIFECYCLE_MAX_LISTENERS+1U;
+    ZD_CHECK_ERR(zd_lifecycle_dispatch(&lifecycle,ZD_LIFECYCLE_START,0),
+                 ZD_EINVAL);
+    ZD_CHECK_EQ(lifecycle.transition_count,0U);
+    lifecycle.listener_count=0;
+    lifecycle.history_head=ZD_LIFECYCLE_MAX_HISTORY;
+    ZD_CHECK_ERR(zd_lifecycle_dispatch(&lifecycle,ZD_LIFECYCLE_START,0),
+                 ZD_EINVAL);
+    ZD_CHECK_EQ(lifecycle.transition_count,0U);
+}
+
 static void test_failure_isolation_path(void) {
     struct zd_lifecycle lifecycle;
     zd_lifecycle_init(&lifecycle);
@@ -113,6 +132,7 @@ void zd_test_lifecycle_suite(void) {
     printf(" suite: lifecycle\n");
     ZD_RUN(test_legal_path);
     ZD_RUN(test_illegal_events);
+    ZD_RUN(test_corrupted_metadata_rejected);
     ZD_RUN(test_failure_isolation_path);
     ZD_RUN(test_listeners_and_history);
     ZD_RUN(test_state_names);

@@ -39,7 +39,8 @@ int zpe_validate(const uint8_t *image, uint32_t file_size,
     opt_off = pe_off + 24;
     if ((uint64_t)opt_off + opt_size > file_size)
         return ZPE_TRUNCATED;
-    if (opt_size < 24)
+    /* SizeOfImage and SizeOfHeaders occupy bytes 56..63. */
+    if (opt_size < 64)
         return ZPE_TRUNCATED;
     opt_magic = rd16(image + opt_off);
     if (opt_magic != 0x20b) /* PE32+ */
@@ -53,12 +54,49 @@ int zpe_validate(const uint8_t *image, uint32_t file_size,
     sect_off = opt_off + opt_size;
     if ((uint64_t)sect_off + (uint64_t)nsec * 40 > file_size)
         return ZPE_TRUNCATED;
-    if (hdr_size == 0 || hdr_size > file_size || hdr_size > img_size)
+    if (hdr_size == 0 || hdr_size > file_size || hdr_size > img_size ||
+        hdr_size < sect_off + (uint64_t)nsec * 40)
         return ZPE_BAD_LAYOUT;
     if (img_size == 0)
         return ZPE_BAD_LAYOUT;
     if (entry >= img_size)
         return ZPE_BAD_LAYOUT;
+    for (uint32_t i=0; i<nsec; ++i) {
+        const uint8_t *section=image+sect_off+(uint64_t)i*40ULL;
+        uint32_t virtual_size=rd32(section+8);
+        uint32_t virtual_address=rd32(section+12);
+        uint32_t raw_size=rd32(section+16);
+        uint32_t raw_offset=rd32(section+20);
+        uint32_t mapped_size=virtual_size>raw_size ? virtual_size : raw_size;
+        uint64_t virtual_end=(uint64_t)virtual_address+mapped_size;
+        uint64_t raw_end=(uint64_t)raw_offset+raw_size;
+        if (!mapped_size || virtual_address<hdr_size ||
+            virtual_address>img_size ||
+            mapped_size>img_size-virtual_address)
+            return ZPE_BAD_LAYOUT;
+        if (raw_size && (raw_offset<hdr_size || raw_offset>file_size ||
+                         raw_size>file_size-raw_offset))
+            return ZPE_BAD_LAYOUT;
+        for (uint32_t j=0; j<i; ++j) {
+            const uint8_t *prior=image+sect_off+(uint64_t)j*40ULL;
+            uint32_t prior_virtual_size=rd32(prior+8);
+            uint32_t prior_virtual_address=rd32(prior+12);
+            uint32_t prior_raw_size=rd32(prior+16);
+            uint32_t prior_raw_offset=rd32(prior+20);
+            uint32_t prior_mapped_size=
+                prior_virtual_size>prior_raw_size ?
+                prior_virtual_size : prior_raw_size;
+            uint64_t prior_virtual_end=
+                (uint64_t)prior_virtual_address+prior_mapped_size;
+            uint64_t prior_raw_end=
+                (uint64_t)prior_raw_offset+prior_raw_size;
+            if ((virtual_address<prior_virtual_end &&
+                 prior_virtual_address<virtual_end) ||
+                (raw_size && prior_raw_size &&
+                 raw_offset<prior_raw_end && prior_raw_offset<raw_end))
+                return ZPE_BAD_LAYOUT;
+        }
+    }
 
     if (out_info) {
         out_info->image_size = img_size;

@@ -38,6 +38,9 @@ DISCOVER -> DOWNLOAD -> VERIFY -> STAGE -> PREFLIGHT -> SNAPSHOT -> ACTIVATE -> 
 Failure path:
 FAIL -> ISOLATE -> ROLLBACK -> VERIFY-RECOVERY -> REPORT
 Updates must be resumable, cancellable and power-loss safe.
+Snapshot replacement must preserve the active rollback point until the new
+snapshot is captured and verified. Rollback must restore the exact snapshot
+bound to that update, not whichever user snapshot happens to be newest.
 
 ## 6.7 Recovery
 Recovery environment must operate without normal desktop services and provide:

@@ -19,6 +19,13 @@ static void setup(void) {
     monitor0.enabled = 1;
     strcpy(monitor0.name, "eDP-1");
     ZD_CHECK_OK(zd_wm_add_monitor(&wm, &monitor0));
+    {
+        struct zd_monitor invalid=monitor0;
+        invalid.id=2;
+        invalid.bounds.x=INT32_MAX-10;
+        invalid.bounds.w=20;
+        ZD_CHECK_ERR(zd_wm_add_monitor(&wm,&invalid),ZD_EINVAL);
+    }
     client_a = zd_wm_register_client(&wm);
     client_b = zd_wm_register_client(&wm);
     ZD_CHECK(client_a != 0 && client_b != 0 && client_a != client_b);

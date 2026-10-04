@@ -13,6 +13,7 @@
 #include "ipc.h"
 #include "shmem.h"
 #include "fb.h"
+#include "kstring.h"
 
 extern void serial_write_public(const char *text);
 extern void zeroos_user_enter(uint64_t entry, uint64_t stack);
@@ -53,6 +54,12 @@ static struct atomic_u64 ipc_send_probe_state;
 static struct process *ipc_send_probe_process;
 static zeroos_ipc_handle_t ipc_send_probe_signal;
 static zeroos_ipc_handle_t ipc_send_probe_wait;
+static struct atomic_u64 ipc_pipe_probe_state;
+static struct atomic_u64 ipc_pipe_probe_release;
+static struct process *ipc_pipe_probe_process;
+static zeroos_ipc_handle_t ipc_pipe_probe_writer;
+static zeroos_ipc_handle_t ipc_pipe_probe_reader;
+static void userspace_write_decimal(uint64_t value);
 
 static const char init_message[]=
     "ZEROOS: userspace init syscall path passed.\n";
@@ -1334,7 +1341,6 @@ static int userspace_ipc_self_test(struct process *process) {
                     ZEROOS_IPC_FLAG_NONBLOCK,&length)!=-ZEROOS_EPIPE ||
         ipc_close(process,peer)!=0 || ipc_debug_validate()!=0)
         return -1;
-
     {
         zeroos_ipc_handle_t pipe_local=0;
         zeroos_ipc_handle_t pipe_peer=0;
@@ -1369,15 +1375,16 @@ static int userspace_ipc_self_test(struct process *process) {
             (void)ipc_close(process,pipe_peer);
             return -1;
         }
-        for (uint32_t i=0; i<4; ++i)
+        for (uint32_t i=0; i<4; ++i) {
             if (ipc_pipe_write_timeout(process,pipe_local,pipe_data,
-                                       sizeof(pipe_data),
+                                       ZEROOS_IPC_PIPE_CAPACITY/4U,
                                        ZEROOS_IPC_FLAG_NONBLOCK,0)!=
-                                       (int)sizeof(pipe_data)) {
+                                       (int)(ZEROOS_IPC_PIPE_CAPACITY/4U)) {
                 (void)ipc_close(process,pipe_local);
                 (void)ipc_close(process,pipe_peer);
                 return -1;
             }
+        }
         if (ipc_pipe_write_timeout(process,pipe_local,pipe_data,1,
                                    ZEROOS_IPC_FLAG_NONBLOCK,0)!=-ZEROOS_EAGAIN ||
             ipc_pipe_write_timeout(process,pipe_local,pipe_data,1,0,0)!=
@@ -1385,8 +1392,6 @@ static int userspace_ipc_self_test(struct process *process) {
             ipc_pipe_read_timeout(process,pipe_peer,pipe_read,1,
                                   ZEROOS_IPC_FLAG_NONBLOCK,&pipe_length,0)!=1 ||
             pipe_length!=1 ||
-            ipc_pipe_write_timeout(process,pipe_local,pipe_data,1,
-                                   ZEROOS_IPC_FLAG_NONBLOCK,0)!=1 ||
             ipc_pipe_write_timeout(process,pipe_local,pipe_data,
                                    ZEROOS_SYSCALL_MAX_TRANSFER+1ULL,0,0)!=
                                    -ZEROOS_EOVERFLOW ||
@@ -1396,6 +1401,26 @@ static int userspace_ipc_self_test(struct process *process) {
             (void)ipc_close(process,pipe_peer);
             return -1;
         }
+        for (uint32_t i=0; i<sizeof(pipe_data); ++i)
+            pipe_data[i]=(uint8_t)('a'+(i%26U));
+        if (ipc_pipe_write_timeout(process,pipe_local,pipe_data,
+                                   sizeof(pipe_data),
+                                   ZEROOS_IPC_FLAG_NONBLOCK,0)!=1 ||
+            ipc_pipe_read_timeout(process,pipe_peer,pipe_read,
+                                  sizeof(pipe_read),
+                                  ZEROOS_IPC_FLAG_NONBLOCK,&pipe_length,0)!=
+                                  (int)sizeof(pipe_read) ||
+            pipe_length!=sizeof(pipe_read)) {
+            (void)ipc_close(process,pipe_local);
+            (void)ipc_close(process,pipe_peer);
+            return -1;
+        }
+        for (uint32_t i=0; i<sizeof(pipe_read); ++i)
+            if (pipe_read[i]!=pipe_data[(i+1U)%sizeof(pipe_data)]) {
+                (void)ipc_close(process,pipe_local);
+                (void)ipc_close(process,pipe_peer);
+                return -1;
+            }
         if (ipc_close(process,pipe_local)!=0) {
             (void)ipc_close(process,pipe_peer);
             return -1;
@@ -1405,12 +1430,12 @@ static int userspace_ipc_self_test(struct process *process) {
                                               sizeof(pipe_read),
                                               ZEROOS_IPC_FLAG_NONBLOCK,
                                               &pipe_length,0);
-        } while (pipe_result==(int)sizeof(pipe_read));
+        } while (pipe_result>0);
         if (pipe_result!=-ZEROOS_EPIPE || ipc_close(process,pipe_peer)!=0 ||
             ipc_debug_validate()!=0)
             return -1;
+        serial_write_public("ZEROOS: IPC pipe partial-write byte ordering passed.\n");
     }
-
     {
         zeroos_ipc_handle_t signal_handle=0;
         zeroos_ipc_handle_t wait_handle=0;
@@ -1437,8 +1462,9 @@ static int userspace_ipc_self_test(struct process *process) {
             ipc_close(process,wait_handle)!=0 || ipc_debug_validate()!=0) {
             (void)ipc_close(process,signal_handle);
             (void)ipc_close(process,wait_handle);
-            return -1;
+                return -1;
         }
+
     }
     return 0;
 
@@ -1883,6 +1909,181 @@ static void ipc_send_probe_entry(void *argument) {
     result=ipc_send_timeout(process,ipc_send_probe_signal,&byte,1,0,
                             ZEROOS_IPC_TIMEOUT_FOREVER);
     atomic_u64_store(&ipc_send_probe_state,result==1 ? 2 : 3);
+}
+
+static void ipc_pipe_probe_entry(void *argument) {
+    struct process *process=(struct process *)argument;
+    uint8_t byte='W';
+    atomic_u64_store(&ipc_pipe_probe_state,1);
+    int result=ipc_pipe_write_timeout(process,ipc_pipe_probe_writer,&byte,1,0,
+                                      ZEROOS_IPC_TIMEOUT_FOREVER);
+    atomic_u64_store(&ipc_pipe_probe_state,result==1 ? 2 : 3);
+    while (!atomic_u64_load(&ipc_pipe_probe_release))
+        scheduler_yield();
+}
+
+static int userspace_ipc_pipe_wakeup_self_test(void) {
+    process_id_t pid=0;
+    thread_id_t tid=0;
+    struct thread *thread=0;
+    uint64_t status=~0ULL;
+    uint8_t thread_created=0;
+    uint8_t blocked_seen=0;
+    uint8_t fill[128], first=0;
+    uint8_t drain[ZEROOS_SYSCALL_MAX_TRANSFER];
+    uint64_t length=0;
+    uint32_t stage=0;
+    int read_result=-999;
+    int drain_result=-999;
+    int result=-1;
+
+    ipc_pipe_probe_process=0;
+    ipc_pipe_probe_writer=0;
+    ipc_pipe_probe_reader=0;
+    atomic_u64_init(&ipc_pipe_probe_state,0);
+    atomic_u64_init(&ipc_pipe_probe_release,0);
+    if (process_create(0,&pid)!=0)
+        return -1;
+    ipc_pipe_probe_process=process_lookup(pid);
+    if (!ipc_pipe_probe_process ||
+        process_set_limits(ipc_pipe_probe_process,1,1,4)!=0 ||
+        ipc_create_pipe(ipc_pipe_probe_process,&ipc_pipe_probe_writer,
+                        &ipc_pipe_probe_reader)!=0)
+        goto fail;
+    stage=1;
+    for (uint32_t i=0; i<sizeof(fill); ++i)
+        fill[i]='F';
+    for (uint32_t i=0; i<ZEROOS_IPC_PIPE_CAPACITY/sizeof(fill); ++i)
+        if (ipc_pipe_write_timeout(ipc_pipe_probe_process,
+                                   ipc_pipe_probe_writer,fill,sizeof(fill),
+                                   ZEROOS_IPC_FLAG_NONBLOCK,0)!=sizeof(fill))
+            goto fail;
+    stage=2;
+    if (thread_create_kernel(ipc_pipe_probe_process,ipc_pipe_probe_entry,
+                             ipc_pipe_probe_process,&tid)!=0)
+        goto fail;
+    stage=3;
+    thread_created=1;
+    thread=thread_lookup(tid);
+    if (!thread)
+        goto release_writer;
+
+    for (uint64_t i=0; i<100000ULL; ++i) {
+        uint64_t state=atomic_u64_load(&ipc_pipe_probe_state);
+        struct task *task=thread->scheduler_task_id ?
+                          task_lookup(thread->scheduler_task_id) : 0;
+        if (state==1 && task && task->state==TASK_BLOCKED) {
+            blocked_seen=1;
+            break;
+        }
+        if (state>=2)
+            break;
+        scheduler_yield();
+    }
+    if (!blocked_seen || atomic_u64_load(&ipc_pipe_probe_state)!=1)
+        goto release_writer;
+    stage=4;
+    read_result=ipc_pipe_read_timeout(ipc_pipe_probe_process,
+                                      ipc_pipe_probe_reader,&first,1,
+                                      ZEROOS_IPC_FLAG_NONBLOCK,&length,0);
+    if (read_result!=1 || length!=1 || first!='F')
+        goto release_writer;
+
+    for (uint64_t i=0; i<100000ULL &&
+         atomic_u64_load(&ipc_pipe_probe_state)<2; ++i)
+        scheduler_yield();
+    if (atomic_u64_load(&ipc_pipe_probe_state)!=2)
+        goto release_writer;
+    for (uint32_t chunk=0;
+         chunk<ZEROOS_IPC_PIPE_CAPACITY/sizeof(drain); ++chunk) {
+        drain_result=ipc_pipe_read_timeout(ipc_pipe_probe_process,
+                                           ipc_pipe_probe_reader,drain,
+                                           sizeof(drain),
+                                           ZEROOS_IPC_FLAG_NONBLOCK,
+                                           &length,0);
+        if (drain_result!=(int)sizeof(drain) || length!=sizeof(drain))
+            goto release_writer;
+        for (uint32_t i=0; i<sizeof(drain); ++i) {
+            uint32_t offset=chunk*(uint32_t)sizeof(drain)+i;
+            uint8_t expected=offset+1U==ZEROOS_IPC_PIPE_CAPACITY ? 'W' : 'F';
+            if (drain[i]!=expected)
+                goto release_writer;
+        }
+    }
+    stage=5;
+    stage=6;
+
+    if (ipc_close(ipc_pipe_probe_process,ipc_pipe_probe_writer)!=0 ||
+        ipc_close(ipc_pipe_probe_process,ipc_pipe_probe_reader)!=0 ||
+        ipc_debug_validate()!=0)
+        goto release_writer;
+    stage=7;
+    ipc_pipe_probe_writer=0;
+    ipc_pipe_probe_reader=0;
+    atomic_u64_store(&ipc_pipe_probe_release,1);
+    if (userspace_wait_probe_exit(thread,ipc_pipe_probe_process)!=0 ||
+        thread->state!=THREAD_ZOMBIE ||
+        thread_reap(thread,&status)!=0 || status!=0 ||
+        ipc_pipe_probe_process->state!=PROCESS_ZOMBIE ||
+        vmm_activate_kernel()!=0 ||
+        process_reap(ipc_pipe_probe_process,&status)!=0 || status!=0 ||
+        process_lookup(pid)!=0) {
+        thread=0;
+        goto fail;
+    }
+    thread=0;
+    thread_created=0;
+    ipc_pipe_probe_process=0;
+    ipc_pipe_probe_writer=0;
+    ipc_pipe_probe_reader=0;
+    return 0;
+
+release_writer:
+    atomic_u64_store(&ipc_pipe_probe_release,1);
+    if (ipc_pipe_probe_process && ipc_pipe_probe_reader) {
+        (void)ipc_close(ipc_pipe_probe_process,ipc_pipe_probe_reader);
+        ipc_pipe_probe_reader=0;
+    }
+    if (thread_created && thread)
+        (void)userspace_wait_probe_exit(thread,ipc_pipe_probe_process);
+fail:
+    serial_write_public("ZEROOS: pipe blocked-writer probe failed at stage ");
+    userspace_write_decimal(stage);
+    serial_write_public(" (read=");
+    userspace_write_decimal((uint64_t)(read_result<0 ? -read_result :
+                                                        read_result));
+    serial_write_public(", length=");
+    userspace_write_decimal(length);
+    serial_write_public(", byte=");
+    userspace_write_decimal(first);
+    serial_write_public(", state=");
+    userspace_write_decimal(atomic_u64_load(&ipc_pipe_probe_state));
+    serial_write_public(", drain=");
+    userspace_write_decimal((uint64_t)(drain_result<0 ? -drain_result :
+                                                        drain_result));
+    serial_write_public(")");
+    serial_write_public(".\n");
+    if (thread_created && thread && thread->state==THREAD_ZOMBIE) {
+        (void)thread_reap(thread,&status);
+        thread=0;
+    }
+    if (ipc_pipe_probe_process &&
+        ipc_pipe_probe_process->state==PROCESS_ZOMBIE) {
+        (void)vmm_activate_kernel();
+        (void)process_reap(ipc_pipe_probe_process,&status);
+    } else if (ipc_pipe_probe_process &&
+               ipc_pipe_probe_process->state!=PROCESS_UNUSED) {
+        if (ipc_pipe_probe_writer)
+            (void)ipc_close(ipc_pipe_probe_process,ipc_pipe_probe_writer);
+        if (ipc_pipe_probe_reader)
+            (void)ipc_close(ipc_pipe_probe_process,ipc_pipe_probe_reader);
+        if (ipc_pipe_probe_process->state==PROCESS_NEW)
+            (void)process_abort_new(ipc_pipe_probe_process);
+    }
+    ipc_pipe_probe_process=0;
+    ipc_pipe_probe_writer=0;
+    ipc_pipe_probe_reader=0;
+    return result;
 }
 
 static int userspace_ipc_send_wakeup_self_test(void) {
@@ -2450,6 +2651,11 @@ int userspace_start_init(void) {
     }
     serial_write_public("ZEROOS: capability IPC queue/backpressure self-test passed.\n");
     serial_write_public("ZEROOS: capability IPC negative/timeout semantics passed.\n");
+    if (userspace_ipc_pipe_wakeup_self_test()!=0) {
+        serial_write_public("ZEROOS PANIC: blocking IPC pipe-writer wakeup self-test failed.\n");
+        goto fail;
+    }
+    serial_write_public("ZEROOS: IPC pipe blocked-writer wakeup passed.\n");
     if (userspace_ipc_generation_stress(init_process)!=0) {
         serial_write_public("ZEROOS PANIC: IPC capability generation stress failed.\n");
         goto fail;

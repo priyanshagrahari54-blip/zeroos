@@ -74,7 +74,8 @@ int net_fw_remove(struct zd_fw *fw, uint32_t id) {
     return -2;
 }
 
-static int fw_match(const struct zd_fw_rule *r, const struct zd_fw_flow *f) {
+static int fw_match_common(const struct zd_fw_rule *r,
+                           const struct zd_fw_flow *f) {
     if (!r->enabled) return 0;
     if ((int)r->dir != f->dir) return 0;
     if (r->proto != ZD_FW_ANY && (int)r->proto != f->proto) return 0;
@@ -83,11 +84,16 @@ static int fw_match(const struct zd_fw_rule *r, const struct zd_fw_flow *f) {
         uint16_t port = f->dst_port;
         if (port < r->port_lo || port > r->port_hi) return 0;
     }
+    if (!fw_str_app(r->app, f->app_id)) return 0;
+    return 1;
+}
+
+static int fw_match(const struct zd_fw_rule *r, const struct zd_fw_flow *f) {
+    if (!fw_match_common(r, f)) return 0;
     if (r->ip_lo || r->ip_hi) {
         uint32_t ip = (f->dir == ZD_FW_OUT) ? f->dst_ip : f->src_ip;
         if (ip < r->ip_lo || ip > r->ip_hi) return 0;
     }
-    if (!fw_str_app(r->app, f->app_id)) return 0;
     return 1;
 }
 
@@ -153,19 +159,35 @@ int net_fw_check_ipv6(const struct zd_fw *fw,
                       uint16_t dst_port) {
     if (!fw || !src || !dst) return -22;
     struct zd_fw_flow flow = {0};
+    struct zd_fw *mutable_fw = (struct zd_fw *)fw;
     flow.dir = ZD_FW_OUT;
-    flow.proto = (nexthdr == 6) ? ZD_FW_TCP :
-                  (nexthdr == 17) ? ZD_FW_UDP : ZD_FW_ANY;
-    /* Convert first 4 bytes of each address to uint32_t for
-     * the existing IPv4-oriented firewall matcher. */
-    flow.src_ip = ((uint32_t)src[0] << 24) |
-                  ((uint32_t)src[1] << 16) |
-                  ((uint32_t)src[2] << 8)  | src[3];
-    flow.dst_ip = ((uint32_t)dst[0] << 24) |
-                  ((uint32_t)dst[1] << 16) |
-                  ((uint32_t)dst[2] << 8)  | dst[3];
+    mutable_fw->stats.flows++;
+    if (nexthdr == 6)
+        flow.proto = ZD_FW_TCP;
+    else if (nexthdr == 17)
+        flow.proto = ZD_FW_UDP;
+    else {
+        mutable_fw->stats.denied++;
+        return ZD_FW_DENY;
+    }
     flow.src_port = src_port;
     flow.dst_port = dst_port;
     flow.conn_known = 0;
-    return net_fw_decide((struct zd_fw *)fw, &flow);
+
+    /* The rule format only carries IPv4 addresses. Never truncate an IPv6
+     * address and let an IPv4-scoped rule authorize unrelated IPv6 traffic. */
+    for (uint32_t i = 0; i < fw->rule_count; ++i) {
+        const struct zd_fw_rule *rule = &fw->rules[i];
+        if (!fw_match_common(rule, &flow))
+            continue;
+        if (rule->ip_lo || rule->ip_hi ||
+            rule->action == ZD_FW_DENY) {
+            mutable_fw->stats.denied++;
+            return ZD_FW_DENY;
+        }
+        mutable_fw->stats.allowed++;
+        return ZD_FW_ALLOW;
+    }
+    mutable_fw->stats.denied++;
+    return ZD_FW_DENY;
 }

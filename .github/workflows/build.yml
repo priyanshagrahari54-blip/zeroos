@@ -85,6 +85,7 @@ jobs:
             grep -q "ZEROOS: timer tick 100." build/serial.log
 
             echo "===== ZEROOS scheduler certification gates ====="
+            grep -q "ZEROOS: scheduler context bounds self-test passed." build/serial.log
             grep -q "ZEROOS: task context-switch self-test passed." build/serial.log
             grep -q "ZEROOS: wait queue integration verified." build/serial.log
             grep -q "ZEROOS: timed sleep integration verified." build/serial.log
@@ -108,9 +109,11 @@ jobs:
             grep -q "ZEROOS: userspace init process published." build/serial.log
             grep -q "ZEROOS: capability IPC queue/backpressure self-test passed." build/serial.log
             grep -q "ZEROOS: capability IPC negative/timeout semantics passed." build/serial.log
+            grep -q "ZEROOS: IPC pipe blocked-writer wakeup passed." build/serial.log
             grep -q "ZEROOS: IPC capability generation/revocation stress passed." build/serial.log
             grep -q "ZEROOS: blocking child wait/wakeup path passed." build/serial.log
             grep -q "ZEROOS: event and pipe IPC foundations self-test passed." build/serial.log
+            grep -q "ZEROOS: IPC pipe partial-write byte ordering passed." build/serial.log
             grep -q "ZEROOS: blocking event wait/wake path passed." build/serial.log
             grep -q "ZEROOS: blocking IPC close-wakeup path passed." build/serial.log
             grep -q "ZEROOS: blocking IPC send-wakeup path passed." build/serial.log

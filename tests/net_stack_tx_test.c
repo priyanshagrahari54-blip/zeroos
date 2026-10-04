@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <stdint.h>
 #include <string.h>
+#include "../kernel/firewall.h"
 #include "../kernel/net_stack.h"
 #include "../kernel/net_l2.h"
 
@@ -85,6 +86,36 @@ int main(void) {
     const uint8_t payload[] = { 'z', 'e', 'r', 'o', 'o', 's', '!' };
     const uint32_t local_ip = 0xc0000202U;
     const uint32_t remote_ip = 0xc6336409U;
+
+    struct zd_fw ipv6_firewall;
+    struct zd_fw_rule ipv6_allow = {
+        .dir = ZD_FW_OUT, .proto = ZD_FW_UDP, .action = ZD_FW_ALLOW
+    };
+    const uint8_t ipv6_source[16] =
+        { 0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 };
+    const uint8_t ipv6_destination[16] =
+        { 0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2 };
+    net_fw_init(&ipv6_firewall);
+    ipv6_allow.ip_lo = 0x20010db8U;
+    ipv6_allow.ip_hi = 0x20010db8U;
+    assert(net_fw_add(&ipv6_firewall, &ipv6_allow, 0) == 0);
+    assert(net_fw_check_ipv6(&ipv6_firewall, ipv6_source, ipv6_destination,
+                             17, 49152, 53) == ZD_FW_DENY);
+    assert(ipv6_firewall.stats.flows == 1 &&
+           ipv6_firewall.stats.denied == 1);
+    assert(net_fw_remove(&ipv6_firewall,
+                         ipv6_firewall.rules[0].id) == 0);
+    assert(net_fw_add(&ipv6_firewall, &(struct zd_fw_rule) {
+                          .dir = ZD_FW_OUT, .proto = ZD_FW_UDP,
+                          .action = ZD_FW_ALLOW
+                      }, 0) == 0);
+    assert(net_fw_check_ipv6(&ipv6_firewall, ipv6_source, ipv6_destination,
+                             17, 49152, 53) == ZD_FW_ALLOW);
+    assert(net_fw_check_ipv6(&ipv6_firewall, ipv6_source, ipv6_destination,
+                             58, 0, 0) == ZD_FW_DENY);
+    assert(ipv6_firewall.stats.flows == 3 &&
+           ipv6_firewall.stats.allowed == 1 &&
+           ipv6_firewall.stats.denied == 2);
 
     assert(netif_init(&interface, "tx0", 1, local_mac, 1500, &capture,
                       transmit, lock_noop, unlock_noop) == 0);
@@ -197,6 +228,19 @@ int main(void) {
     assert(interface.stats.tx_dropped == 1);
     assert(stack.stats.udp_transmitted == 2 && stack.stats.transmit_errors == 5);
     capture.fail = 0;
+    sandbox_enforce_all(&stack.sandbox);
+    uint64_t tx_before_sandbox=stack.stats.udp_transmitted;
+    assert(net_stack_send_udp_ipv4(&stack, &interface, remote_mac, remote_ip,
+                                   1, 2, payload, sizeof(payload)) == -3);
+    assert(stack.stats.udp_transmitted==tx_before_sandbox);
+    struct zd_sandbox_rule allow_interface = {
+        .action=ZD_SANDBOX_ALLOW, .resource=ZD_SANDBOX_RES_NETWORK
+    };
+    memcpy(allow_interface.target,"tx0",4);
+    assert(sandbox_add_rule(&stack.sandbox,&allow_interface)==0);
+    assert(net_stack_send_udp_ipv4(&stack, &interface, remote_mac, remote_ip,
+                                   1, 2, payload, sizeof(payload)) == 0);
+    assert(stack.stats.udp_transmitted==tx_before_sandbox+1);
     assert(netif_set_link(&interface, 0) == 0);
     assert(net_stack_send_udp_ipv4(&stack, &interface, remote_mac, remote_ip,
                                    1, 2, payload, sizeof(payload)) == -1);

@@ -26,7 +26,10 @@ struct net_stack_stats {
 };
 
 /* Caller serializes state access. IPv4 is default-deny through firewall;
- * IPv6 is intentionally unsupported until an explicit IPv6 policy exists. */
+ * IPv6 is intentionally unsupported until an explicit IPv6 policy exists.
+ * When sandbox enforcement is enabled, network traffic is also scoped to
+ * explicit interface-name grants. This is system/interface policy, not
+ * per-process attribution. */
 struct net_stack {
     struct zd_fw ipv4_firewall;
     struct zd_sandbox sandbox;

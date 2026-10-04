@@ -827,7 +827,7 @@ A. Must be proven by soak testing on the relevant evidence class.
 ## 27. CURRENT REPOSITORY CONTEXT TO PRESERVE
 
 - Repository: priyanshagrahari54-blip/zeroos
-- Master hardening checklist: docs/ZEROOS_10_STAGE_HARDENING.md
+- Master hardening checklist: [`ZEROOS_10_STAGE_HARDENING.md`](./ZEROOS_10_STAGE_HARDENING.md)
 - Validation source: docs/VALIDATION.md
 - AI handoff source: docs/ZEROOS_AI_HANDOFF.md
 - Core roadmap: docs/ZEROOS_MASTER_ROADMAP.md

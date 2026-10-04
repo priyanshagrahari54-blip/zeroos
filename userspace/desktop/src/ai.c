@@ -12,6 +12,12 @@ static void wipe_request(struct zd_ai_request *req) {
     req->active = 0;
 }
 
+static void wipe_output(char *output, uint32_t capacity) {
+    volatile char *bytes=(volatile char *)output;
+    for (uint32_t i=0; i<capacity; ++i)
+        bytes[i]=0;
+}
+
 void zd_ai_broker_init(struct zd_ai_broker *broker,
                        const struct zd_ai_ops *ops, uint32_t grants) {
     uint32_t i;
@@ -42,6 +48,9 @@ int zd_ai_submit(struct zd_ai_broker *broker,
     uint32_t i;
 
     if (!broker || !request)
+        return -ZD_EINVAL;
+    if (request->kind < ZD_AI_REQ_COMPLETE ||
+        request->kind > ZD_AI_REQ_COMMAND || request->want_remote > 1)
         return -ZD_EINVAL;
     /* Permission gate: requested context must be fully granted. */
     if (request->context_mask & ~broker->grants) {
@@ -82,7 +91,7 @@ int zd_ai_drain(struct zd_ai_broker *broker, uint32_t max_out,
     while (broker->queued && done < max_out && guard < ZD_AI_QUEUE_DEPTH) {
         struct zd_ai_request *req = 0;
         enum zd_ai_backend backend = ZD_AI_BACKEND_NONE;
-        char out[128];
+        char out[128]={0};
         uint32_t out_len = 0;
         uint32_t i;
         int rc;
@@ -95,6 +104,13 @@ int zd_ai_drain(struct zd_ai_broker *broker, uint32_t max_out,
             }
         if (!req)
             break;
+
+        if (req->context_mask & ~broker->grants) {
+            broker->stats.denied_permission++;
+            wipe_request(req);
+            broker->queued--;
+            continue;
+        }
 
         if (!broker->ops.select_backend || !broker->ops.run) {
             /* Missing hooks are failures, never silent successes. */
@@ -112,6 +128,13 @@ int zd_ai_drain(struct zd_ai_broker *broker, uint32_t max_out,
             broker->queued--;
             continue;
         }
+        if (backend != ZD_AI_BACKEND_LOCAL &&
+            backend != ZD_AI_BACKEND_REMOTE) {
+            broker->stats.run_failures++;
+            wipe_request(req);
+            broker->queued--;
+            continue;
+        }
         /* Remote egress requires the grant: downgrade to local. */
         if (backend == ZD_AI_BACKEND_REMOTE &&
             !(broker->grants & ZD_AI_GRANT_REMOTE_EGRESS)) {
@@ -123,18 +146,14 @@ int zd_ai_drain(struct zd_ai_broker *broker, uint32_t max_out,
                              (uint32_t)sizeof(out), &out_len);
         wipe_request(req); /* minimal resident state: payload gone */
         broker->queued--;
-        if (rc != 0) {
+        wipe_output(out,(uint32_t)sizeof(out));
+        if (rc != 0 || out_len > sizeof(out)) {
             broker->stats.run_failures++;
             continue;
         }
         broker->stats.completed++;
         done++;
 
-        if (!(broker->grants & ZD_AI_GRANT_PERSIST)) {
-            uint32_t k;
-            for (k = 0; k < sizeof(out); ++k)
-                out[k] = 0;
-        }
     }
 
     if (broker->queued == 0)

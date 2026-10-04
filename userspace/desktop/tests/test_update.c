@@ -57,6 +57,15 @@ void zd_test_update_suite(void) {
     zd_update_init(&u, 0); /* no hooks: pipeline still valid */
     ZD_CHECK(zd_update_begin(&u, 0) == -22);
     ZD_CHECK(zd_update_begin(&u, "") == -22);
+    {
+        char too_long[sizeof(u.version)+1U];
+        for (uint32_t i=0; i<sizeof(too_long)-1U; ++i)
+            too_long[i]='v';
+        too_long[sizeof(too_long)-1U]=0;
+        ZD_CHECK(zd_update_begin(&u,too_long)==-22);
+        ZD_CHECK_EQ(u.state,ZD_UPD_IDLE);
+        ZD_CHECK_EQ(u.stats.started,0U);
+    }
     ZD_CHECK(zd_update_event(&u, 999) == -22);
     ZD_CHECK(zd_update_event(&u, ZD_UPD_EV_HEALTH_OK) == -22);
     ZD_CHECK(u.stats.rejected_events >= 2);
@@ -132,7 +141,7 @@ void zd_test_update_suite(void) {
     zd_update_event(&u, ZD_UPD_EV_ROLLBACK_DONE);
     ZD_CHECK(zd_update_state(&u) == ZD_UPD_FAILED);
 
-    /* commit hook failure -> FAILED, not DONE */
+    /* commit hook failure -> ROLLING_BACK, then FAILED after rollback */
     log = (struct hook_log){0, 0, 0, 0, 0, 1, 0};
     zd_update_init(&u, &ops);
     zd_update_begin(&u, "5.3.2");
@@ -143,8 +152,13 @@ void zd_test_update_suite(void) {
     zd_update_event(&u, ZD_UPD_EV_ACTIVATE_OK);
     zd_update_event(&u, ZD_UPD_EV_HEALTH_OK);
     ZD_CHECK(zd_update_event(&u, ZD_UPD_EV_COMMIT_OK) == -5);
-    ZD_CHECK(zd_update_state(&u) == ZD_UPD_FAILED);
+    ZD_CHECK(zd_update_state(&u) == ZD_UPD_ROLLING_BACK);
+    ZD_CHECK(log.commit == 1 && log.rollback == 0);
     ZD_CHECK(u.stats.committed == 0);
+    ZD_CHECK(zd_update_event(&u, ZD_UPD_EV_ROLLBACK_DONE) == 0);
+    ZD_CHECK(zd_update_state(&u) == ZD_UPD_FAILED);
+    ZD_CHECK(log.rollback == 1);
+    ZD_CHECK_EQ(u.stats.rollbacks, 1);
 
     /* rollback hook failure -> FAILED, completed-rollback not counted */
     log = (struct hook_log){0, 0, 0, 0, 0, 0, 1};
@@ -179,6 +193,8 @@ void zd_test_update_suite(void) {
     /* AEAD payload verification (real crypto, no mocks) */
     {
         uint8_t key[32], nonce[12], tag[16], payload[64], out_buf[64];
+        char max_version[64];
+        char overlong_version[65];
         uint32_t i;
         for (i = 0; i < 32; ++i)
             key[i] = (uint8_t)(i * 3 + 7);
@@ -217,5 +233,20 @@ void zd_test_update_suite(void) {
         ZD_CHECK(zd_update_verify_payload(key, nonce, "5.2.0", out_buf,
                                           ZD_UPDATE_VERIFY_MAX + 1,
                                           tag) == -22);
+        for (i = 0; i < sizeof(max_version) - 1U; ++i)
+            max_version[i] = 'v';
+        max_version[sizeof(max_version) - 1U] = 0;
+        ZD_CHECK(zeroos_aead_encrypt(key, nonce,
+                                     (const uint8_t *)max_version,
+                                     sizeof(max_version) - 1U,
+                                     payload, sizeof(payload), out_buf,
+                                     tag) == 0);
+        ZD_CHECK(zd_update_verify_payload(key, nonce, max_version, out_buf,
+                                          sizeof(payload), tag) == 0);
+        for (i = 0; i < sizeof(overlong_version); ++i)
+            overlong_version[i] = 'v';
+        ZD_CHECK(zd_update_verify_payload(key, nonce, overlong_version,
+                                          out_buf, sizeof(payload), tag) ==
+                 -22);
     }
 }

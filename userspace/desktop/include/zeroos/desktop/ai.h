@@ -86,14 +86,16 @@ void zd_ai_revoke(struct zd_ai_broker *broker, uint32_t mask);
 
 /* Enqueue a request.  Context bits not covered by grants are rejected
  * up front (-ZD_EPERM) before any backend sees the payload.  A full
- * queue drops the request (-ZD_ENOSPC) and counts it.  Waking a
- * dormant broker counts a wakeup.  Returns 0 on acceptance. */
+ * queue drops the request (-ZD_ENOSPC) and counts it. Invalid request
+ * kinds and non-boolean want_remote values return -ZD_EINVAL. Waking a
+ * dormant broker counts a wakeup. Returns 0 on acceptance. */
 int zd_ai_submit(struct zd_ai_broker *broker,
                  const struct zd_ai_request *request);
 
 /* Drain up to max_out requests: permission-gated backend selection,
  * remote->local downgrade when the egress grant is absent, execution
- * through the injected run op, then payload wipe (unless PERSIST).
+ * through the injected run op, reject invalid backend/output results,
+ * then payload wipe (unless PERSIST).
  * Returns number completed in *completed_out; 0 with the broker
  * returning to DORMANT when the queue is empty. */
 int zd_ai_drain(struct zd_ai_broker *broker, uint32_t max_out,

@@ -29,7 +29,8 @@ static void verify_register_integrity(uint64_t rbx, uint64_t rbp, uint64_t r12, 
  * Stress task: rapidly yields and verifies its own state.
  */
 void stress_task_entry(void *arg) {
-    uint64_t tid = (uint64_t)arg;
+    uint32_t task_id=(uint32_t)(uintptr_t)arg;
+    uint64_t tid=(uint64_t)task_id;
 
     // Load callee-saved registers with the Task ID
     __asm__ volatile (
@@ -43,7 +44,8 @@ void stress_task_entry(void *arg) {
     );
 
     for (int i = 0; i < 10000; ++i) {
-        // Verify integrity before yielding
+        uint64_t rbx, rbp, r12, r13, r14, r15;
+
         __asm__ volatile (
             "movq %%rbx, %0\n\t"
             "movq %%rbp, %1\n\t"
@@ -51,15 +53,18 @@ void stress_task_entry(void *arg) {
             "movq %%r13, %3\n\t"
             "movq %%r14, %4\n\t"
             "movq %%r15, %5\n\t"
-            : "=r"(tid), "=r"(tid), "=r"(tid), "=r"(tid), "=r"(tid), "=r"(tid)
+            : "=m"(rbx), "=m"(rbp), "=m"(r12), "=m"(r13), "=m"(r14), "=m"(r15)
             : : "rbx", "rbp", "r12", "r13", "r14", "r15"
         );
 
-        verify_register_integrity(tid, tid, tid, tid, tid, tid, (uint32_t)tid);
+        verify_register_integrity(rbx, rbp, r12, r13, r14, r15, task_id);
 
-        // Randomly choose between yield and short sleep to stress different paths
+        /* Mix voluntary yield with timed sleep/preemption. */
         if (i % 10 == 0) {
-            scheduler_sleep_ticks(1);
+            if (scheduler_sleep_ticks(1)!=0) {
+                serial_write_public("ZEROOS STRESS PANIC: timed sleep failed.\n");
+                for (;;) __asm__ volatile ("cli; hlt");
+            }
         } else {
             scheduler_yield();
         }

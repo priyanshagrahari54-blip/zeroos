@@ -537,7 +537,8 @@ int ipc_pipe_write_timeout(struct process *owner, zeroos_ipc_handle_t handle,
             spin_unlock_irqrestore(&ipc_lock,irq_flags);
             return -ZEROOS_EPIPE;
         }
-        if (peer->byte_count>ZEROOS_IPC_PIPE_CAPACITY-length) {
+        uint64_t available=ZEROOS_IPC_PIPE_CAPACITY-peer->byte_count;
+        if (available==0) {
             if (flags&ZEROOS_IPC_FLAG_NONBLOCK) {
                 spin_unlock_irqrestore(&ipc_lock,irq_flags);
                 return -ZEROOS_EAGAIN;
@@ -566,6 +567,8 @@ int ipc_pipe_write_timeout(struct process *owner, zeroos_ipc_handle_t handle,
             }
             continue;
         }
+        if (length>available)
+            length=available;
         for (uint64_t i=0; i<length; ++i)
             peer->bytes[(peer->byte_tail+i)%ZEROOS_IPC_PIPE_CAPACITY]=
                 ((const uint8_t *)data)[i];

@@ -35,7 +35,12 @@ Record app/version, runtime version, CPU/GPU/RAM, driver, display, workload, res
 Compatibility process crash -> restart/diagnose. GPU fault -> reset/recover where possible. Memory pressure -> suspend/terminate by policy. Never let compatibility code silently elevate privilege or corrupt native user data.
 
 ## 8.10 Testing
-PE malformed input, DLL/import errors, API edge cases, thread races, filesystem isolation, network policy, graphics translation, Android package permissions, runtime startup/shutdown, suspend/resume, OOM, thermal pressure, long-run soak and update/rollback.
+PE malformed input must include overlapping virtual and raw section extents as
+well as truncation and out-of-bounds cases. DLL/import errors, API edge cases,
+thread races, filesystem isolation, network policy, graphics translation,
+Android package permissions, runtime startup/shutdown, suspend/resume, OOM,
+thermal pressure, long-run soak and update/rollback also require executable
+evidence.
 
 ## Exit gate
 Only tested application/runtime combinations may be presented as supported. Native ZEROOS must remain fully operational with Windows/Android disabled.

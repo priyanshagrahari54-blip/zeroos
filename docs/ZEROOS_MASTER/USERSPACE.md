@@ -169,15 +169,18 @@ and requires the sender to complete; this covers the opposite backpressure
 wake direction rather than relying only on service receive wakeups.
 
 `PIPE_CREATE`, `PIPE_WRITE`, and `PIPE_READ` expose a bounded byte stream with
-`ZEROOS_IPC_PIPE_CAPACITY` bytes of kernel buffering. A write blocks until the
-whole requested chunk fits (or returns `EAGAIN`, `ETIMEDOUT`, `EINTR`, or
-`EPIPE`); a read returns any available bytes up to the requested capacity and
-may split one write across multiple reads. `PEEK` copies without consuming and
-therefore does not wake blocked writers. After the peer closes, buffered bytes
-remain readable and the empty pipe returns `EPIPE`. Pipe endpoints use the same
-generation-tagged handles, rights, wait-queue publication, cancellation, and
-rollback rules as message IPC, while the message channel retains its discrete
-record semantics.
+`ZEROOS_IPC_PIPE_CAPACITY` bytes of kernel buffering. A write transfers and
+returns the exact positive number of bytes that fit now, up to the requested
+length; it returns `EAGAIN` (nonblocking), waits (blocking), or returns the
+appropriate timeout/interruption/peer-close error only when no space is
+available. A request larger than pipe capacity therefore completes as a
+partial write and must be retried by the caller. A read returns any available
+bytes up to the requested capacity and may split a write across multiple reads.
+`PEEK` copies without consuming and therefore does not wake blocked writers.
+After the peer closes, buffered bytes remain readable and the empty pipe
+returns `EPIPE`. Pipe endpoints use the same generation-tagged handles, rights,
+wait-queue publication, cancellation, and rollback rules as message IPC, while
+the message channel retains its discrete record semantics.
 
 `EVENT_CREATE` returns a signal handle and a wait handle. `EVENT_SIGNAL` sets a
 single pending bit on the peer and wakes one waiter; repeated signals while the
@@ -266,6 +269,12 @@ exercises cross-process capability transfer, least-privilege rights,
 backpressure/endpoint lifetime, blocking wakeup, failure detection, restart,
 address-space teardown, and no-stale-capability cleanup in the normal
 scheduler path.
+
+The pipe IPC guest test fills a byte stream, blocks a writer thread on a full
+pipe, consumes one byte from the peer, and verifies the writer wakes and
+appends its byte after the existing data. A separate assertion covers exact
+partial-write count and ordering. These are QEMU guest checks; they do not
+replace multi-producer/consumer stress or cross-process lifetime testing.
 
 The service image is a static ET_EXEC with the same RX code and RW/NX data
 policy as init. The worker's IPC handle, controller PID, and restart-specific

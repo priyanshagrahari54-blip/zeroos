@@ -60,9 +60,11 @@ static struct zd_rect clamp_to_monitor(const struct zd_monitor *monitor,
         rect.x = workarea.x;
     if (rect.y < workarea.y)
         rect.y = workarea.y;
-    if (rect.x + rect.w > workarea.x + workarea.w)
+    if ((int64_t)rect.x + rect.w >
+        (int64_t)workarea.x + workarea.w)
         rect.x = workarea.x + workarea.w - rect.w;
-    if (rect.y + rect.h > workarea.y + workarea.h)
+    if ((int64_t)rect.y + rect.h >
+        (int64_t)workarea.y + workarea.h)
         rect.y = workarea.y + workarea.h - rect.h;
     return rect;
 }
@@ -179,10 +181,27 @@ void zd_wm_init(struct zd_wm *wm) {
 int zd_wm_add_monitor(struct zd_wm *wm, const struct zd_monitor *monitor) {
     struct zd_monitor *slot;
     if (!wm || !monitor || monitor->enabled == 0 ||
-        zd_rect_empty(monitor->bounds) ||
+        !zd_rect_bounds_valid(monitor->bounds) ||
         monitor->scale_percent < 50 || monitor->scale_percent > 400 ||
         wm->monitor_count >= ZD_MAX_MONITORS)
         return -ZD_EINVAL;
+    {
+        int64_t min_x=monitor->bounds.x;
+        int64_t min_y=monitor->bounds.y;
+        int64_t max_x=(int64_t)monitor->bounds.x+monitor->bounds.w;
+        int64_t max_y=(int64_t)monitor->bounds.y+monitor->bounds.h;
+        for (uint32_t i=0; i<wm->monitor_count; ++i) {
+            const struct zd_rect bounds=wm->monitors[i].bounds;
+            int64_t right=(int64_t)bounds.x+bounds.w;
+            int64_t bottom=(int64_t)bounds.y+bounds.h;
+            if (bounds.x<min_x) min_x=bounds.x;
+            if (bounds.y<min_y) min_y=bounds.y;
+            if (right>max_x) max_x=right;
+            if (bottom>max_y) max_y=bottom;
+        }
+        if (max_x-min_x>INT32_MAX || max_y-min_y>INT32_MAX)
+            return -ZD_EINVAL;
+    }
     if (zd_wm_monitor(wm, monitor->id))
         return -ZD_EBUSY;
     slot = &wm->monitors[wm->monitor_count];
@@ -231,7 +250,8 @@ int zd_wm_create_window(struct zd_wm *wm,
     struct zd_monitor *monitor;
     zd_window_id id;
 
-    if (!wm || !info || info->client == 0 || zd_rect_empty(info->logical_rect))
+    if (!wm || !info || info->client == 0 ||
+        !zd_rect_bounds_valid(info->logical_rect))
         return -ZD_EINVAL;
     if (wm->window_count >= ZD_MAX_WINDOWS)
         return -ZD_ENOSPC;

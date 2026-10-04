@@ -127,12 +127,17 @@ int zd_lifecycle_dispatch(struct zd_lifecycle *lifecycle,
                           enum zd_lifecycle_event event, uint64_t now_ns) {
     enum zd_lifecycle_state previous;
     enum zd_lifecycle_state next;
-    uint32_t index;
     uint32_t slot;
     uint32_t listener;
     (void)now_ns;
 
     if (!lifecycle || (int)event >= ZD_LIFECYCLE_EVENT_COUNT || event < 0)
+        return -ZD_EINVAL;
+    if ((int)lifecycle->state < 0 ||
+        lifecycle->state >= ZD_LIFECYCLE_STATE_COUNT ||
+        lifecycle->listener_count > ZD_LIFECYCLE_MAX_LISTENERS ||
+        lifecycle->history_head >= ZD_LIFECYCLE_MAX_HISTORY ||
+        lifecycle->history_count > ZD_LIFECYCLE_MAX_HISTORY)
         return -ZD_EINVAL;
     previous = lifecycle->state;
     next = (enum zd_lifecycle_state)lifecycle_table[previous][event];
@@ -157,7 +162,6 @@ int zd_lifecycle_dispatch(struct zd_lifecycle *lifecycle,
     for (listener = 0; listener < lifecycle->listener_count; ++listener)
         lifecycle->listeners[listener].callback(
             lifecycle->listeners[listener].context, previous, next, event);
-    (void)index;
     return 0;
 }
 

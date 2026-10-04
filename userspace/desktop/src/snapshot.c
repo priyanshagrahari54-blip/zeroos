@@ -49,6 +49,35 @@ static int sn_inflight(const struct zd_snapshots *s) {
     return -1;
 }
 
+static int sn_free_update_slot(struct zd_snapshots *s,
+                               const char *protected_name) {
+    int candidate = -1;
+    uint32_t oldest_seq = 0;
+
+    for (int i = 0; i < ZD_SNAP_MAX; ++i)
+        if (s->slots[i].state == ZD_SNAP_EMPTY)
+            return 0;
+
+    for (int i = 0; i < ZD_SNAP_MAX; ++i) {
+        const struct zd_snapshot *slot = &s->slots[i];
+        if (slot->state == ZD_SNAP_EMPTY ||
+            (protected_name && sn_eq(slot->name, protected_name)))
+            continue;
+        if (slot->state == ZD_SNAP_FAILED) {
+            candidate = i;
+            break;
+        }
+        if (slot->state == ZD_SNAP_READY &&
+            (candidate < 0 || slot->seq < oldest_seq)) {
+            candidate = i;
+            oldest_seq = slot->seq;
+        }
+    }
+    if (candidate < 0)
+        return -28;
+    return zd_snapshots_discard(s, s->slots[candidate].name);
+}
+
 void zd_snapshots_init(struct zd_snapshots *s,
                        const struct zd_snapshot_ops *ops) {
     int i;
@@ -61,6 +90,7 @@ void zd_snapshots_init(struct zd_snapshots *s,
         s->slots[i].last_error = 0;
     }
     s->ops = ops ? *ops : (struct zd_snapshot_ops){0, 0, 0, 0};
+    s->update_rollback_name[0] = 0;
     s->next_seq = 1;
     s->stats.created = s->stats.create_failed = 0;
     s->stats.restored = s->stats.restore_failed = 0;
@@ -223,31 +253,47 @@ int zd_snapshots_discard(struct zd_snapshots *s, const char *name) {
 
 static int sn_upd_stage(void *ctx) {
     struct zd_snapshots *s = ctx;
+    const char *previous;
+    const char *candidate;
     int r;
     if (!s)
         return -22;
-    /* replace a stale capture from a previous attempt: absent (-2)
-     * is fine, any other error aborts staging fail-closed */
+    previous = s->update_rollback_name[0] ? s->update_rollback_name : 0;
+    candidate = previous && sn_eq(previous, "update-a") ?
+                "update-b" : "update-a";
+    /* Capture into the inactive slot first. A failed capture must not destroy
+     * the last known-good rollback point. */
     {
-        int d = zd_snapshots_discard(s, "update");
+        int d = zd_snapshots_discard(s, candidate);
         if (d < 0 && d != -2)
             return d;
     }
-    r = zd_snapshots_create(s, "update");
+    r = sn_free_update_slot(s, previous);
     if (r < 0)
         return r;
-    return zd_snapshots_create_finish(s, 0);
+    r = zd_snapshots_create(s, candidate);
+    if (r < 0)
+        return r;
+    r = zd_snapshots_create_finish(s, 0);
+    if (r < 0)
+        return r;
+    if (previous) {
+        r = zd_snapshots_discard(s, previous);
+        if (r < 0)
+            return r;
+    }
+    sn_copy(s->update_rollback_name, sizeof(s->update_rollback_name),
+            candidate);
+    return 0;
 }
 
 static int sn_upd_rollback(void *ctx) {
     struct zd_snapshots *s = ctx;
-    struct zd_snapshot *latest;
     if (!s)
         return -22;
-    latest = zd_snapshots_latest_ready(s);
-    if (!latest)
+    if (!s->update_rollback_name[0])
         return -2; /* nothing to restore: caller must fail closed */
-    return zd_snapshots_restore(s, latest->name);
+    return zd_snapshots_restore(s, s->update_rollback_name);
 }
 
 int zd_snapshots_bind_update(struct zd_snapshots *s,

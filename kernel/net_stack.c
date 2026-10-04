@@ -57,6 +57,14 @@ static int ethernet_destination_allowed(const struct netif *interface,
     return 0;
 }
 
+static int sandbox_network_allowed(struct net_stack *stack,
+                                   const struct netif *interface) {
+    if (!stack->sandbox.enforced)
+        return 1;
+    return sandbox_enforce(&stack->sandbox, ZD_SANDBOX_RES_NETWORK,
+                           interface->name) == ZD_SANDBOX_ALLOW;
+}
+
 void net_stack_init(struct net_stack *stack, net_stack_udp_fn udp_receive,
                     void *context) {
     if (!stack)
@@ -101,6 +109,10 @@ int net_stack_input(struct net_stack *stack, const struct netif *interface,
         stack->stats.policy_drops++;
         return 1;
     }
+    if (!sandbox_network_allowed(stack, interface)) {
+        stack->stats.policy_drops++;
+        return 1;
+    }
 
     if (ethernet.ethertype == NET_STACK_ETHERTYPE_IPV4) {
         struct net_ipv4_view ipv4;
@@ -117,15 +129,48 @@ int net_stack_input(struct net_stack *stack, const struct netif *interface,
             stack->stats.policy_drops++;
             return 1;
         }
+        uint32_t ip_length = ipv4.total_length;
         if (ipv4.is_fragment) {
             stack->stats.fragments++;
             return 1; /* No fragment reassembly or partial UDP delivery. */
+        }
+        uint32_t transport_length = ip_length - ipv4.header_length;
+        if (ipv4.protocol == 6U || ipv4.protocol == 1U) {
+            struct zd_fw_flow flow = {
+                .dir = ZD_FW_IN,
+                .proto = ipv4.protocol == 6U ? ZD_FW_TCP : ZD_FW_ICMP,
+                .src_ip = ipv4.source,
+                .dst_ip = ipv4.destination,
+                .conn_known = 0,
+                .app_id = ""
+            };
+            const uint8_t *transport =
+                ethernet.payload + ipv4.header_length;
+
+            if (ipv4.protocol == 6U) {
+                if (transport_length < 20U ||
+                    (uint32_t)(transport[12] >> 4) * 4U < 20U ||
+                    (uint32_t)(transport[12] >> 4) * 4U > transport_length) {
+                    stack->stats.malformed++;
+                    return -1;
+                }
+                flow.src_port = read_be16(transport);
+                flow.dst_port = read_be16(transport + 2U);
+            } else if (transport_length < 4U) {
+                stack->stats.malformed++;
+                return -1;
+            }
+            if (net_fw_decide(&stack->ipv4_firewall, &flow) != ZD_FW_ALLOW) {
+                stack->stats.policy_drops++;
+                return 1;
+            }
+            stack->stats.unsupported++;
+            return 1;
         }
         if (ipv4.protocol != NET_STACK_PROTOCOL_UDP || !stack->udp_receive) {
             stack->stats.unsupported++;
             return 1;
         }
-        uint32_t ip_length = ipv4.total_length;
         if (ip_length < ipv4.header_length ||
             net_udp_parse(ethernet.payload + ipv4.header_length,
                           ip_length - ipv4.header_length, &udp) != 0 ||
@@ -269,6 +314,10 @@ int net_stack_send_udp_ipv4(struct net_stack *stack, struct netif *interface,
         .app_id = ""
     };
     if (net_fw_decide(&stack->ipv4_firewall, &flow) != ZD_FW_ALLOW) {
+        stack->stats.policy_drops++;
+        return -3;
+    }
+    if (!sandbox_network_allowed(stack, interface)) {
         stack->stats.policy_drops++;
         return -3;
     }

@@ -40,15 +40,24 @@ static inline int zd_rect_empty(struct zd_rect rect) {
     return rect.w <= 0 || rect.h <= 0;
 }
 
+static inline int zd_rect_bounds_valid(struct zd_rect rect) {
+    return !zd_rect_empty(rect) &&
+           (int64_t)rect.x + rect.w <= INT32_MAX &&
+           (int64_t)rect.y + rect.h <= INT32_MAX;
+}
+
 static inline int zd_rect_contains(struct zd_rect rect, int32_t x, int32_t y) {
     return !zd_rect_empty(rect) && x >= rect.x && y >= rect.y &&
-           x < rect.x + rect.w && y < rect.y + rect.h;
+           (int64_t)x < (int64_t)rect.x + rect.w &&
+           (int64_t)y < (int64_t)rect.y + rect.h;
 }
 
 static inline int zd_rect_intersects(struct zd_rect a, struct zd_rect b) {
     return !zd_rect_empty(a) && !zd_rect_empty(b) &&
-           a.x < b.x + b.w && b.x < a.x + a.w &&
-           a.y < b.y + b.h && b.y < a.y + a.h;
+           (int64_t)a.x < (int64_t)b.x + b.w &&
+           (int64_t)b.x < (int64_t)a.x + a.w &&
+           (int64_t)a.y < (int64_t)b.y + b.h &&
+           (int64_t)b.y < (int64_t)a.y + a.h;
 }
 
 static inline struct zd_rect zd_rect_intersection(struct zd_rect a,
@@ -56,12 +65,14 @@ static inline struct zd_rect zd_rect_intersection(struct zd_rect a,
     struct zd_rect out;
     int32_t x0 = a.x > b.x ? a.x : b.x;
     int32_t y0 = a.y > b.y ? a.y : b.y;
-    int32_t x1 = (a.x + a.w) < (b.x + b.w) ? (a.x + a.w) : (b.x + b.w);
-    int32_t y1 = (a.y + a.h) < (b.y + b.h) ? (a.y + a.h) : (b.y + b.h);
+    int64_t ax1=(int64_t)a.x+a.w, bx1=(int64_t)b.x+b.w;
+    int64_t ay1=(int64_t)a.y+a.h, by1=(int64_t)b.y+b.h;
+    int64_t x1=ax1<bx1 ? ax1 : bx1;
+    int64_t y1=ay1<by1 ? ay1 : by1;
     out.x = x0;
     out.y = y0;
-    out.w = x1 > x0 ? x1 - x0 : 0;
-    out.h = y1 > y0 ? y1 - y0 : 0;
+    out.w = x1 > x0 ? (int32_t)(x1-x0) : 0;
+    out.h = y1 > y0 ? (int32_t)(y1-y0) : 0;
     return out;
 }
 

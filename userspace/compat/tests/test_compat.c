@@ -17,6 +17,12 @@ static const char *current = "";
                     current, #expr);                                         \
         }                                                                    \
     } while (0)
+#define MK_TWO_SECTIONS() do {                                              \
+        MK_BASE();                                                          \
+        img[0x86]=2;                                                        \
+        img[0x1b8]=0x00; img[0x1b9]=0x01;                                   \
+        img[0x1bc]=0x00; img[0x1bd]=0x03;                                   \
+    } while (0)
 
 #define RUN(fn)                                                              \
     do {                                                                     \
@@ -176,7 +182,7 @@ static void test_dlls(void) {
 
 
 static void test_pe(void) {
-    static uint8_t img[512];
+    static uint8_t img[1024];
     struct zpe_info info;
     int rc;
 
@@ -192,7 +198,9 @@ static void test_pe(void) {
         img[0x98]=0x0b; img[0x99]=0x02;                                     \
         img[0xA8]=0x10;                                                     \
         img[0xD0]=0x00; img[0xD1]=0x10;                                     \
-        img[0xD4]=0x00; img[0xD5]=0x01;                                     \
+        img[0xD4]=0x00; img[0xD5]=0x02;                                     \
+        img[0x190]=0x00; img[0x191]=0x01;                                   \
+        img[0x194]=0x00; img[0x195]=0x02;                                   \
     } while (0)
 
     MK_BASE();
@@ -226,6 +234,10 @@ static void test_pe(void) {
     MK_BASE(); img[0x98]=0x0b; img[0x99]=0x01;  /* PE32 not PE32+ */
     CHECK(zpe_validate(img, 512, &info) == ZPE_UNSUPPORTED_FORMAT);
 
+    /* Declared optional header does not contain SizeOfImage/Headers. */
+    MK_BASE(); img[0x94]=24; img[0x95]=0;
+    CHECK(zpe_validate(img, 512, &info) == ZPE_TRUNCATED);
+
     MK_BASE(); img[0x86]=40;                    /* section table overrun */
     CHECK(zpe_validate(img, 512, &info) == ZPE_TRUNCATED);
 
@@ -240,7 +252,31 @@ static void test_pe(void) {
 
     MK_BASE(); img[0x94]=0xff; img[0x95]=0xff;  /* opt hdr beyond file */
     CHECK(zpe_validate(img, 512, &info) == ZPE_TRUNCATED);
+
+    MK_BASE(); img[0x194]=0x00; img[0x195]=0x10; /* section VA outside image */
+    CHECK(zpe_validate(img,512,&info)==ZPE_BAD_LAYOUT);
+
+    MK_BASE(); img[0x198]=0x01; img[0x19c]=0x00; img[0x19d]=0x04;
+    /* raw range exceeds file */
+    CHECK(zpe_validate(img,512,&info)==ZPE_BAD_LAYOUT);
+
+    MK_BASE(); img[0x194]=0x00; img[0x195]=0x01; /* overlaps headers */
+    CHECK(zpe_validate(img,512,&info)==ZPE_BAD_LAYOUT);
+
+    MK_BASE(); img[0xD4]=0x00; img[0xD5]=0x01; /* table not in headers */
+    CHECK(zpe_validate(img,512,&info)==ZPE_BAD_LAYOUT);
+
+    MK_TWO_SECTIONS();
+    CHECK(zpe_validate(img,sizeof(img),&info)==ZPE_OK);
+    MK_TWO_SECTIONS();
+    img[0x1bc]=0x80; img[0x1bd]=0x02; /* virtual ranges overlap */
+    CHECK(zpe_validate(img,sizeof(img),&info)==ZPE_BAD_LAYOUT);
+    MK_TWO_SECTIONS();
+    img[0x198]=0x20; img[0x19c]=0x00; img[0x19d]=0x02;
+    img[0x1c0]=0x20; img[0x1c4]=0x10; img[0x1c5]=0x02;
+    CHECK(zpe_validate(img,sizeof(img),&info)==ZPE_BAD_LAYOUT);
 #undef MK_BASE
+#undef MK_TWO_SECTIONS
 }
 
 int main(void) {

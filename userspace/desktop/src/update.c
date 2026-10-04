@@ -39,30 +39,21 @@ int zd_update_can_cancel(const struct zd_update *u) {
            u->state == ZD_UPD_STAGING || u->state == ZD_UPD_PREFLIGHT;
 }
 
-static void upd_copy(char *d, unsigned cap, const char *s) {
-    unsigned i = 0;
-    if (!d || !cap)
-        return;
-    if (!s) {
-        d[0] = 0;
-        return;
-    }
-    while (s[i] && i + 1 < cap) {
-        d[i] = s[i];
-        ++i;
-    }
-    d[i] = 0;
-}
-
 int zd_update_begin(struct zd_update *u, const char *version) {
+    uint32_t version_length=0;
     if (!u || !version || !version[0])
+        return -22;
+    while (version_length<sizeof(u->version) && version[version_length])
+        ++version_length;
+    if (version_length==sizeof(u->version))
         return -22;
     if (upd_active(u->state))
         return -16; /* EBUSY: a lifecycle is already running */
     u->state = ZD_UPD_DOWNLOADING;
     u->seq++;
     u->stats.started++;
-    upd_copy(u->version, sizeof(u->version), version);
+    for (uint32_t i=0; i<=version_length; ++i)
+        u->version[i]=version[i];
     return 0;
 }
 
@@ -171,7 +162,8 @@ int zd_update_event(struct zd_update *u, int event) {
         if (u->ops.commit) {
             int r = u->ops.commit(u->ops.ctx);
             if (r < 0) {
-                upd_fail(u);
+                u->state = ZD_UPD_ROLLING_BACK;
+                u->seq++;
                 return r;
             }
         }
@@ -227,7 +219,7 @@ int zd_update_verify_payload(const uint8_t key[32], const uint8_t nonce[12],
         return -22;
     if (payload_len == 0 || payload_len > ZD_UPDATE_VERIFY_MAX)
         return -22;
-    while (version[vlen] && vlen < 64u)
+    while (vlen < 64u && version[vlen])
         ++vlen;
     if (vlen == 0 || vlen >= 64u)
         return -22;

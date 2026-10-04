@@ -4,6 +4,7 @@ set -euo pipefail
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
 required_patterns=(
+  "ZEROOS: scheduler context bounds self-test passed."
   "ZEROOS: scheduler deterministic trace: 01-02-04-08-10-20-40."
   "ZEROOS: scheduler certification passed."
   "ZEROOS PANIC: scheduler panic diagnostics self-test"

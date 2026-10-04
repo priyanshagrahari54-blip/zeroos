@@ -136,6 +136,15 @@ Create one coherent diagnostics model for:
 Universal diagnostics should answer, where evidence permits:
 "what failed?", "what changed?", "what is consuming resources?", and "what recovery action is safe?"
 
+### Operational reliability
+
+- Define service-level indicators and objectives only for services with a meaningful user-facing reliability target. State the event, numerator, denominator, measurement window, and evidence source; do not invent availability targets for an OS that is not operated as a service.
+- Use reliability objectives as engineering decision aids. When a target is missed, prioritize understanding and reducing the failure rate before increasing risky change; do not treat an error budget as a substitute for release gates.
+- Alert only on actionable conditions with an owner and a documented response. Keep diagnostic evidence (timestamps, build/commit, configuration, logs, and relevant counters) sufficient to reconstruct impact and sequence of events.
+- Maintain concise runbooks for supported operational/recovery paths. They must identify the symptom, safe containment steps, decision owner, evidence to preserve, recovery/rollback reference, and escalation boundary. Keep detailed update, recovery, and release procedures in their existing Stage 6, Stage 10, and validation documents.
+- For incidents affecting users, data integrity, security boundaries, or release confidence, record impact and timeline, review contributing system/process factors without blame, and track preventive actions to completion. A small project may combine response roles, but must still name an incident owner.
+- Distinguish automated gates from manual procedures, and mark unverified operational capabilities as pending rather than claiming they are operationally ready.
+
 ## 8. Identity, Accounts and Sessions
 
 Define:

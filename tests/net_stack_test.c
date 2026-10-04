@@ -63,6 +63,32 @@ static void make_ipv4_udp(uint8_t *frame, uint16_t fragment, int bad_udp_checksu
     udp[6]=(uint8_t)(uc>>8); udp[7]=(uint8_t)uc;
 }
 
+static uint32_t make_ipv4_protocol(uint8_t *frame, uint8_t protocol) {
+    static const uint8_t local_mac[6]={0x02,0,0,0,0,1};
+    const uint32_t transport_length = protocol == 6U ? 20U : 8U;
+    const uint32_t frame_length = 14U + 20U + transport_length;
+    memset(frame,0,frame_length);
+    memcpy(frame,local_mac,sizeof(local_mac));
+    for (uint32_t i=0;i<6;i++) frame[6+i]=(uint8_t)(0x10U+i);
+    frame[12]=0x08; frame[13]=0x00;
+    uint8_t *ip=frame+14;
+    ip[0]=0x45; ip[2]=(uint8_t)((20U+transport_length)>>8);
+    ip[3]=(uint8_t)(20U+transport_length); ip[8]=64; ip[9]=protocol;
+    ip[12]=192; ip[13]=0; ip[14]=2; ip[15]=1;
+    ip[16]=192; ip[17]=0; ip[18]=2; ip[19]=2;
+    uint8_t *transport=ip+20;
+    if (protocol == 6U) {
+        transport[0]=0x04; transport[1]=0xd2;
+        transport[2]=0x01; transport[3]=0xbb;
+        transport[12]=0x50; transport[13]=0x02;
+    } else {
+        transport[0]=8; /* Echo request; checksum enforcement is separate. */
+    }
+    uint16_t c=checksum(sum_bytes(0,ip,20));
+    ip[10]=(uint8_t)(c>>8); ip[11]=(uint8_t)c;
+    return frame_length;
+}
+
 int main(void) {
     struct netif interface;
     struct net_stack stack;
@@ -172,5 +198,60 @@ int main(void) {
     assert(socket_payload[0]=='n' && socket_payload[2]=='t');
     assert(net_udp_socket_receive(&sockets,7,socket_handle,socket_payload,
                                   sizeof(socket_payload),&socket_info)==-1);
+
+    /* TCP and ICMP ingress must pass the firewall before being rejected as
+     * unsupported transports; an allow rule does not imply protocol support. */
+    struct zd_fw_rule tcp_rule = {
+        .dir=ZD_FW_IN, .proto=ZD_FW_TCP, .action=ZD_FW_DENY,
+        .port_lo=443, .port_hi=443
+    };
+    assert(net_fw_add(&stack.ipv4_firewall,&tcp_rule,1)==0);
+    uint8_t policy_frame[64];
+    uint32_t policy_length=make_ipv4_protocol(policy_frame,6);
+    uint64_t denied_before=stack.ipv4_firewall.stats.denied;
+    assert(net_stack_input(&stack,&interface,policy_frame,policy_length)==1);
+    assert(stack.ipv4_firewall.stats.denied==denied_before+1);
+    assert(net_fw_remove(&stack.ipv4_firewall,
+                         stack.ipv4_firewall.rules[0].id)==0);
+    tcp_rule.action=ZD_FW_ALLOW;
+    assert(net_fw_add(&stack.ipv4_firewall,&tcp_rule,0)==0);
+    uint64_t allowed_before=stack.ipv4_firewall.stats.allowed;
+    assert(net_stack_input(&stack,&interface,policy_frame,policy_length)==1);
+    assert(stack.ipv4_firewall.stats.allowed==allowed_before+1);
+    assert(stack.stats.unsupported==1);
+    policy_frame[14U+20U+12U]=0x40; /* TCP data offset below minimum. */
+    policy_frame[14U+10U]=policy_frame[14U+11U]=0;
+    uint16_t policy_ip_checksum=checksum(sum_bytes(0,policy_frame+14U,20U));
+    policy_frame[14U+10U]=(uint8_t)(policy_ip_checksum>>8);
+    policy_frame[14U+11U]=(uint8_t)policy_ip_checksum;
+    assert(net_stack_input(&stack,&interface,policy_frame,policy_length)==-1);
+
+    struct zd_fw_rule icmp_rule = {
+        .dir=ZD_FW_IN, .proto=ZD_FW_ICMP, .action=ZD_FW_ALLOW
+    };
+    assert(net_fw_add(&stack.ipv4_firewall,&icmp_rule,0)==0);
+    policy_length=make_ipv4_protocol(policy_frame,1);
+    allowed_before=stack.ipv4_firewall.stats.allowed;
+    assert(net_stack_input(&stack,&interface,policy_frame,policy_length)==1);
+    assert(stack.ipv4_firewall.stats.allowed==allowed_before+1);
+    assert(stack.stats.unsupported==2);
+
+    /* The kernel sandbox's interface-scoped network gate sits before UDP
+     * delivery, and an allow must name the actual ingress interface. */
+    net_stack_init(&stack,net_udp_socket_dispatch,&sockets);
+    assert(net_stack_set_ipv4_address(&stack,0xc0000202U)==0);
+    assert(net_fw_add(&stack.ipv4_firewall,&rule,0)==0);
+    sandbox_enforce_all(&stack.sandbox);
+    make_ipv4_udp(frame,0,0);
+    assert(net_stack_input(&stack,&interface,frame,sizeof(frame))==1);
+    assert(stack.stats.policy_drops==1);
+    struct zd_sandbox_rule allow_ingress = {
+        .action=ZD_SANDBOX_ALLOW, .resource=ZD_SANDBOX_RES_NETWORK
+    };
+    memcpy(allow_ingress.target,"test0",6);
+    assert(sandbox_add_rule(&stack.sandbox,&allow_ingress)==0);
+    assert(net_stack_input(&stack,&interface,frame,sizeof(frame))==0);
+    assert(net_udp_socket_receive(&sockets,42,socket_handle,socket_payload,
+                                  sizeof(socket_payload),&socket_info)==0);
     return 0;
 }

@@ -31,6 +31,15 @@ static int ops_select_denied(void *ctx, const struct zd_ai_request *r,
     return -ZD_EPERM;
 }
 
+static int ops_select_invalid(void *ctx, const struct zd_ai_request *r,
+                              uint32_t grants, enum zd_ai_backend *out) {
+    (void)ctx;
+    (void)r;
+    (void)grants;
+    *out = (enum zd_ai_backend)99;
+    return 0;
+}
+
 static int ops_run_ok(void *ctx, enum zd_ai_backend backend,
                       const struct zd_ai_request *req, char *out,
                       uint32_t out_cap, uint32_t *out_len) {
@@ -57,6 +66,26 @@ static int ops_run_fail(void *ctx, enum zd_ai_backend backend,
     (void)out_cap;
     (void)out_len;
     return -1;
+}
+
+static uint32_t backend_run_count;
+
+static int ops_run_counted(void *ctx, enum zd_ai_backend backend,
+                           const struct zd_ai_request *req, char *out,
+                           uint32_t out_cap, uint32_t *out_len) {
+    ++backend_run_count;
+    return ops_run_ok(ctx, backend, req, out, out_cap, out_len);
+}
+
+static int ops_run_bad_length(void *ctx, enum zd_ai_backend backend,
+                              const struct zd_ai_request *req, char *out,
+                              uint32_t out_cap, uint32_t *out_len) {
+    (void)ctx;
+    (void)backend;
+    (void)req;
+    (void)out;
+    *out_len = out_cap + 1;
+    return 0;
 }
 
 static struct zd_ai_request make_req(uint32_t id, uint32_t ctx_mask,
@@ -95,16 +124,18 @@ static void test_permission_gate(void) {
     ZD_CHECK_EQ(b.active, 1);
     ZD_CHECK_EQ(b.stats.wakeups, 1u);
 
-    /* Revoke before drain: request already accepted, backend selection
-     * under current grants decides. */
+    /* Revoke before drain: the broker itself must prevent context reaching a
+     * backend, regardless of what a backend selector would choose. */
     zd_ai_revoke(&b, ZD_AI_GRANT_CONTEXT_FILES);
     {
-        struct zd_ai_ops ops = {ops_select_denied, ops_run_ok, 0};
+        struct zd_ai_ops ops = {ops_select_local, ops_run_counted, 0};
         b.ops = ops;
     }
+    backend_run_count = 0;
     ZD_CHECK_OK(zd_ai_drain(&b, 8, &done));
     ZD_CHECK_EQ(done, 0);
     ZD_CHECK_EQ(b.stats.denied_permission, 2u);
+    ZD_CHECK_EQ(backend_run_count, 0u);
     ZD_CHECK_EQ(b.queued, 0);
     ZD_CHECK_EQ(b.active, 0); /* dormant again */
 }
@@ -206,6 +237,48 @@ static void test_failure_paths(void) {
     ZD_CHECK_EQ(zd_ai_drain(&b, 4, 0), -ZD_EINVAL); /* null out */
 }
 
+static void test_malformed_request_and_backend_output(void) {
+    struct zd_ai_broker b;
+    struct zd_ai_request r = make_req(9, 0, 0);
+    uint32_t done = 0;
+
+    zd_ai_broker_init(&b, 0, ZD_AI_GRANT_ALL);
+    r.kind = (enum zd_ai_request_kind)99;
+    ZD_CHECK_EQ(zd_ai_submit(&b, &r), -ZD_EINVAL);
+    r = make_req(10, 0, 0);
+    r.want_remote = 2;
+    ZD_CHECK_EQ(zd_ai_submit(&b, &r), -ZD_EINVAL);
+    ZD_CHECK_EQ(b.queued, 0);
+    ZD_CHECK_EQ(b.active, 0);
+    ZD_CHECK_EQ(b.stats.submitted, 0u);
+
+    {
+        struct zd_ai_ops ops = {ops_select_invalid, ops_run_ok, 0};
+        zd_ai_broker_init(&b, &ops, ZD_AI_GRANT_ALL);
+    }
+    r = make_req(11, 0, 0);
+    ZD_CHECK_OK(zd_ai_submit(&b, &r));
+    ZD_CHECK_OK(zd_ai_drain(&b, 4, &done));
+    ZD_CHECK_EQ(done, 0);
+    ZD_CHECK_EQ(b.stats.run_failures, 1u);
+    ZD_CHECK_EQ(b.stats.completed, 0u);
+    ZD_CHECK_EQ(b.queued, 0);
+    ZD_CHECK_EQ(b.active, 0);
+
+    {
+        struct zd_ai_ops ops = {ops_select_local, ops_run_bad_length, 0};
+        zd_ai_broker_init(&b, &ops, ZD_AI_GRANT_ALL);
+    }
+    r = make_req(12, 0, 0);
+    ZD_CHECK_OK(zd_ai_submit(&b, &r));
+    ZD_CHECK_OK(zd_ai_drain(&b, 4, &done));
+    ZD_CHECK_EQ(done, 0);
+    ZD_CHECK_EQ(b.stats.run_failures, 1u);
+    ZD_CHECK_EQ(b.stats.completed, 0u);
+    ZD_CHECK_EQ(b.queued, 0);
+    ZD_CHECK_EQ(b.active, 0);
+}
+
 /* --- minimal resident state ------------------------------------------ */
 
 static void test_minimal_resident_state(void) {
@@ -242,5 +315,6 @@ void zd_test_ai_suite(void) {
     ZD_RUN(test_remote_downgrade);
     ZD_RUN(test_queue_bounds);
     ZD_RUN(test_failure_paths);
+    ZD_RUN(test_malformed_request_and_backend_output);
     ZD_RUN(test_minimal_resident_state);
 }

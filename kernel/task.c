@@ -85,25 +85,65 @@ static int task_stack_guard_ok(const struct task *task) {
            *(const uint64_t *)(uint64_t)task->stack_base == ZEROOS_TASK_STACK_GUARD;
 }
 
+static int task_stack_bounds_valid(const struct task *task) {
+    return task && task->stack_base &&
+           task->stack_base<=~0ULL-ZEROOS_TASK_STACK_SIZE;
+}
+
 static int task_saved_stack_ok(const struct task *task) {
     uint64_t sp;
-    if (!task || !task->stack_base || task->saved_stack==0)
+    if (!task_stack_bounds_valid(task) || task->saved_stack==0)
         return 0;
     sp=task->saved_stack;
+    /* context_switch_ex restores six registers and then reads a return
+     * address: the complete resumable frame occupies seven words. */
     return (sp & 7ULL)==0 &&
            sp >= task->stack_base &&
-           sp < task->stack_base + ZEROOS_TASK_STACK_SIZE;
+           sp-task->stack_base <= ZEROOS_TASK_STACK_SIZE-7ULL*sizeof(uint64_t);
 }
 
 static int task_frame_ok(const struct task *task,
                          const struct interrupt_frame *frame) {
     uint64_t fp;
-    if (!task || !task->stack_base || !frame)
+    if (!task_stack_bounds_valid(task) || !frame)
         return 0;
     fp=(uint64_t)frame;
     return (fp & 7ULL)==0 &&
            fp >= task->stack_base &&
-           fp + sizeof(*frame) <= task->stack_base + ZEROOS_TASK_STACK_SIZE;
+           fp-task->stack_base <= ZEROOS_TASK_STACK_SIZE-sizeof(*frame);
+}
+
+static int task_context_bounds_self_test(void) {
+    struct task probe={0};
+    const uint64_t base=0x1000ULL;
+    const struct interrupt_frame *frame;
+
+    probe.stack_base=base;
+    probe.saved_stack=base+ZEROOS_TASK_STACK_SIZE-7ULL*sizeof(uint64_t);
+    if (!task_saved_stack_ok(&probe))
+        return -1;
+    probe.saved_stack=base+ZEROOS_TASK_STACK_SIZE-sizeof(uint64_t);
+    if (task_saved_stack_ok(&probe))
+        return -1;
+
+    frame=(const struct interrupt_frame *)(uintptr_t)
+          (base+ZEROOS_TASK_STACK_SIZE-sizeof(*frame));
+    if (!task_frame_ok(&probe,frame))
+        return -1;
+    frame=(const struct interrupt_frame *)(uintptr_t)
+          (base+ZEROOS_TASK_STACK_SIZE-sizeof(*frame)+8ULL);
+    if (task_frame_ok(&probe,frame))
+        return -1;
+
+    /* This near-UINT64_MAX range used to wrap its computed stack end and
+     * could make an interrupt frame straddling address zero appear valid. */
+    probe.stack_base=~0ULL-8191ULL;
+    probe.saved_stack=~0ULL-7ULL;
+    frame=(const struct interrupt_frame *)(uintptr_t)probe.saved_stack;
+    if (task_stack_bounds_valid(&probe) || task_saved_stack_ok(&probe) ||
+        task_frame_ok(&probe,frame))
+        return -1;
+    return 0;
 }
 
 static int task_saved_context_ok(const struct task *task) {
@@ -121,8 +161,7 @@ static int task_saved_context_ok(const struct task *task) {
 
 static void task_saved_context_panic(const struct task *task) {
     uint64_t rip=0;
-    if (task && task->saved_stack &&
-        task->stack_base && task->saved_stack + 48ULL < task->stack_base + ZEROOS_TASK_STACK_SIZE)
+    if (task_saved_stack_ok(task))
         rip=*(const uint64_t *)(task->saved_stack + 48ULL);
 
     task_debug_dump_all("saved-context invariant dump");
@@ -1016,6 +1055,9 @@ int task_system_init(void) {
 
     if (online==0 || online>ZEROOS_MAX_CPUS)
         return -1;
+    if (task_context_bounds_self_test()!=0)
+        return -1;
+    serial_write_public("ZEROOS: scheduler context bounds self-test passed.\n");
 
     for (int i=0;i<ZEROOS_MAX_TASKS;++i) {
         tasks[i].id=0;
@@ -1284,9 +1326,7 @@ static void task_debug_dump_all(const char *label) {
         serial_write_public(" saved=");
         task_write_u64(task->saved_stack);
 
-        if (task->saved_stack &&
-            task->stack_base &&
-            task->saved_stack + 48ULL < task->stack_base + ZEROOS_TASK_STACK_SIZE) {
+        if (task_saved_stack_ok(task)) {
             serial_write_public(" rip=");
             task_write_u64(*(const uint64_t *)(task->saved_stack + 48ULL));
         }

@@ -54,6 +54,8 @@ int net_fw_check_tcp(const struct zd_fw *fw,
 int net_fw_check_icmp(const struct zd_fw *fw,
                       uint32_t src_ip, uint32_t dst_ip,
                       uint8_t icmp_type, uint8_t icmp_code);
+/* Fails closed for unsupported next headers and matching address-scoped
+ * rules because the current rule format stores IPv4 ranges. */
 int net_fw_check_ipv6(const struct zd_fw *fw,
                       const uint8_t src[16],
                       const uint8_t dst[16],

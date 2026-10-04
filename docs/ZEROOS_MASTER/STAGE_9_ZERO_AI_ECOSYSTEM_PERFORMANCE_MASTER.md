@@ -12,6 +12,8 @@ ZERO AI must never have unrestricted kernel access. Core OS must boot and operat
 
 ## 9.2 Permission broker
 Capabilities include filesystem read/write scope, process actions, settings changes, package/update actions, network egress, device access, secrets and automation. Each action carries principal, scope, expiry, confirmation policy and audit identity.
+Context grants are revalidated immediately before backend execution; revocation
+while work is queued must prevent that context from reaching any backend.
 
 ## 9.3 Context engine
 Context providers expose only minimum necessary data: active window/app, selected text, files explicitly granted, system diagnostics, calendar/study context where enabled and relevant device state. Sensitive buffers have bounded lifetime and explicit wipe/release policy.

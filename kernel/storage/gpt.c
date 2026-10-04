@@ -80,7 +80,7 @@ static int gpt_check_header(struct block_device *disk, uint64_t lba,
 
     if (my_lba!=lba)
         return GPT_ERR_MY_LBA;
-    if (primary ? (alternate==0 || alternate>last || alternate==1ULL)
+    if (primary ? (alternate!=last)
                 : (alternate!=1ULL))
         return GPT_ERR_ALTERNATE;
     if (entry_size<128U || entry_size>1024U || (entry_size&(entry_size-1U)) ||
@@ -155,21 +155,38 @@ static int gpt_parse_entries(const uint8_t *header, const uint8_t *entries,
 }
 
 int gpt_scan(struct block_device *disk, struct gpt_result *result) {
-    uint32_t ss=disk->sector_size;
     uint64_t entry_pages=(GPT_MAX_ENTRIES*1024ULL+ZEROOS_PAGE_SIZE-1ULL)/ZEROOS_PAGE_SIZE;
-    /* page 0: sector scratch, page 1: primary header, page 2: backup. */
-    uint8_t *sector=(uint8_t *)page_alloc_contiguous(3);
-    uint8_t *entries=(uint8_t *)page_alloc_contiguous(entry_pages);
-    uint8_t *primary_header=sector+ZEROOS_PAGE_SIZE;
-    uint8_t *backup_header=sector+2U*ZEROOS_PAGE_SIZE;
+    uint8_t *sector;
+    uint8_t *entries;
+    uint8_t *primary_header;
+    uint8_t *backup_header;
+    uint32_t ss;
     uint64_t bytes=0;
+
+    if (!result)
+        return -SE_INVAL;
     memset(result,0,sizeof(*result));
-    if (!sector || !entries || ss>4096U || disk->sectors<68ULL) {
+    if (!disk) {
+        result->primary_status=result->backup_status=GPT_ERR_ENTRY_GEOMETRY;
+        return -SE_INVAL;
+    }
+    ss=disk->sector_size;
+    if (ss<512U || ss>4096U || (ss&(ss-1U)) || disk->sectors<68ULL) {
+        result->primary_status=result->backup_status=GPT_ERR_ENTRY_GEOMETRY;
+        return -SE_INVAL;
+    }
+
+    /* page 0: sector scratch, page 1: primary header, page 2: backup. */
+    sector=(uint8_t *)page_alloc_contiguous(3);
+    entries=(uint8_t *)page_alloc_contiguous(entry_pages);
+    if (!sector || !entries) {
         if (sector) page_free_contiguous(sector,3);
         if (entries) page_free_contiguous(entries,entry_pages);
         result->primary_status=result->backup_status=GPT_ERR_NO_MEMORY;
         return -SE_NOMEM;
     }
+    primary_header=sector+ZEROOS_PAGE_SIZE;
+    backup_header=sector+2U*ZEROOS_PAGE_SIZE;
     if (block_rw(disk,BLOCK_OP_READ,0,sector,ss,BLOCK_PRIO_NORMAL)==0 &&
         sector[510]==0x55 && sector[511]==0xaa) {
         for (uint32_t i=0; i<4; ++i)
@@ -180,9 +197,6 @@ int gpt_scan(struct block_device *disk, struct gpt_result *result) {
                                             primary_header);
     uint64_t backup_lba=disk->sectors-1ULL;
     if (result->primary_status==GPT_OK) {
-        uint64_t alternate=rd64(primary_header+32);
-        if (alternate!=backup_lba)
-            backup_lba=alternate;       /* validated <= last by the check */
         result->primary_status=gpt_parse_entries(primary_header,entries,result);
     }
     /* Always verify the backup so damage is reported, not discovered later. */

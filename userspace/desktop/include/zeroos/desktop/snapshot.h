@@ -38,6 +38,7 @@ struct zd_snapshot {
 struct zd_snapshots {
     struct zd_snapshot slots[ZD_SNAP_MAX];
     struct zd_snapshot_ops ops;
+    char update_rollback_name[ZD_SNAP_NAME];
     uint32_t next_seq;
     struct {
         uint32_t created, create_failed, restored, restore_failed,
@@ -62,12 +63,11 @@ struct zd_snapshot *zd_snapshots_find(struct zd_snapshots *s,
 struct zd_snapshot *zd_snapshots_latest_ready(struct zd_snapshots *s);
 uint32_t zd_snapshots_ready_count(const struct zd_snapshots *s);
 
-/* Production glue (part B): fill `out` with update-pipeline hooks
- * backed by this manager.  stage_apply captures a fresh "update"
- * snapshot (replacing a stale one; capture errors abort staging),
- * rollback restores the newest READY snapshot (none available ->
- * -2, which the update machine converts to FAILED — atomic, never a
- * silent half-rollback).  activate/commit stay NULL: A/B slot flips
+/* Update glue alternates update-a/update-b, captures into the inactive
+ * slot, and preserves the current rollback snapshot until replacement
+ * capture succeeds. At capacity it may discard only a non-active snapshot;
+ * rollback restores the exact snapshot recorded for the update. A missing
+ * active snapshot fails closed. activate/commit stay NULL: A/B slot flips
  * belong to the block layer, not to snapshot state. */
 int zd_snapshots_bind_update(struct zd_snapshots *s,
                              struct zd_update_ops *out);

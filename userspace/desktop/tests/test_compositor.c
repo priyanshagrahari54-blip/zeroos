@@ -125,6 +125,21 @@ static void test_scene_sync_and_damage(void) {
     }
 }
 
+static void test_rectangle_overflow_boundaries(void) {
+    struct zd_rect a={INT32_MAX-10,0,20,10};
+    struct zd_rect b={INT32_MAX-2,2,20,5};
+    struct zd_rect intersection;
+    ZD_CHECK(zd_rect_contains(a,INT32_MAX,1));
+    ZD_CHECK(zd_rect_intersects(a,b));
+    intersection=zd_rect_intersection(a,b);
+    ZD_CHECK_EQ(intersection.x,INT32_MAX-2);
+    ZD_CHECK_EQ(intersection.y,2);
+    ZD_CHECK_EQ(intersection.w,12);
+    ZD_CHECK_EQ(intersection.h,5);
+    ZD_CHECK(zd_rect_bounds_valid((struct zd_rect){INT32_MAX-10,0,10,1}));
+    ZD_CHECK(!zd_rect_bounds_valid((struct zd_rect){INT32_MAX-10,0,11,1}));
+}
+
 static void test_present_writes_only_damage(void) {
     struct zd_bitmap target;
     int written;
@@ -326,6 +341,7 @@ static void test_damage_storm_stress(void) {
 
 void zd_test_compositor_suite(void) {
     printf(" suite: compositor\n");
+    ZD_RUN(test_rectangle_overflow_boundaries);
     ZD_RUN(test_scene_sync_and_damage);
     ZD_RUN(test_present_writes_only_damage);
     ZD_RUN(test_frame_pacing);

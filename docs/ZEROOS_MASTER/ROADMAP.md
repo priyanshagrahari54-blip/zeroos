@@ -48,7 +48,15 @@ The detailed product plan remains in ZEROOS_MASTER_ROADMAP.md.
     (sandbox/firewall/media/eco/clipboard counters -> documented
     risk ladder).  Directional firewall enforcement is bound to the IPv4/UDP
     packet-stack ingress and egress paths and host-tested; live device/service
-    integration plus TCP, ICMP and IPv6 enforcement remain open.
+    integration remains open. An interface-targeted kernel sandbox gate now
+    blocks network ingress/egress unless the interface is explicitly allowed;
+    per-process/service identity attribution remains open. TCP and ICMP ingress now consults directional
+    firewall policy before the unsupported-transport drop; allowing either
+    protocol does not claim transport support, and TCP checksum/connection
+    handling plus ICMP delivery remain open. The
+    IPv6 helper fails closed for unsupported next headers and IPv4-address-
+    scoped rules; family-aware IPv6 rules and live IPv6 packet-path enforcement
+    remain open.
 12. Study Center and app framework.
     Status: flashcard/spaced-repetition scheduler and focus sessions
     host-tested (Stage 5); the PDF subset contract (page tree, Tj/TJ

@@ -98,6 +98,13 @@ int storage_selftest_gpt(void) {
     uint8_t *sector=entries+4U*ZEROOS_PAGE_SIZE;
     static struct gpt_result result;
     TG_CHECK(disk && entries,"setup");
+    struct block_device invalid_disk={0};
+    invalid_disk.sector_size=256;
+    invalid_disk.sectors=128;
+    TG_CHECK(gpt_scan(0,&result)==-SE_INVAL &&
+             gpt_scan(disk,0)==-SE_INVAL &&
+             gpt_scan(&invalid_disk,&result)==-SE_INVAL,
+             "null arguments and invalid sector geometry rejected");
     uint64_t last=disk->sectors-1ULL;
     struct tg_part good[2]={
         {2048,4095,gpt_type_zeroos_zjfs},
@@ -191,6 +198,11 @@ int storage_selftest_gpt(void) {
     tg_edit_header(disk,1,12,600,4,0,sector);
     TG_CHECK(gpt_scan(disk,&result)==0 &&
              result.primary_status==GPT_ERR_HEADER_SIZE,"header size validated");
+    tg_build(disk,good,2,entries,sector);
+    tg_edit_header(disk,1,32,last-1ULL,8,1,sector);
+    TG_CHECK(gpt_scan(disk,&result)==0 && result.used_backup &&
+             result.primary_status==GPT_ERR_ALTERNATE,
+             "primary alternate must identify final disk LBA");
 
     /* 10. registration exposes bounded, correctly offset partitions */
     tg_build(disk,good,2,entries,sector);
