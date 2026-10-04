@@ -323,3 +323,14 @@ G560 reference validation must measure:
 - security isolation.
 
 No target is considered achieved from documentation alone.
+
+
+## 22. G560 Input / Shortcut / Touchpad Preset
+
+G560 default input profile is **Keyboard + Precision Touchpad Legacy** and is fully remappable.
+
+Core defaults: Ctrl+C/X/V copy/cut/paste, Ctrl+Shift+V plain paste, Ctrl+A select all, Ctrl+Z/Y undo/redo, Ctrl+F find, Alt+Tab switching, Alt+F4 close, Win+D desktop, Win+Tab overview, Win+Arrow snap/window state, Win+Ctrl+Arrow workspace switching, Win+S Universal Search, Win+I ZERO Control, Win+E Files, Win+L lock, PrtSc/Alt+PrtSc/Shift+PrtSc screenshot modes, F11 fullscreen, Esc dismiss.
+
+Touchpad defaults: tap/left-click, two-finger secondary click, two-finger scroll, pinch zoom, two-finger navigation, three-finger workspace/app switching, three-finger overview, configurable four-finger actions. Settings include natural/traditional scroll, pointer speed, acceleration, tap-to-click, palm rejection, button mapping and per-device profiles.
+
+Clipboard history, screenshot/recording, emoji picker, command palette and accessibility controls are event-driven and dormant when unused. Sensitive clipboard data can be excluded from history/sync. Global security/recovery shortcuts cannot be overridden by applications.
