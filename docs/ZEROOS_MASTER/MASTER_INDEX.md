@@ -1,197 +1,45 @@
 # ZEROOS — MASTER DOCUMENT INDEX
-Version: 1.0
+Version: 2.0
 
-This file is the navigation layer for the ZEROOS documentation set.
+This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md` remains the canonical consolidated product/architecture specification. Stage 6-10 execution is split into dedicated production master documents so an implementation agent can work one stage at a time without losing cross-cutting requirements.
 
 ## Source-of-truth hierarchy
+1. `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md` — canonical consolidated system/product specification.
+2. `ZEROOS_MASTER_ROADMAP.md` — authoritative execution order and stage gates.
+3. `STAGE_6_SECURITY_UPDATE_RECOVERY_MASTER.md` — Stage 6 execution contract.
+4. `STAGE_7_GPU_MEDIA_BROWSER_APPS_MASTER.md` — Stage 7 execution contract.
+5. `STAGE_8_WINDOWS_ANDROID_GAMING_MASTER.md` — Stage 8 execution contract.
+6. `STAGE_9_ZERO_AI_ECOSYSTEM_PERFORMANCE_MASTER.md` — Stage 9 execution contract.
+7. `STAGE_10_CERTIFICATION_RELEASE_MASTER.md` — Stage 10 certification/release contract.
+8. `ZEROOS_MASTER_IMPLEMENTATION_PROMPT.md` — implementation-agent operating contract.
+9. `ZEROOS_MASTER_CONTRACT_AND_FEATURE_EXPANSION.md` — cross-cutting engineering/product contract.
+10. `ZEROOS_MASTER_BLUEPRINT.md`, `PRD.md`, `ARCHITECTURE.md`, `TECHSPEC.md`, `RULES.md`, `AGENTS.md`, `PHASES.md`, `MEMORY.md`, `VALIDATION.md` and subsystem specifications — supporting source documents.
 
-1. `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md` — canonical consolidated product, architecture, requirements, roadmap, hardening, micro-requirements, AI handoff, UI/UX and hardware-experience specification.
-2. `ZEROOS_MASTER_IMPLEMENTATION_PROMPT.md` — canonical implementation-agent execution contract.
-3. `ZEROOS_MASTER_BLUEPRINT.md` — what ZEROOS is and the target system architecture.
-4. `ZEROOS_MASTER_ROADMAP.md` — execution order and current engineering priority.
-5. `PRD.md` — product requirements and feature acceptance.
-6. `ARCHITECTURE.md` — subsystem boundaries and ownership.
-7. `TECHSPEC.md` — technical contracts and implementation requirements.
-8. `RULES.md` — non-negotiable engineering rules.
-9. `AGENTS.md` — instructions for AI/human implementation agents.
-10. `PHASES.md` — phase/stage/substage development plan.
-11. `MEMORY.md` — memory/state/resource lifecycle contract.
-12. `VALIDATION.md` — Stage 5 evidence ledger and support matrix.
-13. Existing subsystem specifications — detailed contracts for boot, scheduler, processes, interrupts, synchronization, virtual memory, GDT/TSS and hardware.
+## Stage 6-10 rule
+Stages are dependency gates, not feature-quality levels. Every stage starts with the intended production architecture. No placeholder implementation may be introduced solely to move the stage number.
 
-## Current implementation priority
+## Universal execution loop
+AUDIT -> DESIGN -> IMPLEMENT -> TEST -> STRESS -> MEASURE -> DOCUMENT -> INTEGRATE
 
-The repository is not to jump directly into UI, Android, Windows or AI implementation while the kernel scheduler/context lifecycle is unstable.
+## Universal production gate
+A feature is not complete because it parses, detects hardware, has a UI, passes a host test, or has a design. Completion requires real enforcement/operation plus relevant positive, negative, boundary, concurrency, fault, resource and recovery evidence; CI/QEMU/hardware evidence where applicable; measured resource/performance behavior; and synchronized documentation.
 
-Current order:
+## Feature lifecycle
+STOPPED -> DORMANT -> WARM -> ACTIVE -> THROTTLED -> SUSPENDED -> DORMANT/STOPPED
 
-```
-Scheduler/context correctness
-        ↓
-QEMU/CI stability
-        ↓
-Process/thread lifetime
-        ↓
-Ring-3 userspace
-        ↓
-Syscall ABI
-        ↓
-IPC
-        ↓
-Memory maturity
-        ↓
-Drivers + storage + networking
-        ↓
-Graphics/compositor
-        ↓
-Desktop shell
-        ↓
-Native applications
-        ↓
-Security/update/recovery hardening
-        ↓
-Windows/Android compatibility
-        ↓
-AI + ecosystem
-```
+Installed != loaded != running != active. Dormant features must not create unnecessary continuous CPU/GPU/network work.
 
-## Documentation change rule
+## Stage map
+| Stage | Focus | Dedicated plan |
+|---|---|---|
+| 6 | Security, package trust, transactional updates, snapshots, recovery | `STAGE_6_SECURITY_UPDATE_RECOVERY_MASTER.md` |
+| 7 | GPU, compositor acceleration, media, browser, native apps | `STAGE_7_GPU_MEDIA_BROWSER_APPS_MASTER.md` |
+| 8 | Windows, Android, compatibility, gaming | `STAGE_8_WINDOWS_ANDROID_GAMING_MASTER.md` |
+| 9 | ZERO AI, automation, ecosystem, performance/regression | `STAGE_9_ZERO_AI_ECOSYSTEM_PERFORMANCE_MASTER.md` |
+| 10 | Hardware certification, soak, release gates | `STAGE_10_CERTIFICATION_RELEASE_MASTER.md` |
 
-When implementation changes a contract:
-- update the closest subsystem document;
-- update TECHSPEC/ARCHITECTURE if the boundary changes;
-- update PRD if user-visible requirements change;
-- update PHASES/MASTER_ROADMAP if execution order changes;
-- update AGENTS/RULES if the engineering contract changes.
+## Cross-cutting requirements
+See `ZEROOS_MASTER_CONTRACT_AND_FEATURE_EXPANSION.md` for boot/firmware, hardware certification, networking, packages, SDK, observability, accounts, backup/recovery, privacy, supply-chain security, accessibility/i18n, virtualization, power-loss testing, performance/compatibility labs, ZERO AI safety and additional product features.
 
-Documentation and code should describe the same system.
-
-## Status vocabulary
-
-- PLANNED — design exists, implementation not started.
-- IN_PROGRESS — implementation underway.
-- EXPERIMENTAL — usable for testing, contract may change.
-- STABLE — tested contract with CI coverage.
-- PRODUCTION — release-quality with recovery/security validation.
-- DEPRECATED — retained only for migration.
-
-## Feature lifecycle vocabulary
-
-```
-STOPPED
-  ↓
-DORMANT
-  ↓
-WARM
-  ↓
-ACTIVE
-  ↓
-THROTTLED
-  ↓
-SUSPENDED
-  ↓
-DORMANT / STOPPED
-```
-
-The exact states used by a subsystem may be smaller, but its lifecycle must be explicit.
-
-## Resource contract
-
-Every service must define:
-- resident memory;
-- active memory ceiling;
-- CPU/scheduler policy;
-- I/O priority;
-- wake events;
-- background policy;
-- suspend/unload behavior;
-- recovery behavior.
-
-The engineering goal is near-zero unnecessary idle work, not an impossible literal zero-resource guarantee while active.
-
-## Review checklist
-
-Before merging a major subsystem:
-
-- [ ] Requirements mapped to implementation.
-- [ ] Ownership and lifecycle documented.
-- [ ] Public API/ABI documented.
-- [ ] Concurrency reviewed.
-- [ ] Security boundary reviewed.
-- [ ] Failure behavior defined.
-- [ ] Resource behavior measured.
-- [ ] Tests cover positive and negative paths.
-- [ ] QEMU/hardware validation completed where relevant.
-- [ ] Recovery/rollback behavior documented.
-- [ ] Documentation updated with the code.
-
-## Repository map
-
-### Product
-- PRD.md
-- DESIGN_UI_UX.md
-
-### Architecture
-- ZEROOS_MASTER_BLUEPRINT.md
-- ARCHITECTURE.md
-- TECHSPEC.md
-
-### Execution
-- ZEROOS_MASTER_ROADMAP.md
-- PHASES.md
-- AGENTS.md
-
-### Engineering governance
-- RULES.md
-- MEMORY.md
-
-### Existing detailed subsystem documents
-- BOOT_SPEC.md
-- CPU_ARCHITECTURE.md
-- HARDWARE.md
-- ACPI.md
-- GDT_TSS.md
-- INTERRUPTS.md
-- SCHEDULER.md
-- PROCESS.md
-- SYNCHRONIZATION.md
-- VIRTUAL_MEMORY.md
-- BUILD.md
-- USERSPACE.md
-- STORAGE.md (Stage 3 storage stack: block layer, drivers, GPT, page cache, security, recovery)
-- VFS.md (VFS objects, semantics, file syscall ABI)
-- ZJFS.md (initial filesystem format, journaling, fsck)
-
-## Final rule
-
-If two documents conflict, do not silently choose one. Treat the conflict as an architecture issue, resolve it deliberately, then update the affected documents in the same change.
-
-
-## Advanced-First Production Policy
-
-Stage labels define dependency order, not quality level.
-
-ZEROOS must NOT follow “basic foundation now, advanced later”. Every subsystem is designed against its intended production architecture from the beginning. If a dependency blocks activation, implement the dependency-independent production portion and isolate the remaining boundary without creating a throwaway API.
-
-Production status requires, where applicable:
-- correctness and invariant validation;
-- ownership/lifetime/concurrency contracts;
-- security boundaries;
-- bounded CPU/RAM/I/O behavior;
-- diagnostics and observability;
-- failure isolation and recovery;
-- unit/integration/negative/stress/fault tests;
-- QEMU and supported-hardware validation;
-- CI coverage;
-- documentation synchronization.
-
-Canonical implementation prompt: `MASTER_IMPLEMENTATION_PROMPT.md`.
-
-The master prompt is the operational execution contract; this index remains the navigation/source-of-truth map.
-
-
----
-
-## Cross-Cutting Master Contract
-
-See [`ZEROOS_MASTER_CONTRACT_AND_FEATURE_EXPANSION.md`](./ZEROOS_MASTER_CONTRACT_AND_FEATURE_EXPANSION.md) for the mandatory cross-cutting engineering contract and the expanded ZEROOS feature/platform catalog. Applicable requirements cover ownership/lifetime/concurrency, boot/firmware, hardware certification, networking, packages, SDK, observability, accounts, backup/recovery, privacy, supply-chain security, accessibility/i18n, virtualization, power-loss certification, performance/compatibility labs, ZERO AI safety, and additional product features. This is a specification link only; implementation status remains evidence-based.
+## Documentation synchronization
+When implementation changes a contract, update the closest subsystem document and the affected master/roadmap/stage plan in the same change. Never mark an item implemented without evidence.
