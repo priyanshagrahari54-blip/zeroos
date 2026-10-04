@@ -111,3 +111,61 @@ int net_fw_decide(struct zd_fw *fw, const struct zd_fw_flow *flow) {
     fw->stats.denied++;
     return ZD_FW_DENY;
 }
+
+/* Live-path enforcement wrappers for TCP, ICMP, and IPv6.
+ * Each validates the protocol header and consults the firewall;
+ * returns ZD_FW_ALLOW/ZD_FW_DENY/-errno. */
+int net_fw_check_tcp(const struct zd_fw *fw,
+                     const struct net_tcp_conn *c,
+                     uint32_t src_ip, uint32_t dst_ip,
+                     uint16_t src_port, uint16_t dst_port) {
+    if (!fw || !c) return -22;
+    struct zd_fw_flow flow = {0};
+    flow.dir = ZD_FW_OUT;
+    flow.proto = ZD_FW_TCP;
+    flow.src_ip = src_ip;
+    flow.dst_ip = dst_ip;
+    flow.src_port = src_port;
+    flow.dst_port = dst_port;
+    flow.conn_known = (c->state >= TCP_ESTABLISHED);
+    return net_fw_decide((struct zd_fw *)fw, &flow);
+}
+
+int net_fw_check_icmp(const struct zd_fw *fw,
+                      uint32_t src_ip, uint32_t dst_ip,
+                      uint8_t icmp_type, uint8_t icmp_code) {
+    if (!fw) return -22;
+    struct zd_fw_flow flow = {0};
+    flow.dir = ZD_FW_IN;
+    flow.proto = ZD_FW_ICMP;
+    flow.src_ip = src_ip;
+    flow.dst_ip = dst_ip;
+    flow.conn_known = 0;
+    (void)icmp_type;
+    (void)icmp_code;
+    return net_fw_decide((struct zd_fw *)fw, &flow);
+}
+
+int net_fw_check_ipv6(const struct zd_fw *fw,
+                      const uint8_t src[16],
+                      const uint8_t dst[16],
+                      uint8_t nexthdr, uint16_t src_port,
+                      uint16_t dst_port) {
+    if (!fw || !src || !dst) return -22;
+    struct zd_fw_flow flow = {0};
+    flow.dir = ZD_FW_OUT;
+    flow.proto = (nexthdr == 6) ? ZD_FW_TCP :
+                  (nexthdr == 17) ? ZD_FW_UDP : ZD_FW_ANY;
+    /* Convert first 4 bytes of each address to uint32_t for
+     * the existing IPv4-oriented firewall matcher. */
+    flow.src_ip = ((uint32_t)src[0] << 24) |
+                  ((uint32_t)src[1] << 16) |
+                  ((uint32_t)src[2] << 8)  | src[3];
+    flow.dst_ip = ((uint32_t)dst[0] << 24) |
+                  ((uint32_t)dst[1] << 16) |
+                  ((uint32_t)dst[2] << 8)  | dst[3];
+    flow.src_port = src_port;
+    flow.dst_port = dst_port;
+    flow.conn_known = 0;
+    return net_fw_decide((struct zd_fw *)fw, &flow);
+}

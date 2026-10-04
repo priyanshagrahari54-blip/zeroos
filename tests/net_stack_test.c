@@ -133,6 +133,13 @@ int main(void) {
     assert(net_stack_input(&stack,&interface,frame,sizeof(frame))==1);
     assert(stack.stats.policy_drops==4);
 
+    /* Unsupported traffic must fail closed instead of silently passing through
+     * the generic "unsupported" path. */
+    make_ipv4_udp(frame,0,0);
+    frame[12]=0x88; frame[13]=0x88; /* unsupported ethertype */
+    assert(net_stack_input(&stack,&interface,frame,sizeof(frame))==1);
+    assert(stack.stats.policy_drops==5);
+
     /* A bounded poll drains only the caller's budget, leaving work queued. */
     make_ipv4_udp(frame,0,0);
     assert(netif_receive(&interface,frame,sizeof(frame))==0);

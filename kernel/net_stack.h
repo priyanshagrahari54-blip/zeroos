@@ -3,6 +3,7 @@
 #include "firewall.h"
 #include "net_core.h"
 #include "netif.h"
+#include "sandbox.h"
 
 #define NET_STACK_FAMILY_IPV4 4U
 #define NET_STACK_FAMILY_IPV6 6U
@@ -28,6 +29,7 @@ struct net_stack_stats {
  * IPv6 is intentionally unsupported until an explicit IPv6 policy exists. */
 struct net_stack {
     struct zd_fw ipv4_firewall;
+    struct zd_sandbox sandbox;
     net_stack_udp_fn udp_receive;
     void *context;
     uint32_t ipv4_local_address;

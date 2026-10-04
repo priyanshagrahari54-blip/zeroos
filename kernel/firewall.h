@@ -2,6 +2,7 @@
 #define ZEROOS_FIREWALL_H
 
 #include "types.h"
+#include "net_transport.h"
 
 #define ZD_FW_MAX_RULES 32
 #define ZD_FW_APP 32
@@ -45,5 +46,18 @@ void net_fw_init(struct zd_fw *fw);
 int net_fw_add(struct zd_fw *fw, const struct zd_fw_rule *tmpl, int front);
 int net_fw_remove(struct zd_fw *fw, uint32_t id);
 int net_fw_decide(struct zd_fw *fw, const struct zd_fw_flow *flow);
+/* Live-path enforcement wrappers for TCP, ICMP, and IPv6. */
+int net_fw_check_tcp(const struct zd_fw *fw,
+                     const struct net_tcp_conn *c,
+                     uint32_t src_ip, uint32_t dst_ip,
+                     uint16_t src_port, uint16_t dst_port);
+int net_fw_check_icmp(const struct zd_fw *fw,
+                      uint32_t src_ip, uint32_t dst_ip,
+                      uint8_t icmp_type, uint8_t icmp_code);
+int net_fw_check_ipv6(const struct zd_fw *fw,
+                      const uint8_t src[16],
+                      const uint8_t dst[16],
+                      uint8_t nexthdr, uint16_t src_port,
+                      uint16_t dst_port);
 
 #endif

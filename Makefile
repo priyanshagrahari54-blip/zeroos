@@ -20,16 +20,34 @@ CFLAGS += $(EXTRA_CFLAGS)
 ASFLAGS := -m64 -ffreestanding -fno-pic -fno-pie -nostdlib
 LDFLAGS := -m elf_x86_64 -T kernel/linker.ld -nostdlib
 
-.PHONY: all clean elf iso run check storage-tools-check kernel-simd-check userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check
+.PHONY: all clean elf iso run check storage-tools-check stage1-scheduler-cert stage2-userspace-cert stage3-storage-cert stage4-hardware-cert stage5-desktop-cert kernel-simd-check userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check
 
 all: iso
 
-# Reproducible local release gate: compile, ABI, core, desktop,
-# compatibility, storage-image recovery, and SIMD-safety checks before guest boot.
-check: elf userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check storage-tools-check
+# Reproducible local release gate: compile, Stage 1 scheduler certification,
+# Stage 2 userspace certification, Stage 3 storage certification, Stage 4
+# hardware certification, Stage 5 desktop certification, ABI, core,
+# desktop, compatibility, storage-image recovery, and SIMD-safety checks
+# before guest boot.
+check: elf userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check storage-tools-check stage1-scheduler-cert stage2-userspace-cert stage3-storage-cert stage4-hardware-cert stage5-desktop-cert
 
 storage-tools-check:
 	bash tools/storage/host_selftest.sh
+
+stage1-scheduler-cert:
+	bash tools/stage1_scheduler_cert.sh
+
+stage2-userspace-cert:
+	bash tools/stage2_userspace_cert.sh
+
+stage3-storage-cert:
+	bash tools/stage3_storage_cert.sh
+
+stage4-hardware-cert:
+	bash tools/stage4_hardware_cert.sh
+
+stage5-desktop-cert:
+	bash tools/stage5_desktop_cert.sh
 
 elf: $(KERNEL)
 
@@ -192,9 +210,9 @@ hardware-core-test: | $(BUILD)
 	$(BUILD)/mouse-core-test
 	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/netif_test.c kernel/netif.c kernel/net_l2.c -o $(BUILD)/netif-test
 	$(BUILD)/netif-test
-	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/net_stack_test.c kernel/net_stack.c kernel/netif.c kernel/net_l2.c kernel/net_core.c kernel/firewall.c kernel/net_ipv6.c kernel/net_transport.c kernel/net_socket.c -o $(BUILD)/net-stack-test
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/net_stack_test.c kernel/net_stack.c kernel/netif.c kernel/net_l2.c kernel/net_core.c kernel/firewall.c kernel/net_ipv6.c kernel/net_transport.c kernel/net_socket.c kernel/sandbox.c -o $(BUILD)/net-stack-test
 	$(BUILD)/net-stack-test
-	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/net_stack_tx_test.c kernel/net_stack.c kernel/netif.c kernel/net_l2.c kernel/net_core.c kernel/firewall.c kernel/net_ipv6.c kernel/net_transport.c -o $(BUILD)/net-stack-tx-test
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/net_stack_tx_test.c kernel/net_stack.c kernel/netif.c kernel/net_l2.c kernel/net_core.c kernel/firewall.c kernel/net_ipv6.c kernel/net_transport.c kernel/sandbox.c -o $(BUILD)/net-stack-tx-test
 	$(BUILD)/net-stack-tx-test
 	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/net_socket_test.c kernel/net_socket.c -o $(BUILD)/net-socket-test
 	$(BUILD)/net-socket-test
@@ -229,7 +247,7 @@ $(BUILD)/scheduler.o: kernel/scheduler.c kernel/scheduler.h kernel/task.h kernel
 # compiler-generated dependency files so header changes rebuild dependants.
 STORAGE_SRCS := $(wildcard kernel/storage/*.c)
 STORAGE_OBJS := $(patsubst kernel/storage/%.c,$(BUILD)/storage/%.o,$(STORAGE_SRCS))
-INFRA_OBJS := $(BUILD)/ksync.o $(BUILD)/crc.o $(BUILD)/kstring.o $(BUILD)/pci.o
+INFRA_OBJS := $(BUILD)/ksync.o $(BUILD)/crc.o $(BUILD)/kstring.o $(BUILD)/pci.o $(BUILD)/sandbox.o
 PROBE_OBJ := $(BUILD)/storage_probe_image.o
 SESSION_OBJ := $(BUILD)/session_probe_image.o
 EXTRA_OBJS := $(STORAGE_OBJS) $(INFRA_OBJS) $(PROBE_OBJ) $(SESSION_OBJ)
@@ -240,7 +258,7 @@ $(BUILD)/storage:
 $(BUILD)/storage/%.o: kernel/storage/%.c | $(BUILD)/storage
 	$(CC) $(CFLAGS) -MMD -MP -Ikernel -c $< -o $@
 
-$(BUILD)/ksync.o $(BUILD)/crc.o $(BUILD)/kstring.o $(BUILD)/pci.o: $(BUILD)/%.o: kernel/%.c | $(BUILD)
+$(BUILD)/ksync.o $(BUILD)/crc.o $(BUILD)/kstring.o $(BUILD)/pci.o $(BUILD)/sandbox.o: $(BUILD)/%.o: kernel/%.c | $(BUILD)
 	$(CC) $(CFLAGS) -MMD -MP -Ikernel -c $< -o $@
 
 -include $(STORAGE_OBJS:.o=.d) $(INFRA_OBJS:.o=.d)

@@ -2,6 +2,7 @@
 #include "net_ipv6.h"
 #include "net_l2.h"
 #include "net_transport.h"
+#include "sandbox.h"
 
 static int ipv4_unicast_address(uint32_t address) {
     uint8_t first = (uint8_t)(address >> 24);
@@ -64,6 +65,7 @@ void net_stack_init(struct net_stack *stack, net_stack_udp_fn udp_receive,
     for (uint32_t i = 0; i < sizeof(*stack); ++i)
         bytes[i] = 0;
     net_fw_init(&stack->ipv4_firewall);
+    sandbox_init(&stack->sandbox);
     stack->udp_receive = udp_receive;
     stack->context = context;
 }
@@ -179,14 +181,15 @@ int net_stack_input(struct net_stack *stack, const struct netif *interface,
             stack->stats.malformed++;
             return -1;
         }
-        /* IPv6 delivery stays fail-closed until firewall/routing policy and
-         * fragment reassembly are implemented. Parsing remains useful for
-         * diagnostics and safe future policy integration. */
+        /* IPv6 delivery remains intentionally fail-closed until an explicit
+         * IPv6 firewall/routing policy and packet reassembly are implemented. */
         stack->stats.unsupported++;
+        stack->stats.policy_drops++;
         return 1;
     }
 
     stack->stats.unsupported++;
+    stack->stats.policy_drops++;
     return 1;
 }
 
