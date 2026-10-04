@@ -364,3 +364,76 @@ ZEROOS provides bounded event-driven feedback for copy/paste, screenshot, downlo
 ## 20. App Interaction Contract Addendum
 
 First-party apps expose copy/cut/paste, undo/redo, find, context menus, command palette and keyboard navigation where applicable. Touch/long-press alternatives exist for core pointer actions. Interactive state is accessible without relying on color alone.
+
+
+## 21. Cross-Platform Feature Inspiration & ZEROOS-Native Enhancements
+
+ZEROOS may adopt proven interaction patterns from Android, Windows, Linux, macOS, ChromeOS, GNOME and KDE after architecture, licensing, security, memory and dependency review. These are usability references, not implementation dependencies or cloning targets.
+
+### Android-inspired capabilities
+- notification channels and grouped notifications;
+- granular per-app permissions;
+- quick settings/action center;
+- share sheet;
+- picture-in-picture;
+- app pairs/split-screen;
+- per-app battery/data controls;
+- gesture navigation;
+- dormant app lifecycle with demand-loaded services.
+
+### Windows-inspired capabilities
+- snap layouts and advanced window tiling;
+- virtual desktops/workspaces;
+- clipboard history;
+- task/resource monitoring;
+- nearby sharing;
+- display/HDR profiles where hardware supports them;
+- optional PowerToys-class lightweight utilities;
+- window/session restoration.
+
+### Linux-inspired capabilities
+- powerful terminal and shell tooling;
+- package/repository management;
+- service lifecycle and detailed journal/logging;
+- scripting and automation;
+- containers/sandbox integration;
+- filesystem diagnostics and recovery tooling;
+- composable developer workflows.
+
+### macOS-inspired capabilities
+- Spotlight-class universal search;
+- Quick Look-style instant previews;
+- Mission Control-style overview;
+- Spaces/workspace workflows;
+- Hot Corners;
+- advanced trackpad gestures;
+- continuity-style device handoff;
+- AirDrop-style peer sharing where permitted.
+
+### ChromeOS / GNOME / KDE-inspired capabilities
+- lightweight web/PWA app lifecycle;
+- simple recovery/reset flows;
+- strong accessibility and keyboard workflows;
+- flexible tiling and multi-monitor layouts;
+- global shortcuts and desktop customization;
+- robust notification and workspace management.
+
+### ZEROOS-native additions
+1. **ZERO Quick Action Center** — Wi-Fi, Bluetooth, audio, display, performance, thermal, privacy and accessibility controls in one event-driven surface.
+2. **Smart Workspace Memory** — restore application/window/workspace arrangements without forcing heavy engines to remain resident.
+3. **Universal Handoff** — permission-controlled phone/other-device clipboard, files, notifications and active-task handoff.
+4. **Game Profile Auto-Switch** — game launch can activate a measured performance/thermal/audio profile and restore the previous profile on exit.
+5. **Adaptive Resource Modes** — automatically tune memory, I/O, animation, caching and background work for HDD, low-RAM, battery or thermal conditions.
+6. **ZERO Repair Center** — guided diagnostics and safe repair for drivers, services, storage, network and boot/recovery issues.
+7. **Universal App Launcher** — one search surface for native, Windows, Android, Linux/container and supported web applications.
+8. **Quick Look** — lightweight file preview without starting the full associated application.
+9. **Per-App Privacy Matrix** — explicit camera, microphone, files, network, location-capability, clipboard and device permissions.
+10. **Smart Freeze** — lifecycle-aware freezing/reclamation with state preservation for inactive applications.
+11. **ZERO AI Actions** — permission-scoped natural-language actions such as diagnostics, file operations, PDF summarization, workspace setup and settings changes.
+12. **Device Capability Profiles** — automatically select graphics, audio, thermal, storage and UI paths from detected hardware instead of assuming modern hardware.
+13. **Universal Share Sheet** — local app sharing, peer transfer and approved external connectors through one permission-aware interface.
+14. **Session Time Machine** — crash-safe workspace/application state checkpoints for recovery without pretending arbitrary application state is always serializable.
+15. **Contextual Command Palette** — searchable actions from the current app, window, selected file and system context.
+
+### Resource and security constraint
+Every borrowed or new feature must obey ZEROOS lifecycle states, capability security, bounded memory, event-driven activation, zero-render idle rules, cancellation/backpressure and failure isolation. A feature is not accepted merely because it exists on another OS; it must pass ZEROOS performance, security, recovery and accessibility gates.
