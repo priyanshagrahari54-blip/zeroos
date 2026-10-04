@@ -119,6 +119,7 @@ persistence certification. A green
 | `93eb05e` / run [37137251504](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/37137251504) | Added per-CPU FPU completion reporting and made the scheduler's FPU completion a timeout prerequisite. Host gate/image verification passed; the single-CPU high-memory guest showed the expected `fpu_cpu0=2/2 fpu_cpu1=0/0` and reached storage Stage 3. The ordinary 2-vCPU serial log still stops immediately after `scheduler policy and affinity self-test passed`; no ordinary-boot scheduler probe counters are emitted. | FAILED — ordinary SMP scheduler-start stall remains before scheduler monitor progress; no FPU-root-cause evidence from the failing guest. q35 persistence skipped. |
 | `0c4b21a` / run [37137601792](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/37137601792) | Added phase markers around scheduler setup. The high-memory single-CPU boot reaches its later certification gates; the ordinary 2-vCPU serial log advances through timer-hook registration and prints `pre-start task validation entered`, but never prints validation completion. The last QEMU interrupt snapshot still points to the wait-queue wake-all path and is not established as causal. | FAILED — ordinary SMP boot hangs during the pre-start task-table validation call; it is not yet known whether lock acquisition or table traversal stalls. Host gate/image verification passed; q35 persistence skipped. |
 | `fd9bc14` / run [37166300653](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/37166300653) | Stage 6 bounded vault name/record-metadata validation compiled; build, host release gate and image verification passed. The 2-vCPU serial trace shows task-lock acquisition and table validation both complete, but the expected post-unlock marker is absent. Separate high-memory single-CPU probes progress; ordinary SMP Boot still fails, q35 persistence skipped. | FAILED — narrows the ordinary-boot stall to the release/interrupt-restore boundary after validation; causal mechanism remains unproven. Vault hardening has host evidence only. |
+| `023cb6f` / run [37166496240](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/37166496240) | Added markers separating metadata-lock release from interrupt restore. The ordinary 2-vCPU log reaches `task metadata lock released before IRQ restore` but not `task validation IRQs restored`; the later high-memory single-CPU progress output is from a separate guest. | FAILED — stalls during the interrupt-restore boundary after successful table validation/lock release; interrupt/dispatch cause still unknown. Host build/release gate and image verification passed; q35 persistence skipped. |
 
 The session milestone strings are grepped by the workflow, so a green
 run is machine-verified evidence, not a log skim.
@@ -359,15 +360,14 @@ That fallback is removed: writes now require an injected OS CSPRNG provider,
 observed nonce collisions are rejected, failed generation/encryption leaves
 existing ciphertext intact, and lock/forget use explicit memory erasure. The
 host tests use deterministic unique/failure fixtures only; no real entropy or
-key service is integrated. Exact-SHA CI run [37166300653](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/37166300653)
+key service is integrated. Exact-SHA CI run [37166496240](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/37166496240)
 passed the build, reproducible host release gate and image verification. Its
 single-CPU high-memory guest progressed through scheduler/storage milestones,
-but the ordinary 2-vCPU trace confirms lock acquisition and table traversal
-complete before output stops at the unlock/interrupt-restore boundary; q35
-persistence was skipped. The QEMU interrupt snapshot at
-`wait_queue_wake_all()`'s post-unlock path remains a location clue only. Vault
-metadata bounds have host evidence only, not ordinary-guest evidence. This is
-host-tested policy logic only. `zd_update_verify_payload()` remains symmetric
+but the ordinary 2-vCPU trace completed task-table validation and released the
+metadata lock before stalling at interrupt restore; q35 persistence was skipped.
+The QEMU interrupt snapshot at `wait_queue_wake_all()`'s post-unlock path remains
+a location clue only. Vault metadata bounds have host evidence only, not
+ordinary-guest evidence. This is host-tested policy logic only. `zd_update_verify_payload()` remains symmetric
 AEAD integrity support, not a public-key signature; production trust roots,
 key rotation/revocation, immutable artifact binding, a signed package format,
 installer/A-B activation, interrupted-update recovery, and physical-device
