@@ -258,3 +258,10 @@ Kernel/boot/memory/userspace/storage/network/compositor foundations are substant
 
 ## For the next AI
 Treat GitHub as the source of truth. Inspect current branch, workflows, issues, PRs, docs, source and tests before acting. If this document conflicts with current repository evidence, current repository code/CI wins and this document should be updated.
+
+
+---
+
+## Cross-Cutting Master Contract
+
+See [`ZEROOS_MASTER_CONTRACT_AND_FEATURE_EXPANSION.md`](./ZEROOS_MASTER_CONTRACT_AND_FEATURE_EXPANSION.md) for the mandatory cross-cutting engineering contract and the expanded ZEROOS feature/platform catalog. Applicable requirements cover ownership/lifetime/concurrency, boot/firmware, hardware certification, networking, packages, SDK, observability, accounts, backup/recovery, privacy, supply-chain security, accessibility/i18n, virtualization, power-loss certification, performance/compatibility labs, ZERO AI safety, and additional product features. This is a specification link only; implementation status remains evidence-based.

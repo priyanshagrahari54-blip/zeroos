@@ -1141,3 +1141,10 @@ For each subsystem:
 
 ## HANDOFF RULE
 A future engineer/AI must start at section 0 and proceed in order. For every unchecked item, inspect current code/tests first, then implement only what is actually missing, add executable evidence, and update the authoritative evidence documents. Never infer completion from old chat history.
+
+
+---
+
+## Cross-Cutting Master Contract
+
+See [`ZEROOS_MASTER_CONTRACT_AND_FEATURE_EXPANSION.md`](./ZEROOS_MASTER_CONTRACT_AND_FEATURE_EXPANSION.md) for the mandatory cross-cutting engineering contract and the expanded ZEROOS feature/platform catalog. Applicable requirements cover ownership/lifetime/concurrency, boot/firmware, hardware certification, networking, packages, SDK, observability, accounts, backup/recovery, privacy, supply-chain security, accessibility/i18n, virtualization, power-loss certification, performance/compatibility labs, ZERO AI safety, and additional product features. This is a specification link only; implementation status remains evidence-based.
