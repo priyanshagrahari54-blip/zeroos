@@ -24,8 +24,22 @@ uint64_t memory_total_pages(void);
 uint64_t memory_free_pages(void);
 uint64_t memory_max_physical(void);
 /* Boot-context only (interrupts off): mark [start, start+length) non-usable
- * when it overlaps the managed window. No-op for addresses outside the
+ * that it overlaps the managed window. No-op for addresses outside the
  * managed range (e.g. high PCI framebuffer BARs). */
 void memory_reserve_physical(uint64_t start, uint64_t length);
+
+/* Slab Allocator for kernel object management. */
+struct slab_cache {
+    uint32_t object_size;
+    uint32_t objects_per_page;
+    void **free_list;
+    uint64_t free_count;
+    struct spinlock lock;
+};
+
+struct slab_cache *slab_create(uint32_t size);
+void *slab_alloc(struct slab_cache *cache);
+void slab_free(struct slab_cache *cache, void *ptr);
+void slab_destroy(struct slab_cache *cache);
 
 #endif

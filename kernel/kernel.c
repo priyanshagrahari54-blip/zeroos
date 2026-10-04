@@ -72,7 +72,7 @@ void serial_write_public(const char *text) {
 extern void interrupts_init(void);
 extern int boot_stack_guard_ok(void);
 
-static void serial_write_u64(uint64_t value) {
+void serial_write_u64(uint64_t value) {
     char buffer[21];
     int pos=20;
     buffer[pos]='\0';
