@@ -334,3 +334,26 @@ Core defaults: Ctrl+C/X/V copy/cut/paste, Ctrl+Shift+V plain paste, Ctrl+A selec
 Touchpad defaults: tap/left-click, two-finger secondary click, two-finger scroll, pinch zoom, two-finger navigation, three-finger workspace/app switching, three-finger overview, configurable four-finger actions. Settings include natural/traditional scroll, pointer speed, acceleration, tap-to-click, palm rejection, button mapping and per-device profiles.
 
 Clipboard history, screenshot/recording, emoji picker, command palette and accessibility controls are event-driven and dormant when unused. Sensitive clipboard data can be excluded from history/sync. Global security/recovery shortcuts cannot be overridden by applications.
+
+
+## 23. Mandatory 2 GB G560 1080p Video Certification
+
+The G560 2 GB reference profile treats smooth 1080p playback as a mandatory release acceptance target, not an optional enhancement. The target is specifically **1080p H.264/AVC at 30 FPS with sustained playback, stable audio/video synchronization, no sustained stutter, and minimal dropped frames**, subject to the actual G560 GPU/decoder hardware exposing a usable acceleration path.
+
+### ZERO Video Adaptive Engine (ZVAE)
+- Prefer hardware H.264/AVC decode through the detected Intel/NVIDIA acceleration path where supported.
+- Prefer efficient H.264/AVC delivery for legacy hardware when the source/service exposes that format; do not depend on a browser extension such as h264ify.
+- Use capability detection before selecting codec, decoder and rendering path.
+- Prefer hardware video overlay/direct scanout or the lowest-cost supported presentation path.
+- Use adaptive 2–4 frame buffering and frame pacing to reduce jitter without unbounded memory use.
+- Keep audio/video clocks synchronized and detect sustained drift.
+- Monitor dropped frames, decoder load, CPU load, buffer health, memory pressure, network throughput and thermal state.
+- Give active playback foreground resource priority.
+- Freeze/discard eligible background browser tabs and pause indexing, updates, AI and other nonessential background work during constrained playback.
+- Minimize HDD activity during playback and avoid swap storms.
+- Use thermal/power policy that protects sustained playback without allowing unnecessary background work to starve the video path.
+- Fallback order: accelerated H.264/AVC -> optimized software H.264/AVC -> adaptive lower resolution when the hardware/network cannot sustain the requested mode.
+- Never claim a codec is hardware-accelerated unless capability detection confirms it.
+
+### Acceptance gate
+A G560 2 GB build is not media-certified until real target hardware demonstrates sustained **1080p H.264/AVC @ 30 FPS** playback with acceptable dropped-frame rate, stable A/V sync, no sustained stutter and no uncontrolled memory/swap pressure. 1080p60 and newer codecs such as AV1 remain hardware-dependent and are not implied by the 1080p30 requirement.
