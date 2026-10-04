@@ -93,6 +93,7 @@ jobs:
             grep -q "ZEROOS: per-task kernel-stack/TSS handoff self-test passed." build/serial.log
             grep -q "ZEROOS: Ring-3 GDT and versioned syscall ABI initialized." build/serial.log
             grep -q "ZEROOS: bounded capability IPC core initialized." build/serial.log
+            grep -q "ZEROOS: pipe byte-stream contract certification passed." build/serial.log
             grep -q "ZEROOS: ELF loader, W^X mapping, and capability IPC gates initialized." build/serial.log
             grep -q "ZEROOS: executable spawn/argv/auxv and wait ABI initialized." build/serial.log
             grep -q "ZEROOS: userspace init process published." build/serial.log
