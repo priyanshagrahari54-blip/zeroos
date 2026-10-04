@@ -29,6 +29,8 @@ void zd_test_vault_suite(void) {
     uint32_t out_len = 0;
     struct test_nonce_state nonce_state={0};
     uint8_t entry_snapshot[ZD_VAULT_CT_MAX];
+    char long_name[ZD_VAULT_NAME];
+    uint32_t saved_ct_len;
     const uint8_t secret[] = "correct horse battery staple";
     int i;
 
@@ -122,6 +124,29 @@ void zd_test_vault_suite(void) {
     ZD_CHECK(zd_vault_put(&v, "x", secret, ZD_VAULT_SECRET_MAX + 1) == -22);
     ZD_CHECK(zd_vault_put(&v, 0, secret, 4) == -22);
     ZD_CHECK(zd_vault_get(&v, "wifi", out, 2, &out_len) == -22); /* cap */
+
+    /* Names are bounded on every public lookup, including get and forget. */
+    memset(long_name,'n',sizeof(long_name));
+    ZD_CHECK(zd_vault_put(&v,long_name,secret,4)==-22);
+    ZD_CHECK(zd_vault_get(&v,long_name,out,sizeof(out),&out_len)==-22);
+    ZD_CHECK(zd_vault_forget(&v,long_name)==-22);
+
+    /* Corrupt length metadata must not make decryption read past ct[]. */
+    saved_ct_len=v.entries[0].ct_len;
+    v.entries[0].ct_len=ZD_VAULT_CT_MAX+1U;
+    ZD_CHECK(zd_vault_get(&v,"wifi",out,sizeof(out),&out_len)==-5);
+    ZD_CHECK(zd_vault_put(&v,"new",secret,4)==-5);
+    v.entries[0].ct_len=12U+16U; /* zero-length secrets are never stored */
+    ZD_CHECK(zd_vault_get(&v,"wifi",out,sizeof(out),&out_len)==-5);
+    ZD_CHECK(zd_vault_put(&v,"new",secret,4)==-5);
+    v.entries[0].ct_len=saved_ct_len;
+
+    /* Malformed in-memory entry names are ignored by bounded lookup. */
+    memset(v.entries[1].name,'m',sizeof(v.entries[1].name));
+    v.entries[1].in_use=1;
+    ZD_CHECK(zd_vault_get(&v,"missing",out,sizeof(out),&out_len)==-2);
+    ZD_CHECK(zd_vault_put(&v,"fresh",secret,4)==-5);
+    memset(&v.entries[1],0,sizeof(v.entries[1]));
 
     /* capacity */
     {

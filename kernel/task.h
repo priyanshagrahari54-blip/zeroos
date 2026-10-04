@@ -177,6 +177,8 @@ uint64_t task_stack_high_water(const struct task *task);
  * through a live hardware interrupt frame.
  */
 int task_debug_validate(void);
+/* Emits one-shot lock/validator phase markers on the next explicit checkpoint. */
+void task_debug_validate_trace_once(void);
 uint64_t task_frame_resume_count(void);
 /* CPUs on which a real (non-idle) task has executed since scheduler start. */
 uint64_t task_scheduler_task_cpu_mask(void);

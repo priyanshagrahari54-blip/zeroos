@@ -2048,10 +2048,27 @@ int task_scheduler_ready(void) {
     return __atomic_load_n(&scheduler_ready,__ATOMIC_ACQUIRE)!=0;
 }
 
+static volatile uint8_t task_debug_validation_trace_once;
+
+void task_debug_validate_trace_once(void) {
+    __atomic_store_n(&task_debug_validation_trace_once,1,__ATOMIC_RELEASE);
+}
+
 int task_debug_validate(void) {
-    uint64_t flags=spin_lock_irqsave(&task_lock);
+    int trace=__atomic_exchange_n(&task_debug_validation_trace_once,0,
+                                  __ATOMIC_ACQ_REL)!=0;
+    uint64_t flags;
+    if (trace)
+        serial_write_public("ZEROOS: task validation waiting for metadata lock.\n");
+    flags=spin_lock_irqsave(&task_lock);
+    if (trace)
+        serial_write_public("ZEROOS: task validation acquired metadata lock.\n");
     task_validate_table("ZEROOS PANIC: explicit scheduler checkpoint failed.\n");
+    if (trace)
+        serial_write_public("ZEROOS: task-table validation completed.\n");
     spin_unlock_irqrestore(&task_lock,flags);
+    if (trace)
+        serial_write_public("ZEROOS: task validation released metadata lock.\n");
     return 0;
 }
 

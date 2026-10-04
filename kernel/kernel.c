@@ -1509,6 +1509,7 @@ static void scheduler_self_test(void) {
         kernel_panic("scheduler timer hook registration failed");
     serial_write_public("ZEROOS: scheduler timer hook registered.\n");
 
+    task_debug_validate_trace_once();
     serial_write_public("ZEROOS: pre-start task validation entered.\n");
     if (task_debug_validate()!=0)
         kernel_panic("scheduler pre-start task validation failed");

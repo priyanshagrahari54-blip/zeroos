@@ -117,6 +117,7 @@ persistence certification. A green
 | `ed3e49b` / run [37136713010](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/37136713010) | Stage 6 vault nonce hardening compiled; reproducible host release gate and image verification passed. The separate single-CPU high-memory boot reached storage Stage 3 and scheduler progress, while the ordinary 2-vCPU boot's serial tail stopped immediately after `scheduler policy and affinity self-test passed`, before the context-switch marker or periodic scheduler report. The QEMU interrupt snapshot locates RIP `0x120802` in `wait_queue_wake_all()`'s normal post-unlock path; this is not proof of cause. q35 persistence was skipped. | HOST RELEASE GATE PASS; OVERALL CI FAILED on unresolved ordinary SMP scheduler-start stall. Vault nonce change has host evidence only, not guest evidence. |
 | `d893e20` / run [37136986403](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/37136986403) | Added scheduler diagnostic counters. The single-CPU high-memory boot reports FPU `2/2` on CPU 0 and `0/0` on CPU 1 (expected for that one-CPU guest), and reaches later scheduler/storage milestones. In contrast, the ordinary 2-vCPU serial log again stops after `scheduler policy and affinity self-test passed`, before scheduler progress; its QEMU snapshot at the same post-unlock wait-queue instruction is only a location clue. | FAILED — ordinary SMP boot stalls before scheduler monitor progress; FPU evidence from the separate high-memory boot does not identify the SMP failure. Host release gate and image verification passed; q35 persistence skipped. |
 | `93eb05e` / run [37137251504](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/37137251504) | Added per-CPU FPU completion reporting and made the scheduler's FPU completion a timeout prerequisite. Host gate/image verification passed; the single-CPU high-memory guest showed the expected `fpu_cpu0=2/2 fpu_cpu1=0/0` and reached storage Stage 3. The ordinary 2-vCPU serial log still stops immediately after `scheduler policy and affinity self-test passed`; no ordinary-boot scheduler probe counters are emitted. | FAILED — ordinary SMP scheduler-start stall remains before scheduler monitor progress; no FPU-root-cause evidence from the failing guest. q35 persistence skipped. |
+| `0c4b21a` / run [37137601792](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/37137601792) | Added phase markers around scheduler setup. The high-memory single-CPU boot reaches its later certification gates; the ordinary 2-vCPU serial log advances through timer-hook registration and prints `pre-start task validation entered`, but never prints validation completion. The last QEMU interrupt snapshot still points to the wait-queue wake-all path and is not established as causal. | FAILED — ordinary SMP boot hangs during the pre-start task-table validation call; it is not yet known whether lock acquisition or table traversal stalls. Host gate/image verification passed; q35 persistence skipped. |
 
 The session milestone strings are grepped by the workflow, so a green
 run is machine-verified evidence, not a log skim.
@@ -342,9 +343,12 @@ explicitly provides no verifier, so snapshots alone cannot authorize an
 update. Tests cover missing verifier, verifier denial, absent downstream
 operations, failure-to-rollback behavior, and successful test-provider flow.
 
-Local `make desktop-check` **PASS**: 120,966 assertions, zero failures; full
-local `make check` also **PASS**, including 23 RFC/negative crypto checks. The
-crypto layer now exposes `zeroos_secure_zero()` using volatile stores and uses
+Local `make check` **PASS** after the latest vault-boundary tests: 120,975
+desktop assertions, zero failures; crypto 23/0, compatibility 107/0, wait queue
+4/0, storage host tools, SIMD audit, and FPU host check passed. The extra vault
+checks cover unterminated/overlong names, corrupt stored names, invalid
+ciphertext lengths, and fail-closed writes when live record metadata is corrupt.
+The crypto layer now exposes `zeroos_secure_zero()` using volatile stores and uses
 it for ChaCha/Poly1305 work buffers, one-time Poly1305 keys, AEAD failure
 plaintext, and update-verification scratch. This is best-effort process-memory
 erasure; it does not clear registers/caches or establish secure key storage.
@@ -354,13 +358,11 @@ That fallback is removed: writes now require an injected OS CSPRNG provider,
 observed nonce collisions are rejected, failed generation/encryption leaves
 existing ciphertext intact, and lock/forget use explicit memory erasure. The
 host tests use deterministic unique/failure fixtures only; no real entropy or
-key service is integrated. Exact-SHA CI run [37137251504](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/37137251504)
+key service is integrated. Exact-SHA CI run [37137601792](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/37137601792)
 passed the build, reproducible host release gate and image verification. Its
 single-CPU high-memory guest progressed through scheduler/storage milestones,
-but the ordinary 2-vCPU boot stopped after scheduler policy initialization,
-before scheduler progress or certification; q35 persistence was skipped. The
-per-CPU FPU counters belong to the separate high-memory guest and show its
-expected 2/2 BSP completions, not a missing AP probe in the failing boot. The
+but the ordinary 2-vCPU boot stopped during pre-start task-table validation,
+after registering the scheduler timer hook; q35 persistence was skipped. The
 QEMU interrupt snapshot at `wait_queue_wake_all()`'s post-unlock path remains a
 location clue only. The vault nonce change has host evidence only, not guest
 evidence. This is host-tested policy logic only. `zd_update_verify_payload()` remains symmetric

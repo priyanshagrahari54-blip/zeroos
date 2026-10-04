@@ -51,8 +51,10 @@ int zd_vault_lock(struct zd_vault *v);
  * Existing ciphertext is unchanged on failure; plaintext is never retained. */
 int zd_vault_put(struct zd_vault *v, const char *name,
                  const uint8_t *secret, uint32_t secret_len);
-/* Decrypt into out (cap >= secret length).  Unknown name -> -2;
- * tamper/wrong key -> -3 (auth failure counted); locked -> -1. */
+/* Decrypt into out (cap >= secret length). Names must be NUL-terminated
+ * within ZD_VAULT_NAME and nonempty; invalid args/name -> -22. Unknown name
+ * -> -2; malformed ciphertext metadata -> -5; tamper/wrong key -> -3
+ * (auth failure counted); locked -> -1. */
 int zd_vault_get(struct zd_vault *v, const char *name,
                  uint8_t *out, uint32_t out_cap, uint32_t *out_len);
 int zd_vault_forget(struct zd_vault *v, const char *name);

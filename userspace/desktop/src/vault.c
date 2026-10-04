@@ -7,21 +7,40 @@
 
 #define V_NONCE  ZEROOS_CHACHA20_NONCE_LEN  /* 12 */
 #define V_TAG    ZEROOS_AEAD_TAG_LEN        /* 16 */
+#define V_CT_MAX (V_NONCE+ZD_VAULT_SECRET_MAX+V_TAG)
 
 /* entry layout: nonce | ciphertext | tag */
 static int v_bad(void) { return -22; }
-static int v_eq(const char *a, const char *b) {
-    while (*a && *b && *a == *b) {
-        ++a;
-        ++b;
-    }
-    return *a == 0 && *b == 0;
+static uint32_t v_name_length(const char *name) {
+    uint32_t length;
+    if (!name)
+        return ZD_VAULT_NAME;
+    for (length=0;length<ZD_VAULT_NAME;++length)
+        if (!name[length])
+            return length;
+    return ZD_VAULT_NAME;
 }
-static int v_find(const struct zd_vault *v, const char *name) {
+
+static int v_name_valid(const char *name, uint32_t *length_out) {
+    uint32_t length=v_name_length(name);
+    if (!name || !length_out || length==0 || length>=ZD_VAULT_NAME)
+        return 0;
+    *length_out=length;
+    return 1;
+}
+
+static int v_find(const struct zd_vault *v, const char *name,
+                  uint32_t name_length) {
     int i;
-    for (i = 0; i < ZD_VAULT_MAX; ++i)
-        if (v->entries[i].in_use && v_eq(v->entries[i].name, name))
+    for (i = 0; i < ZD_VAULT_MAX; ++i) {
+        uint32_t stored_length;
+        if (!v->entries[i].in_use)
+            continue;
+        stored_length=v_name_length(v->entries[i].name);
+        if (stored_length<ZD_VAULT_NAME && stored_length==name_length &&
+            memcmp(v->entries[i].name,name,name_length)==0)
             return i;
+    }
     return -1;
 }
 void zd_vault_init(struct zd_vault *v) {
@@ -71,14 +90,9 @@ int zd_vault_put(struct zd_vault *v, const char *name,
 
     if (!v)
         return v_bad();
-    if (!name || !name[0] || !secret || secret_len == 0 ||
-        secret_len > ZD_VAULT_SECRET_MAX) {
-        v->stats.rejected++;
-        return v_bad();
-    }
-    for (slen = 0; slen < ZD_VAULT_NAME && name[slen]; ++slen)
-        ;
-    if (slen >= ZD_VAULT_NAME) {
+    if (!secret || secret_len == 0 ||
+        secret_len > ZD_VAULT_SECRET_MAX ||
+        !v_name_valid(name,&slen)) {
         v->stats.rejected++;
         return v_bad();
     }
@@ -95,7 +109,7 @@ int zd_vault_put(struct zd_vault *v, const char *name,
         v->stats.rejected++;
         return -95; /* ENOTSUP: no secure nonce source */
     }
-    idx = v_find(v, name);
+    idx = v_find(v, name, slen);
     if (idx < 0) {
         for (i = 0; i < ZD_VAULT_MAX; ++i)
             if (!v->entries[i].in_use) {
@@ -105,6 +119,21 @@ int zd_vault_put(struct zd_vault *v, const char *name,
     }
     if (idx < 0)
         return -28; /* ENOSPC */
+
+    /* A corrupt live record makes nonce comparison and replacement decisions
+     * ambiguous. Refuse writes rather than silently skipping its metadata. */
+    for (i=0;i<ZD_VAULT_MAX;++i) {
+        const struct zd_vault_entry *entry=&v->entries[i];
+        uint32_t stored_name_length;
+        if (!entry->in_use)
+            continue;
+        stored_name_length=v_name_length(entry->name);
+        if (stored_name_length==0 || stored_name_length>=ZD_VAULT_NAME ||
+            entry->ct_len<=V_NONCE+V_TAG || entry->ct_len>V_CT_MAX) {
+            v->stats.rejected++;
+            return -5;
+        }
+    }
 
     zeroos_secure_zero(replacement,sizeof(replacement));
     if (v->nonce_source(v->nonce_source_ctx,nonce)!=0) {
@@ -153,7 +182,7 @@ int zd_vault_get(struct zd_vault *v, const char *name,
     uint32_t pt_len, slen;
     if (!v)
         return v_bad();
-    if (!name || !out || !out_len) {
+    if (!out || !out_len || !v_name_valid(name,&slen)) {
         v->stats.rejected++;
         return v_bad();
     }
@@ -161,16 +190,15 @@ int zd_vault_get(struct zd_vault *v, const char *name,
         v->stats.get_denied++;
         return -1;
     }
-    idx = v_find(v, name);
+    idx = v_find(v, name, slen);
     if (idx < 0)
         return -2;
-    if (v->entries[idx].ct_len < V_NONCE + V_TAG)
+    if (v->entries[idx].ct_len>V_CT_MAX ||
+        v->entries[idx].ct_len<=V_NONCE+V_TAG)
         return -5;
     pt_len = v->entries[idx].ct_len - V_NONCE - V_TAG;
     if (out_cap < pt_len)
         return -22;
-    for (slen = 0; slen < ZD_VAULT_NAME && name[slen]; ++slen)
-        ;
     r = zeroos_aead_decrypt(v->key, v->entries[idx].ct,
                             (const uint8_t *)name, slen,
                             v->entries[idx].ct + V_NONCE, pt_len,
@@ -186,9 +214,10 @@ int zd_vault_get(struct zd_vault *v, const char *name,
 
 int zd_vault_forget(struct zd_vault *v, const char *name) {
     int idx;
-    if (!v || !name)
+    uint32_t name_length;
+    if (!v || !v_name_valid(name,&name_length))
         return v_bad();
-    idx = v_find(v, name);
+    idx = v_find(v, name, name_length);
     if (idx < 0)
         return -2;
     zeroos_secure_zero(v->entries[idx].ct,sizeof(v->entries[idx].ct));
