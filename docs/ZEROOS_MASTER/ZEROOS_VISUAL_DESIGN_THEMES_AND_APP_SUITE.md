@@ -17,7 +17,7 @@ Target character:
 - dense and keyboard-efficient on desktop;
 - graceful on low-end hardware.
 
-Windows 12 is treated only as a visual reference category, not a dependency or cloning target. Modern Windows itself uses rounded geometry and layered surfaces, while many unofficial next-generation concepts emphasize glass, floating controls and adaptive layouts; ZEROOS should implement its own component language rather than reproduce them. citeturn0search2turn0search5
+Windows 12 is treated only as a visual reference category, not a dependency or cloning target. ZEROOS uses its own component language.
 
 ## 2. ZERO Material System
 
@@ -25,15 +25,15 @@ Windows 12 is treated only as a visual reference category, not a dependency or c
 
 Four surface levels:
 - Solid: lowest GPU cost and highest readability.
-- Soft: subtle translucency with no expensive blur.
-- Glass: translucent surface with bounded backdrop sampling.
+- Soft: subtle translucency without expensive continuous blur.
+- Glass: translucent surface with bounded, event-driven backdrop sampling.
 - Hero: premium visual treatment reserved for focused/important surfaces.
 
-Blur is optional and budget-aware. A glass surface must have a solid fallback so transparency never becomes a performance dependency.
+Blur is optional and budget-aware. A glass surface always has a solid fallback.
 
 ### 2.2 Geometry
 
-Global geometry uses a coherent radius scale rather than arbitrary per-app rounding:
+Global geometry uses a coherent radius scale:
 - 6px micro controls;
 - 10px controls;
 - 14px cards;
@@ -41,17 +41,17 @@ Global geometry uses a coherent radius scale rather than arbitrary per-app round
 - 24px hero surfaces;
 - pill geometry for compact controls and Dynamic Capsule states.
 
-Touch targets are larger on tablet mode while the underlying design tokens remain shared.
+Touch targets are larger on tablet mode while design tokens remain shared.
 
 ### 2.3 Color Grading
 
-Themes use a base background, elevated surface, text hierarchy, accent, success, warning and error tokens. Accent colors may be derived from wallpaper or manually selected.
+Themes use background, elevated surface, text hierarchy, accent, success, warning and error tokens. Accent colors may be derived from wallpaper or selected manually.
 
-Color is never the sole carrier of status. Every state also has iconography, text or shape.
+Color is never the sole carrier of status.
 
 ### 2.4 Lighting
 
-Optional ambient lighting can tint surfaces using wallpaper-derived colors. It must be computed from a small sampled palette, not continuously analyze the entire screen.
+Optional ambient lighting derives from a small sampled palette. It never continuously analyzes the whole screen.
 
 ## 3. ZERO Themes
 
@@ -59,19 +59,19 @@ Optional ambient lighting can tint surfaces using wallpaper-derived colors. It m
 Dark navy base, cyan/indigo accent, soft aurora gradients. Default premium theme.
 
 ### Obsidian Glass
-Near-black surfaces, restrained white text, electric blue accent. Maximum contrast for power users.
+Near-black surfaces, restrained white text, electric blue accent. Power-user oriented.
 
 ### Pearl
-Light neutral surfaces, subtle glass, blue-violet accent. Daytime productivity.
+Light neutral surfaces, subtle glass, blue-violet accent. Productivity oriented.
 
 ### Solar
-Warm cream/orange highlights with strong readability. Designed for bright rooms.
+Warm cream/orange highlights with strong readability.
 
 ### Ocean
 Deep blue with teal/cyan accents and cool glass layers.
 
 ### Forest
-Dark green/emerald accent system for calm working environments.
+Dark green/emerald accents for calm working environments.
 
 ### Sunset
 Purple, magenta and warm orange accents with adaptive wallpaper grading.
@@ -83,87 +83,40 @@ Near-monochrome, almost no transparency or decorative animation. Accessibility a
 Strict contrast ratios, solid surfaces, minimal transparency and explicit focus rings.
 
 ### Custom Theme Studio
-Users can independently configure wallpaper, accent, material strength, corner radius, density, icon style, animation level, transparency and sound profile. Every custom theme has a preview and safe fallback.
+Users can configure wallpaper, accent, material strength, corner radius, density, icon style, animation level, transparency and sound profile. Every custom theme has a preview and safe fallback.
 
 ## 4. Desktop Layout
 
 ### ZERO Bar
-The primary adaptive shell contains:
-- ZERO launcher;
-- Universal Search;
-- current workspace;
-- active app/window context;
-- Dynamic Capsule;
-- network/audio/battery status;
-- notifications;
-- profile/system menu.
-
-It may collapse into a compact bar when an application needs space.
+Primary adaptive shell containing launcher, Universal Search, workspace, active app/window context, Dynamic Capsule, network/audio/battery status, notifications and profile/system menu.
 
 ### Dynamic Capsule
-A small central contextual surface that expands only for active events:
-- music playback;
-- downloads;
-- recording;
-- calls;
-- timers;
-- navigation;
-- AI task progress;
-- update/recovery operations.
+A small contextual surface that expands only for active events: music, downloads, recording, calls, timers, navigation, AI tasks and update/recovery.
 
-Idle state is tiny. Event state expands with animation and collapses automatically. It is event-driven and must not poll continuously.
+Idle state is tiny and has **no continuous render loop**. Event state requests only the frames needed to show the change, then returns to the cached idle state.
 
 ### Floating Dock
-The dock uses adaptive width and shows only relevant applications plus pinned items. It can become a side dock or compact tablet shelf.
+Adaptive-width dock with relevant and pinned apps. Can become a side dock or compact tablet shelf.
 
 ## 5. Window System
 
-Windows support:
-- rounded corners;
-- snap zones;
-- freeform resize;
-- maximize/minimize;
-- workspace move;
-- always-on-top;
-- picture-in-picture where applicable;
-- edge gestures on touch devices;
-- keyboard window management;
-- smooth open/close/minimize transitions.
+Windows support rounded corners, snap zones, resize, maximize/minimize, workspace movement, always-on-top, picture-in-picture where applicable, edge gestures, keyboard management and smooth open/close transitions.
 
-Animations must be interruptible and state-driven. Low-power mode can replace them with immediate transitions.
+Animations are interruptible and state-driven. Low-power mode can use immediate transitions.
 
 ## 6. Tablet / 2-in-1 Mode
 
 ZEROOS is not simply a scaled desktop.
 
-When touch-first mode is active:
-- controls increase to touch-safe targets;
-- dock becomes a gesture-friendly shelf;
-- windows support edge gestures;
-- split-screen and multi-window become primary layouts;
-- Dynamic Capsule becomes touch-expandable;
-- keyboard shortcuts remain available when a keyboard is connected;
-- handwriting/stylus APIs may expose a dedicated input layer;
-- virtual keyboard is integrated into the input service;
-- portrait and landscape layouts use the same design tokens.
+Touch-first mode provides larger targets, gesture-friendly shelf, edge gestures, split-screen/multi-window layouts, touch-expandable Dynamic Capsule, keyboard shortcuts when connected, stylus/input APIs and integrated virtual keyboard.
 
-### Tablet transitions
-
-Desktop -> Hybrid -> Tablet is capability/state based. The transition must preserve running applications and workspace state without restarting the desktop shell.
+Desktop -> Hybrid -> Tablet is capability/state based and preserves running application/workspace state without restarting the shell.
 
 ## 7. Large Display / UHD Mode
 
-For UHD and high-DPI displays:
-- vector-first icons;
-- DPI-aware text;
-- fractional scaling;
-- layout density adaptation;
-- high-resolution wallpapers;
-- HDR-aware media where supported;
-- multi-monitor topology;
-- per-display scaling and refresh rate.
+UHD/high-DPI uses vector-first icons, DPI-aware text, fractional scaling, density adaptation, high-resolution wallpapers, HDR-aware media where supported, multi-monitor topology and per-display scaling/refresh rate.
 
-High resolution must not imply permanently loaded 4K textures. Assets use resolution-aware loading and bounded caches.
+4K resolution does not imply permanently loaded 4K textures; assets are resolution-aware and cached within bounds.
 
 ## 8. Motion System
 
@@ -173,136 +126,111 @@ Motion levels:
 - Standard;
 - Expressive.
 
-Standard animations target short, interruptible transitions. Expressive animation is disabled automatically when thermal/power/resource policy requires it.
+**Instant/Off is a first-class mode, not a fallback.** With animation disabled, state changes are committed directly and no animation frame loop runs.
 
-No decorative animation may block input or create an unbounded render loop.
+Expressive animation is disabled automatically when thermal/power/resource policy requires it.
 
-## 9. Premium Native App Suite
+## 9. ZERO-Render Idle Rule
+
+The UI must remain visible without continuously rendering it.
+
+For an unchanged scene:
+
+```text
+VISIBLE + UNCHANGED
+       |
+       v
+retain last composed buffer
+       |
+       v
+NO APP REDRAW
+NO COMPOSITOR REDRAW
+NO GPU COMPOSITION
+       |
+       v
+wait for visual event
+```
+
+ZEROOS uses a retained-surface, damage-driven compositor. Once a frame is presented, it remains reusable until a visual state changes. The display can scan out the existing buffer without requiring a new software/GPU frame.
+
+Required mechanisms:
+- retained scene graph;
+- damage-region tracking;
+- surface/buffer reuse;
+- direct scanout when possible;
+- hardware overlay planes where available;
+- event-driven frame scheduling;
+- no unconditional render loop;
+- independent per-monitor invalidation;
+- cached glass/material results.
+
+### Glass without continuous rendering
+
+A glass surface is sampled/computed only when its backdrop changes. The result is cached and reused. No full-screen blur runs every refresh interval.
+
+Fallback:
+`Glass -> Soft -> Solid`
+
+### Dynamic Capsule idle behavior
+
+```text
+IDLE -> no timer / no polling / no render
+EVENT -> wake -> update -> required frame(s) -> cache -> IDLE
+```
+
+### Animation behavior
+
+Animation Off means **zero animation frames**. When animation is enabled, each next frame is requested only after the display pacing callback/VSYNC and only while the animation remains active.
+
+### Resource target
+
+For an unchanged desktop scene:
+- application redraw: 0/s;
+- compositor redraw: 0/s;
+- animation frames: 0/s when Off;
+- unnecessary GPU composition: 0;
+- UI polling: 0;
+- new frame generation: 0 until a visual event occurs.
+
+This does not claim zero physical display power or zero retained framebuffer memory.
+
+Detailed engineering requirements are defined in [`ZEROOS_ZERO_RENDER_IDLE_ARCHITECTURE.md`](./ZEROOS_ZERO_RENDER_IDLE_ARCHITECTURE.md).
+
+## 10. Premium Native App Suite
 
 ### ZERO Browser
-- tab groups;
-- vertical tabs option;
-- reader mode;
-- downloads;
-- history;
-- profiles;
-- privacy controls;
-- site permissions;
-- media picture-in-picture;
-- resource-aware tab lifecycle;
-- isolated renderer processes.
+Tabs/groups, vertical tabs, reader mode, downloads, history, profiles, privacy, site permissions, PiP, resource-aware tab lifecycle and isolated renderer processes.
 
 ### ZERO Files
-- dual-pane mode;
-- tabs;
-- quick drop zone;
-- transfer queue;
-- preview pane;
-- archive support;
-- storage health;
-- permissions;
-- recent/semantic search;
-- safe delete/recovery.
+Dual-pane, tabs, quick drop, transfer queue, preview, archive support, storage health, permissions, recent/semantic search and safe delete/recovery.
 
 ### ZERO Music
-- local library;
-- playlists;
-- queue;
-- equalizer;
-- gapless playback where supported;
-- lyrics when legally/technically available;
-- hardware audio path;
-- external service connectors as optional integrations;
-- offline-first local playback.
-
-The OS must not bundle copyrighted music without appropriate licensing. Open-source or user-owned media can be integrated through supported import/provider mechanisms.
+Local library, playlists, queue, equalizer, gapless playback where supported, lyrics when legally/technically available, hardware audio path, optional external-service connectors and offline-first local playback.
 
 ### ZERO Video
-A VLC-class player architecture with:
-- broad codec/container support through legal/available codecs;
-- hardware decoding;
-- subtitles;
-- audio tracks;
-- playback speed;
-- frame stepping;
-- screenshots;
-- playlists;
-- network streams;
-- HDR where supported;
-- low-resource software fallback.
+VLC-class architecture with broad legal/available codec support, hardware decoding, subtitles, audio tracks, speed control, frame stepping, screenshots, playlists, network streams, HDR where supported and low-resource software fallback.
 
 ### ZERO Terminal
-- tabs;
-- split panes;
-- searchable scrollback;
-- profiles;
-- command palette;
-- SSH/local shell integration;
-- safe elevation flow;
-- GPU-accelerated rendering only when beneficial.
+Tabs, split panes, searchable scrollback, profiles, command palette, SSH/local shell integration, safe elevation and GPU rendering only when beneficial.
 
 ### ZERO Study
-- PDF/ebook reading;
-- notes;
-- OCR;
-- flashcards;
-- focus timer;
-- dictionary;
-- formula tools;
-- citation/reference workspace;
-- offline study library;
-- optional ZERO AI explanation.
+PDF/ebook reading, notes, OCR, flashcards, focus timer, dictionary, formula tools, citation workspace, offline library and optional ZERO AI explanation.
 
 ### ZERO Studio
-- screenshot;
-- screen recording;
-- image annotation;
-- basic video trimming;
-- compression/export;
-- capture history;
-- hardware encoder when available.
+Screenshot, screen recording, annotation, basic video trimming, compression/export, capture history and hardware encoder when available.
 
 ### ZERO Control
-A unified control center for:
-- Wi-Fi;
-- Bluetooth;
-- display;
-- audio;
-- battery;
-- performance profile;
-- firewall;
-- privacy;
-- devices;
-- notifications;
-- accessibility.
+Unified controls for Wi-Fi, Bluetooth, display, audio, battery, performance profile, firewall, privacy, devices, notifications and accessibility.
 
 ### ZERO Health
-System health dashboard for:
-- CPU/RAM/GPU;
-- storage;
-- thermal state;
-- battery;
-- driver status;
-- network;
-- recent crashes;
-- update/recovery readiness.
+CPU/RAM/GPU, storage, thermal, battery, driver, network, crash and update/recovery readiness dashboard.
 
 ### ZERO AI
-AI assistant with:
-- chat;
-- file understanding;
-- search;
-- system diagnostics;
-- controlled automation;
-- coding assistance;
-- study assistance;
-- media actions.
+Chat, file understanding, search, diagnostics, controlled automation, coding, study and media actions. Every privileged action uses the ZERO AI permission broker.
 
-Every privileged action goes through the ZERO AI permission broker.
+## 11. Resource Contract
 
-## 10. Resource Contract
-
-The visual system must never assume that premium appearance requires premium hardware.
+Premium appearance must not require premium hardware.
 
 Mechanisms:
 - no permanent full-screen blur pass;
@@ -315,59 +243,45 @@ Mechanisms:
 - adaptive animation;
 - display-rate-aware frame scheduling;
 - surface reuse;
+- damage-only composition;
+- direct-scanout/overlay fast paths;
 - automatic effects reduction under memory/GPU/thermal pressure.
 
-“0 resource” is interpreted as near-zero unnecessary idle overhead, not literally zero CPU/GPU/RAM usage while a feature is actively rendering.
+“0 resource” means near-zero unnecessary idle overhead. Active video, AI, animation or other active work necessarily consumes resources.
 
-## 11. Theme Performance Profiles
+## 12. Theme Performance Profiles
 
-Every theme declares:
-- visual cost class;
-- blur budget;
-- animation budget;
-- texture budget;
-- idle controller budget;
-- low-power fallback.
+Every theme declares visual cost, blur, animation, texture and idle-controller budgets plus a low-power fallback.
 
-Themes are therefore presentation configurations, not hidden background services.
+Themes are presentation configurations, not hidden background services.
 
-## 12. App Design Contract
+## 13. App Design Contract
 
-Every first-party app must provide:
-- shared design tokens;
-- light/dark/high-contrast variants;
-- keyboard navigation;
-- touch layout;
-- offline state;
-- permission state;
-- low-resource state;
-- reduced-motion state;
-- empty/loading/error states;
-- searchable commands;
-- consistent context menus;
-- deep links;
-- state restoration;
-- crash-safe recovery.
+Every first-party app provides shared design tokens, light/dark/high-contrast variants, keyboard navigation, touch layout, offline/permission/low-resource/reduced-motion states, empty/loading/error states, searchable commands, context menus, deep links, state restoration and crash-safe recovery.
 
-## 13. Accessibility and Readability
+Apps must also implement the zero-render idle contract: unchanged views remain retained and do not continuously repaint.
 
-Glass never reduces text readability. The compositor can automatically increase surface opacity, disable background motion or switch to solid surfaces when contrast or accessibility settings require it.
+## 14. Accessibility and Readability
 
-## 14. Originality Rule
+Glass never reduces text readability. The compositor can increase opacity, disable background motion or switch to solid surfaces when accessibility requires it.
 
-ZEROOS can combine familiar desktop, mobile and tablet interaction ideas, but its branding, icons, component geometry, information architecture and interaction grammar must remain original.
+## 15. Originality Rule
 
-## 15. Acceptance Checklist
+ZEROOS may combine familiar desktop, mobile and tablet interaction ideas, but its branding, icons, component geometry, information architecture and interaction grammar remain original.
+
+## 16. Acceptance Checklist
 
 A theme/app experience is accepted only when:
 - desktop and tablet layouts are validated;
 - low-resource fallback exists;
 - reduced-motion works;
+- animation Off produces no animation loop;
 - high-contrast works;
 - keyboard and touch flows work;
 - no unnecessary background polling exists;
+- unchanged views demonstrate zero redraw activity;
 - resource cost is measured;
 - startup/wakeup latency is measured;
 - crash/recovery state exists;
 - visual regression tests exist;
-- implementation status is separately recorded from design completion.
+- implementation status is separate from design completion.
