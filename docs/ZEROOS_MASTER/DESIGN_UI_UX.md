@@ -1,231 +1,109 @@
 # ZEROOS — UI/UX DESIGN SYSTEM
-Version: 1.0 | Original ZEROOS Visual Language
+Version: 2.0 | Original ZEROOS Visual Language
 
 ## 1. Design Intent
-ZEROOS should feel immediately understandable to a desktop user while remaining visually and structurally original. The target is not to reproduce Windows 11, ChromeOS or macOS. Those systems can inform usability conventions, but ZEROOS owns its own interaction model.
+ZEROOS should feel immediately understandable to a desktop user while remaining visually and structurally original. Familiar desktop, tablet and mobile conventions may inform usability, but ZEROOS owns its own interaction model.
+
+Target character: premium, glass-like, rounded, expressive, touch-ready, keyboard-efficient and aggressively resource-aware.
 
 ## 2. Design Principles
 1. Clarity before decoration.
 2. Fast path before feature discovery.
 3. One consistent interaction grammar.
-4. Keyboard and pointer parity.
+4. Keyboard, pointer and touch parity.
 5. Adaptive complexity.
 6. Near-zero idle work.
 7. Recovery is visible and understandable.
-8. Accessibility is foundational, not a plug-in.
+8. Accessibility is foundational.
 9. User data is locally understandable and controllable.
 10. Motion communicates state, never blocks action.
+11. Premium visual quality must degrade gracefully instead of degrading responsiveness.
+12. Visual effects are optional presentation work, never mandatory background work.
 
-## 3. Global Shell
-### 3.1 ZERO Bar
-A persistent adaptive shell containing:
-- launcher/search entry,
-- active application indicators,
-- system status,
-- notifications,
-- quick controls,
-- workspace indicator.
+## 3. Visual Language
 
-It may compress on small screens and expand on large displays.
+### ZERO Material
+ZEROOS uses four surface levels: Solid, Soft, Glass and Hero. Glass is translucent but has a solid fallback; blur is bounded and budget-aware.
 
-### 3.2 Command/Search Surface
-One search surface can find:
-- applications,
-- files,
-- settings,
-- contacts/devices,
-- commands,
-- help,
-- system diagnostics,
-- optional AI answers.
+### Geometry
+Shared radius tokens: 6px, 10px, 14px, 18px and 24px, with pills for compact status/control elements. Touch mode increases target size without changing the core visual grammar.
 
-Search indexing is incremental and event-driven.
-
-### 3.3 Window System
-Windows have:
-- title/action area,
-- predictable controls,
-- snapping,
-- tiling,
-- workspaces,
-- minimized/dormant states,
-- accessibility labels.
-
-The compositor must support a low-effects mode.
-
-## 4. Visual System
-### Typography
-Use a legible UI family with strong Hindi/Latin coverage. Font selection is capability and licensing dependent.
-
-### Surfaces
-Use layered surfaces with restrained depth. Avoid excessive blur because blur can become a GPU/memory cost.
+### Color
+Wallpaper-aware accent extraction is performed from a small sampled palette. Themes define background, surface, elevated surface, primary/secondary text, accent, success, warning and error tokens. Color is never the sole status indicator.
 
 ### Motion
-Default transitions should be short and interruptible.
-Reduced-motion mode removes nonessential animation.
-Low-power hardware may use instant state changes.
+Instant, Minimal, Standard and Expressive motion levels. All nonessential motion is interruptible. Low-power/thermal pressure can automatically reduce motion.
 
-## 5. Core Screens
-### Desktop
-Workspace, windows, shell, widgets and notifications.
+## 4. Shell
 
-### Launcher
-Application grid/list, search, recent items, categories, commands.
+### 4.1 ZERO Bar
+Adaptive shell containing launcher/search, active app context, workspace, Dynamic Capsule, system status, notifications and controls. It compresses on small displays and can expand on large displays.
 
-### Settings
-Hierarchical but searchable. Every setting includes current value, scope, dependency and reset/default action.
+### 4.2 Universal Search
+One search surface can find applications, files, settings, devices, commands, help, diagnostics and optional AI answers. Indexing is incremental and event-driven.
 
-### File Manager
-Volumes, folders, search, previews, permissions, transfer queue and storage health.
+### 4.3 Dynamic Capsule
+Compact contextual surface for music, downloads, recordings, calls, timers, navigation, AI tasks and update/recovery progress. Idle state is tiny; event state expands. It is event-driven and does not continuously poll.
 
-### Hardware Center
-CPU, GPU, RAM, storage, display, network, audio, USB, battery and driver status.
+### 4.4 Floating Dock
+Adaptive-width task dock with pinned and contextual apps. It can move to the side or become a tablet shelf.
 
-### Performance Center
-Live CPU/RAM/I/O/network graphs, foreground process, thermal state and resource governor decisions.
+## 5. Window System
+Windows provide rounded corners, snap zones, tiling, resize, maximize/minimize, workspaces, always-on-top where permitted, picture-in-picture where applicable, keyboard management and touch gestures. Open/close/minimize transitions are short and interruptible.
 
-### Privacy Center
-Camera/microphone/location/app permissions, recent access, network activity summaries and controls.
+## 6. Tablet / 2-in-1 UI
+ZEROOS has a genuine responsive tablet mode rather than a stretched desktop:
+- touch-safe controls;
+- gesture-friendly dock/shelf;
+- split-screen and multi-window;
+- touch-expandable Dynamic Capsule;
+- stylus/handwriting input hooks;
+- virtual keyboard integration;
+- portrait/landscape layouts;
+- keyboard shortcuts preserved when a physical keyboard is present.
 
-### Security Center
-Firewall state, malware scan status, update trust, encryption state and recovery readiness.
+Desktop -> Hybrid -> Tablet transitions preserve application and workspace state without restarting the shell.
 
-### Recovery Center
-Snapshots, rollback, safe mode, logs, repair tools and boot-repair status.
+## 7. UHD / High-DPI
+Vector-first icons, fractional scaling, DPI-aware layout, per-display scaling, high-resolution wallpapers, multi-monitor topology and HDR-aware media where supported. High resolution uses demand-loaded assets and bounded caches; 4K presentation does not imply permanent 4K texture residency.
 
-## 6. Native Apps
-ZERO Browser, Terminal, Notes, PDF Reader, Media Player, Music, Screenshot/Recorder, Calculator, Package Manager, Archive Manager, Device Link and Study Center.
+## 8. Core Screens
+Desktop, Launcher, Settings, File Manager, Hardware Center, Performance Center, Privacy Center, Security Center, Recovery Center and Device Center are defined as production surfaces.
 
-Each app must declare:
-- startup policy,
-- memory budget,
-- background behavior,
-- permission needs,
-- accessibility behavior.
+## 9. Native Apps
+ZERO Browser, Terminal, Notes, PDF Reader, Media Player, Music, Screenshot/Recorder, Calculator, Package Manager, Archive Manager, Device Link, Study Center, Studio, Control and Health. Each declares startup policy, memory budget, background behavior, permissions and accessibility behavior.
 
-## 7. Adaptive Resource UX
-The UI must expose why a feature is dormant, not make it appear broken.
-Example: “AI assistant ready — starts when requested.”
-Background tasks show “Paused to prioritize your game” rather than silently consuming resources.
+The detailed app/theming contract is maintained in `ZEROOS_VISUAL_DESIGN_THEMES_AND_APP_SUITE.md`.
 
-## 8. Accessibility
-- full keyboard traversal,
-- screen reader semantic tree,
-- scalable UI,
-- high contrast,
-- color-independent status,
-- captions,
-- reduced motion,
-- large pointer/touch targets,
-- alternative input hooks,
-- Hindi/English localization architecture.
+## 10. Adaptive Resource UX
+The UI explains dormancy rather than appearing broken. Heavy engines are demand-loaded; controllers can remain tiny and warm. Background work pauses under pressure. “Near-zero resource” means near-zero unnecessary idle overhead, not literally zero resource consumption while actively rendering/decoding/playing media.
 
-## 9. Notifications
-Notifications are grouped by source and urgency.
-No service may wake the desktop repeatedly merely to update a nonurgent badge.
-Notifications can be deferred, summarized or disabled.
+## 11. Accessibility
+Full keyboard traversal, semantic screen-reader tree, scalable UI, high contrast, color-independent status, captions, reduced motion, large touch targets, alternative input and Hindi/English localization architecture. Glass automatically becomes more opaque or solid when readability requires it.
 
-## 10. Browser UX
-Tabs use states:
-ACTIVE -> IDLE -> FROZEN -> DISCARDED.
-Visible and recently interactive tabs receive priority.
-Media tabs remain active only while required.
-Discarding must preserve recoverable navigation state.
+## 12. Notifications
+Grouped by source and urgency. Nonurgent notifications must not repeatedly wake the desktop. They can be deferred, summarized or disabled.
 
-## 11. Gaming UX
-Game Mode provides:
-- foreground priority,
-- optional background throttling,
-- FPS/frame-time overlay,
-- controller status,
-- capture controls,
-- thermal/resource visibility.
-It must never disable security or recovery mechanisms without explicit, documented policy.
+## 13. Browser UX
+Tabs: ACTIVE -> IDLE -> FROZEN -> DISCARDED. Visible/recently interactive tabs receive priority. Discarding preserves recoverable navigation state.
 
-## 12. Study UX
-Study Center integrates:
-- PDF reader,
-- notes,
-- OCR,
-- flashcards,
-- dictionary,
-- formula manager,
-- focus timer,
-- optional AI explanation.
-AI is demand-driven and user-controlled.
+## 14. Gaming UX
+Game Mode provides foreground priority, optional background throttling, frame-time/FPS visibility, controller status, capture controls and thermal/resource visibility. It cannot disable security or recovery mechanisms without explicit policy.
 
-## 13. Media UX
-Video player supports subtitles, multiple audio tracks, speed control, screenshots, playlists and hardware decode where available.
-Audio engine chooses hardware acceleration or efficient software DSP based on device capability.
+## 15. Study UX
+PDF/ebook reader, notes, OCR, flashcards, dictionary, formula tools, focus timer, citation/reference workspace and optional demand-driven AI explanation.
 
-## 14. Error UX
-Errors should answer:
-1. What happened?
-2. What was affected?
-3. Is my data safe?
-4. What can I do now?
-5. Can ZEROOS repair it automatically?
-6. Where is the diagnostic report?
+## 16. Media UX
+Video supports subtitles, multiple audio tracks, speed control, screenshots, playlists, network streams and hardware decode where available. Audio selects efficient hardware or software paths based on capability.
 
-Never show an unexplained kernel-style message for ordinary application failures.
+## 17. Error UX
+Every error should answer: what happened, what was affected, whether data is safe, what can be done now, whether ZEROOS can repair it, and where the diagnostic report is.
 
-## 15. UI Performance Contract
-- no unbounded animation loops,
-- no full-tree relayout for trivial state changes,
-- incremental rendering,
-- cached assets,
-- demand-loaded heavy resources,
-- frame scheduling aligned with display capability,
-- background work suspended under pressure.
+## 18. UI Performance Contract
+No unbounded animation loops; no full-tree relayout for trivial changes; incremental rendering; cached/vector assets; demand-loaded heavy resources; display-rate-aware scheduling; background suspension under pressure; bounded blur and texture budgets.
 
-## 16. Design Acceptance
-Every UI feature must have:
-- normal state,
-- loading state,
-- empty state,
-- error state,
-- offline state where applicable,
-- permission-denied state,
-- reduced-motion state,
-- low-resource state,
-- keyboard navigation,
-- localization-ready strings.
+## 19. Design Acceptance
+Every UI feature must define normal, loading, empty, error, offline, permission-denied, reduced-motion, low-resource, keyboard and localization states where applicable. It must be measured on desktop and tablet profiles before production certification.
 
-
-## 17. Production Desktop Quality Contract
-
-ZEROOS desktop implementation is not a visual prototype. Every desktop subsystem must be engineered as a production platform component.
-
-### Shell/Compositor Requirements
-
-Production graphics/desktop architecture must include, as applicable:
-- retained scene model;
-- damage tracking;
-- occlusion;
-- frame scheduling and pacing;
-- vsync/display synchronization;
-- GPU/software fallback;
-- surface/buffer ownership;
-- multi-monitor;
-- DPI scaling;
-- accessibility semantics;
-- crash isolation;
-- watchdog/restart behavior;
-- low-resource and reduced-motion modes.
-
-### UI State Completeness
-
-Every major feature must define:
-NORMAL, LOADING, EMPTY, ERROR, OFFLINE, PERMISSION-DENIED, LOW-RESOURCE and REDUCED-MOTION states where applicable.
-
-### Resource Maturity
-
-Do not keep heavy renderers, indexes or engines permanently resident merely to make a feature appear instant. Use tiny warm controllers, retained state and demand activation. Measure wake latency and memory residency rather than assuming performance.
-
-### Accessibility Is Production Scope
-
-Keyboard traversal, semantic accessibility information, scaling, high contrast, captions, reduced motion, alternative input and Hindi/English localization are architectural requirements, not later polish.
-
-### Originality
-
-ZEROOS may learn from familiar desktop interaction patterns, but implementation must maintain its own visual language, component system and information architecture rather than becoming a clone of another operating system.
+## 20. Originality
+ZEROOS may combine useful patterns from desktop, tablet and mobile systems, but its branding, icons, component geometry, information architecture and interaction grammar must remain original.
