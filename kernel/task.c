@@ -2064,11 +2064,15 @@ int task_debug_validate(void) {
     if (trace)
         serial_write_public("ZEROOS: task validation acquired metadata lock.\n");
     task_validate_table("ZEROOS PANIC: explicit scheduler checkpoint failed.\n");
-    if (trace)
+    if (trace) {
         serial_write_public("ZEROOS: task-table validation completed.\n");
-    spin_unlock_irqrestore(&task_lock,flags);
-    if (trace)
-        serial_write_public("ZEROOS: task validation released metadata lock.\n");
+        spin_unlock(&task_lock);
+        serial_write_public("ZEROOS: task metadata lock released before IRQ restore.\n");
+        task_irq_restore(flags);
+        serial_write_public("ZEROOS: task validation IRQs restored.\n");
+    } else {
+        spin_unlock_irqrestore(&task_lock,flags);
+    }
     return 0;
 }
 
