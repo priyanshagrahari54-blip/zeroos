@@ -79,7 +79,7 @@ int main(void) {
     struct netif interface, receiver_interface;
     struct net_stack stack, receiver_stack;
     struct received_datagram received = {0};
-    struct net_firewall_rule allow_udp = {0};
+    struct zd_fw_rule allow_udp = {0};
     const uint8_t local_mac[6] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x01 };
     const uint8_t remote_mac[6] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x02 };
     const uint8_t payload[] = { 'z', 'e', 'r', 'o', 'o', 's', '!' };
@@ -91,6 +91,23 @@ int main(void) {
     assert(netif_set_link(&interface, 1) == 0);
     net_stack_init(&stack, 0, 0);
     assert(net_stack_set_ipv4_address(&stack, local_ip) == 0);
+    assert(net_stack_send_udp_ipv4(&stack, &interface, remote_mac, remote_ip,
+                                   49152, 53, payload, sizeof(payload)) == -3);
+    assert(stack.stats.policy_drops == 1 && stack.stats.transmit_errors == 0);
+    allow_udp.dir = ZD_FW_OUT;
+    allow_udp.proto = ZD_FW_UDP;
+    allow_udp.action = ZD_FW_ALLOW;
+    assert(net_fw_add(&stack.ipv4_firewall, &allow_udp, 0) == 0);
+    struct zd_fw_rule deny_dns = {
+        .dir = ZD_FW_OUT, .proto = ZD_FW_UDP, .action = ZD_FW_DENY,
+        .port_lo = 53, .port_hi = 53
+    };
+    assert(net_fw_add(&stack.ipv4_firewall, &deny_dns, 1) == 0);
+    assert(net_stack_send_udp_ipv4(&stack, &interface, remote_mac, remote_ip,
+                                   49152, 53, payload, sizeof(payload)) == -3);
+    assert(stack.stats.policy_drops == 2 && capture.length == 0);
+    assert(net_fw_remove(&stack.ipv4_firewall,
+                         stack.ipv4_firewall.rules[0].id) == 0);
 
     assert(net_stack_send_udp_ipv4(&stack, &interface, remote_mac, remote_ip,
                                    49152, 53, payload, sizeof(payload)) == 0);
@@ -122,9 +139,20 @@ int main(void) {
     assert(netif_set_link(&receiver_interface, 1) == 0);
     net_stack_init(&receiver_stack, receive_udp, &received);
     assert(net_stack_set_ipv4_address(&receiver_stack, remote_ip) == 0);
-    allow_udp.protocol = NET_PROTO_UDP;
-    allow_udp.action = NET_ACTION_ALLOW;
-    assert(net_firewall_add(&receiver_stack.ipv4_firewall, &allow_udp) == 0);
+    struct zd_fw_rule allow_inbound = {
+        .dir = ZD_FW_IN, .proto = ZD_FW_UDP, .action = ZD_FW_ALLOW
+    };
+    assert(net_fw_add(&receiver_stack.ipv4_firewall, &allow_inbound, 0) == 0);
+    struct zd_fw_rule deny_inbound_dns = {
+        .dir = ZD_FW_IN, .proto = ZD_FW_UDP, .action = ZD_FW_DENY,
+        .port_lo = 53, .port_hi = 53
+    };
+    assert(net_fw_add(&receiver_stack.ipv4_firewall, &deny_inbound_dns, 1) == 0);
+    assert(net_stack_input(&receiver_stack, &receiver_interface, capture.frame,
+                           capture.length) == 1);
+    assert(received.count == 0 && receiver_stack.stats.policy_drops == 1);
+    assert(net_fw_remove(&receiver_stack.ipv4_firewall,
+                         receiver_stack.ipv4_firewall.rules[0].id) == 0);
     assert(net_stack_input(&receiver_stack, &receiver_interface, capture.frame,
                            capture.length) == 0);
     assert(received.count == 1 && received.source_port == 49152 &&
@@ -132,6 +160,15 @@ int main(void) {
     assert(memcmp(received.payload, payload, sizeof(payload)) == 0);
 
     /* Zero-length datagrams are legal, and still get a nonzero checksum. */
+    struct zd_fw_rule deny_ntp = {
+        .dir = ZD_FW_OUT, .proto = ZD_FW_UDP, .action = ZD_FW_DENY,
+        .port_lo = 7, .port_hi = 7
+    };
+    assert(net_fw_add(&stack.ipv4_firewall, &deny_ntp, 1) == 0);
+    assert(net_stack_send_udp_ipv4(&stack, &interface, remote_mac, remote_ip,
+                                   49152, 7, 0, 0) == -3);
+    assert(net_fw_remove(&stack.ipv4_firewall,
+                         stack.ipv4_firewall.rules[0].id) == 0);
     assert(net_stack_send_udp_ipv4(&stack, &interface, remote_mac, remote_ip,
                                    49152, 7, 0, 0) == 0);
     ip = capture.frame + 14U;

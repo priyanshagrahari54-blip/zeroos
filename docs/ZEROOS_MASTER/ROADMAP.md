@@ -46,8 +46,9 @@ The detailed product plan remains in ZEROOS_MASTER_ROADMAP.md.
     binding with the previously-unwired stage_apply/capture hooks
     restored fail-closed, and the privacy centre aggregation
     (sandbox/firewall/media/eco/clipboard counters -> documented
-    risk ladder).  Kernel packet-path binding and enforcement hooks
-    follow.
+    risk ladder).  Directional firewall enforcement is bound to the IPv4/UDP
+    packet-stack ingress and egress paths and host-tested; live device/service
+    integration plus TCP, ICMP and IPv6 enforcement remain open.
 12. Study Center and app framework.
     Status: flashcard/spaced-repetition scheduler and focus sessions
     host-tested (Stage 5); the PDF subset contract (page tree, Tj/TJ

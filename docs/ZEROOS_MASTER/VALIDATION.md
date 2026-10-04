@@ -24,7 +24,7 @@ Never claim literal zero CPU/RAM/latency, universal compatibility, or untested h
 | FAULT | Injected failures and recovery | Required |
 | STRESS | Capacity/concurrency loops | Required |
 | SOAK | Long-duration stability | Required; hardware pending |
-| SECURITY | Enforcement and crypto boundaries | Host coverage exists; kernel enforcement pending |
+| SECURITY | Enforcement and crypto boundaries | IPv4/UDP directional policy is packet-stack-bound and host-tested; live-path and other protocol gates remain pending |
 | RECOVERY | Crash/update/filesystem recovery | Covered paths recorded; full recovery gate pending |
 | QEMU | Guest certification | Required |
 | REAL-HARDWARE | Physical certified ISO | Not run — no claim |

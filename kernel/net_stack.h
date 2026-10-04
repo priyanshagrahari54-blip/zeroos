@@ -1,5 +1,6 @@
 #ifndef ZEROOS_NET_STACK_H
 #define ZEROOS_NET_STACK_H
+#include "firewall.h"
 #include "net_core.h"
 #include "netif.h"
 
@@ -26,7 +27,7 @@ struct net_stack_stats {
 /* Caller serializes state access. IPv4 is default-deny through firewall;
  * IPv6 is intentionally unsupported until an explicit IPv6 policy exists. */
 struct net_stack {
-    struct net_firewall ipv4_firewall;
+    struct zd_fw ipv4_firewall;
     net_stack_udp_fn udp_receive;
     void *context;
     uint32_t ipv4_local_address;
@@ -47,7 +48,8 @@ int net_stack_poll(struct net_stack *stack, struct netif *interface,
                    uint32_t frame_budget);
 /* Builds and transmits one unfragmented IPv4/UDP Ethernet frame. Caller
  * supplies the resolved next-hop MAC; ARP, routing and retransmission are
- * outside this bounded primitive. Payload is limited by interface MTU. */
+ * outside this bounded primitive. Payload is limited by interface MTU.
+ * Directional firewall policy is enforced; policy denial returns -3. */
 int net_stack_send_udp_ipv4(struct net_stack *stack, struct netif *interface,
                             const uint8_t destination_mac[6],
                             uint32_t destination_address,

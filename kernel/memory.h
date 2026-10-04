@@ -2,6 +2,7 @@
 #define ZEROOS_MEMORY_H
 
 #include "types.h"
+#include "sync.h"
 
 #define ZEROOS_PAGE_SIZE 4096ULL
 

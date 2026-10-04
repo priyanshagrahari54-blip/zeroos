@@ -63,7 +63,7 @@ void net_stack_init(struct net_stack *stack, net_stack_udp_fn udp_receive,
     uint8_t *bytes = (uint8_t *)stack;
     for (uint32_t i = 0; i < sizeof(*stack); ++i)
         bytes[i] = 0;
-    net_firewall_init(&stack->ipv4_firewall);
+    net_fw_init(&stack->ipv4_firewall);
     stack->udp_receive = udp_receive;
     stack->context = context;
 }
@@ -115,11 +115,6 @@ int net_stack_input(struct net_stack *stack, const struct netif *interface,
             stack->stats.policy_drops++;
             return 1;
         }
-        if (net_firewall_check(&stack->ipv4_firewall, &ipv4) !=
-            NET_ACTION_ALLOW) {
-            stack->stats.policy_drops++;
-            return 1;
-        }
         if (ipv4.is_fragment) {
             stack->stats.fragments++;
             return 1; /* No fragment reassembly or partial UDP delivery. */
@@ -141,6 +136,20 @@ int net_stack_input(struct net_stack *stack, const struct netif *interface,
                                      udp.length)) {
             stack->stats.udp_checksum_errors++;
             return -1;
+        }
+        struct zd_fw_flow flow = {
+            .dir = ZD_FW_IN,
+            .proto = ZD_FW_UDP,
+            .src_ip = ipv4.source,
+            .dst_ip = ipv4.destination,
+            .src_port = udp.source_port,
+            .dst_port = udp.destination_port,
+            .conn_known = 0,
+            .app_id = ""
+        };
+        if (net_fw_decide(&stack->ipv4_firewall, &flow) != ZD_FW_ALLOW) {
+            stack->stats.policy_drops++;
+            return 1;
         }
         source[10] = source[11] = 0xff;
         destination[10] = destination[11] = 0xff;
@@ -245,6 +254,20 @@ int net_stack_send_udp_ipv4(struct net_stack *stack, struct netif *interface,
         ip_length > 0xffffU) {
         stack->stats.transmit_errors++;
         return -2;
+    }
+    struct zd_fw_flow flow = {
+        .dir = ZD_FW_OUT,
+        .proto = ZD_FW_UDP,
+        .src_ip = stack->ipv4_local_address,
+        .dst_ip = destination_address,
+        .src_port = source_port,
+        .dst_port = destination_port,
+        .conn_known = 0,
+        .app_id = ""
+    };
+    if (net_fw_decide(&stack->ipv4_firewall, &flow) != ZD_FW_ALLOW) {
+        stack->stats.policy_drops++;
+        return -3;
     }
 
     for (uint32_t i = 0; i < 6U; ++i) {

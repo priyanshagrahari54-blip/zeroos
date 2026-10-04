@@ -1,5 +1,5 @@
 #include "firewall.h"
-#include <string.h>
+#include "kstring.h"
 
 static int fw_str_app(const char *rule_app, const char *flow_app) {
     if (!rule_app[0])
@@ -29,10 +29,15 @@ static int fw_valid_tmpl(const struct zd_fw_rule *t) {
     if (t->action != ZD_FW_DENY && t->action != ZD_FW_ALLOW) return 0;
     if (t->port_lo > t->port_hi) return 0;
     if (t->ip_lo > t->ip_hi) return 0;
-    for (int i = 0; i < ZD_FW_APP && t->app[i]; ++i) {
+    int terminated = 0;
+    for (int i = 0; i < ZD_FW_APP; ++i) {
+        if (!t->app[i]) {
+            terminated = 1;
+            break;
+        }
         if ((unsigned char)t->app[i] < 0x21) return 0;
     }
-    return 1;
+    return terminated;
 }
 
 int net_fw_add(struct zd_fw *fw, const struct zd_fw_rule *tmpl, int front) {
@@ -75,7 +80,7 @@ static int fw_match(const struct zd_fw_rule *r, const struct zd_fw_flow *f) {
     if (r->proto != ZD_FW_ANY && (int)r->proto != f->proto) return 0;
     if (r->established_only && !f->conn_known) return 0;
     if (r->port_lo || r->port_hi) {
-        uint16_t port = (f->dir == ZD_FW_OUT) ? f->dst_port : f->src_port;
+        uint16_t port = f->dst_port;
         if (port < r->port_lo || port > r->port_hi) return 0;
     }
     if (r->ip_lo || r->ip_hi) {

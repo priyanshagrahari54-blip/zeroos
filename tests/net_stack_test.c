@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <string.h>
 #include "../kernel/net_stack.h"
 #include "../kernel/net_l2.h"
 #include "../kernel/net_socket.h"
@@ -68,7 +69,15 @@ int main(void) {
     struct delivery delivery={0};
     uint8_t mac[6]={0x02,0,0,0,0,1};
     uint8_t frame[45];
-    struct net_firewall_rule rule={0};
+    struct zd_fw_rule rule={0};
+    struct zd_fw invalid_app_policy;
+    struct zd_fw_rule unterminated_app={0};
+    net_fw_init(&invalid_app_policy);
+    unterminated_app.dir=ZD_FW_IN;
+    unterminated_app.proto=ZD_FW_ANY;
+    unterminated_app.action=ZD_FW_ALLOW;
+    memset(unterminated_app.app,'x',sizeof(unterminated_app.app));
+    assert(net_fw_add(&invalid_app_policy,&unterminated_app,0)==-22);
     assert(netif_init(&interface,"test0",7,mac,1500,0,tx_noop,lock_noop,unlock_noop)==0);
     assert(netif_set_link(&interface,1)==0);
     net_stack_init(&stack,delivered,&delivery);
@@ -82,8 +91,9 @@ int main(void) {
     assert(net_stack_input(&stack,&interface,frame,sizeof(frame))==1);
     assert(stack.stats.policy_drops==2 && delivery.count==0); /* firewall default deny */
 
-    rule.protocol=NET_PROTO_UDP; rule.action=NET_ACTION_ALLOW;
-    assert(net_firewall_add(&stack.ipv4_firewall,&rule)==0);
+    rule.dir=ZD_FW_IN; rule.proto=ZD_FW_UDP; rule.action=ZD_FW_ALLOW;
+    rule.port_lo=9999; rule.port_hi=9999;
+    assert(net_fw_add(&stack.ipv4_firewall,&rule,0)==0);
     assert(net_stack_input(&stack,&interface,frame,sizeof(frame))==0);
     assert(delivery.count==1 && delivery.family==NET_STACK_FAMILY_IPV4);
     assert(delivery.interface_index==7 && delivery.source_port==1234 &&
@@ -145,7 +155,7 @@ int main(void) {
                                &socket_handle)==0);
     net_stack_init(&stack,net_udp_socket_dispatch,&sockets);
     assert(net_stack_set_ipv4_address(&stack,0xc0000202U)==0);
-    assert(net_firewall_add(&stack.ipv4_firewall,&rule)==0);
+    assert(net_fw_add(&stack.ipv4_firewall,&rule,0)==0);
     make_ipv4_udp(frame,0,0);
     assert(net_stack_input(&stack,&interface,frame,sizeof(frame))==0);
     assert(net_udp_socket_receive(&sockets,42,socket_handle,socket_payload,
