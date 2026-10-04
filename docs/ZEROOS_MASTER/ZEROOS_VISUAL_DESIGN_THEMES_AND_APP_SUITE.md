@@ -58,6 +58,8 @@ Optional ambient lighting derives from a small sampled palette. It never continu
 ### Aurora
 Dark navy base, cyan/indigo accent, soft aurora gradients. Default premium theme.
 
+For the Lenovo G560 reference profile, the default preset is **Aurora Legacy**: Aurora colors with lower animation, bounded glass, 1366x768 density tuning and HDD/thermal-aware effects.
+
 ### Obsidian Glass
 Near-black surfaces, restrained white text, electric blue accent. Power-user oriented.
 
@@ -249,27 +251,31 @@ Mechanisms:
 
 “0 resource” means near-zero unnecessary idle overhead. Active video, AI, animation or other active work necessarily consumes resources.
 
-## 12. Theme Performance Profiles
+## 12. G560 Reference Preset
+
+The Lenovo G560 uses the Aurora Legacy preset by default. It targets the 15.6-inch 1366x768 display and legacy Intel/NVIDIA graphics variants with compact geometry, Minimal motion, bounded caches, HDD-aware loading, thermal-aware effects, eye-protection controls and keyboard-first multitasking. See `ZEROOS_LENOVO_G560_REFERENCE_PROFILE.md` for the complete hardware/UI contract.
+
+## 13. Theme Performance Profiles
 
 Every theme declares visual cost, blur, animation, texture and idle-controller budgets plus a low-power fallback.
 
 Themes are presentation configurations, not hidden background services.
 
-## 13. App Design Contract
+## 14. App Design Contract
 
 Every first-party app provides shared design tokens, light/dark/high-contrast variants, keyboard navigation, touch layout, offline/permission/low-resource/reduced-motion states, empty/loading/error states, searchable commands, context menus, deep links, state restoration and crash-safe recovery.
 
 Apps must also implement the zero-render idle contract: unchanged views remain retained and do not continuously repaint.
 
-## 14. Accessibility and Readability
+## 15. Accessibility and Readability
 
 Glass never reduces text readability. The compositor can increase opacity, disable background motion or switch to solid surfaces when accessibility requires it.
 
-## 15. Originality Rule
+## 16. Originality Rule
 
 ZEROOS may combine familiar desktop, mobile and tablet interaction ideas, but its branding, icons, component geometry, information architecture and interaction grammar remain original.
 
-## 16. Acceptance Checklist
+## 17. Acceptance Checklist
 
 A theme/app experience is accepted only when:
 - desktop and tablet layouts are validated;
