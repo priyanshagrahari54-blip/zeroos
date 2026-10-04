@@ -1590,3 +1590,10 @@ For the granular implementation/validation checklist from boot through release, 
 Cross-cutting details that are easy to miss are tracked in `docs/ZEROOS_REMAINING_GAP_CLOSURE.md`, including toolchain/reproducibility, firmware edge cases, CPU/RAS, locking/memory ordering, crash forensics, time/locale, users/sessions, IPC/filesystem/network security, randomness, graphics robustness, UX reliability, package sandboxing, browser untrusted-content handling, compatibility runtime details, gaming measurement, ZERO AI agent safety/privacy, backups, observability, test infrastructure, formal invariants, documentation consistency, supply-chain security, installer/first boot, shutdown/reboot, and final repository-wide gap searches.
 
 ## End of exhaustive retained context.
+
+
+---
+
+## Cross-Cutting Master Contract
+
+See [`ZEROOS_MASTER_CONTRACT_AND_FEATURE_EXPANSION.md`](./ZEROOS_MASTER_CONTRACT_AND_FEATURE_EXPANSION.md) for the mandatory cross-cutting engineering contract and the expanded ZEROOS feature/platform catalog. Applicable requirements cover ownership/lifetime/concurrency, boot/firmware, hardware certification, networking, packages, SDK, observability, accounts, backup/recovery, privacy, supply-chain security, accessibility/i18n, virtualization, power-loss certification, performance/compatibility labs, ZERO AI safety, and additional product features. This is a specification link only; implementation status remains evidence-based.
