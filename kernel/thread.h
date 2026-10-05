@@ -44,6 +44,8 @@ int thread_system_init(void);
 
 struct thread *thread_current(void);
 struct thread *thread_lookup(thread_id_t tid);
+/* Caller holds process_lock; checks thread states under thread_lock. */
+int thread_process_all_zombie(const struct process *process);
 int thread_is_user(const struct thread *thread);
 struct vmm_space *thread_address_space(const struct thread *thread);
 

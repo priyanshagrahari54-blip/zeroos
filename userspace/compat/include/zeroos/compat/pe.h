@@ -1,8 +1,9 @@
 /* PE/COFF image header validation (Stage 5 part C — first loader
- * stage).  Validates DOS/PE/COFF/optional headers and the section
- * table against truncation and out-of-bounds fields with explicit
- * diagnostics.  Emulation/API translation happens later on top of
- * this contract.  Host-testable, freestanding-safe. */
+ * stage). Validates DOS/PE/COFF/optional headers, alignment rules, bounded
+ * data directories (including the certificate table's file-offset form),
+ * non-overlapping section extents, and executable-entry mapping with
+ * explicit diagnostics. Emulation/API translation happens later on top of
+ * this contract. Host-testable, freestanding-safe. */
 #ifndef ZEROOS_COMPAT_PE_H
 #define ZEROOS_COMPAT_PE_H
 
@@ -21,13 +22,15 @@ enum zpe_result {
 struct zpe_info {
     uint32_t image_size;      /* SizeOfImage */
     uint32_t header_size;     /* SizeOfHeaders */
-    uint32_t entry_rva;       /* AddressOfEntryPoint */
+    uint32_t entry_rva;       /* AddressOfEntryPoint; zero means absent */
     uint32_t section_count;
     uint32_t file_size;       /* input size passed in */
 };
 
-/* Validate a full in-memory image.  file_size must equal the buffer
- * length; every declared offset is bounds-checked against it. */
+/* Validate a full in-memory image. file_size must equal the buffer
+ * length; every declared offset is bounds-checked against it. A nonzero
+ * entry RVA must lie in a mapped executable section; zero permits a DLL
+ * without an entry point. */
 int zpe_validate(const uint8_t *image, uint32_t file_size,
                  struct zpe_info *out_info);
 

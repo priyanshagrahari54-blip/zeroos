@@ -8,6 +8,8 @@ required_patterns=(
   "ZEROOS: capability IPC negative/timeout semantics passed."
   "ZEROOS: IPC pipe blocked-writer wakeup passed."
   "ZEROOS: IPC capability generation/revocation stress passed."
+  "ZEROOS: finite child wait deadline/detach passed."
+  "ZEROOS: Ring-3 finite WAIT timeout/reap path passed."
   "ZEROOS: blocking child wait/wakeup path passed."
   "ZEROOS: event and pipe IPC foundations self-test passed."
   "ZEROOS: IPC pipe partial-write byte ordering passed."
@@ -17,6 +19,7 @@ required_patterns=(
   "ZEROOS: shared-memory map/grant/lifecycle self-test passed."
   "ZEROOS: userspace resource exhaustion/recovery passed."
   "ZEROOS: Ring-3 transition, syscall ABI, and init recovery passed."
+  "ZEROOS: serialized user-copy cross-page/read-only boundary self-test passed."
   "ZEROOS: display present contract verified."
 )
 
@@ -38,5 +41,13 @@ grep -Fq "ZEROOS_ELF_PT_INTERP ||" "$repo_root/kernel/elf.c"
 grep -Fq "ZEROOS_ELF_PT_DYNAMIC" "$repo_root/kernel/elf.c"
 grep -Fq "range_end(program->offset,program->file_size,&file_end)" "$repo_root/kernel/elf.c"
 grep -Fq "ZEROOS_USER_STACK_TOP>ZEROOS_USER_STACK_PAGE+VMM_PAGE_SIZE" "$repo_root/kernel/exec.c"
+grep -Fq "process_address_space_copy_from_user" "$repo_root/kernel/exec.c"
+grep -Fq "zeroos_tick_deadline_from_timeout" "$repo_root/kernel/syscall.c"
+grep -Fq "zeroos_tick_deadline_expired" "$repo_root/kernel/syscall.c"
+grep -Fq "zeroos_tick_deadline_expired" "$repo_root/kernel/process.c"
+if grep -Fq "vmm_space_translate" "$repo_root/kernel/exec.c"; then
+  echo "stage2-userspace-cert: exec must use the serialized user-copy helper" >&2
+  exit 1
+fi
 
 echo "stage2-userspace-cert: PASS"

@@ -1,7 +1,7 @@
 # ZEROOS — CURRENT IMPLEMENTATION STATUS
 
-Updated: 2026-10-04
-HEAD reviewed through H3 and subsequent Stage 2 hardening commits.
+Updated: 2026-10-05
+HEAD reviewed through latest main (`8f1d3ac`) plus the current cross-stage hardening batch.
 
 ## Honest stage completion estimate
 
@@ -66,3 +66,88 @@ Stage percentages remain evidence-weighted: **S1 92%, S2 82%, S3 45%, S4 39%, S5
 6. Keep Stage 2–5 gates green while these are integrated.
 
 This status intentionally distinguishes **host-tested platform cores** from **booted-kernel production integration**.
+
+### Update — 2026-10-05: cross-stage hardening batch
+
+- **Stages 1–2:** Added deadline-aware wait-queue detach/wakeup and finite
+  child-WAIT timeout/reap coverage; user-copy now holds process accounting
+  across validation, translation and bounded copies, with kernel probes for
+  cross-page, read-only, unmapped and overflow cases. This is source/build
+  evidence; the new serial markers have not been observed in a guest.
+- **Stage 3:** VFS mount lookup holds a short-lived superblock reference across
+  root-inode acquisition. Unmount, including forced unmount, now refuses live
+  inode/file/mmap references; the host filesystem test confirms the mount
+  remains usable after refusal. Crash-consistency, persistence and power-cut
+  recovery remain open.
+- **Stage 4:** DHCP parsing rejects truncated and duplicate known options;
+  REQUESTING/RENEWING replies are bound to the selected server, with a new
+  server permitted only during REBINDING. Tests add 512 exact-length datagrams
+  and 512 mutated option streams. This does not certify a live NIC or packet
+  path.
+- **Stages 5–6 and 9:** Hardened browser URL, file-provider, download progress,
+  AI broker/action-grant, automation cooldown and update/snapshot rollback
+  policies, with hostile-input, permission-revocation, reentrancy and lifecycle
+  tests. These are bounded host-tested cores, not full shell/service integration.
+- **Stage 8:** PE validation now checks alignment, optional-header/directory
+  extents, overlap and executable-entry constraints; host tests sweep 1,025
+  truncation boundaries and 8,192 one-bit mutations. No PE loader or Windows/
+  Android runtime is claimed.
+- **Validation:** Local `make check` and `make sanitize-check` passed after
+  integration of this batch. CI, guest boot, physical hardware, long soak and
+  release certification were not run here.
+
+The stage and overall estimates above remain unchanged at **~44% implemented
+(~56% remaining)**. The batch improves safety and evidence across existing
+foundations but closes no whole-stage exit gate: the remaining effort is still
+weighted toward guest/SMP validation, persistent storage recovery, real drivers,
+live graphics/browser/media integration, runtime compatibility, enforced
+security/update/recovery, production AI/service wiring, and hardware/soak
+certification. Assertion counts are evidence, not a feature-completion
+denominator. The earlier `~85% remaining` figure was an uncalibrated estimate
+and is superseded by this repository's stage-weighted assessment.
+
+### Update — 2026-10-05: Stage 2 exec transaction hardening
+
+- `exec_spawn` now routes image, argument-vector and string copies through
+  `process_address_space_copy_from_user`, keeping address-space validation and
+  physical translation serialized against mapping changes. Its user-copy
+  wrapper consistently reports `EFAULT` for invalid/unavailable user memory.
+- Spawn result IDs are cleared before validation. A post-load thread-creation
+  refusal now returns `ENOMEM` instead of falling through with a zero result;
+  rollback reports `EIO` if the unpublished child cannot be aborted.
+- Added `tests/exec_spawn_test.c` and wired it into `make check` and
+  `make sanitize-check`. Six host scenarios cover copy faults, spawn success
+  and stack layout, loader/map failures, thread-creation rollback, and abort
+  failure reporting. Stage 2 static certification also forbids reintroducing
+  raw `vmm_space_translate` reads in `kernel/exec.c`.
+- Validation passed: `make -j4 check` (desktop 121,665 checks; compatibility
+  9,352; certification gates), `make sanitize-check` (including the exec
+  harness under ASan/UBSan), and `make BUILD=build/production-check -j4 elf`
+  (kernel SIMD check clean). These are host/build results only; no guest boot,
+  QEMU lifecycle run, or hardware certification was performed.
+
+This closes a concrete Stage 2 exec failure path but does not close the stage's
+lifecycle or guest-certification gates. Estimates therefore remain **Stage 2
+82%, overall ~44% implemented (~56% remaining)**.
+
+### Update — 2026-10-05: wrap-safe finite wait deadlines
+
+- Added a shared tick-deadline primitive and applied it to process `WAIT`,
+  `INPUT_WAIT`, IPC timed operations, scheduler sleeps, and timed wait arming.
+  Finite intervals are bounded by `INT64_MAX`; modular addition now preserves
+  valid timeouts across `uint64_t` wrap instead of saturating to all-ones.
+  Oversized process/input waits return `EINVAL`, and scheduler wait-prepare
+  races that cross expiry resolve as `ETIMEDOUT` rather than `EBUSY`.
+- Added `tests/tick_deadline_test.c` with 29 checks for exact bounds,
+  over-limit rejection, due/past/ambiguous deadlines, and wraparound; the test
+  is in both `make check` and `make sanitize-check`. Stage 1/2/5 static gates
+  now assert the scheduler, process-wait and input-wait paths use the common
+  validation.
+- Validation passed: `make -j4 check`, `make sanitize-check` (ASan/UBSan),
+  and `make BUILD=build/production-check -j4 elf`; all five wired stage
+  certification scripts passed. No guest boot, QEMU lifecycle run, or physical
+  hardware certification was performed.
+
+This removes a bounded-deadline correctness gap across Stages 1, 2 and 5, but
+it does not close any stage exit gate. Estimates remain **S1 92%, S2 82%, S5
+41%, overall ~44% implemented (~56% remaining)**.

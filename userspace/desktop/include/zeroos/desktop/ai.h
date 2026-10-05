@@ -1,24 +1,26 @@
 #ifndef ZEROOS_DESKTOP_AI_H
 #define ZEROOS_DESKTOP_AI_H
-/* ZEROOS AI platform broker (Stage 5 part F) — deliberately separate
- * from Forge AI: this module is only the local request broker, and it
- * is event-driven (dormant while no request exists), demand-driven
- * (backends are invoked only inside submit/drain), permission-aware
- * (every context bit, action grant and the remote egress need explicit grants) and
- * minimal-resident (request payloads are cleared when drained; nothing
- * is retained across calls unless ZD_AI_GRANT_PERSIST is set).
+/* ZEROOS AI platform broker (Stage 9) — deliberately separate from Forge AI.
+ * This local request broker is demand-driven. Context data and action
+ * capabilities have separate explicit grants, checked at submission and again
+ * immediately before backend execution. Queued requests and output are wiped;
+ * persistent request retention is not implemented.
  *
- * Pipeline (docs/ARCHITECTURE.md section 17):
+ * Pipeline (docs/ZEROOS_MASTER/ARCHITECTURE.md section 17):
  *   request -> broker -> permission check -> backend select -> run
- * Missing injected ops count failures and return -ZD_EINVAL; they are
- * never mocked as success. */
+ * Missing injected ops count failures; they are never mocked as success. */
 #include <zeroos/desktop/common.h>
 
 /* Permission grants — explicit, user-controlled bits. */
 #define ZD_AI_GRANT_CONTEXT_FILES 0x0001u
 #define ZD_AI_GRANT_CONTEXT_SETTINGS 0x0002u
 #define ZD_AI_GRANT_CONTEXT_SELECTION 0x0004u
+#define ZD_AI_GRANT_CONTEXT_MASK \
+    (ZD_AI_GRANT_CONTEXT_FILES | ZD_AI_GRANT_CONTEXT_SETTINGS | \
+     ZD_AI_GRANT_CONTEXT_SELECTION)
 #define ZD_AI_GRANT_REMOTE_EGRESS 0x0008u
+/* Reserved for a future explicit persistence policy; retention is not yet
+ * implemented, so current requests are wiped regardless of this bit. */
 #define ZD_AI_GRANT_PERSIST 0x0010u
 #define ZD_AI_GRANT_ACTION_FILE_READ 0x0020u
 #define ZD_AI_GRANT_ACTION_FILE_WRITE 0x0040u
@@ -43,8 +45,8 @@ enum zd_ai_request_kind {
 struct zd_ai_request {
     uint32_t id;
     enum zd_ai_request_kind kind;
-    uint32_t context_mask;    /* which ZD_AI_GRANT_CONTEXT_* it wants */
-    uint32_t action_mask;     /* which action grants are required */
+    uint32_t context_mask;    /* subset of ZD_AI_GRANT_CONTEXT_MASK only */
+    uint32_t action_mask;     /* subset of ZD_AI_GRANT_ACTION_ALL */
     uint8_t want_remote;      /* requester prefers remote backend */
     uint8_t active;           /* queue slot occupancy */
     /* Payload is opaque to the broker and wiped after drain. */
@@ -61,7 +63,8 @@ struct zd_ai_stats {
     uint32_t queue_dropped;
     uint32_t run_failures;
     uint32_t wakeups;             /* dormant -> active transitions */
-    uint64_t resident_bytes_after_drain; /* must be 0 without PERSIST */
+    uint32_t reentrant_drains;    /* rejected while a drain hook is active */
+    uint64_t resident_bytes_after_drain; /* queued payload capacity; 0 when empty */
 };
 
 /* Injected demand-driven backend surface. */
@@ -84,6 +87,7 @@ struct zd_ai_broker {
     uint32_t grants;
     uint32_t queued;          /* occupancy */
     uint8_t active;           /* 0 = dormant (no request resident) */
+    uint8_t draining;          /* prevents callback-driven nested drains */
 };
 
 void zd_ai_broker_init(struct zd_ai_broker *broker,
@@ -91,20 +95,23 @@ void zd_ai_broker_init(struct zd_ai_broker *broker,
 void zd_ai_grant(struct zd_ai_broker *broker, uint32_t mask);
 void zd_ai_revoke(struct zd_ai_broker *broker, uint32_t mask);
 
-/* Enqueue a request.  Context bits not covered by grants are rejected
- * up front (-ZD_EPERM) before any backend sees the payload.  A full
- * queue drops the request (-ZD_ENOSPC) and counts it. Invalid request
+/* Enqueue a request. Only context bits are valid in context_mask and only
+ * action bits are valid in action_mask; unknown bits return -ZD_EINVAL.
+ * Missing context/action grants are rejected up front (-ZD_EPERM) before a
+ * backend sees payload.
+ * A full queue drops the request (-ZD_ENOSPC) and counts it. Invalid request
  * kinds and non-boolean want_remote values return -ZD_EINVAL. Waking a
  * dormant broker counts a wakeup. Returns 0 on acceptance. */
 int zd_ai_submit(struct zd_ai_broker *broker,
                  const struct zd_ai_request *request);
 
-/* Drain up to max_out requests: permission-gated backend selection,
- * remote->local downgrade when the egress grant is absent, execution
- * through the injected run op, reject invalid backend/output results,
- * then payload wipe (unless PERSIST).
- * Returns number completed in *completed_out; 0 with the broker
- * returning to DORMANT when the queue is empty. */
+/* Drain at most max_out queued requests: revalidate context/action schemas
+ * and current grants, select a permission-gated backend, downgrade remote to local
+ * when egress is absent, execute through the injected run op, reject invalid
+ * backend/output results, then wipe request and output buffers.
+ * Returns number completed in *completed_out; broker returns to DORMANT
+ * when the queue is empty. A callback-driven nested drain is rejected with
+ * -ZD_EBUSY and counted in reentrant_drains. */
 int zd_ai_drain(struct zd_ai_broker *broker, uint32_t max_out,
                 uint32_t *completed_out);
 

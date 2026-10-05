@@ -9,6 +9,7 @@
 #include "sync.h"
 #include "timer.h"
 #include "task.h"
+#include "tick_deadline.h"
 
 extern void serial_write_public(const char *text);
 
@@ -368,11 +369,10 @@ int input_wait(struct zeroos_input_event *event, uint64_t timeout_flags,
 
     if (!event || (timeout_flags & ~ZEROOS_WAIT_FLAG_NONBLOCK))
         return -ZEROOS_EINVAL;
-    if (timeout_ticks) {
-        deadline = timer_ticks() + timeout_ticks;
-        if (deadline < timer_ticks())
-            deadline = ~0ULL;
-    }
+    if (timeout_ticks &&
+        zeroos_tick_deadline_from_timeout(timer_ticks(),timeout_ticks,
+                                          &deadline)!=0)
+        return -ZEROOS_EINVAL;
 
     for (;;) {
         struct input_event source;
@@ -392,19 +392,25 @@ int input_wait(struct zeroos_input_event *event, uint64_t timeout_flags,
             return -ZEROOS_EAGAIN;
         }
         if (timeout_ticks) {
-            int sleep_result;
-            if ((long long)(deadline - timer_ticks()) <= 0) {
+            if (zeroos_tick_deadline_expired(timer_ticks(),deadline)) {
                 spin_unlock_irqrestore(&input_lock, irq_flags);
                 return -ZEROOS_ETIMEDOUT;
             }
-            spin_unlock_irqrestore(&input_lock, irq_flags);
-            sleep_result = task_sleep_ticks(1);
-            if (sleep_result != 0)
+            if (wait_queue_prepare_timeout(&input_waiters, deadline,
+                                           &block_flags) != 0) {
+                int wait_error=zeroos_tick_deadline_expired(
+                    timer_ticks(),deadline) ? -ZEROOS_ETIMEDOUT :
+                    -ZEROOS_EBUSY;
+                spin_unlock_irqrestore(&input_lock, irq_flags);
+                return wait_error;
+            }
+            spin_unlock(&input_lock);
+            if (wait_queue_commit(irq_flags) != 0)
                 return -ZEROOS_EINTR;
             continue;
         }
-        /* Same lost-wakeup discipline as ipc.c: publish the waiter while
-         * the queue condition lock is held, then release and commit. */
+        /* Publish the waiter while the queue condition lock is held, then
+         * release and commit. */
         if (wait_queue_prepare(&input_waiters, &block_flags) != 0) {
             spin_unlock_irqrestore(&input_lock, irq_flags);
             return -ZEROOS_EBUSY;

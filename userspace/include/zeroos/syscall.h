@@ -74,6 +74,8 @@ enum zeroos_syscall_id {
 #define ZEROOS_WAIT_VALID_FLAGS ZEROOS_WAIT_FLAG_NONBLOCK
 #define ZEROOS_IPC_VALID_FLAGS (ZEROOS_IPC_FLAG_NONBLOCK | ZEROOS_IPC_FLAG_PEEK)
 #define ZEROOS_PAGE_SIZE 4096U
+#define ZEROOS_SHMEM_MAX_PAGES 16U
+#define ZEROOS_SHMEM_MAX_SIZE (ZEROOS_SHMEM_MAX_PAGES * 4096ULL)
 #define ZEROOS_EXEC_MAX_IMAGE (64U * 1024U)
 #define ZEROOS_EXEC_MAX_ARGUMENTS 16U
 #define ZEROOS_EXEC_MAX_STRING 128U
@@ -138,6 +140,7 @@ enum zeroos_error {
                                   ZEROOS_SHMEM_RIGHT_GRANT | \
                                   ZEROOS_SHMEM_RIGHT_CLOSE)
 #define ZEROOS_SHMEM_MAP_WRITE   (1ULL << 0)
+#define ZEROOS_SHMEM_VALID_MAP_FLAGS ZEROOS_SHMEM_MAP_WRITE
 
 #define ZEROOS_ABI_FEATURE_PROCESS (1ULL << 0)
 #define ZEROOS_ABI_FEATURE_MEMORY  (1ULL << 1)
@@ -415,6 +418,9 @@ static inline int64_t zeroos_spawn(const void *image, uint64_t image_size,
         (uint64_t)(uintptr_t)argv,argc,(uint64_t)(uintptr_t)envp,envc));
 }
 
+/* Child WAIT timeout is in scheduler ticks: zero means wait forever, and a
+ * finite interval above INT64_MAX is rejected with -EINVAL so tick wrap stays
+ * unambiguous. */
 static inline int64_t zeroos_wait(uint64_t pid, uint64_t *status,
                                   uint64_t flags, uint64_t timeout) {
     return zeroos_syscall_result(zeroos_syscall6(
@@ -517,8 +523,8 @@ static inline int64_t zeroos_display_present(uint32_t x, uint32_t y,
 }
 
 /* Input: nonblocking drain (0 with event, -EAGAIN when empty) and
- * blocking wait. timeout is in scheduler ticks; 0 waits forever.
- * flags accepts ZEROOS_WAIT_FLAG_NONBLOCK only. */
+ * blocking wait. timeout is in scheduler ticks; 0 waits forever and finite
+ * values above INT64_MAX return -EINVAL. flags accepts NONBLOCK only. */
 static inline int64_t zeroos_input_poll(struct zeroos_input_event *event) {
     return zeroos_syscall_result(zeroos_syscall6(
         ZEROOS_SYS_INPUT_POLL,(uint64_t)(uintptr_t)event,0,0,0,0,0));

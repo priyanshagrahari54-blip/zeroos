@@ -1,4 +1,142 @@
 #include <assert.h>
+#include <string.h>
 #include "../kernel/dhcp_core.h"
-static void base(uint8_t*p,uint8_t type){for(unsigned i=0;i<260;i++)p[i]=0;p[0]=2;p[1]=1;p[2]=6;p[7]=1;p[16]=192;p[17]=0;p[18]=2;p[19]=44;p[236]=0x63;p[237]=0x82;p[238]=0x53;p[239]=0x63;p[240]=53;p[241]=1;p[242]=type;}
-int main(void){uint8_t p[260];struct dhcp_client c={0};base(p,2);p[243]=54;p[244]=4;p[245]=192;p[246]=0;p[247]=2;p[248]=1;p[249]=255;assert(dhcp_client_start(&c,1,100)==0);assert(dhcp_client_tick(&c,100,5,3)==DHCP_ACTION_DISCOVER);assert(dhcp_client_receive(&c,p,250,101)==1&&c.state==DHCP_REQUESTING&&c.address==0xc000022cU);assert(dhcp_client_tick(&c,101,5,3)==DHCP_ACTION_REQUEST);base(p,5);p[243]=54;p[244]=4;p[245]=192;p[246]=0;p[247]=2;p[248]=1;p[249]=51;p[250]=4;p[251]=0;p[252]=0;p[253]=0;p[254]=100;p[255]=58;p[256]=4;p[257]=0;p[258]=0;p[259]=0;/* truncated options must be rejected */assert(dhcp_client_receive(&c,p,sizeof(p),110)==-1);uint8_t a[270]={0};base(a,5);a[243]=54;a[244]=4;a[245]=192;a[246]=0;a[247]=2;a[248]=1;a[249]=51;a[250]=4;a[251]=0;a[252]=0;a[253]=0;a[254]=100;a[255]=58;a[256]=4;a[257]=0;a[258]=0;a[259]=0;a[260]=50;a[261]=59;a[262]=4;a[263]=0;a[264]=0;a[265]=0;a[266]=87;a[267]=255;assert(dhcp_client_receive(&c,a,sizeof(a),110)==3&&c.state==DHCP_BOUND);assert(dhcp_client_tick(&c,159,5,3)==DHCP_ACTION_NONE);assert(dhcp_client_tick(&c,160,5,3)==DHCP_ACTION_RENEW);assert(dhcp_client_tick(&c,197,5,3)==DHCP_ACTION_REBIND);assert(dhcp_client_tick(&c,210,5,3)==DHCP_ACTION_EXPIRED&&c.state==DHCP_FAILED);return 0;}
+
+#define PACKET_SIZE 270U
+#define OFFERED_ADDRESS 0xc000022cU
+#define SERVER_ONE 0xc0000201U
+#define SERVER_TWO 0xc0000202U
+
+static void packet_init(uint8_t *packet, uint8_t message_type,
+                        uint32_t address, uint32_t server) {
+    memset(packet, 0, PACKET_SIZE);
+    packet[0] = 2; /* BOOTREPLY */
+    packet[1] = 1; /* Ethernet */
+    packet[2] = 6;
+    packet[7] = 1; /* transaction ID */
+    packet[16] = (uint8_t)(address >> 24);
+    packet[17] = (uint8_t)(address >> 16);
+    packet[18] = (uint8_t)(address >> 8);
+    packet[19] = (uint8_t)address;
+    packet[236] = 0x63;
+    packet[237] = 0x82;
+    packet[238] = 0x53;
+    packet[239] = 0x63;
+    packet[240] = 53;
+    packet[241] = 1;
+    packet[242] = message_type;
+    packet[243] = 54;
+    packet[244] = 4;
+    packet[245] = (uint8_t)(server >> 24);
+    packet[246] = (uint8_t)(server >> 16);
+    packet[247] = (uint8_t)(server >> 8);
+    packet[248] = (uint8_t)server;
+}
+
+static uint32_t add_u32_option(uint8_t *packet, uint32_t offset,
+                               uint8_t code, uint32_t value) {
+    packet[offset++] = code;
+    packet[offset++] = 4;
+    packet[offset++] = (uint8_t)(value >> 24);
+    packet[offset++] = (uint8_t)(value >> 16);
+    packet[offset++] = (uint8_t)(value >> 8);
+    packet[offset++] = (uint8_t)value;
+    return offset;
+}
+
+int main(void) {
+    uint8_t packet[PACKET_SIZE];
+    struct dhcp_client client = {0};
+    uint32_t length;
+
+    assert(dhcp_client_start(NULL, 1, 100) == -1);
+    assert(dhcp_client_start(&client, 0, 100) == -1);
+    assert(dhcp_client_start(&client, 1, 100) == 0);
+    assert(dhcp_client_tick(&client, 100, 5, 3) == DHCP_ACTION_DISCOVER);
+
+    /* A valid OFFER advances SELECTING -> REQUESTING. */
+    packet_init(packet, 2, OFFERED_ADDRESS, SERVER_ONE);
+    packet[249] = 255;
+    length = 250;
+    packet[7] = 2; /* wrong transaction */
+    assert(dhcp_client_receive(&client, packet, length, 101) == -1);
+    assert(client.state == DHCP_SELECTING);
+    packet[7] = 1;
+    assert(dhcp_client_receive(&client, packet, length, 101) == 1);
+    assert(client.state == DHCP_REQUESTING);
+    assert(client.address == OFFERED_ADDRESS && client.server == SERVER_ONE);
+    assert(dhcp_client_tick(&client, 101, 5, 3) == DHCP_ACTION_REQUEST);
+
+    /* NAK/ACK from a different server must not steal the selected lease. */
+    packet_init(packet, 6, 0, SERVER_TWO);
+    packet[249] = 255;
+    assert(dhcp_client_receive(&client, packet, 250, 102) == -1);
+    assert(client.state == DHCP_REQUESTING && client.server == SERVER_ONE);
+
+    packet_init(packet, 5, OFFERED_ADDRESS, SERVER_TWO);
+    length = add_u32_option(packet, 249, 51, 100);
+    length = add_u32_option(packet, length, 58, 50);
+    length = add_u32_option(packet, length, 59, 87);
+    packet[length++] = 255;
+    assert(dhcp_client_receive(&client, packet, length, 110) == -1);
+    assert(client.state == DHCP_REQUESTING && client.server == SERVER_ONE);
+
+    /* Valid ACK pins the lease to the selected server and establishes timers. */
+    packet_init(packet, 5, OFFERED_ADDRESS, SERVER_ONE);
+    length = add_u32_option(packet, 249, 51, 100);
+    length = add_u32_option(packet, length, 58, 50);
+    length = add_u32_option(packet, length, 59, 87);
+    packet[length++] = 255;
+    assert(dhcp_client_receive(&client, packet, length, 110) == 3);
+    assert(client.state == DHCP_BOUND);
+    assert(client.lease_seconds == 100);
+    assert(client.renewal_seconds == 50 && client.rebind_seconds == 87);
+    assert(dhcp_client_tick(&client, 159, 5, 3) == DHCP_ACTION_NONE);
+    assert(dhcp_client_tick(&client, 160, 5, 3) == DHCP_ACTION_RENEW);
+    assert(dhcp_client_tick(&client, 197, 5, 3) == DHCP_ACTION_REBIND);
+    assert(dhcp_client_tick(&client, 210, 5, 3) == DHCP_ACTION_EXPIRED);
+    assert(client.state == DHCP_FAILED && client.address == 0);
+
+    /* T1/T2/expiry comparisons remain correct across a 32-bit tick wrap. */
+    {
+        struct dhcp_client wrap = {0};
+        uint32_t start = 0xfffffff0U;
+        assert(dhcp_client_start(&wrap, 1, start) == 0);
+        packet_init(packet, 2, OFFERED_ADDRESS, SERVER_ONE);
+        packet[249] = 255;
+        assert(dhcp_client_receive(&wrap, packet, 250, start + 1U) == 1);
+        packet_init(packet, 5, OFFERED_ADDRESS, SERVER_ONE);
+        length = add_u32_option(packet, 249, 51, 16);
+        length = add_u32_option(packet, length, 58, 8);
+        length = add_u32_option(packet, length, 59, 14);
+        packet[length++] = 255;
+        assert(dhcp_client_receive(&wrap, packet, length, start + 2U) == 3);
+        assert(dhcp_client_tick(&wrap, start + 9U, 2, 3) ==
+               DHCP_ACTION_NONE);
+        assert(dhcp_client_tick(&wrap, start + 10U, 2, 3) ==
+               DHCP_ACTION_RENEW);
+        assert(dhcp_client_tick(&wrap, start + 16U, 2, 3) ==
+               DHCP_ACTION_REBIND);
+        assert(dhcp_client_tick(&wrap, start + 18U, 2, 3) ==
+               DHCP_ACTION_EXPIRED);
+    }
+
+    /* Malformed/truncated ACK options cannot advance client state. */
+    {
+        struct dhcp_client pending = {0};
+        assert(dhcp_client_start(&pending, 1, 10) == 0);
+        packet_init(packet, 2, OFFERED_ADDRESS, SERVER_ONE);
+        packet[249] = 255;
+        assert(dhcp_client_receive(&pending, packet, 250, 11) == 1);
+        packet_init(packet, 5, OFFERED_ADDRESS, SERVER_ONE);
+        packet[249] = 51;
+        packet[250] = 4;
+        packet[251] = 0;
+        packet[252] = 0;
+        packet[253] = 0;
+        assert(dhcp_client_receive(&pending, packet, 254, 12) == -1);
+        assert(pending.state == DHCP_REQUESTING);
+    }
+
+    return 0;
+}

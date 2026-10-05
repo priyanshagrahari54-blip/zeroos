@@ -407,6 +407,8 @@ static int tf_io_errors(struct block_device *device, uint8_t *a, uint8_t *b) {
     fault.lba_start=device->start_lba+spb;
     fault.lba_end=device->start_lba+spb*(1U+((struct zj_super *)sbp)->journal_blocks);
     page_free(sbp);
+    struct block_stats stats_before, stats_after;
+    block_stats_snapshot(device,&stats_before,0,0);
     block_fault_set(device,&fault);
     int rc=vfs_mkdir(&tf_root,"/t/doomed",0755);
     struct vfs_file *d;
@@ -415,12 +417,22 @@ static int tf_io_errors(struct block_device *device, uint8_t *a, uint8_t *b) {
         vfs_file_put(d);
     }
     block_fault_clear(device);
+    block_stats_snapshot(device,&stats_after,0,0);
+    TF_CHECK(stats_after.faults_injected>stats_before.faults_injected,
+             "journal write fault matched");
     TF_CHECK(rc==-SE_IO,"journal write failure surfaces EIO");
     struct vfs_statfs s;
     TF_CHECK(vfs_statfs("/t",&s)==0 && (s.flags&VFS_SB_ERROR),"filesystem aborted read-only");
     TF_CHECK(vfs_mkdir(&tf_root,"/t/after-abort",0755)==-SE_IO,"no writes after abort");
-    (void)vfs_unmount("/t",1);
-    TF_CHECK(vfs_mount(device,"/t",0)==0,"mount after abort");
+    int unmount_rc=vfs_unmount("/t",1);
+    TF_CHECK(unmount_rc!=-SE_BUSY,"unmount after abort has no live references");
+    int idle=block_idle(device);
+    TF_CHECK(idle,"block requests drained after abort unmount");
+    int mount_rc=vfs_mount(device,"/t",0);
+    if (mount_rc)
+        klog("ZEROOS: storage fs test: remount after abort rc=%d (unmount rc=%d, block idle=%d).",
+             mount_rc,unmount_rc,idle);
+    TF_CHECK(mount_rc==0,"mount after abort");
     TF_CHECK(vfs_statfs("/t",&s)==0 && (s.flags&VFS_SB_RDONLY),"ERROR state -> read-only mount");
     TF_CHECK(!tf_exists("/t/doomed"),"uncommitted mkdir not visible");
     TF_CHECK(vfs_unmount("/t",0)==0,"unmount ro");
@@ -558,6 +570,11 @@ static int tf_unmount_rules(struct block_device *device) {
     struct vfs_file *f;
     TF_CHECK(vfs_open(&tf_root,"/t/busy",VFS_O_CREAT|VFS_O_RDWR,0644,&f)==0,"busy file");
     TF_CHECK(vfs_unmount("/t",0)==-SE_BUSY,"unmount with open file -> EBUSY");
+    TF_CHECK(vfs_unmount("/t",1)==-SE_BUSY,
+             "forced unmount also refuses live file references");
+    TF_CHECK(vfs_write(f,"held",4)==4,
+             "mount remains usable after refused forced unmount");
+    TF_CHECK(vfs_fsync(f,0)==0,"fsync after refused forced unmount");
     vfs_file_put(f);
     TF_CHECK(vfs_unlink(&tf_root,"/t/busy")==0,"unlink busy");
     TF_CHECK(vfs_unmount("/t",0)==0,"clean unmount");

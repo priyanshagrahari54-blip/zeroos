@@ -19,4 +19,6 @@ for pattern in "${required_patterns[@]}"; do
   fi
 done
 
+grep -Fq "zeroos_tick_deadline_distance_valid" "$repo_root/kernel/task.c"
+
 echo "stage1-scheduler-cert: PASS"

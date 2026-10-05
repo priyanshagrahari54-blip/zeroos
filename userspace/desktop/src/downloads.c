@@ -131,6 +131,12 @@ int zd_downloads_progress(struct zd_downloads *d, uint32_t id,
         d->stats.progress_regressions++;
         return d_bad();
     }
+    /* Reject inconsistent producer updates rather than displaying a
+     * percentage above 100 or silently changing a previously known size. */
+    if ((total && received > total) ||
+        (it->total && received > it->total) ||
+        (it->total && total && total != it->total))
+        return d_bad();
     it->received = received;
     if (total && it->total == 0)
         it->total = total;
@@ -148,7 +154,9 @@ int zd_downloads_finish(struct zd_downloads *d, uint32_t id, int err) {
         return -22;
     if (err < 0) {
         it->state = ZD_DL_FAILED;
-        it->fail_errno = -err;
+        /* `err` comes from an injected transport callback. Avoid signed
+         * overflow if a faulty callback supplies INT_MIN. */
+        it->fail_errno = (err == (-2147483647 - 1)) ? 2147483647 : -err;
         d->stats.failed++;
     } else {
         it->state = ZD_DL_DONE;

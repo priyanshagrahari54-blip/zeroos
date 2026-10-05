@@ -936,14 +936,14 @@ Do not import Linux, Windows, Android or macOS architecture wholesale. ZEROOS ma
 ## Required living documents
 
 The following documents must remain synchronized:
-- docs/ZEROOS_MASTER_BLUEPRINT.md — product + architecture truth
-- docs/ZEROOS_MASTER_ROADMAP.md — stage execution truth
-- docs/ROADMAP.md — short execution bridge
-- docs/BLUEPRINT_VERIFICATION.md — evidence and audit rules
-- docs/HARDWARE.md — detected vs operational hardware matrix
-- docs/VALIDATION.md — test/hardware evidence
-- docs/ARCHITECTURE.md — subsystem contracts and dependency graph
-- docs/ZEROOS_MASTER_PROMPT_10_STAGE.md — reusable execution prompt
+- docs/ZEROOS_MASTER/ZEROOS_MASTER_BLUEPRINT.md — product + architecture truth
+- docs/ZEROOS_MASTER/ZEROOS_MASTER_ROADMAP.md — stage execution truth
+- docs/ZEROOS_MASTER/ROADMAP.md — short execution bridge
+- docs/ZEROOS_MASTER/BLUEPRINT_VERIFICATION.md — evidence and audit rules
+- docs/ZEROOS_MASTER/HARDWARE.md — detected vs operational hardware matrix
+- docs/ZEROOS_MASTER/VALIDATION.md — test/hardware evidence
+- docs/ZEROOS_MASTER/ARCHITECTURE.md — subsystem contracts and dependency graph
+- docs/ZEROOS_MASTER/ZEROOS_MASTER_PROMPT_10_STAGE.md — reusable execution prompt
 
 A roadmap statement is never evidence of implementation.
 

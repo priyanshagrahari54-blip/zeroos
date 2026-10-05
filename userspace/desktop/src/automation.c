@@ -40,6 +40,7 @@ int zd_automation_init(struct zd_automation *engine,
     engine->rule_count = 0;
     engine->next_id = 1;
     engine->audit_count = 0;
+    engine->firing = 0;
     for (i = 0; i < ZD_AUTOMATION_MAX_RULES; ++i) {
         struct zd_automation_rule *rule = &engine->rules[i];
         for (j = 0; j < sizeof(*rule); ++j)
@@ -58,6 +59,8 @@ int zd_automation_add(struct zd_automation *engine,
     if (!engine || !rule || !target_valid(rule->target) ||
         !event_known(rule->event) || !action_known(rule->action))
         return -ZD_EINVAL;
+    if (engine->firing)
+        return -ZD_EBUSY;
     if (engine->rule_count >= ZD_AUTOMATION_MAX_RULES)
         return -ZD_ENOSPC;
     slot = &engine->rules[engine->rule_count++];
@@ -84,6 +87,8 @@ struct zd_automation_rule *zd_automation_find(struct zd_automation *engine,
 int zd_automation_remove(struct zd_automation *engine, uint32_t rule_id) {
     if (!engine || !rule_id)
         return -ZD_EINVAL;
+    if (engine->firing)
+        return -ZD_EBUSY;
     for (uint32_t i = 0; i < engine->rule_count; ++i) {
         if (engine->rules[i].id != rule_id)
             continue;
@@ -138,6 +143,13 @@ uint32_t zd_automation_fire(struct zd_automation *engine, uint32_t event,
     if (!engine || !event_known(event))
         return 0;
     engine->stats.events_seen++;
+    if (engine->firing) {
+        engine->stats.reentrant_suppressed++;
+        audit_push(engine, 0, event, ZD_AUTO_RESULT_REENTRANT_SUPPRESSED,
+                   now_tick);
+        return 0;
+    }
+    engine->firing = 1;
 
     for (uint32_t i = 0; i < engine->rule_count; ++i) {
         struct zd_automation_rule *rule = &engine->rules[i];
@@ -157,7 +169,8 @@ uint32_t zd_automation_fire(struct zd_automation *engine, uint32_t event,
             continue;
         }
         if (rule->cooldown_ticks && rule->fires &&
-            now_tick - rule->last_fire_tick < rule->cooldown_ticks) {
+            (now_tick < rule->last_fire_tick ||
+             now_tick - rule->last_fire_tick < rule->cooldown_ticks)) {
             engine->stats.rate_limited++;
             audit_push(engine, rule->id, event, ZD_AUTO_RESULT_RATE_LIMITED,
                        now_tick);
@@ -175,6 +188,7 @@ uint32_t zd_automation_fire(struct zd_automation *engine, uint32_t event,
         audit_push(engine, rule->id, event, ZD_AUTO_RESULT_FIRED, now_tick);
         fired++;
     }
+    engine->firing = 0;
     return fired;
 }
 

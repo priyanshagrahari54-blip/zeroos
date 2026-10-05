@@ -13,9 +13,9 @@
  * the boot. The event queue, POLL/WAIT syscalls and injection path work
  * regardless of controller health (used by tests and later input sources).
  *
- * Waiters block on an ordinary kernel wait queue; timeout waits follow the
- * same tick-deadline loop as ipc.c. The driver never polls hardware — IRQ1
- * pushes, the queue wakes.
+ * Waiters block on a kernel wait queue; finite waits arm their deadline on
+ * the scheduler timer queue and are detached on event or timeout. The driver
+ * never polls hardware — IRQ1 pushes, the queue wakes.
  */
 
 /* One-time controller/IRQ bring-up. Returns 0 when PS/2 keyboard input is

@@ -31,31 +31,20 @@ static struct exec_workspace exec_workspace;
 #define ZEROOS_AUXV_BASE    7ULL
 #define ZEROOS_AUXV_ENTRY   9ULL
 
-static int exec_copy_from_user(const struct process *process,
-                               uint64_t source, void *destination,
-                               uint64_t length) {
-    uint8_t *out=(uint8_t *)destination;
-    uint64_t offset=0;
-
-    if (!process || !destination ||
-        (length && !process_address_space_is_user_range(process,source,
-                                                        length,0)))
+static int exec_copy_from_user(struct process *process, uint64_t source,
+                               void *destination, uint64_t length) {
+    if (!process || !destination)
         return -ZEROOS_EFAULT;
-    while (offset<length) {
-        uint64_t address=source+offset;
-        uint64_t physical=vmm_space_translate(&process->address_space,address);
-        uint64_t within=VMM_PAGE_SIZE-(address&(VMM_PAGE_SIZE-1ULL));
-        uint64_t count=length-offset<within ? length-offset : within;
-        if (!physical)
-            return -ZEROOS_EFAULT;
-        for (uint64_t i=0; i<count; ++i)
-            out[offset+i]=((const uint8_t *)(uint64_t)(physical+i))[0];
-        offset+=count;
-    }
-    return 0;
+
+    /* Keep address-space validation and translation under the process lock.
+     * Doing a separate range check followed by page-table walks here leaves
+     * a map/unmap race between validation and the copy. */
+    return process_address_space_copy_from_user(process,destination,source,
+                                                length)==0 ? 0 :
+           -ZEROOS_EFAULT;
 }
 
-static int exec_copy_string(const struct process *process, uint64_t source,
+static int exec_copy_string(struct process *process, uint64_t source,
                             uint64_t offset, uint64_t *length_out) {
     uint64_t length=0;
     if (!source || offset>=ZEROOS_EXEC_MAX_STRING_BYTES)
@@ -178,9 +167,8 @@ static int exec_build_stack(const struct zeroos_elf_load_result *load_result,
     return 0;
 }
 
-static int exec_copy_vectors(const struct process *parent,
-                             uint64_t user_vector, uint64_t count,
-                             uint64_t *offsets_out) {
+static int exec_copy_vectors(struct process *parent, uint64_t user_vector,
+                             uint64_t count, uint64_t *offsets_out) {
     for (uint64_t i=0; i<count; ++i) {
         uint64_t pointer=0;
         int result=exec_copy_from_user(parent,
@@ -225,7 +213,12 @@ int exec_spawn(struct process *parent, uint64_t user_image,
     int copy_result;
     int failure_result=-ZEROOS_ENOMEM;
 
-    if (!exec_workspace.initialized || !parent || !result ||
+    if (!result)
+        return -ZEROOS_EINVAL;
+    result->pid=0;
+    result->tid=0;
+
+    if (!exec_workspace.initialized || !parent ||
         image_size==0 || image_size>ZEROOS_EXEC_MAX_IMAGE ||
         argc>ZEROOS_EXEC_MAX_ARGUMENTS || envc>ZEROOS_EXEC_MAX_ARGUMENTS ||
         (argc && !user_argv) || (envc && !user_envp))
@@ -294,8 +287,13 @@ int exec_spawn(struct process *parent, uint64_t user_image,
     stack_page=0;
     stack_mapped=1;
 
-    if (thread_create_user(child,load_result.entry,stack_pointer,&tid)!=0)
+    if (thread_create_user(child,load_result.entry,stack_pointer,&tid)!=0) {
+        /* Image loading completed, but no user thread was published. Treat
+         * the common table/task-capacity refusal as resource exhaustion and
+         * roll back the still-unpublished child below. */
+        failure_result=-ZEROOS_ENOMEM;
         goto fail_locked;
+    }
     result->pid=pid;
     result->tid=tid;
     spin_unlock_irqrestore(&exec_workspace.lock,lock_flags);
@@ -308,8 +306,15 @@ fail_locked:
         (void)process_address_space_unmap_page(child,ZEROOS_USER_STACK_PAGE);
     if (image_loaded && child)
         (void)elf_unload_image(child,exec_workspace.image,image_size);
-    if (child && child->state==PROCESS_NEW)
-        (void)process_abort_new(child);
+    if (child) {
+        if (child->state==PROCESS_NEW) {
+            if (process_abort_new(child)!=0)
+                failure_result=-ZEROOS_EIO;
+        } else {
+            /* A failed spawn must never silently leave a published child. */
+            failure_result=-ZEROOS_EIO;
+        }
+    }
     spin_unlock_irqrestore(&exec_workspace.lock,lock_flags);
     return failure_result;
 }

@@ -22,6 +22,9 @@ jobs:
       - name: Run reproducible local release gate
         run: make check
 
+      - name: Run host memory and undefined-behavior sanitizer gate
+        run: make sanitize-check
+
       - name: Verify kernel image
         run: |
           test -s build/zeroos.elf
@@ -111,6 +114,7 @@ jobs:
             grep -q "ZEROOS: capability IPC negative/timeout semantics passed." build/serial.log
             grep -q "ZEROOS: IPC pipe blocked-writer wakeup passed." build/serial.log
             grep -q "ZEROOS: IPC capability generation/revocation stress passed." build/serial.log
+            grep -q "ZEROOS: finite child wait deadline/detach passed." build/serial.log
             grep -q "ZEROOS: blocking child wait/wakeup path passed." build/serial.log
             grep -q "ZEROOS: event and pipe IPC foundations self-test passed." build/serial.log
             grep -q "ZEROOS: IPC pipe partial-write byte ordering passed." build/serial.log
@@ -119,6 +123,7 @@ jobs:
             grep -q "ZEROOS: blocking IPC send-wakeup path passed." build/serial.log
             grep -q "ZEROOS: isolated service process setup complete." build/serial.log
             grep -q "ZEROOS: shared-memory map/grant/lifecycle self-test passed." build/serial.log
+            grep -q "ZEROOS: serialized user-copy cross-page/read-only boundary self-test passed." build/serial.log
             grep -q "ZEROOS: userspace resource exhaustion/recovery passed." build/serial.log
             grep -q "ZEROOS: service capability least-privilege grant passed." build/serial.log
             grep -q "ZEROOS: service worker grant denial passed." build/serial.log
@@ -133,6 +138,7 @@ jobs:
             grep -q "ZEROOS: persistent service manager shutdown event delivered." build/serial.log
             grep -q "ZEROOS: userspace service manager reaped cleanly." build/serial.log
             grep -q "ZEROOS: persistent userspace service manager reaped cleanly." build/serial.log
+            grep -q "ZEROOS: Ring-3 finite WAIT timeout/reap path passed." build/serial.log
             grep -q "ZEROOS: userspace init syscall path passed." build/serial.log
             grep -q "ZEROOS: userspace negative syscall/fault/malformed-ELF probes passed." build/serial.log
             grep -q "ZEROOS: init userspace process reaped cleanly." build/serial.log
@@ -200,10 +206,12 @@ jobs:
           grep -q "ZEROOS: persistent service manager shutdown event delivered." build/serial-smp4.log
           grep -q "ZEROOS: userspace service manager reaped cleanly." build/serial-smp4.log
           grep -q "ZEROOS: persistent userspace service manager reaped cleanly." build/serial-smp4.log
+          grep -q "ZEROOS: Ring-3 finite WAIT timeout/reap path passed." build/serial-smp4.log
           grep -q "ZEROOS: userspace init syscall path passed." build/serial-smp4.log
           grep -q "ZEROOS: userspace resource exhaustion/recovery passed." build/serial-smp4.log
           grep -q "ZEROOS: event and pipe IPC foundations self-test passed." build/serial-smp4.log
           grep -q "ZEROOS: blocking event wait/wake path passed." build/serial-smp4.log
+          grep -q "ZEROOS: finite child wait deadline/detach passed." build/serial-smp4.log
           grep -q "ZEROOS: blocking child wait/wakeup path passed." build/serial-smp4.log
           grep -q "ZEROOS: blocking IPC close-wakeup path passed." build/serial-smp4.log
           grep -q "ZEROOS: blocking IPC send-wakeup path passed." build/serial-smp4.log
@@ -217,6 +225,7 @@ jobs:
           grep -q "ZEROOS: session shell process complete." build/serial-smp4.log
           grep -q "ZEROOS: session shell process reaped cleanly." build/serial-smp4.log
           grep -q "ZEROOS: shared-memory map/grant/lifecycle self-test passed." build/serial-smp4.log
+          grep -q "ZEROOS: serialized user-copy cross-page/read-only boundary self-test passed." build/serial-smp4.log
           grep -q "ZEROOS: userspace negative syscall/fault/malformed-ELF probes passed." build/serial-smp4.log
           grep -q "ZEROOS: Ring-3 transition, syscall ABI, and init recovery passed." build/serial-smp4.log
           if grep -q "ZEROOS PANIC:" build/serial-smp4.log; then
@@ -255,15 +264,18 @@ jobs:
           grep -q "ZEROOS: persistent service manager shutdown event delivered." build/serial-nx-off.log
           grep -q "ZEROOS: userspace service manager reaped cleanly." build/serial-nx-off.log
           grep -q "ZEROOS: persistent userspace service manager reaped cleanly." build/serial-nx-off.log
+          grep -q "ZEROOS: Ring-3 finite WAIT timeout/reap path passed." build/serial-nx-off.log
           grep -q "ZEROOS: userspace init syscall path passed." build/serial-nx-off.log
           grep -q "ZEROOS: userspace resource exhaustion/recovery passed." build/serial-nx-off.log
           grep -q "ZEROOS: event and pipe IPC foundations self-test passed." build/serial-nx-off.log
           grep -q "ZEROOS: blocking event wait/wake path passed." build/serial-nx-off.log
+          grep -q "ZEROOS: finite child wait deadline/detach passed." build/serial-nx-off.log
           grep -q "ZEROOS: blocking child wait/wakeup path passed." build/serial-nx-off.log
           grep -q "ZEROOS: blocking IPC close-wakeup path passed." build/serial-nx-off.log
           grep -q "ZEROOS: blocking IPC send-wakeup path passed." build/serial-nx-off.log
           grep -q "ZEROOS: isolated service process setup complete." build/serial-nx-off.log
           grep -q "ZEROOS: shared-memory map/grant/lifecycle self-test passed." build/serial-nx-off.log
+          grep -q "ZEROOS: serialized user-copy cross-page/read-only boundary self-test passed." build/serial-nx-off.log
           grep -q "ZEROOS: userspace negative syscall/fault/malformed-ELF probes passed." build/serial-nx-off.log
           grep -q "ZEROOS: Ring-3 transition, syscall ABI, and init recovery passed." build/serial-nx-off.log
           if grep -q "ZEROOS PANIC:" build/serial-nx-off.log; then
@@ -297,15 +309,18 @@ jobs:
           grep -q "ZEROOS: persistent service manager shutdown event delivered." build-fault/serial.log
           grep -q "ZEROOS: userspace service manager reaped cleanly." build-fault/serial.log
           grep -q "ZEROOS: persistent userspace service manager reaped cleanly." build-fault/serial.log
+          grep -q "ZEROOS: Ring-3 finite WAIT timeout/reap path passed." build-fault/serial.log
           grep -q "ZEROOS: userspace init syscall path passed." build-fault/serial.log
           grep -q "ZEROOS: userspace resource exhaustion/recovery passed." build-fault/serial.log
           grep -q "ZEROOS: event and pipe IPC foundations self-test passed." build-fault/serial.log
           grep -q "ZEROOS: blocking event wait/wake path passed." build-fault/serial.log
+          grep -q "ZEROOS: finite child wait deadline/detach passed." build-fault/serial.log
           grep -q "ZEROOS: blocking child wait/wakeup path passed." build-fault/serial.log
           grep -q "ZEROOS: blocking IPC close-wakeup path passed." build-fault/serial.log
           grep -q "ZEROOS: blocking IPC send-wakeup path passed." build-fault/serial.log
           grep -q "ZEROOS: isolated service process setup complete." build-fault/serial.log
           grep -q "ZEROOS: shared-memory map/grant/lifecycle self-test passed." build-fault/serial.log
+          grep -q "ZEROOS: serialized user-copy cross-page/read-only boundary self-test passed." build-fault/serial.log
           grep -q "ZEROOS: userspace negative syscall/fault/malformed-ELF probes passed." build-fault/serial.log
           grep -q "ZEROOS: Ring-3 transition, syscall ABI, and init recovery passed." build-fault/serial.log
           if grep -q "ZEROOS PANIC:" build-fault/serial.log; then

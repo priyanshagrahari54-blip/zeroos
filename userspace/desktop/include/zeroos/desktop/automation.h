@@ -45,7 +45,8 @@ enum zd_automation_result {
     ZD_AUTO_RESULT_DENIED_PERMISSION = 1,
     ZD_AUTO_RESULT_RATE_LIMITED = 2,
     ZD_AUTO_RESULT_CAP_REACHED = 3,
-    ZD_AUTO_RESULT_ACTION_FAILED = 4
+    ZD_AUTO_RESULT_ACTION_FAILED = 4,
+    ZD_AUTO_RESULT_REENTRANT_SUPPRESSED = 5
 };
 
 struct zd_automation_ops {
@@ -86,6 +87,7 @@ struct zd_automation_stats {
     uint64_t cap_reached;
     uint64_t action_failures;
     uint64_t audit_dropped;
+    uint64_t reentrant_suppressed;
     uint64_t rules_added;
     uint64_t rules_removed;
 };
@@ -97,6 +99,7 @@ struct zd_automation {
     uint32_t next_id;
     struct zd_automation_audit_entry audit[ZD_AUTOMATION_AUDIT_RING];
     uint32_t audit_count;     /* audit[0] is the oldest entry */
+    uint32_t firing;          /* suppress synchronous event/action loops */
     struct zd_automation_stats stats;
 };
 
@@ -106,8 +109,9 @@ int zd_automation_init(struct zd_automation *engine,
                        const struct zd_automation_ops *ops);
 
 /* Copies the rule template (id is assigned). Returns -ZD_ENOSPC when
- * full, -ZD_EINVAL on bad template (empty target, unknown event/action,
- * cooldown/cap misuse is allowed — they are plain bounds). */
+ * full, -ZD_EINVAL on bad template, and -ZD_EBUSY for structural changes
+ * attempted synchronously from an action hook during event dispatch.
+ * Cooldown/cap values are plain bounds. */
 int zd_automation_add(struct zd_automation *engine,
                       const struct zd_automation_rule *rule,
                       uint32_t *rule_id_out);
@@ -119,7 +123,8 @@ struct zd_automation_rule *zd_automation_find(struct zd_automation *engine,
 
 /* Deliver one event at `now_tick`: every enabled matching rule is
  * evaluated in id order (permission → cap → cooldown → action).
- * Returns the number of rules that fired. */
+ * Synchronous re-entry from an action hook is suppressed and audited as
+ * REENTRANT_SUPPRESSED (rule_id 0). Returns the number of rules fired. */
 uint32_t zd_automation_fire(struct zd_automation *engine, uint32_t event,
                             uint64_t now_tick);
 

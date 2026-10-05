@@ -5,22 +5,22 @@ Repository: https://github.com/priyanshagrahari54-blip/zeroos
 ## Mission
 Continue from current `main`. PR #3 is already merged. Inspect the real tree and current CI first. Do not restart or replace working kernel foundations.
 
-Stage 2 builds the production userspace boundary described by `docs/MASTER_IMPLEMENTATION_PROMPT.md`. Dependency order is not permission to make a toy implementation.
+Stage 2 builds the production userspace boundary described by `docs/ZEROOS_MASTER/MASTER_IMPLEMENTATION_PROMPT.md`. Dependency order is not permission to make a toy implementation.
 
 ## Mandatory workflow
 DISCOVER → AUDIT → DESIGN → IMPLEMENT → BUILD → UNIT TEST → INTEGRATION TEST → NEGATIVE TEST → STRESS → FAULT TEST → PROFILE → VERIFY → DOCUMENT → COMMIT → CI.
 
 Read before architecture changes:
-- docs/MASTER_INDEX.md
-- docs/MASTER_IMPLEMENTATION_PROMPT.md
-- docs/ARCHITECTURE.md
-- docs/RULES.md
-- docs/TECHSPEC.md
-- docs/PHASES.md
-- docs/MEMORY.md
-- docs/PROCESS.md
-- docs/SYNCHRONIZATION.md
-- docs/VIRTUAL_MEMORY.md
+- docs/ZEROOS_MASTER/MASTER_INDEX.md
+- docs/ZEROOS_MASTER/MASTER_IMPLEMENTATION_PROMPT.md
+- docs/ZEROOS_MASTER/ARCHITECTURE.md
+- docs/ZEROOS_MASTER/RULES.md
+- docs/ZEROOS_MASTER/TECHSPEC.md
+- docs/ZEROOS_MASTER/PHASES.md
+- docs/ZEROOS_MASTER/MEMORY.md
+- docs/ZEROOS_MASTER/PROCESS.md
+- docs/ZEROOS_MASTER/SYNCHRONIZATION.md
+- docs/ZEROOS_MASTER/VIRTUAL_MEMORY.md
 and inspect actual callers/tests.
 
 ## 1. Ring-3 execution

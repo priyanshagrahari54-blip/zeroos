@@ -1,6 +1,8 @@
 /* PE header validator.  See pe.h. */
 #include <zeroos/compat/pe.h>
 
+#define ZPE_IMAGE_SCN_MEM_EXECUTE 0x20000000U
+
 static uint16_t rd16(const uint8_t *p) {
     return (uint16_t)(p[0] | ((uint16_t)p[1] << 8));
 }
@@ -9,11 +11,17 @@ static uint32_t rd32(const uint8_t *p) {
            ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
 }
 
+static int is_power_of_two(uint32_t value) {
+    return value && !(value & (value - 1U));
+}
+
 int zpe_validate(const uint8_t *image, uint32_t file_size,
                  struct zpe_info *out_info) {
     uint32_t lfanew, pe_off, opt_off, sect_off, opt_size;
     uint16_t machine, nsec, opt_magic;
-    uint32_t entry, img_size, hdr_size;
+    uint32_t entry, img_size, hdr_size, directory_count;
+    uint32_t section_alignment, file_alignment;
+    int entry_in_executable_section;
 
     if (!image)
         return ZPE_BADARG;
@@ -39,16 +47,30 @@ int zpe_validate(const uint8_t *image, uint32_t file_size,
     opt_off = pe_off + 24;
     if ((uint64_t)opt_off + opt_size > file_size)
         return ZPE_TRUNCATED;
-    /* SizeOfImage and SizeOfHeaders occupy bytes 56..63. */
-    if (opt_size < 64)
+    /* PE32+ fixed optional header ends with NumberOfRvaAndSizes at byte 111. */
+    if (opt_size < 112)
         return ZPE_TRUNCATED;
     opt_magic = rd16(image + opt_off);
     if (opt_magic != 0x20b) /* PE32+ */
         return ZPE_UNSUPPORTED_FORMAT;
+    directory_count = rd32(image + opt_off + 108);
+    if (directory_count > (opt_size - 112U) / 8U)
+        return ZPE_TRUNCATED;
 
     entry = rd32(image + opt_off + 16);
+    section_alignment = rd32(image + opt_off + 32);
+    file_alignment = rd32(image + opt_off + 36);
     img_size = rd32(image + opt_off + 56);
     hdr_size = rd32(image + opt_off + 60);
+    if (!is_power_of_two(section_alignment) ||
+        !is_power_of_two(file_alignment) ||
+        section_alignment < file_alignment)
+        return ZPE_BAD_LAYOUT;
+    if ((section_alignment < 0x1000U &&
+         file_alignment != section_alignment) ||
+        (section_alignment >= 0x1000U &&
+         (file_alignment < 0x200U || file_alignment > 0x10000U)))
+        return ZPE_BAD_LAYOUT;
     if (nsec == 0 || nsec > 96) /* PE limit */
         return ZPE_BAD_LAYOUT;
     sect_off = opt_off + opt_size;
@@ -57,10 +79,32 @@ int zpe_validate(const uint8_t *image, uint32_t file_size,
     if (hdr_size == 0 || hdr_size > file_size || hdr_size > img_size ||
         hdr_size < sect_off + (uint64_t)nsec * 40)
         return ZPE_BAD_LAYOUT;
-    if (img_size == 0)
+    if (img_size == 0 || img_size % section_alignment != 0 ||
+        hdr_size % file_alignment != 0)
         return ZPE_BAD_LAYOUT;
+    /* Validate every declared directory, with the certificate table's
+     * specified file-offset semantics handled separately from RVA entries. */
+    for (uint32_t i = 0; i < directory_count; ++i) {
+        const uint8_t *directory = image + opt_off + 112U + i * 8U;
+        uint32_t address = rd32(directory);
+        uint32_t size = rd32(directory + 4);
+        if (address == 0 && size == 0)
+            continue;
+        if (address == 0 || size == 0)
+            return ZPE_BAD_LAYOUT;
+        if (i == 4U) { /* IMAGE_DIRECTORY_ENTRY_SECURITY uses a file offset. */
+            if ((address & 7U) || address > file_size ||
+                size > file_size - address)
+                return ZPE_BAD_LAYOUT;
+        } else if (address > img_size || size > img_size - address) {
+            return ZPE_BAD_LAYOUT;
+        }
+    }
     if (entry >= img_size)
         return ZPE_BAD_LAYOUT;
+    /* PE DLLs may omit an entry point (RVA 0). A nonzero entry must
+     * resolve to a section mapped executable by the image loader. */
+    entry_in_executable_section = entry == 0;
     for (uint32_t i=0; i<nsec; ++i) {
         const uint8_t *section=image+sect_off+(uint64_t)i*40ULL;
         uint32_t virtual_size=rd32(section+8);
@@ -70,13 +114,18 @@ int zpe_validate(const uint8_t *image, uint32_t file_size,
         uint32_t mapped_size=virtual_size>raw_size ? virtual_size : raw_size;
         uint64_t virtual_end=(uint64_t)virtual_address+mapped_size;
         uint64_t raw_end=(uint64_t)raw_offset+raw_size;
-        if (!mapped_size || virtual_address<hdr_size ||
-            virtual_address>img_size ||
-            mapped_size>img_size-virtual_address)
+        if (!mapped_size || virtual_address % section_alignment != 0 ||
+            virtual_address < hdr_size || virtual_address > img_size ||
+            mapped_size > img_size - virtual_address)
             return ZPE_BAD_LAYOUT;
-        if (raw_size && (raw_offset<hdr_size || raw_offset>file_size ||
-                         raw_size>file_size-raw_offset))
+        if (raw_size &&
+            (raw_offset % file_alignment != 0 ||
+             raw_size % file_alignment != 0 || raw_offset < hdr_size ||
+             raw_offset > file_size || raw_size > file_size - raw_offset))
             return ZPE_BAD_LAYOUT;
+        if (entry != 0 && entry >= virtual_address && entry < virtual_end &&
+            (rd32(section + 36) & ZPE_IMAGE_SCN_MEM_EXECUTE))
+            entry_in_executable_section = 1;
         for (uint32_t j=0; j<i; ++j) {
             const uint8_t *prior=image+sect_off+(uint64_t)j*40ULL;
             uint32_t prior_virtual_size=rd32(prior+8);
@@ -97,6 +146,8 @@ int zpe_validate(const uint8_t *image, uint32_t file_size,
                 return ZPE_BAD_LAYOUT;
         }
     }
+    if (!entry_in_executable_section)
+        return ZPE_BAD_LAYOUT;
 
     if (out_info) {
         out_info->image_size = img_size;

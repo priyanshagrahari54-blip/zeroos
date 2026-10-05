@@ -28,6 +28,11 @@ void zd_test_url_suite(void) {
     /* bare host with no path */
     ZD_CHECK(zd_url_parse("https://example.com", &u) == 0);
     ZD_CHECK(u.path[0] == 0);
+    /* Query/fragment-only navigations retain their requested components. */
+    ZD_CHECK(zd_url_parse("https://example.com?q=1", &u) == 0);
+    ZD_CHECK(strcmp(u.path, "/?q=1") == 0);
+    ZD_CHECK(zd_url_parse("https://example.com#section", &u) == 0);
+    ZD_CHECK(strcmp(u.path, "/#section") == 0);
 
     /* about:blank only */
     ZD_CHECK(zd_url_parse("about:blank", &u) == 0);
@@ -71,7 +76,9 @@ void zd_test_url_suite(void) {
     ZD_CHECK(u.reject_reason == ZD_URL_R_BAD_HOST);
     ZD_CHECK(zd_url_parse("https://-lead.com/", &u) == -22);  /* label rule */
     ZD_CHECK(zd_url_parse("https://trail.-com/", &u) == -22);
+    ZD_CHECK(zd_url_parse("https://trail-.com/", &u) == -22);
     ZD_CHECK(zd_url_parse("https://double..dot/", &u) == -22);
+    ZD_CHECK(zd_url_parse("https://ex%61mple.com/", &u) == -22);
     ZD_CHECK(zd_url_parse("https://[::1]/", &u) == -22); /* not in slice */
 
     /* ports */
@@ -88,6 +95,39 @@ void zd_test_url_suite(void) {
     ZD_CHECK(u.reject_reason == ZD_URL_R_BAD_PATH);
     ZD_CHECK(zd_url_parse("https://example.com/a%zz", &u) == -22);
     ZD_CHECK(zd_url_parse("https://example.com/a%00", &u) == -22);
+    ZD_CHECK(zd_url_parse("https://example.com?q=%zz", &u) == -22);
+    ZD_CHECK(zd_url_parse("https://example.com/a\\b", &u) == -22);
+
+    /* Exhaust byte classes in a path component. NUL ends a C string and is
+     * tested separately by the empty/bare-path cases above. */
+    {
+        char path_url[] = "https://example.com/pX";
+        for (uint32_t value = 1; value < 256; ++value) {
+            int accepted;
+            path_url[21] = (char)value;
+            accepted = value >= 0x21U && value != 0x25U &&
+                       value != 0x5cU && value != 0x7fU;
+            rc = zd_url_parse(path_url, &u);
+            ZD_CHECK_EQ(rc == 0, accepted);
+        }
+    }
+    /* Exhaust non-NUL bytes in a host position. ASCII DNS-label bytes are
+     * accepted; '.', '/', '?', and '#' are valid structural delimiters here,
+     * so the resulting authority/path is parsed rather than treated as a
+     * hostname byte. */
+    {
+        char host_url[] = "https://aXb.com/";
+        for (uint32_t value = 1; value < 256; ++value) {
+            int accepted = (value >= 'a' && value <= 'z') ||
+                           (value >= 'A' && value <= 'Z') ||
+                           (value >= '0' && value <= '9') || value == '-' ||
+                           value == '.' || value == '/' || value == '?' ||
+                           value == '#';
+            host_url[9] = (char)value;
+            rc = zd_url_parse(host_url, &u);
+            ZD_CHECK_EQ(rc == 0, accepted);
+        }
+    }
 
     /* reject strings are stable */
     ZD_CHECK(zd_url_reject_str(ZD_URL_R_BAD_SCHEME) != 0);

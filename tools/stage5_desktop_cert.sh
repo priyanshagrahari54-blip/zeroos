@@ -21,4 +21,7 @@ for pattern in "${required_patterns[@]}"; do
   fi
 done
 
+grep -Fq "zeroos_tick_deadline_from_timeout" "$repo_root/kernel/input.c"
+grep -Fq "zeroos_tick_deadline_expired" "$repo_root/kernel/input.c"
+
 echo "stage5-desktop-cert: PASS"

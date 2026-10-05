@@ -22,6 +22,11 @@ void wait_queue_init(struct wait_queue *queue);
  * wait_queue_commit(), never the inner ones, or the woken task resumes with
  * interrupts permanently disabled (a latent HLT deadlock). */
 int wait_queue_prepare(struct wait_queue *queue, uint64_t *flags_out);
+/* Prepare a finite waiter on both this queue and the scheduler deadline queue.
+ * Timer expiry detaches it from this queue before making it runnable. */
+int wait_queue_prepare_timeout(struct wait_queue *queue, uint64_t deadline,
+                               uint64_t *flags_out);
+void wait_queue_timeout_wake(struct wait_queue *queue, struct task *task);
 int wait_queue_commit(uint64_t flags);
 int wait_queue_block(struct wait_queue *queue);
 uint64_t wait_queue_wake_one(struct wait_queue *queue);

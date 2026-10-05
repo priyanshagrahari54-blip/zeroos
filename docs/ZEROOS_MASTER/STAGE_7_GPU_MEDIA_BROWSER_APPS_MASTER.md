@@ -1,6 +1,6 @@
 # ZEROOS STAGE 7 — GPU, MEDIA, BROWSER & NATIVE APPS
 
-Status: NEXT EXECUTION STAGE — specification and implementation contract.
+Status: IN PROGRESS — host-tested compositor, browser-lifecycle and media-policy foundations exist; the Stage 7 exit gate remains open, with no GPU-acceleration, playback or browser-engine support claim.
 
 ## Mission
 Deliver a real accelerated desktop/media/application platform while preserving a measured low-resource path for old hardware.
@@ -35,6 +35,11 @@ Define low-latency audio path, mixer, device selection, per-app volume, sample-r
 
 ## 7.6 Browser
 Browser must be isolated into a process architecture with renderer/content/network/GPU boundaries, sandboxing, site storage, cache controls, permissions, downloads, crash recovery, update mechanism and hardware media integration. Do not expose a browser UI as fully functional until the engine path works.
+
+Current implemented slice: the repository has host-tested window/compositor
+models, browser tab lifecycle and media policy. There is no GPU command path,
+video/audio decoder pipeline, isolated browser engine or real playback path;
+none is claimed as operational.
 
 ## 7.7 Native application framework
 Define stable app lifecycle, permissions, IPC, storage, settings, notifications, graphics, audio, accessibility, localization, crash reporting and resource quotas. Apps transition INSTALLED -> LOADED -> RUNNING -> ACTIVE -> SUSPENDED -> TERMINATED.

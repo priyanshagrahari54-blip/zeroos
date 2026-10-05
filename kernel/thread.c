@@ -1,5 +1,6 @@
 #include "thread.h"
 #include "process.h"
+#include "user.h"
 #include "sync.h"
 
 extern void serial_write_public(const char *text);
@@ -145,6 +146,23 @@ struct thread *thread_lookup(thread_id_t tid) {
     struct thread *thread=thread_lookup_locked(tid);
     spin_unlock_irqrestore(&thread_lock,flags);
     return thread;
+}
+
+int thread_process_all_zombie(const struct process *process) {
+    uint64_t flags;
+    int all_zombie=1;
+
+    if (!process)
+        return 0;
+    flags=spin_lock_irqsave(&thread_lock);
+    for (const struct thread *thread=process->first_thread; thread;
+         thread=thread->next_in_process)
+        if (thread->state!=THREAD_ZOMBIE) {
+            all_zombie=0;
+            break;
+        }
+    spin_unlock_irqrestore(&thread_lock,flags);
+    return all_zombie;
 }
 
 int thread_is_user(const struct thread *thread) {
@@ -306,11 +324,13 @@ int thread_create_user(struct process *process, uint64_t user_entry,
 
 int thread_exit(uint64_t exit_status) {
     struct thread *thread=thread_current();
+    struct process *process;
     uint64_t flags;
 
     if (!thread || thread->state==THREAD_ZOMBIE ||
         thread->state==THREAD_UNUSED)
         return -1;
+    process=thread->process;
 
     if (process_thread_exited(thread,exit_status)!=0)
         return -1;
@@ -328,6 +348,7 @@ int thread_exit(uint64_t exit_status) {
     thread->state=THREAD_ZOMBIE;
     thread->scheduler_task_id=0;
     spin_unlock_irqrestore(&thread_lock,flags);
+    process_child_exit_complete(process);
 
     task_exit();
     return 0;

@@ -10,6 +10,7 @@ struct fm_dir {
     struct zd_fm_entry e[80]; /* entries beyond cap exercise truncation */
     uint32_t n;
     int force_err;            /* source returns this errno */
+    int over_cap;             /* deliberately violates the output-count ABI */
 };
 
 static void fm_add(struct fm_dir *d, const char *name, uint64_t size,
@@ -28,7 +29,7 @@ static void fm_add(struct fm_dir *d, const char *name, uint64_t size,
     e->flags = flags;
 }
 
-static struct fm_dir dirs[4];
+static struct fm_dir dirs[7];
 static uint32_t ndirs;
 
 static struct fm_dir *fm_dir(const char *path) {
@@ -51,6 +52,10 @@ static int fm_source(void *ctx, const char *path,
         return -2; /* ENOENT: unknown directory */
     if (d->force_err)
         return d->force_err;
+    if (d->over_cap) {
+        *out_n = cap + 1;
+        return 0;
+    }
     for (i = 0; i < d->n && i < cap; ++i)
         out[i] = d->e[i];
     *out_n = (d->n < cap) ? d->n : cap;
@@ -115,6 +120,21 @@ static void fm_fixture(void) {
         nm[3] = 0;
         fm_add(&dirs[ndirs], nm, i, (int64_t)i, 0);
     }
+    ndirs++;
+
+    dirs[ndirs].path = "/release..notes";
+    ndirs++;
+
+    dirs[ndirs].path = "/malformed";
+    fm_add(&dirs[ndirs], "safe.txt", 1, 1, 0);
+    fm_add(&dirs[ndirs], "../escape", 1, 1, 0);
+    fm_add(&dirs[ndirs], ".", 1, 1, 0);
+    fm_add(&dirs[ndirs], "unterminated", 1, 1, 0);
+    memset(dirs[ndirs].e[3].name, 'x', ZD_FM_NAME);
+    ndirs++;
+
+    dirs[ndirs].path = "/overcap";
+    dirs[ndirs].over_cap = 1;
     ndirs++;
 }
 
@@ -196,6 +216,8 @@ void zd_test_filemgr_suite(void) {
     ZD_CHECK_EQ(zd_fm_open(&fm, "/a/../b"), -22);
     ZD_CHECK_EQ(zd_fm_open(&fm, ".."), -22);
     ZD_CHECK_EQ(zd_fm_open(&fm, NULL), -22);
+    /* Parent traversal is rejected by component, not by any '..' substring. */
+    ZD_CHECK_OK(zd_fm_open(&fm, "/release..notes"));
     {
         char huge[ZD_FM_PATH + 8];
         memset(huge, 'x', sizeof(huge) - 1);
@@ -214,6 +236,21 @@ void zd_test_filemgr_suite(void) {
     /* unknown dir */
     ZD_CHECK_EQ(zd_fm_open(&fm, "/nope"), -2);
     ZD_CHECK_EQ(fm.stats.source_errors, 3);
+
+    /* Malformed source names (traversal, dot entries, unterminated fixed
+     * buffers) are removed before sorting or path construction. */
+    {
+        uint32_t rejected = fm.stats.rejected;
+        ZD_CHECK_OK(zd_fm_open(&fm, "/malformed"));
+        ZD_CHECK_EQ(fm.count, 1);
+        ZD_CHECK(strcmp(fm.entries[0].name, "safe.txt") == 0);
+        ZD_CHECK_EQ(fm.stats.rejected - rejected, 3);
+    }
+    /* A source count beyond the supplied capacity is a protocol failure. */
+    ZD_CHECK_EQ(zd_fm_open(&fm, "/overcap"), -22);
+    ZD_CHECK_EQ(fm.hist_state, 3);
+    ZD_CHECK_EQ(fm.count, 0);
+    ZD_CHECK_EQ(fm.stats.source_errors, 4);
 
     /* truncation: source fills capacity -> flagged, not hidden */
     ZD_CHECK_OK(zd_fm_open(&fm, "/big"));

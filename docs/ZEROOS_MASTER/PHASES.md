@@ -58,6 +58,13 @@ Framebuffer/basic display.
 Ethernet/Wi-Fi driver strategy, IP stack and sockets.
 ### 4.5 Audio
 Playback/capture abstraction.
+Status: host-tested hardware, network and DHCP state-machine cores provide
+validation foundations, not live-device support. The DHCP option parser rejects
+truncated/duplicate known options, while the client binds REQUESTING/RENEWING
+replies to the selected server and permits a new server only while rebinding.
+Host tests include exact-length fuzz buffers over 512 arbitrary datagrams and
+512 mutated option streams. PCI/NIC/Wi-Fi/audio drivers and real-device
+certification remain.
 Exit: practical hardware I/O works on defined test hardware.
 
 ## Phase 5 — Graphics and Desktop
@@ -113,12 +120,19 @@ Each app must have resource lifecycle policy and crash isolation.
 Status/contracts: browser lifecycle core (Phase 8.5), ZERO Bar core
 (applets, toggles, badges, focus) and launcher core (registry, query
 ranking, launch dedup) are implemented and host-tested; engine,
-rendering chrome and app surface remain.  Study Center: the
-flashcard/spaced-repetition scheduler (bounded 0/1/3/7/21/60-day
-ladder, lapse tracking) and focus-session core are implemented and
-host-tested; PDF, OCR, formulas, dictionary and assistant attach on
-these contracts later.  Media policy is binding: lawful sources only, no DRM
-bypass, and no proprietary codec/container claims without tests.
+rendering chrome and app surface remain. Browser URL navigation is
+  host-tested with strict ASCII DNS-label validation, bounded/validated
+  path-query-fragment parsing, preserved query-only/fragment-only URLs, and
+  exhaustive non-NUL byte-class tests for host/path inputs; this is a parser
+  contract, not a browser engine. The file-manager core
+bounds and validates provider names/counts before sorting or constructing
+paths, and the bounded download queue rejects inconsistent progress totals;
+all remain host-tested policy/core modules without full app/runtime wiring.
+Study Center: the flashcard/spaced-repetition scheduler (bounded
+0/1/3/7/21/60-day ladder, lapse tracking) and focus-session core are
+implemented and host-tested; PDF, OCR, formulas, dictionary and assistant
+attach on these contracts later. Media policy is binding: lawful sources
+only, no DRM bypass, and no proprietary codec/container claims without tests.
 
 ## Phase 7 — Security, Update and Recovery
 Firewall, permissions, encryption integration, antivirus scanning, privacy center, secure vault, update manager, snapshots and rollback.
@@ -242,5 +256,5 @@ Every stage must pass:
 A stage may remain PARTIAL when a genuine external dependency blocks activation, but its final production contract must already be defined and its independent implementation must be mature.
 
 
-## Current Stage Snapshot — 2026-10-04
-Implementation estimates: Stage 1 **92%**, Stage 2 **82%**, Stage 3 **45%**, Stage 4 **39%**, Stage 5 **41%**, Stage 6 **20%**, Stage 7 **12%**, Stage 8 **12%**, Stage 9 **12%**, Stage 10 **6%**; overall **~44%**. These are evidence-weighted engineering estimates, not code-line percentages. Stage 2 is the active priority after recent exec/timed-wait/ELF hardening.
+## Current Stage Snapshot — 2026-10-05
+Implementation estimates: Stage 1 **92%**, Stage 2 **83%**, Stage 3 **45%**, Stage 4 **39%**, Stage 5 **41%**, Stage 6 **20%**, Stage 7 **12%**, Stage 8 **12%**, Stage 9 **12%**, Stage 10 **6%**; overall **~44%**. These are evidence-weighted engineering estimates, not code-line percentages. Stage 2 remains the active priority after exec/timed-wait/ELF hardening and the new feature-gated userspace event/shared-memory runtime helpers.

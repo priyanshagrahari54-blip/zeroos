@@ -18,9 +18,11 @@ void zd_update_init(struct zd_update *u, const struct zd_update_ops *ops) {
     u->ops = ops ? *ops : (struct zd_update_ops){0, 0, 0, 0, 0};
     u->version[0] = 0;
     u->seq = 0;
+    u->hook_in_progress=0;
     u->stats.started = u->stats.committed = u->stats.rollbacks = 0;
     u->stats.verify_failures = u->stats.health_failures = 0;
     u->stats.rejected_events = u->stats.cancels = 0;
+    u->stats.reentrant_events=0;
 }
 
 int zd_update_state(const struct zd_update *u) {
@@ -70,6 +72,11 @@ int zd_update_event(struct zd_update *u, int event) {
             u->stats.rejected_events++;
         return -22;
     }
+    if (u->hook_in_progress) {
+        u->stats.reentrant_events++;
+        u->stats.rejected_events++;
+        return -16; /* EBUSY: do not replay a side effect recursively */
+    }
     prev = u->state;
 
 #define REJECT()  do { u->stats.rejected_events++; return -22; } while (0)
@@ -107,7 +114,9 @@ int zd_update_event(struct zd_update *u, int event) {
         if (u->ops.stage_apply) {
             /* documented hook: write payload to staging.  A failure
              * aborts atomically here — nothing reaches preflight. */
+            u->hook_in_progress=1;
             int r = u->ops.stage_apply(u->ops.ctx);
+            u->hook_in_progress=0;
             if (r < 0) {
                 upd_fail(u);
                 return r;
@@ -129,7 +138,9 @@ int zd_update_event(struct zd_update *u, int event) {
         if (prev != ZD_UPD_ACTIVATING)
             REJECT();
         if (u->ops.activate) {
+            u->hook_in_progress=1;
             int r = u->ops.activate(u->ops.ctx);
+            u->hook_in_progress=0;
             if (r < 0) {
                 u->state = ZD_UPD_ROLLING_BACK;
                 u->seq++;
@@ -160,7 +171,9 @@ int zd_update_event(struct zd_update *u, int event) {
         if (prev != ZD_UPD_COMMITTING)
             REJECT();
         if (u->ops.commit) {
+            u->hook_in_progress=1;
             int r = u->ops.commit(u->ops.ctx);
+            u->hook_in_progress=0;
             if (r < 0) {
                 u->state = ZD_UPD_ROLLING_BACK;
                 u->seq++;
@@ -175,7 +188,9 @@ int zd_update_event(struct zd_update *u, int event) {
         if (prev != ZD_UPD_ROLLING_BACK)
             REJECT();
         if (u->ops.rollback) {
+            u->hook_in_progress=1;
             int r = u->ops.rollback(u->ops.ctx);
+            u->hook_in_progress=0;
             if (r < 0) {
                 upd_fail(u);
                 return r;

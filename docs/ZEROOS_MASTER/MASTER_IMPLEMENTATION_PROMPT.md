@@ -126,26 +126,26 @@ Use measured targets and explicit supported matrices.
 
 Read before modifying architecture:
 
-docs/MASTER_INDEX.md
-docs/PRD.md
-docs/AGENTS.md
-docs/DESIGN_UI_UX.md
-docs/ARCHITECTURE.md
-docs/RULES.md
-docs/TECHSPEC.md
-docs/PHASES.md
-docs/MEMORY.md
+docs/ZEROOS_MASTER/MASTER_INDEX.md
+docs/ZEROOS_MASTER/PRD.md
+docs/ZEROOS_MASTER/AGENTS.md
+docs/ZEROOS_MASTER/DESIGN_UI_UX.md
+docs/ZEROOS_MASTER/ARCHITECTURE.md
+docs/ZEROOS_MASTER/RULES.md
+docs/ZEROOS_MASTER/TECHSPEC.md
+docs/ZEROOS_MASTER/PHASES.md
+docs/ZEROOS_MASTER/MEMORY.md
 
 Also inspect relevant detailed documents:
-docs/BOOT_SPEC.md
-docs/HARDWARE.md
-docs/GDT_TSS.md
-docs/INTERRUPTS.md
-docs/SCHEDULER.md
-docs/PROCESS.md
-docs/SYNCHRONIZATION.md
-docs/VIRTUAL_MEMORY.md
-docs/BUILD.md
+docs/ZEROOS_MASTER/BOOT_SPEC.md
+docs/ZEROOS_MASTER/HARDWARE.md
+docs/ZEROOS_MASTER/GDT_TSS.md
+docs/ZEROOS_MASTER/INTERRUPTS.md
+docs/ZEROOS_MASTER/SCHEDULER.md
+docs/ZEROOS_MASTER/PROCESS.md
+docs/ZEROOS_MASTER/SYNCHRONIZATION.md
+docs/ZEROOS_MASTER/VIRTUAL_MEMORY.md
+docs/ZEROOS_MASTER/BUILD.md
 
 Repository implementation is authoritative for current code reality.
 

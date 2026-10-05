@@ -124,11 +124,17 @@ waiter is first marked BLOCKED and linked while the queue lock is held. The
 queue lock is released before the scheduler performs the context switch.
 
 A wake-one or wake-all operation removes waiters from the queue before making
-them RUNNABLE. Waking never performs a context switch itself.
+them RUNNABLE. Waking never performs a context switch itself. Finite waits are
+also linked to the scheduler deadline queue; the timeout marker distinguishes
+this intentional dual membership from an invariant violation. On expiry, the
+timer records the waiter while holding `task_lock`, releases that lock, then
+removes the task from its wait queue and makes it runnable. An ordinary event
+wake or endpoint close removes it from both queues and cancels the deadline.
 
 The condition itself remains owned by the caller. A producer changes the
 condition and then wakes the queue; a waiter re-checks its condition after
-resuming.
+resuming. IPC, child-WAIT and input finite-timeout paths park once on their
+condition queue instead of waking and polling on every tick.
 
 ## Preemption boundary
 

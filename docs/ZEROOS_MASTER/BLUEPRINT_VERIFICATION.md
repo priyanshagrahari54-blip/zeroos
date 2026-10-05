@@ -4,16 +4,16 @@ Use this document to verify that the repository contains the complete project vi
 
 ## Required master documents
 
-- docs/ZEROOS_MASTER_BLUEPRINT.md
-- docs/ZEROOS_MASTER_ROADMAP.md
-- docs/ARCHITECTURE.md
-- docs/ROADMAP.md
-- docs/HARDWARE.md
-- docs/BOOT_SPEC.md
+- docs/ZEROOS_MASTER/ZEROOS_MASTER_BLUEPRINT.md
+- docs/ZEROOS_MASTER/ZEROOS_MASTER_ROADMAP.md
+- docs/ZEROOS_MASTER/ARCHITECTURE.md
+- docs/ZEROOS_MASTER/ROADMAP.md
+- docs/ZEROOS_MASTER/HARDWARE.md
+- docs/ZEROOS_MASTER/BOOT_SPEC.md
 
 ## Repository bridge documents
 
-The short execution bridge is `docs/ROADMAP.md`. Current hardware and boot contracts are `docs/HARDWARE.md` and `docs/BOOT_SPEC.md`. The detailed master blueprint and master roadmap remain authoritative for the intended system scope.
+The short execution bridge is `docs/ZEROOS_MASTER/ROADMAP.md`. Current hardware and boot contracts are `docs/ZEROOS_MASTER/HARDWARE.md` and `docs/ZEROOS_MASTER/BOOT_SPEC.md`. The detailed master blueprint and master roadmap remain authoritative for the intended system scope.
 
 ## How to verify in GitHub
 

@@ -828,13 +828,13 @@ A. Must be proven by soak testing on the relevant evidence class.
 
 - Repository: priyanshagrahari54-blip/zeroos
 - Master hardening checklist: [`ZEROOS_10_STAGE_HARDENING.md`](./ZEROOS_10_STAGE_HARDENING.md)
-- Validation source: docs/VALIDATION.md
-- AI handoff source: docs/ZEROOS_AI_HANDOFF.md
-- Core roadmap: docs/ZEROOS_MASTER_ROADMAP.md
-- Blueprint: docs/ZEROOS_MASTER_BLUEPRINT.md
-- Architecture: docs/ARCHITECTURE.md
-- Hardware: docs/HARDWARE.md
-- Boot specification: docs/BOOT_SPEC.md
+- Validation source: docs/ZEROOS_MASTER/VALIDATION.md
+- AI handoff source: docs/ZEROOS_MASTER/ZEROOS_AI_HANDOFF.md
+- Core roadmap: docs/ZEROOS_MASTER/ZEROOS_MASTER_ROADMAP.md
+- Blueprint: docs/ZEROOS_MASTER/ZEROOS_MASTER_BLUEPRINT.md
+- Architecture: docs/ZEROOS_MASTER/ARCHITECTURE.md
+- Hardware: docs/ZEROOS_MASTER/HARDWARE.md
+- Boot specification: docs/ZEROOS_MASTER/BOOT_SPEC.md
 - Stage 1–2 gate: GitHub Issue #10
 - Pipe hardening: PR #6
 - Merged prior work: PR #7
@@ -1583,11 +1583,11 @@ The repository state is authoritative for implementation. Executable evidence is
 
 ## 47. MICRO-TO-MICRO CONTINUATION
 
-For the granular implementation/validation checklist from boot through release, see `docs/ZEROOS_MICRO_REQUIREMENTS_FROM_START.md`. It is intentionally checklist-based and does not mark requirements complete merely because they are documented.
+For the granular implementation/validation checklist from boot through release, see `docs/ZEROOS_MASTER/ZEROOS_MICRO_REQUIREMENTS_FROM_START.md`. It is intentionally checklist-based and does not mark requirements complete merely because they are documented.
 
 ## 48. REMAINING GAP CLOSURE
 
-Cross-cutting details that are easy to miss are tracked in `docs/ZEROOS_REMAINING_GAP_CLOSURE.md`, including toolchain/reproducibility, firmware edge cases, CPU/RAS, locking/memory ordering, crash forensics, time/locale, users/sessions, IPC/filesystem/network security, randomness, graphics robustness, UX reliability, package sandboxing, browser untrusted-content handling, compatibility runtime details, gaming measurement, ZERO AI agent safety/privacy, backups, observability, test infrastructure, formal invariants, documentation consistency, supply-chain security, installer/first boot, shutdown/reboot, and final repository-wide gap searches.
+Cross-cutting details that are easy to miss are tracked in `docs/ZEROOS_MASTER/ZEROOS_REMAINING_GAP_CLOSURE.md`, including toolchain/reproducibility, firmware edge cases, CPU/RAS, locking/memory ordering, crash forensics, time/locale, users/sessions, IPC/filesystem/network security, randomness, graphics robustness, UX reliability, package sandboxing, browser untrusted-content handling, compatibility runtime details, gaming measurement, ZERO AI agent safety/privacy, backups, observability, test infrastructure, formal invariants, documentation consistency, supply-chain security, installer/first boot, shutdown/reboot, and final repository-wide gap searches.
 
 ## End of exhaustive retained context.
 
