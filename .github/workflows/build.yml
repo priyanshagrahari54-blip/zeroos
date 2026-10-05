@@ -28,21 +28,36 @@ jobs:
 
       - name: Verify kernel image
         run: |
+          set -e
           test -s build/zeroos.elf
           test -s build/zeroos.iso
           file build/zeroos.elf build/zeroos.iso
           readelf -h -l build/zeroos.elf
-          # Structural checks are release-blocking; verbose dumps are diagnostics only.
-          readelf -SW build/zeroos.elf | grep -q '\.multiboot2'
-          test "$(readelf -rW build/zeroos.elf | grep -c 'R_X86_64' || true)" -eq 0
-          objdump -s -j .multiboot2 build/zeroos.elf || true
+
+          echo "===== ZEROOS ELF structural diagnostics ====="
+          if readelf -SW build/zeroos.elf | grep -q '\\.multiboot2'; then
+            echo "multiboot2 section: PRESENT"
+          else
+            echo "multiboot2 section: MISSING"
+            readelf -SW build/zeroos.elf
+            exit 1
+          fi
+          reloc_count=$(readelf -rW build/zeroos.elf | grep -c 'R_X86_64' || true)
+          echo "linked relocation count: $reloc_count"
+          test "$reloc_count" -eq 0
+
           trampoline_start=$(nm -n build/zeroos.elf | awk '$3 == "ap_trampoline_start" {print "0x" $1}')
           trampoline_end=$(nm -n build/zeroos.elf | awk '$3 == "ap_trampoline_end" {print "0x" $1}')
           test -n "$trampoline_start" -a -n "$trampoline_end"
-          test $((trampoline_end - trampoline_start)) -gt 0
-          test $((trampoline_end - trampoline_start)) -le 4096
-          echo "===== ZEROOS linker symbols ====="
-          nm -n build/zeroos.elf | grep -E '(__kernel_start|__kernel_end|stack_bottom|stack_top|tasks$|task_lock$|next_task_id$|sleep_head$|frame_resume_count$|tick_hook$|ticks$|page_bitmap|usable_bitmap|free_word_summary|memory_lock$|boot_cpu$|boot_cpu_local$|state$)' || true
+          trampoline_size=$((trampoline_end - trampoline_start))
+          echo "AP trampoline size: $trampoline_size bytes"
+          test "$trampoline_size" -gt 0
+          test "$trampoline_size" -le 4096
+
+          # Human-readable disassembly is useful when diagnosing failures but
+          # must never be the reason a valid boot image is rejected.
+          echo "===== ZEROOS multiboot header dump ====="
+          objdump -s -j .multiboot2 build/zeroos.elf || true
           echo "===== ZEROOS memory_init disassembly ====="
           objdump -d --disassemble=memory_init build/zeroos.elf || true
           echo "===== ZEROOS task context disassembly ====="
