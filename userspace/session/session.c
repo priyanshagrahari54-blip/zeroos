@@ -276,6 +276,19 @@ int session_main(void) {
         return fail("click release", delivery.result);
     say("ZEROOS: session input routing passed.");
 
+#ifdef ZEROOS_BOOT_CERTIFICATION
     say("ZEROOS: session shell process complete.");
     return 0;
+#else
+    /* Production boot: keep the desktop as a real long-lived Ring-3
+     * process. The kernel input wait is the lifetime boundary, so idle CPU
+     * usage stays event-driven instead of polling. */
+    say("ZEROOS: interactive desktop session ready.");
+    for (;;) {
+        sys_result = zeroos_input_wait(&event, 0, 0);
+        if (sys_result == 0 || sys_result == -ZEROOS_EINTR)
+            continue;
+        return fail("persistent input wait", sys_result);
+    }
+#endif
 }
