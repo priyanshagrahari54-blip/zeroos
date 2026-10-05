@@ -116,6 +116,9 @@ uint64_t process_address_space_mapped_pages(const struct process *process);
 int process_address_space_is_user_range(const struct process *process,
                                         uint64_t virtual_address,
                                         uint64_t length, uint64_t write);
+int process_address_space_is_executable(const struct process *process,
+                                        uint64_t virtual_address,
+                                        uint64_t length);
 
 uint64_t process_child_count(const struct process *process);
 uint64_t process_thread_count(const struct process *process);
