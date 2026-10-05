@@ -81,6 +81,12 @@ Design principles:
 Initial syscall groups:
 process, thread, memory, file, directory, time, IPC, synchronization, device, network.
 
+Finite scheduler-tick waits (`WAIT`, `INPUT_WAIT`, and timed IPC operations) use
+wrap-safe modular deadlines. A finite interval may not exceed `INT64_MAX` ticks;
+larger values are rejected with `EINVAL` rather than saturated or ambiguously
+ordered. `WAIT`/`INPUT_WAIT` use zero for infinite wait, while IPC uses
+`ZEROOS_IPC_TIMEOUT_FOREVER`.
+
 Stage 5 additions: `DISPLAY_INFO` (ID 51) — display geometry read-only query;
 `DISPLAY_PRESENT` (ID 52) — pixel-mapping scanout submit;
 `INPUT_POLL` (ID 53) / `INPUT_WAIT` (ID 54) — keyboard/pointer event drain

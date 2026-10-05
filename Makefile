@@ -20,7 +20,7 @@ CFLAGS += $(EXTRA_CFLAGS)
 ASFLAGS := -m64 -ffreestanding -fno-pic -fno-pie -nostdlib
 LDFLAGS := -m elf_x86_64 -T kernel/linker.ld -nostdlib
 
-.PHONY: all clean elf iso run check sanitize-check storage-tools-check stage1-scheduler-cert stage2-userspace-cert stage3-storage-cert stage4-hardware-cert stage5-desktop-cert kernel-simd-check userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test exec-host-test desktop-check compat-check
+.PHONY: all clean elf iso run check sanitize-check storage-tools-check stage1-scheduler-cert stage2-userspace-cert stage3-storage-cert stage4-hardware-cert stage5-desktop-cert kernel-simd-check userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test exec-host-test tick-deadline-test desktop-check compat-check
 
 all: iso
 
@@ -29,7 +29,7 @@ all: iso
 HOST_SANITIZER_FLAGS ?= -fsanitize=address,undefined -fno-omit-frame-pointer
 sanitize-check:
 	$(MAKE) --no-print-directory desktop-check compat-check hardware-core-test \
-		exec-host-test CC="$(CC) $(HOST_SANITIZER_FLAGS)"
+		exec-host-test tick-deadline-test CC="$(CC) $(HOST_SANITIZER_FLAGS)"
 
 # Reproducible local release gate: compile, Stage 1 scheduler certification,
 # Stage 2 userspace certification, Stage 3 storage certification, Stage 4
@@ -39,7 +39,7 @@ sanitize-check:
 # The certification build intentionally runs the embedded session in finite
 # probe mode. A normal `make` produces the persistent interactive session.
 check: CFLAGS += -DZEROOS_BOOT_CERTIFICATION
-check: elf userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test exec-host-test desktop-check compat-check storage-tools-check stage1-scheduler-cert stage2-userspace-cert stage3-storage-cert stage4-hardware-cert stage5-desktop-cert
+check: elf userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test exec-host-test tick-deadline-test desktop-check compat-check storage-tools-check stage1-scheduler-cert stage2-userspace-cert stage3-storage-cert stage4-hardware-cert stage5-desktop-cert
 
 storage-tools-check:
 	bash tools/storage/host_selftest.sh
@@ -128,16 +128,16 @@ $(BUILD)/kernel.o: kernel/kernel.c kernel/storage/storage.h kernel/types.h kerne
 $(BUILD)/interrupts.o: kernel/interrupts.c kernel/interrupts.h kernel/sync.h kernel/types.h kernel/cpu.h kernel/apic.h kernel/pic.h kernel/timer.h kernel/gdt.h kernel/task.h kernel/thread.h kernel/tlb.h kernel/scheduler.h kernel/syscall.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
-$(BUILD)/syscall.o: kernel/syscall.c kernel/syscall.h kernel/interrupts.h kernel/process.h kernel/thread.h kernel/task.h kernel/timer.h kernel/vmm.h kernel/ipc.h kernel/shmem.h kernel/exec.h kernel/fb.h kernel/display_core.h kernel/input.h | $(BUILD)
+$(BUILD)/syscall.o: kernel/syscall.c kernel/syscall.h kernel/interrupts.h kernel/process.h kernel/thread.h kernel/task.h kernel/timer.h kernel/tick_deadline.h kernel/vmm.h kernel/ipc.h kernel/shmem.h kernel/exec.h kernel/fb.h kernel/display_core.h kernel/input.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
 $(BUILD)/fb.o: kernel/fb.c kernel/fb.h kernel/memory.h kernel/vmm.h kernel/sync.h kernel/types.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
-$(BUILD)/input.o: kernel/input.c kernel/input.h kernel/input_core.h kernel/scancode_core.h kernel/mouse_core.h kernel/interrupts.h kernel/apic.h kernel/pic.h kernel/wait.h kernel/sync.h kernel/timer.h kernel/task.h kernel/syscall.h | $(BUILD)
+$(BUILD)/input.o: kernel/input.c kernel/input.h kernel/input_core.h kernel/scancode_core.h kernel/mouse_core.h kernel/interrupts.h kernel/apic.h kernel/pic.h kernel/wait.h kernel/sync.h kernel/timer.h kernel/tick_deadline.h kernel/task.h kernel/syscall.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
-$(BUILD)/ipc.o: kernel/ipc.c kernel/ipc.h kernel/process.h kernel/sync.h kernel/wait.h kernel/task.h kernel/timer.h kernel/syscall.h | $(BUILD)
+$(BUILD)/ipc.o: kernel/ipc.c kernel/ipc.h kernel/process.h kernel/sync.h kernel/wait.h kernel/task.h kernel/timer.h kernel/tick_deadline.h kernel/syscall.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
 $(BUILD)/shmem.o: kernel/shmem.c kernel/shmem.h kernel/memory.h kernel/process.h kernel/sync.h kernel/user.h kernel/vmm.h kernel/syscall.h | $(BUILD)
@@ -238,6 +238,11 @@ exec-host-test: | $(BUILD)
 		tests/exec_spawn_test.c kernel/exec.c -o $(BUILD)/exec-spawn-test
 	$(BUILD)/exec-spawn-test
 
+tick-deadline-test: | $(BUILD)
+	$(CC) -std=c11 -Wall -Wextra -Werror -O2 -Ikernel \
+		tests/tick_deadline_test.c -o $(BUILD)/tick-deadline-test
+	$(BUILD)/tick-deadline-test
+
 $(BUILD)/gdt.o: kernel/gdt.c kernel/gdt.h kernel/memory.h kernel/cpu.h kernel/types.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
@@ -247,7 +252,7 @@ $(BUILD)/vmm.o: kernel/vmm.c kernel/vmm.h kernel/memory.h kernel/tlb.h kernel/cp
 $(BUILD)/tlb.o: kernel/tlb.c kernel/tlb.h kernel/sync.h kernel/cpu.h kernel/types.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
-$(BUILD)/task.o: kernel/task.c kernel/task.h kernel/types.h kernel/memory.h kernel/gdt.h kernel/sync.h kernel/timer.h kernel/thread.h kernel/cpu.h kernel/smp.h kernel/tlb.h kernel/apic.h | $(BUILD)
+$(BUILD)/task.o: kernel/task.c kernel/task.h kernel/types.h kernel/memory.h kernel/gdt.h kernel/sync.h kernel/timer.h kernel/tick_deadline.h kernel/thread.h kernel/cpu.h kernel/smp.h kernel/tlb.h kernel/apic.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
 $(BUILD)/wait.o: kernel/wait.c kernel/wait.h kernel/task.h kernel/types.h kernel/sync.h | $(BUILD)
@@ -256,7 +261,7 @@ $(BUILD)/wait.o: kernel/wait.c kernel/wait.h kernel/task.h kernel/types.h kernel
 $(BUILD)/thread.o: kernel/thread.c kernel/thread.h kernel/task.h kernel/process.h kernel/types.h kernel/sync.h kernel/vmm.h kernel/user.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
-$(BUILD)/process.o: kernel/process.c kernel/process.h kernel/thread.h kernel/vmm.h kernel/types.h kernel/sync.h kernel/ipc.h kernel/shmem.h | $(BUILD)
+$(BUILD)/process.o: kernel/process.c kernel/process.h kernel/thread.h kernel/vmm.h kernel/types.h kernel/sync.h kernel/ipc.h kernel/shmem.h kernel/timer.h kernel/tick_deadline.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
 $(BUILD)/scheduler.o: kernel/scheduler.c kernel/scheduler.h kernel/task.h kernel/timer.h kernel/sync.h kernel/cpu.h kernel/apic.h kernel/smp.h | $(BUILD)

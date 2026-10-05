@@ -5,6 +5,7 @@
 #include "task.h"
 #include "timer.h"
 #include "syscall.h"
+#include "tick_deadline.h"
 
 struct ipc_message {
     uint16_t length;
@@ -43,26 +44,23 @@ struct ipc_capability {
 
 static struct spinlock ipc_lock;
 static int ipc_deadline_init(uint64_t timeout_ticks, uint64_t *deadline_out) {
-    uint64_t now;
-    uint64_t deadline;
-
     if (!deadline_out)
         return -1;
     if (timeout_ticks==ZEROOS_IPC_TIMEOUT_FOREVER) {
         *deadline_out=0;
         return 0;
     }
-    if (timeout_ticks>0x7fffffffffffffffULL)
-        return -1;
-    now=timer_ticks();
-    deadline=now+timeout_ticks;
-    *deadline_out=deadline;
-    return 0;
+    return zeroos_tick_deadline_from_timeout(timer_ticks(),timeout_ticks,
+                                             deadline_out);
 }
 
 static int ipc_deadline_expired(uint64_t deadline) {
-    uint64_t delta=deadline-timer_ticks();
-    return delta==0 || delta>0x7fffffffffffffffULL;
+    return zeroos_tick_deadline_expired(timer_ticks(),deadline);
+}
+
+static int ipc_deadline_wait_error(uint64_t deadline) {
+    return ipc_deadline_expired(deadline) ? -ZEROOS_ETIMEDOUT :
+           -ZEROOS_EBUSY;
 }
 
 static struct ipc_endpoint endpoints[ZEROOS_IPC_MAX_ENDPOINTS];
@@ -407,7 +405,7 @@ int ipc_send_timeout(struct process *owner, zeroos_ipc_handle_t handle,
                 if (wait_queue_prepare_timeout(&peer->send_waiters,deadline,
                                                &block_flags)!=0) {
                     spin_unlock_irqrestore(&ipc_lock,irq_flags);
-                    return -ZEROOS_EBUSY;
+                    return ipc_deadline_wait_error(deadline);
                 }
                 spin_unlock(&ipc_lock);
                 if (wait_queue_commit(irq_flags)!=0)
@@ -492,7 +490,7 @@ int ipc_receive_timeout(struct process *owner, zeroos_ipc_handle_t handle,
                 if (wait_queue_prepare_timeout(&endpoint->receive_waiters,
                                                deadline,&block_flags)!=0) {
                     spin_unlock_irqrestore(&ipc_lock,irq_flags);
-                    return -ZEROOS_EBUSY;
+                    return ipc_deadline_wait_error(deadline);
                 }
                 spin_unlock(&ipc_lock);
                 if (wait_queue_commit(irq_flags)!=0)
@@ -572,7 +570,7 @@ int ipc_pipe_write_timeout(struct process *owner, zeroos_ipc_handle_t handle,
                 if (wait_queue_prepare_timeout(&peer->send_waiters,deadline,
                                                &block_flags)!=0) {
                     spin_unlock_irqrestore(&ipc_lock,irq_flags);
-                    return -ZEROOS_EBUSY;
+                    return ipc_deadline_wait_error(deadline);
                 }
                 spin_unlock(&ipc_lock);
                 if (wait_queue_commit(irq_flags)!=0)
@@ -649,7 +647,7 @@ int ipc_pipe_read_timeout(struct process *owner, zeroos_ipc_handle_t handle,
                 if (wait_queue_prepare_timeout(&endpoint->receive_waiters,
                                                deadline,&block_flags)!=0) {
                     spin_unlock_irqrestore(&ipc_lock,irq_flags);
-                    return -ZEROOS_EBUSY;
+                    return ipc_deadline_wait_error(deadline);
                 }
                 spin_unlock(&ipc_lock);
                 if (wait_queue_commit(irq_flags)!=0)
@@ -760,7 +758,7 @@ int ipc_event_wait_timeout(struct process *owner, zeroos_ipc_handle_t handle,
             if (wait_queue_prepare_timeout(&endpoint->receive_waiters,
                                            deadline,&block_flags)!=0) {
                 spin_unlock_irqrestore(&ipc_lock,irq_flags);
-                return -ZEROOS_EBUSY;
+                return ipc_deadline_wait_error(deadline);
             }
             spin_unlock(&ipc_lock);
             if (wait_queue_commit(irq_flags)!=0)

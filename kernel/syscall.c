@@ -13,6 +13,7 @@
 #include "fb.h"
 #include "display_core.h"
 #include "input.h"
+#include "tick_deadline.h"
 
 extern void serial_write_public(const char *text);
 
@@ -22,6 +23,16 @@ static uint64_t syscall_error(uint64_t error) {
 
 static uint64_t syscall_result(int result) {
     return result<0 ? syscall_error((uint64_t)(-result)) : (uint64_t)result;
+}
+
+static int syscall_deadline_init(uint64_t timeout_ticks,
+                                 uint64_t *deadline_out) {
+    return zeroos_tick_deadline_from_timeout(timer_ticks(),timeout_ticks,
+                                             deadline_out);
+}
+
+static int syscall_deadline_expired(uint64_t deadline) {
+    return zeroos_tick_deadline_expired(timer_ticks(),deadline);
 }
 
 static struct process *current_process(void) {
@@ -453,10 +464,9 @@ void syscall_dispatch(struct interrupt_frame *frame) {
             frame->rax=syscall_error(ZEROOS_EFAULT);
             break;
         }
-        if (timeout) {
-            deadline=timer_ticks()+timeout;
-            if (deadline<timer_ticks())
-                deadline=~0ULL;
+        if (timeout && syscall_deadline_init(timeout,&deadline)!=0) {
+            frame->rax=syscall_error(ZEROOS_EINVAL);
+            break;
         }
         for (;;) {
             struct process *child=process_find_child(process,frame->rdi);
@@ -472,7 +482,7 @@ void syscall_dispatch(struct interrupt_frame *frame) {
                     !(frame->rdx&ZEROOS_WAIT_FLAG_NONBLOCK)) {
                     uint64_t wait_flags=0;
                     int wait_result;
-                    if (timeout && (long long)(deadline-timer_ticks())<=0) {
+                    if (timeout && syscall_deadline_expired(deadline)) {
                         result=-ZEROOS_ETIMEDOUT;
                         break;
                     }
@@ -511,7 +521,7 @@ void syscall_dispatch(struct interrupt_frame *frame) {
                 result=-ZEROOS_EAGAIN;
                 break;
             }
-            if (timeout && (long long)(deadline-timer_ticks())<=0) {
+            if (timeout && syscall_deadline_expired(deadline)) {
                 result=-ZEROOS_ETIMEDOUT;
                 break;
             }

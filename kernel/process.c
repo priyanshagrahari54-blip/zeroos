@@ -4,6 +4,8 @@
 #include "ipc.h"
 #include "shmem.h"
 #include "syscall.h"
+#include "timer.h"
+#include "tick_deadline.h"
 #include "storage/fsyscall.h"
 
 #define ZEROOS_MAX_PROCESSES 16U
@@ -305,13 +307,20 @@ static int process_child_wait_prepare_internal(struct process *parent,
             return 1;
         }
     }
+    if (finite_timeout &&
+        zeroos_tick_deadline_expired(timer_ticks(),deadline)) {
+        spin_unlock_irqrestore(&process_lock,process_flags);
+        return -ZEROOS_ETIMEDOUT;
+    }
     prepare_result=finite_timeout ?
         wait_queue_prepare_timeout(&parent->child_waiters,deadline,
                                    &wait_flags) :
         wait_queue_prepare(&parent->child_waiters,&wait_flags);
     if (prepare_result!=0) {
+        int timed_out=finite_timeout &&
+            zeroos_tick_deadline_expired(timer_ticks(),deadline);
         spin_unlock_irqrestore(&process_lock,process_flags);
-        return -ZEROOS_EBUSY;
+        return timed_out ? -ZEROOS_ETIMEDOUT : -ZEROOS_EBUSY;
     }
     /* Both wait-queue prepare forms intentionally leave interrupts disabled.
      * Release the process lock without restoring them so the condition check

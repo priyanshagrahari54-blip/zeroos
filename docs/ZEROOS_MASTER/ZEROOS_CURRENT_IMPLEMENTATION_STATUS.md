@@ -129,3 +129,25 @@ and is superseded by this repository's stage-weighted assessment.
 This closes a concrete Stage 2 exec failure path but does not close the stage's
 lifecycle or guest-certification gates. Estimates therefore remain **Stage 2
 82%, overall ~44% implemented (~56% remaining)**.
+
+### Update — 2026-10-05: wrap-safe finite wait deadlines
+
+- Added a shared tick-deadline primitive and applied it to process `WAIT`,
+  `INPUT_WAIT`, IPC timed operations, scheduler sleeps, and timed wait arming.
+  Finite intervals are bounded by `INT64_MAX`; modular addition now preserves
+  valid timeouts across `uint64_t` wrap instead of saturating to all-ones.
+  Oversized process/input waits return `EINVAL`, and scheduler wait-prepare
+  races that cross expiry resolve as `ETIMEDOUT` rather than `EBUSY`.
+- Added `tests/tick_deadline_test.c` with 29 checks for exact bounds,
+  over-limit rejection, due/past/ambiguous deadlines, and wraparound; the test
+  is in both `make check` and `make sanitize-check`. Stage 1/2/5 static gates
+  now assert the scheduler, process-wait and input-wait paths use the common
+  validation.
+- Validation passed: `make -j4 check`, `make sanitize-check` (ASan/UBSan),
+  and `make BUILD=build/production-check -j4 elf`; all five wired stage
+  certification scripts passed. No guest boot, QEMU lifecycle run, or physical
+  hardware certification was performed.
+
+This removes a bounded-deadline correctness gap across Stages 1, 2 and 5, but
+it does not close any stage exit gate. Estimates remain **S1 92%, S2 82%, S5
+41%, overall ~44% implemented (~56% remaining)**.

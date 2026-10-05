@@ -11,6 +11,7 @@
 #include "tlb.h"
 #include "apic.h"
 #include "vmm.h"
+#include "tick_deadline.h"
 
 extern void context_switch_ex(uint64_t *old_sp, const uint64_t *new_sp,
                               struct interrupt_frame *new_frame);
@@ -1438,13 +1439,15 @@ int task_arm_wait_timeout(uint64_t deadline) {
     struct task *task=current_task;
     uint64_t flags;
 
-    if (!task || task==&tasks[0] || task_is_idle(task))
+    if (!task || task==&tasks[0] || task_is_idle(task) ||
+        !zeroos_tick_deadline_distance_valid(timer_ticks(),deadline))
         return -1;
 
     flags=spin_lock_irqsave(&task_lock);
     if (task->state!=TASK_BLOCKED || !task->scheduler_transition ||
         !task->wait_queue || !task->wait_timeout_armed ||
-        task->sleep_armed || task->sleep_next) {
+        task->sleep_armed || task->sleep_next ||
+        !zeroos_tick_deadline_distance_valid(timer_ticks(),deadline)) {
         spin_unlock_irqrestore(&task_lock,flags);
         return -1;
     }
@@ -1564,7 +1567,6 @@ int task_sleep_until(uint64_t deadline) {
     uint64_t flags;
     struct task *next;
     uint64_t now;
-    uint64_t delta;
 
     if (!task || task==&tasks[0] || task_is_idle(task) ||
         task->state!=TASK_RUNNING || task->preempt_count!=0 ||
@@ -1578,10 +1580,9 @@ int task_sleep_until(uint64_t deadline) {
      * indefinite or fire immediately after wrap.
      */
     now=timer_ticks();
-    delta=deadline-now;
-    if (delta==0)
+    if (deadline==now)
         return 0;
-    if (delta>0x7fffffffffffffffULL)
+    if (!zeroos_tick_deadline_distance_valid(now,deadline))
         return -1;
 
     flags=task_irq_save();
@@ -1595,13 +1596,12 @@ int task_sleep_until(uint64_t deadline) {
     }
 
     now=timer_ticks();
-    delta=deadline-now;
-    if (delta==0) {
+    if (deadline==now) {
         spin_unlock(&task_lock);
         task_irq_restore(flags);
         return 0;
     }
-    if (delta>0x7fffffffffffffffULL) {
+    if (!zeroos_tick_deadline_distance_valid(now,deadline)) {
         spin_unlock(&task_lock);
         task_irq_restore(flags);
         return -1;
@@ -1635,7 +1635,7 @@ int task_sleep_ticks(uint64_t ticks) {
     /* Keep relative waits inside the timer comparator's signed half-range.
      * The addition itself may wrap, which is intentional and safe because
      * task_sleep_until() validates the resulting modular distance. */
-    if (ticks>0x7fffffffffffffffULL)
+    if (ticks>ZEROOS_TICK_DEADLINE_MAX_DELTA)
         return -1;
 
     return task_sleep_until(timer_ticks()+ticks);

@@ -9,6 +9,7 @@
 #include "sync.h"
 #include "timer.h"
 #include "task.h"
+#include "tick_deadline.h"
 
 extern void serial_write_public(const char *text);
 
@@ -368,11 +369,10 @@ int input_wait(struct zeroos_input_event *event, uint64_t timeout_flags,
 
     if (!event || (timeout_flags & ~ZEROOS_WAIT_FLAG_NONBLOCK))
         return -ZEROOS_EINVAL;
-    if (timeout_ticks) {
-        deadline = timer_ticks() + timeout_ticks;
-        if (deadline < timer_ticks())
-            deadline = ~0ULL;
-    }
+    if (timeout_ticks &&
+        zeroos_tick_deadline_from_timeout(timer_ticks(),timeout_ticks,
+                                          &deadline)!=0)
+        return -ZEROOS_EINVAL;
 
     for (;;) {
         struct input_event source;
@@ -392,14 +392,17 @@ int input_wait(struct zeroos_input_event *event, uint64_t timeout_flags,
             return -ZEROOS_EAGAIN;
         }
         if (timeout_ticks) {
-            if ((long long)(deadline - timer_ticks()) <= 0) {
+            if (zeroos_tick_deadline_expired(timer_ticks(),deadline)) {
                 spin_unlock_irqrestore(&input_lock, irq_flags);
                 return -ZEROOS_ETIMEDOUT;
             }
             if (wait_queue_prepare_timeout(&input_waiters, deadline,
                                            &block_flags) != 0) {
+                int wait_error=zeroos_tick_deadline_expired(
+                    timer_ticks(),deadline) ? -ZEROOS_ETIMEDOUT :
+                    -ZEROOS_EBUSY;
                 spin_unlock_irqrestore(&input_lock, irq_flags);
-                return -ZEROOS_EBUSY;
+                return wait_error;
             }
             spin_unlock(&input_lock);
             if (wait_queue_commit(irq_flags) != 0)

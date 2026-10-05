@@ -415,6 +415,9 @@ static inline int64_t zeroos_spawn(const void *image, uint64_t image_size,
         (uint64_t)(uintptr_t)argv,argc,(uint64_t)(uintptr_t)envp,envc));
 }
 
+/* Child WAIT timeout is in scheduler ticks: zero means wait forever, and a
+ * finite interval above INT64_MAX is rejected with -EINVAL so tick wrap stays
+ * unambiguous. */
 static inline int64_t zeroos_wait(uint64_t pid, uint64_t *status,
                                   uint64_t flags, uint64_t timeout) {
     return zeroos_syscall_result(zeroos_syscall6(
@@ -517,8 +520,8 @@ static inline int64_t zeroos_display_present(uint32_t x, uint32_t y,
 }
 
 /* Input: nonblocking drain (0 with event, -EAGAIN when empty) and
- * blocking wait. timeout is in scheduler ticks; 0 waits forever.
- * flags accepts ZEROOS_WAIT_FLAG_NONBLOCK only. */
+ * blocking wait. timeout is in scheduler ticks; 0 waits forever and finite
+ * values above INT64_MAX return -EINVAL. flags accepts NONBLOCK only. */
 static inline int64_t zeroos_input_poll(struct zeroos_input_event *event) {
     return zeroos_syscall_result(zeroos_syscall6(
         ZEROOS_SYS_INPUT_POLL,(uint64_t)(uintptr_t)event,0,0,0,0,0));
