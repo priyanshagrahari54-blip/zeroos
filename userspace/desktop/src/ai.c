@@ -53,7 +53,8 @@ int zd_ai_submit(struct zd_ai_broker *broker,
         request->kind > ZD_AI_REQ_COMMAND || request->want_remote > 1)
         return -ZD_EINVAL;
     /* Permission gate: requested context must be fully granted. */
-    if (request->context_mask & ~broker->grants) {
+    if (request->context_mask & ~broker->grants ||
+        request->action_mask & ~(broker->grants & ZD_AI_GRANT_ACTION_ALL)) {
         broker->stats.denied_permission++;
         return -ZD_EPERM;
     }
@@ -105,7 +106,8 @@ int zd_ai_drain(struct zd_ai_broker *broker, uint32_t max_out,
         if (!req)
             break;
 
-        if (req->context_mask & ~broker->grants) {
+        if (req->context_mask & ~broker->grants ||
+            req->action_mask & ~(broker->grants & ZD_AI_GRANT_ACTION_ALL)) {
             broker->stats.denied_permission++;
             wipe_request(req);
             broker->queued--;
