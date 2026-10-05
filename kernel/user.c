@@ -2851,7 +2851,10 @@ int userspace_service_step(void) {
 }
 
 int userspace_debug_validate(void) {
-    if (!userspace_initialized)
+    if (!userspace_initialized ||
+        ZEROOS_USER_STACK_PAGE>=ZEROOS_USER_STACK_TOP ||
+        ZEROOS_USER_STACK_TOP>ZEROOS_USER_STACK_PAGE+VMM_PAGE_SIZE ||
+        (ZEROOS_USER_STACK_TOP&0xfULL)!=0)
         return -1;
     if (init_reaped && (!init_process || !init_thread || service_started ||
                         !service_recovered))
