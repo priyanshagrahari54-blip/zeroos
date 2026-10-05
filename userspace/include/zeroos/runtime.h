@@ -31,6 +31,36 @@ int64_t zeroos_runtime_pipe_read(const struct zeroos_runtime *runtime,
                                  zeroos_ipc_handle_t handle, void *data,
                                  uint64_t capacity, uint64_t flags,
                                  uint64_t *length, uint64_t timeout);
+/* Signal returns 1 for a new pending event or 0 when signals coalesce; wait
+ * returns 1 when an event is available. Wait accepts NONBLOCK and PEEK, and
+ * timeout is in ticks (zero means forever). */
+int64_t zeroos_runtime_event_create(const struct zeroos_runtime *runtime,
+                                   struct zeroos_ipc_pair *pair);
+int64_t zeroos_runtime_event_signal(const struct zeroos_runtime *runtime,
+                                    zeroos_handle_t handle, uint64_t flags);
+int64_t zeroos_runtime_event_wait(const struct zeroos_runtime *runtime,
+                                  zeroos_handle_t handle, uint64_t flags,
+                                  uint64_t timeout);
+int64_t zeroos_runtime_event_close(const struct zeroos_runtime *runtime,
+                                   zeroos_handle_t handle);
+/* Shared memory is capped by ZEROOS_SHMEM_MAX_SIZE. Map returns the mapped
+ * user address on success; close still fails while this process has an active
+ * mapping. */
+int64_t zeroos_runtime_shmem_create(const struct zeroos_runtime *runtime,
+                                    uint64_t size, uint64_t flags,
+                                    zeroos_shmem_handle_t *handle);
+int64_t zeroos_runtime_shmem_grant(const struct zeroos_runtime *runtime,
+                                   zeroos_shmem_handle_t source,
+                                   uint64_t target_pid, uint8_t rights,
+                                   zeroos_shmem_handle_t *target);
+int64_t zeroos_runtime_shmem_map(const struct zeroos_runtime *runtime,
+                                 zeroos_shmem_handle_t handle,
+                                 uintptr_t address, uint64_t flags);
+int64_t zeroos_runtime_shmem_unmap(const struct zeroos_runtime *runtime,
+                                   zeroos_shmem_handle_t handle,
+                                   uintptr_t address);
+int64_t zeroos_runtime_shmem_close(const struct zeroos_runtime *runtime,
+                                   zeroos_shmem_handle_t handle);
 int64_t zeroos_runtime_spawn(const struct zeroos_runtime *runtime,
                              const void *image, uint64_t image_size,
                              const uint64_t *argv, uint64_t argc,

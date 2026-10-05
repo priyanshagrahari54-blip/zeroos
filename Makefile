@@ -20,7 +20,7 @@ CFLAGS += $(EXTRA_CFLAGS)
 ASFLAGS := -m64 -ffreestanding -fno-pic -fno-pie -nostdlib
 LDFLAGS := -m elf_x86_64 -T kernel/linker.ld -nostdlib
 
-.PHONY: all clean elf iso run check sanitize-check storage-tools-check stage1-scheduler-cert stage2-userspace-cert stage3-storage-cert stage4-hardware-cert stage5-desktop-cert kernel-simd-check userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test exec-host-test tick-deadline-test desktop-check compat-check
+.PHONY: all clean elf iso run check sanitize-check storage-tools-check stage1-scheduler-cert stage2-userspace-cert stage3-storage-cert stage4-hardware-cert stage5-desktop-cert kernel-simd-check userspace-abi-check userspace-runtime-check userspace-runtime-test userspace-abi-consistency hardware-core-test exec-host-test tick-deadline-test desktop-check compat-check
 
 all: iso
 
@@ -29,7 +29,8 @@ all: iso
 HOST_SANITIZER_FLAGS ?= -fsanitize=address,undefined -fno-omit-frame-pointer
 sanitize-check:
 	$(MAKE) --no-print-directory desktop-check compat-check hardware-core-test \
-		exec-host-test tick-deadline-test CC="$(CC) $(HOST_SANITIZER_FLAGS)"
+		exec-host-test tick-deadline-test userspace-runtime-test \
+		CC="$(CC) $(HOST_SANITIZER_FLAGS)"
 
 # Reproducible local release gate: compile, Stage 1 scheduler certification,
 # Stage 2 userspace certification, Stage 3 storage certification, Stage 4
@@ -64,9 +65,14 @@ elf: $(KERNEL)
 userspace-abi-check:
 	$(CC) -std=c11 -Wall -Wextra -Werror -m64 -Iuserspace/include -fsyntax-only userspace/tests/abi_compile.c
 
-userspace-runtime-check: | $(BUILD)
+userspace-runtime-check: userspace-runtime-test | $(BUILD)
 	$(CC) -std=c11 -Wall -Wextra -Werror -ffreestanding -fno-builtin -m64 \
 		-Iuserspace/include -c userspace/runtime.c -o $(BUILD)/userspace-runtime.o
+
+userspace-runtime-test: | $(BUILD)
+	$(CC) -std=c11 -Wall -Wextra -Werror -O2 -Iuserspace/include \
+		userspace/tests/runtime_test.c -o $(BUILD)/userspace-runtime-test
+	$(BUILD)/userspace-runtime-test
 
 userspace-abi-consistency:
 	python3 userspace/tests/abi_consistency.py

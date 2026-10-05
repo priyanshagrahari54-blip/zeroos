@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[2]
 PUBLIC = (ROOT / "userspace/include/zeroos/syscall.h").read_text()
 KERNEL = (ROOT / "kernel/syscall.h").read_text()
 IPC = (ROOT / "kernel/ipc.h").read_text()
+SHMEM = (ROOT / "kernel/shmem.h").read_text()
 INPUT_CORE = (ROOT / "kernel/input_core.h").read_text()
 MOUSE_CORE = (ROOT / "kernel/mouse_core.h").read_text()
 
@@ -63,6 +64,19 @@ for name in (
 
 for name in ("ZEROOS_IPC_MAX_MESSAGE", "ZEROOS_IPC_PIPE_CAPACITY"):
     if macro(PUBLIC, name) != macro(IPC, name):
+        raise SystemExit(f"macro drift for {name}")
+
+for name in (
+    "ZEROOS_SHMEM_MAX_PAGES",
+    "ZEROOS_SHMEM_MAX_SIZE",
+    "ZEROOS_SHMEM_RIGHT_MAP",
+    "ZEROOS_SHMEM_RIGHT_WRITE",
+    "ZEROOS_SHMEM_RIGHT_GRANT",
+    "ZEROOS_SHMEM_RIGHT_CLOSE",
+    "ZEROOS_SHMEM_MAP_WRITE",
+    "ZEROOS_SHMEM_VALID_MAP_FLAGS",
+):
+    if macro(PUBLIC, name) != macro(SHMEM, name):
         raise SystemExit(f"macro drift for {name}")
 
 public_errors = enum_values(PUBLIC, "zeroos_error")

@@ -126,6 +126,13 @@ every v1 call, including pipe, event, and shared-memory operations. The
 warnings-as-errors; it does not link or run in the kernel and therefore cannot
 hide ABI drift behind kernel-private headers.
 
+The higher-level freestanding runtime also wraps event and shared-memory
+operations. It returns `-ENOSYS` when the negotiated ABI lacks the relevant
+feature, validates event flags and shared-memory size/rights/map alignment,
+and preserves the coalesced-event result and mapped-address return contract.
+`make userspace-runtime-check` compiles this layer freestanding and runs a host
+policy suite with fake syscalls; that suite does not execute Ring-3 syscalls.
+
 `SPAWN` accepts bounded vectors (16 arguments and 16 environment strings, each
 at most 128 bytes) and constructs an initial stack containing `argc`, argv,
 envp, and a bounded auxiliary vector (`AT_ENTRY`, `AT_PHNUM`, `AT_PHENT`,
@@ -342,13 +349,14 @@ yet claim a general dynamic service registry.
 
 This is not the Stage 2 exit claim. The remaining production gates are:
 
-- ELF process construction with argv/env/auxv, executable identity and a
-  defined relocation/dynamic-loader policy;
+- executable identity and a defined relocation/dynamic-loader policy; the
+  current static loader explicitly rejects `PT_INTERP` and `PT_DYNAMIC`;
 - a general service registry beyond the bounded manager image, including
   dependency graphs, health checks, crash diagnostics, shutdown policy and
   multi-service resource accounting;
 - capability credentials/identity policy and a complete userspace runtime
-  library beyond the current freestanding syscall/IPC/spawn/wait layer;
+  library beyond the current feature-gated syscall/IPC/pipe/event/shared-memory/
+  spawn/wait helpers;
 - socket foundations built on the bounded/backpressure and cancellation
   contracts (the byte-stream pipe, coalescing-event, and page-granular
   shared-memory ABI is only the first foundation);

@@ -11,6 +11,15 @@ static int runtime_ready(const struct zeroos_runtime *runtime) {
            runtime->abi.max_transfer!=0;
 }
 
+static int runtime_feature_ready(const struct zeroos_runtime *runtime,
+                                 uint64_t feature) {
+    if (!runtime_ready(runtime))
+        return -ZEROOS_EPERM;
+    if ((runtime->abi.features&feature)!=feature)
+        return -ZEROOS_ENOSYS;
+    return 0;
+}
+
 int zeroos_runtime_init(struct zeroos_runtime *runtime) {
     int64_t result;
     if (!runtime)
@@ -99,6 +108,101 @@ int64_t zeroos_runtime_pipe_read(const struct zeroos_runtime *runtime,
     if (capacity>runtime->abi.max_transfer)
         return -ZEROOS_EOVERFLOW;
     return zeroos_pipe_read(handle,data,capacity,flags,length,timeout);
+}
+
+int64_t zeroos_runtime_event_create(const struct zeroos_runtime *runtime,
+                                   struct zeroos_ipc_pair *pair) {
+    int ready=runtime_feature_ready(runtime,ZEROOS_ABI_FEATURE_EVENT);
+    if (ready!=0)
+        return ready;
+    if (!pair)
+        return -ZEROOS_EINVAL;
+    return zeroos_event_create(pair);
+}
+
+int64_t zeroos_runtime_event_signal(const struct zeroos_runtime *runtime,
+                                    zeroos_handle_t handle, uint64_t flags) {
+    int ready=runtime_feature_ready(runtime,ZEROOS_ABI_FEATURE_EVENT);
+    if (ready!=0)
+        return ready;
+    if (flags&~ZEROOS_IPC_FLAG_NONBLOCK)
+        return -ZEROOS_EINVAL;
+    return zeroos_event_signal(handle,flags);
+}
+
+int64_t zeroos_runtime_event_wait(const struct zeroos_runtime *runtime,
+                                  zeroos_handle_t handle, uint64_t flags,
+                                  uint64_t timeout) {
+    int ready=runtime_feature_ready(runtime,ZEROOS_ABI_FEATURE_EVENT);
+    if (ready!=0)
+        return ready;
+    if ((flags&~ZEROOS_IPC_VALID_FLAGS)!=0)
+        return -ZEROOS_EINVAL;
+    return zeroos_event_wait(handle,flags,timeout);
+}
+
+int64_t zeroos_runtime_event_close(const struct zeroos_runtime *runtime,
+                                   zeroos_handle_t handle) {
+    int ready=runtime_feature_ready(runtime,ZEROOS_ABI_FEATURE_EVENT);
+    if (ready!=0)
+        return ready;
+    return zeroos_event_close(handle);
+}
+
+int64_t zeroos_runtime_shmem_create(const struct zeroos_runtime *runtime,
+                                    uint64_t size, uint64_t flags,
+                                    zeroos_shmem_handle_t *handle) {
+    int ready=runtime_feature_ready(runtime,ZEROOS_ABI_FEATURE_SHMEM);
+    if (ready!=0)
+        return ready;
+    if (!handle || !size || size>ZEROOS_SHMEM_MAX_SIZE || flags!=0)
+        return -ZEROOS_EINVAL;
+    return zeroos_shmem_create(size,flags,handle);
+}
+
+int64_t zeroos_runtime_shmem_grant(const struct zeroos_runtime *runtime,
+                                   zeroos_shmem_handle_t source,
+                                   uint64_t target_pid, uint8_t rights,
+                                   zeroos_shmem_handle_t *target) {
+    int ready=runtime_feature_ready(runtime,ZEROOS_ABI_FEATURE_SHMEM);
+    if (ready!=0)
+        return ready;
+    if (!target || !target_pid || !rights ||
+        (rights&~ZEROOS_SHMEM_ALL_RIGHTS)!=0)
+        return -ZEROOS_EINVAL;
+    return zeroos_shmem_grant(source,target_pid,rights,target);
+}
+
+int64_t zeroos_runtime_shmem_map(const struct zeroos_runtime *runtime,
+                                 zeroos_shmem_handle_t handle,
+                                 uintptr_t address, uint64_t flags) {
+    int ready=runtime_feature_ready(runtime,ZEROOS_ABI_FEATURE_SHMEM);
+    if (ready!=0)
+        return ready;
+    if (!address || (address&(ZEROOS_PAGE_SIZE-1U)) ||
+        (flags&~ZEROOS_SHMEM_VALID_MAP_FLAGS)!=0)
+        return -ZEROOS_EINVAL;
+    /* The syscall returns the mapped address rather than a zero status. */
+    return zeroos_shmem_map(handle,address,flags);
+}
+
+int64_t zeroos_runtime_shmem_unmap(const struct zeroos_runtime *runtime,
+                                   zeroos_shmem_handle_t handle,
+                                   uintptr_t address) {
+    int ready=runtime_feature_ready(runtime,ZEROOS_ABI_FEATURE_SHMEM);
+    if (ready!=0)
+        return ready;
+    if (!address || (address&(ZEROOS_PAGE_SIZE-1U)))
+        return -ZEROOS_EINVAL;
+    return zeroos_shmem_unmap(handle,address);
+}
+
+int64_t zeroos_runtime_shmem_close(const struct zeroos_runtime *runtime,
+                                   zeroos_shmem_handle_t handle) {
+    int ready=runtime_feature_ready(runtime,ZEROOS_ABI_FEATURE_SHMEM);
+    if (ready!=0)
+        return ready;
+    return zeroos_shmem_close(handle);
 }
 
 int64_t zeroos_runtime_spawn(const struct zeroos_runtime *runtime,
