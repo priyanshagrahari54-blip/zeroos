@@ -73,17 +73,20 @@ static void session_main(void *argument) {
         session_fail("thread create");
 
     thread = thread_lookup(tid);
+#ifdef ZEROOS_BOOT_CERTIFICATION
     t0 = timer_ticks();
     while (thread && thread->state != THREAD_ZOMBIE &&
            timer_ticks() - t0 < 3000U)
         task_sleep_ticks(2);
     if (!thread || thread->state != THREAD_ZOMBIE)
         session_fail("session did not finish");
+#endif
     if (thread_reap(thread, &status) != 0)
         session_fail("thread reap");
     t0 = timer_ticks();
     while (process->state != PROCESS_ZOMBIE && timer_ticks() - t0 < 200U)
         task_sleep_ticks(1);
+#ifdef ZEROOS_BOOT_CERTIFICATION
     if (vmm_activate_kernel() != 0 || process_reap(process, &status) != 0)
         session_fail("process reap");
     if (status != 0) {
@@ -93,6 +96,15 @@ static void session_main(void *argument) {
     serial_write_public("ZEROOS: session shell process reaped cleanly.\n");
     session_done = 1;
     task_exit();
+#else
+    /* Production: the Ring-3 desktop owns its process for the whole boot.
+     * It blocks in input_wait(), so the launcher task can finish without
+     * reclaiming the live session address space. */
+    (void)thread;
+    (void)process;
+    session_done = 1;
+    task_exit();
+#endif
 }
 
 void session_start(void) {
