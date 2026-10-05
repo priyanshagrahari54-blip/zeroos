@@ -41,7 +41,8 @@ enum zd_update_event {
     ZD_UPD_EV_CANCEL          /* allowed before ACTIVATING only */
 };
 
-/* Side-effect hooks (all optional; run during the transition). */
+/* Side-effect hooks (all optional; run during the transition). A hook may
+ * not recursively advance this update instance; nested events fail -16. */
 struct zd_update_ops {
     int (*stage_apply)(void *ctx);      /* write payload to staging */
     int (*activate)(void *ctx);         /* flip to new A/B slot */
@@ -55,9 +56,11 @@ struct zd_update {
     struct zd_update_ops ops;
     char version[32];                   /* target version label */
     uint32_t seq;                       /* transitions applied */
+    uint8_t hook_in_progress;           /* blocks event re-entry from hooks */
     struct {
         uint32_t started, committed, rollbacks, verify_failures,
-                 health_failures, rejected_events, cancels;
+                 health_failures, rejected_events, cancels,
+                 reentrant_events;
     } stats;
 };
 
@@ -65,7 +68,7 @@ void zd_update_init(struct zd_update *u, const struct zd_update_ops *ops);
 int zd_update_begin(struct zd_update *u, const char *version);
 /* Feed one pipeline event; returns 0 on accepted transition,
  * -22 (EINVAL) invalid event for current state, -16 (EBUSY) if a
- * lifecycle is already running where applicable, hook <0 propagates
+ * lifecycle is already running or a side-effect hook is re-entered, hook <0 propagates
  * (mapped to FAILED/ROLLING_BACK per stage). */
 int zd_update_event(struct zd_update *u, int event);
 int zd_update_state(const struct zd_update *u);

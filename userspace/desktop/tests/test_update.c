@@ -45,11 +45,86 @@ static void run_to(struct zd_update *u, int final_event) {
     zd_update_event(u, final_event);
 }
 
+struct update_reentry_context {
+    struct zd_update *update;
+    int event;
+    int nested_result;
+    uint32_t calls;
+};
+
+static int h_reenter_update(void *context) {
+    struct update_reentry_context *reentry=
+        (struct update_reentry_context *)context;
+    ++reentry->calls;
+    reentry->nested_result=zd_update_event(reentry->update,reentry->event);
+    return 0;
+}
+
+static void test_hook_reentry_suppressed(void) {
+    struct zd_update update;
+    struct update_reentry_context reentry={&update,0,0,0};
+    struct zd_update_ops ops={
+        h_reenter_update,h_reenter_update,h_reenter_update,h_reenter_update,
+        &reentry
+    };
+
+    zd_update_init(&update,&ops);
+    ZD_CHECK_EQ(zd_update_begin(&update,"reentry"),0);
+    ZD_CHECK_EQ(zd_update_event(&update,ZD_UPD_EV_DOWNLOAD_OK),0);
+    ZD_CHECK_EQ(zd_update_event(&update,ZD_UPD_EV_VERIFY_OK),0);
+
+    reentry.event=ZD_UPD_EV_STAGE_OK;
+    ZD_CHECK_EQ(zd_update_event(&update,ZD_UPD_EV_STAGE_OK),0);
+    ZD_CHECK_EQ(reentry.nested_result,-16);
+    ZD_CHECK_EQ(reentry.calls,1u);
+    ZD_CHECK_EQ(update.state,ZD_UPD_PREFLIGHT);
+    ZD_CHECK_EQ(update.hook_in_progress,0u);
+
+    ZD_CHECK_EQ(zd_update_event(&update,ZD_UPD_EV_PREFLIGHT_OK),0);
+    reentry.event=ZD_UPD_EV_ACTIVATE_OK;
+    ZD_CHECK_EQ(zd_update_event(&update,ZD_UPD_EV_ACTIVATE_OK),0);
+    ZD_CHECK_EQ(reentry.nested_result,-16);
+    ZD_CHECK_EQ(reentry.calls,2u);
+    ZD_CHECK_EQ(update.state,ZD_UPD_HEALTH_CHECK);
+    ZD_CHECK_EQ(zd_update_event(&update,ZD_UPD_EV_HEALTH_OK),0);
+    reentry.event=ZD_UPD_EV_COMMIT_OK;
+    ZD_CHECK_EQ(zd_update_event(&update,ZD_UPD_EV_COMMIT_OK),0);
+    ZD_CHECK_EQ(reentry.nested_result,-16);
+    ZD_CHECK_EQ(reentry.calls,3u);
+    ZD_CHECK_EQ(update.state,ZD_UPD_DONE);
+    ZD_CHECK_EQ(update.stats.reentrant_events,3u);
+    ZD_CHECK_EQ(update.stats.committed,1u);
+    ZD_CHECK_EQ(update.hook_in_progress,0u);
+
+    /* The rollback hook has the same no-recursion contract. */
+    zd_update_init(&update,&ops);
+    reentry.calls=0;
+    ZD_CHECK_EQ(zd_update_begin(&update,"rollback-reentry"),0);
+    ZD_CHECK_EQ(zd_update_event(&update,ZD_UPD_EV_DOWNLOAD_OK),0);
+    ZD_CHECK_EQ(zd_update_event(&update,ZD_UPD_EV_VERIFY_OK),0);
+    reentry.event=ZD_UPD_EV_STAGE_OK;
+    ZD_CHECK_EQ(zd_update_event(&update,ZD_UPD_EV_STAGE_OK),0);
+    ZD_CHECK_EQ(zd_update_event(&update,ZD_UPD_EV_PREFLIGHT_OK),0);
+    reentry.event=ZD_UPD_EV_ACTIVATE_OK;
+    ZD_CHECK_EQ(zd_update_event(&update,ZD_UPD_EV_ACTIVATE_OK),0);
+    ZD_CHECK_EQ(zd_update_event(&update,ZD_UPD_EV_HEALTH_FAIL),0);
+    reentry.event=ZD_UPD_EV_ROLLBACK_DONE;
+    ZD_CHECK_EQ(zd_update_event(&update,ZD_UPD_EV_ROLLBACK_DONE),0);
+    ZD_CHECK_EQ(reentry.nested_result,-16);
+    ZD_CHECK_EQ(reentry.calls,3u);
+    ZD_CHECK_EQ(update.state,ZD_UPD_FAILED);
+    ZD_CHECK_EQ(update.stats.reentrant_events,3u);
+    ZD_CHECK_EQ(update.stats.rollbacks,1u);
+    ZD_CHECK_EQ(update.hook_in_progress,0u);
+}
+
 void zd_test_update_suite(void) {
     struct zd_update u;
     struct hook_log log;
     struct zd_update_ops ops;
     uint32_t seq;
+
+    test_hook_reentry_suppressed();
 
     /* NULL/invalid args */
     zd_update_init(0, 0);

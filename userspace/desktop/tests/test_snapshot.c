@@ -181,9 +181,17 @@ void zd_test_snapshot_suite(void) {
         ZD_CHECK_OK(zd_update_event(&u, ZD_UPD_EV_VERIFY_OK));
         ZD_CHECK_OK(zd_update_event(&u, ZD_UPD_EV_STAGE_OK));
         ZD_CHECK_OK(zd_update_event(&u, ZD_UPD_EV_PREFLIGHT_OK));
-        ZD_CHECK_OK(zd_snapshots_discard(&sn2,
-                                         sn2.update_rollback_name));
-        sn2.update_rollback_name[0] = 0;
+        {
+            struct zd_snapshot *lost=zd_snapshots_find(
+                &sn2,sn2.update_rollback_name);
+            ZD_CHECK(lost && lost->state==ZD_SNAP_READY);
+            /* Simulate registry/storage corruption outside the public API;
+             * normal callers cannot discard the protected rollback point. */
+            if (lost) {
+                lost->state=ZD_SNAP_EMPTY;
+                lost->name[0]=0;
+            }
+        }
         ZD_CHECK_OK(zd_update_event(&u, ZD_UPD_EV_ACTIVATE_FAIL));
         ZD_CHECK_EQ(zd_update_state(&u), ZD_UPD_ROLLING_BACK);
         rc = zd_update_event(&u, ZD_UPD_EV_ROLLBACK_DONE);
@@ -278,6 +286,17 @@ void zd_test_snapshot_suite(void) {
                 ZD_CHECK_OK(zd_snapshots_create_finish(&sn5, 0));
             }
             ZD_CHECK_EQ(zd_snapshots_ready_count(&sn5), ZD_SNAP_MAX);
+            ZD_CHECK_EQ(zd_snapshots_discard(&sn5,name),-16);
+            ZD_CHECK_EQ(log5.discard,0); /* the backing point was untouched */
+            ZD_CHECK(protected->state==ZD_SNAP_READY);
+            /* Ordinary snapshot pressure also cannot evict the update's
+             * active rollback point. */
+            ZD_CHECK_OK(zd_snapshots_create(&sn5,"user-extra"));
+            ZD_CHECK_EQ(log5.discard,1);
+            ZD_CHECK(strcmp(log5.discarded_name,"x0")==0);
+            ZD_CHECK_OK(zd_snapshots_create_finish(&sn5,0));
+            ZD_CHECK(protected->state==ZD_SNAP_READY);
+            ZD_CHECK(zd_snapshots_find(&sn5,name)==protected);
             zd_update_init(&u5, &u5ops);
             ZD_CHECK_OK(zd_update_begin(&u5, "11.0.1"));
             ZD_CHECK_OK(zd_update_event(&u5, ZD_UPD_EV_DOWNLOAD_OK));

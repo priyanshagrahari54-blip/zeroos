@@ -69,6 +69,22 @@ int main(void) {
     assert(feed(&d, 0xcb, &ev) == 1);
     assert(ev.code == ZEROOS_KEY_LEFT);
 
+    /* The E0-prefixed set-1 codes occupy their own 128-entry state range.
+     * Exercise the highest mapped extended key through repeat and release;
+     * this guards down-code bookkeeping against an undersized base-only
+     * table. */
+    assert(feed(&d, 0xe0, &ev) == 0);
+    assert(feed(&d, 0x53, &ev) == 1);
+    assert(ev.code == ZEROOS_KEY_DELETE &&
+           ev.flags == ZEROOS_INPUT_FLAG_DOWN);
+    assert(feed(&d, 0xe0, &ev) == 0);
+    assert(feed(&d, 0x53, &ev) == 1);
+    assert(ev.code == ZEROOS_KEY_DELETE &&
+           ev.flags == (ZEROOS_INPUT_FLAG_DOWN | ZEROOS_INPUT_FLAG_REPEAT));
+    assert(feed(&d, 0xe0, &ev) == 0);
+    assert(feed(&d, 0xd3, &ev) == 1);
+    assert(ev.code == ZEROOS_KEY_DELETE && ev.flags == 0);
+
     /* Right-hand modifiers are distinct from left. */
     assert(feed(&d, 0xe0, &ev) == 0);
     assert(feed(&d, 0x1d, &ev) == 1);

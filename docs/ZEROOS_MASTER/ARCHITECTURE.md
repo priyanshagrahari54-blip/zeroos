@@ -223,8 +223,11 @@ Implemented (this stage):
 - Automation framework (`userspace/desktop/src/automation.c`): bounded
   event/rule engine (32 rules, 64-entry audit ring) with explicit
   permission grants, per-rule cooldowns, lifetime fire caps, injected
-  action ops (notify/settings/callback/log) and drainable audit records
-  (rule, event, result, tick) for the privacy center — host-tested.
+  action ops (notify/settings/callback/log) and drainable audit records.
+  Synchronous re-entry from action hooks is suppressed/audited, structural
+  add/remove is blocked during dispatch, and tick regression cannot bypass
+  cooldowns — host-tested. Persistence and asynchronous workflow-loop
+  prevention remain unimplemented.
 - Session/shell process (`userspace/session/session.c`, embedded and
   launched by `kernel/session.c`): the first Ring-3 shell process binds
   the display service to the real DISPLAY_INFO/DISPLAY_PRESENT syscalls,
@@ -250,9 +253,15 @@ Implemented (this stage):
   states with explicit recovery (no auto-restart, double-crash and
   early-focus rejected), bounded at 16 tabs with capacity errors —
   host-tested.  Rendering engine and tab UI remain.
-- AI broker (`userspace/desktop/src/ai.c`): Part F contracts are in
-  section 17; permissions, downgrade, dormancy and wipe semantics are
-  host-tested.
+- AI broker (`userspace/desktop/src/ai.c`): section 17 contracts are
+  host-tested. Initialization and grant changes mask unknown bits; request
+  context masks accept only file/settings/selection capabilities, with remote
+  egress kept separate. Grants are checked at enqueue and revalidated just
+  before backend execution; queued request/output buffers are always wiped.
+  Nested callback-driven drains are suppressed and counted, preventing a
+  backend hook from recursively executing the same request. Persistent request
+  retention is not supported, and partial drains report the still-resident
+  queued payload capacity.
 - Windows compatibility core (`userspace/compat/`): Part C contracts
   are in section 18; host-tested via `make compat-check`.
 - ZERO Bar core (`userspace/desktop/src/bar.c`): applet layout with a
@@ -289,9 +298,12 @@ Implemented (this stage):
   (including control-byte decodes like %00/%0A) rejected with named
   reasons — host-tested.
 - PE image validator (`userspace/compat/src/pe.c`): first loader
-  stage — MZ/PE signature, x86-64 machine, PE32+ format, section
-  table and entry/header bounds against truncation with explicit
-  diagnostics (section 18) — host-tested.
+  stage — MZ/PE signature, x86-64 machine, PE32+ format, bounded optional-
+  header directory counts/ranges (including the security directory's file-
+  offset semantics), power-of-two section/file alignment rules, aligned
+  image/header/section extents, non-overlapping ranges, and entry validation
+  (zero or inside a mapped executable section) — host-tested. Imports,
+  relocations and loading remain unimplemented.
 - Study Center core (`userspace/desktop/src/study.c`): deck/card
   registry with a bounded spaced-repetition ladder (0/1/3/7/21/60
   days), lapse and ease accounting, due-card selection and
@@ -401,14 +413,17 @@ Implemented (this stage):
   sensitive-clip events surfaced as protected, optional sources
   contribute zero rather than failing — host-tested against real
   engine counters.
-- Update<->snapshot production binding (`zd_snapshots_bind_update`,
-  part B): the update machine's `stage_apply` hook captures a fresh
-  "update" snapshot (capture errors abort staging atomically) and
-  `rollback` restores the newest READY one (none available -> -2,
-  which the machine converts to FAILED — never a silent half-
-  rollback).  Wiring fix: `stage_apply` and the snapshot `capture`
-  hook were documented but never invoked; both are now called during
-  their transitions with fail-closed semantics and regression tests.
+- Update<->snapshot binding (`zd_snapshots_bind_update`, part B):
+  `stage_apply` captures into the inactive `update-a`/`update-b` slot,
+  verifies it reaches READY, then rotates the exact rollback identity.
+  The active rollback point cannot be explicitly discarded or selected
+  for generic capacity pruning; it is released only after replacement
+  capture succeeds. Rollback restores that exact named snapshot (missing
+  state fails closed rather than selecting an unrelated newest snapshot).
+  The update state machine also blocks/counts recursive events from side-effect
+  hooks, so stage/activate/commit/rollback callbacks cannot replay themselves.
+  These are host-tested state-machine guarantees; no persistent updater or
+  recovery-boot integration is claimed.
 - Cloud/device ecosystem core (`userspace/desktop/src/eco.c`, part
   J): offline-first sync queue — pairing grants zero permissions,
   grants/revoke operate on exact bits, enqueue demands the paired
@@ -538,15 +553,17 @@ request broker -> permission check -> model/backend selector -> context provider
 Model execution may use CPU/GPU/NPU when available.
 No model remains actively generating or polling when no request exists.
 Status: the local broker (`userspace/desktop/src/ai.c`) implements
-request -> permission check -> backend select -> run with explicit
-grants (context bits, remote egress, persistence), automatic
-remote-to-local downgrade when the egress grant is absent, a bounded
-queue with drop counters, injected backend hooks (a missing hook counts
-a failure, never a fake success), payload wipe on drain and
-dormant-until-submit residency — host-tested in `make desktop-check`.
-Model adapters, context providers and action executors attach on top of
-these contracts later.  This ZEROOS platform is deliberately separate
-from Forge AI.
+request -> permission check -> backend select -> run with a bounded
+queue and drop counters. Only file/settings/selection context bits are
+accepted; remote egress is a separate control grant, and unknown grant
+bits are masked. Context grants are checked at enqueue and again after
+backend selection immediately before execution. Remote requests downgrade
+to local when egress is absent. Request/output buffers are always wiped;
+persistent request retention is unsupported. Partial drains report the
+queued payload capacity that remains resident. Missing backend hooks count
+as failures, never fake success. These contracts are host-tested in
+`make desktop-check`. Model adapters, context providers and action executors
+attach later. This ZEROOS platform is separate from Forge AI.
 
 ## 18. Compatibility Architecture
 Windows:

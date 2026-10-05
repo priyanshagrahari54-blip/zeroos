@@ -101,6 +101,9 @@ struct task {
 
     struct task *wait_next;
     struct wait_queue *wait_queue;
+    /* Nonzero only for a finite wait-queue block whose deadline is also
+     * armed on the scheduler sleep queue. */
+    uint8_t wait_timeout_armed;
     struct task *sleep_next;
     uint64_t wake_tick;
     uint8_t sleep_armed;
@@ -121,6 +124,9 @@ struct task *task_lookup(uint64_t task_id);
 void task_detach_thread(void);
 void task_yield(void);
 int task_prepare_block(void);
+/* Arm/cancel the current task's scheduler transition after wait-queue publish. */
+int task_arm_wait_timeout(uint64_t deadline);
+int task_cancel_prepared_block(void);
 int task_block(void);
 /* Block while interrupts are already disabled; restores the supplied flags when resumed. */
 int task_block_irqsave(uint64_t flags);

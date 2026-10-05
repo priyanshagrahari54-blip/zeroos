@@ -5,20 +5,20 @@
 > Generated from the repository documents listed below. Source sections are preserved as much as practical; this file is a consolidation, not a replacement for executable code or test evidence.
 
 ## Source Documents
-- `docs/ZEROOS_MASTER_ROADMAP.md`
-- `docs/ZEROOS_MASTER_BLUEPRINT.md`
-- `docs/ROADMAP.md`
-- `docs/BLUEPRINT_VERIFICATION.md`
-- `docs/ARCHITECTURE.md`
-- `docs/HARDWARE.md`
-- `docs/BOOT_SPEC.md`
-- `docs/VALIDATION.md`
-- `docs/ZEROOS_MASTER_PROMPT_10_STAGE.md`
+- `docs/ZEROOS_MASTER/ZEROOS_MASTER_ROADMAP.md`
+- `docs/ZEROOS_MASTER/ZEROOS_MASTER_BLUEPRINT.md`
+- `docs/ZEROOS_MASTER/ROADMAP.md`
+- `docs/ZEROOS_MASTER/BLUEPRINT_VERIFICATION.md`
+- `docs/ZEROOS_MASTER/ARCHITECTURE.md`
+- `docs/ZEROOS_MASTER/HARDWARE.md`
+- `docs/ZEROOS_MASTER/BOOT_SPEC.md`
+- `docs/ZEROOS_MASTER/VALIDATION.md`
+- `docs/ZEROOS_MASTER/ZEROOS_MASTER_PROMPT_10_STAGE.md`
 - [`ZEROOS_10_STAGE_HARDENING.md`](./ZEROOS_10_STAGE_HARDENING.md)
-- `docs/ZEROOS_AI_HANDOFF.md`
-- `docs/ZEROOS_FULL_REQUIREMENTS_225_PLUS_QA.md`
-- `docs/ZEROOS_MICRO_REQUIREMENTS_FROM_START.md`
-- `docs/ZEROOS_REMAINING_GAP_CLOSURE.md`
+- `docs/ZEROOS_MASTER/ZEROOS_AI_HANDOFF.md`
+- `docs/ZEROOS_MASTER/ZEROOS_FULL_REQUIREMENTS_225_PLUS_QA.md`
+- `docs/ZEROOS_MASTER/ZEROOS_MICRO_REQUIREMENTS_FROM_START.md`
+- `docs/ZEROOS_MASTER/ZEROOS_REMAINING_GAP_CLOSURE.md`
 
 ## Important Evidence Rule
 A requirement written in this document is **not** proof that the implementation exists. Host tests, QEMU tests, real-hardware tests, long-duration soak tests, security evidence, and performance measurements remain required according to the applicable gates.
@@ -27,7 +27,7 @@ A requirement written in this document is **not** proof that the implementation 
 
 
 
-# SOURCE 1: docs/ZEROOS_MASTER_ROADMAP.md
+# SOURCE 1: docs/ZEROOS_MASTER/ZEROOS_MASTER_ROADMAP.md
 
 # ZEROOS MASTER ROADMAP
 
@@ -672,21 +672,21 @@ Do not import Linux, Windows, Android or macOS architecture wholesale. ZEROOS ma
 ## Required living documents
 
 The following documents must remain synchronized:
-- docs/ZEROOS_MASTER_BLUEPRINT.md — product + architecture truth
-- docs/ZEROOS_MASTER_ROADMAP.md — stage execution truth
-- docs/ROADMAP.md — short execution bridge
-- docs/BLUEPRINT_VERIFICATION.md — evidence and audit rules
-- docs/HARDWARE.md — detected vs operational hardware matrix
-- docs/VALIDATION.md — test/hardware evidence
-- docs/ARCHITECTURE.md — subsystem contracts and dependency graph
-- docs/ZEROOS_MASTER_PROMPT_10_STAGE.md — reusable execution prompt
+- docs/ZEROOS_MASTER/ZEROOS_MASTER_BLUEPRINT.md — product + architecture truth
+- docs/ZEROOS_MASTER/ZEROOS_MASTER_ROADMAP.md — stage execution truth
+- docs/ZEROOS_MASTER/ROADMAP.md — short execution bridge
+- docs/ZEROOS_MASTER/BLUEPRINT_VERIFICATION.md — evidence and audit rules
+- docs/ZEROOS_MASTER/HARDWARE.md — detected vs operational hardware matrix
+- docs/ZEROOS_MASTER/VALIDATION.md — test/hardware evidence
+- docs/ZEROOS_MASTER/ARCHITECTURE.md — subsystem contracts and dependency graph
+- docs/ZEROOS_MASTER/ZEROOS_MASTER_PROMPT_10_STAGE.md — reusable execution prompt
 
 A roadmap statement is never evidence of implementation.
 
 
 ---
 
-# SOURCE 2: docs/ZEROOS_MASTER_BLUEPRINT.md
+# SOURCE 2: docs/ZEROOS_MASTER/ZEROOS_MASTER_BLUEPRINT.md
 
 # ZEROOS MASTER BLUEPRINT
 
@@ -1626,21 +1626,21 @@ Do not import Linux, Windows, Android or macOS architecture wholesale. ZEROOS ma
 ## Required living documents
 
 The following documents must remain synchronized:
-- docs/ZEROOS_MASTER_BLUEPRINT.md — product + architecture truth
-- docs/ZEROOS_MASTER_ROADMAP.md — stage execution truth
-- docs/ROADMAP.md — short execution bridge
-- docs/BLUEPRINT_VERIFICATION.md — evidence and audit rules
-- docs/HARDWARE.md — detected vs operational hardware matrix
-- docs/VALIDATION.md — test/hardware evidence
-- docs/ARCHITECTURE.md — subsystem contracts and dependency graph
-- docs/ZEROOS_MASTER_PROMPT_10_STAGE.md — reusable execution prompt
+- docs/ZEROOS_MASTER/ZEROOS_MASTER_BLUEPRINT.md — product + architecture truth
+- docs/ZEROOS_MASTER/ZEROOS_MASTER_ROADMAP.md — stage execution truth
+- docs/ZEROOS_MASTER/ROADMAP.md — short execution bridge
+- docs/ZEROOS_MASTER/BLUEPRINT_VERIFICATION.md — evidence and audit rules
+- docs/ZEROOS_MASTER/HARDWARE.md — detected vs operational hardware matrix
+- docs/ZEROOS_MASTER/VALIDATION.md — test/hardware evidence
+- docs/ZEROOS_MASTER/ARCHITECTURE.md — subsystem contracts and dependency graph
+- docs/ZEROOS_MASTER/ZEROOS_MASTER_PROMPT_10_STAGE.md — reusable execution prompt
 
 A roadmap statement is never evidence of implementation.
 
 
 ---
 
-# SOURCE 3: docs/ROADMAP.md
+# SOURCE 3: docs/ZEROOS_MASTER/ROADMAP.md
 
 # ZEROOS Execution Roadmap
 
@@ -1741,7 +1741,7 @@ All stage claims remain evidence-gated: detection != operational support, host-t
 
 ---
 
-# SOURCE 4: docs/BLUEPRINT_VERIFICATION.md
+# SOURCE 4: docs/ZEROOS_MASTER/BLUEPRINT_VERIFICATION.md
 
 # ZEROOS BLUEPRINT VERIFICATION
 
@@ -1749,16 +1749,16 @@ Use this document to verify that the repository contains the complete project vi
 
 ## Required master documents
 
-- docs/ZEROOS_MASTER_BLUEPRINT.md
-- docs/ZEROOS_MASTER_ROADMAP.md
-- docs/ARCHITECTURE.md
-- docs/ROADMAP.md
-- docs/HARDWARE.md
-- docs/BOOT_SPEC.md
+- docs/ZEROOS_MASTER/ZEROOS_MASTER_BLUEPRINT.md
+- docs/ZEROOS_MASTER/ZEROOS_MASTER_ROADMAP.md
+- docs/ZEROOS_MASTER/ARCHITECTURE.md
+- docs/ZEROOS_MASTER/ROADMAP.md
+- docs/ZEROOS_MASTER/HARDWARE.md
+- docs/ZEROOS_MASTER/BOOT_SPEC.md
 
 ## Repository bridge documents
 
-The short execution bridge is `docs/ROADMAP.md`. Current hardware and boot contracts are `docs/HARDWARE.md` and `docs/BOOT_SPEC.md`. The detailed master blueprint and master roadmap remain authoritative for the intended system scope.
+The short execution bridge is `docs/ZEROOS_MASTER/ROADMAP.md`. Current hardware and boot contracts are `docs/ZEROOS_MASTER/HARDWARE.md` and `docs/ZEROOS_MASTER/BOOT_SPEC.md`. The detailed master blueprint and master roadmap remain authoritative for the intended system scope.
 
 ## How to verify in GitHub
 
@@ -1899,7 +1899,7 @@ A later stage may not bypass an earlier blocking dependency. Every stage follows
 
 ---
 
-# SOURCE 5: docs/ARCHITECTURE.md
+# SOURCE 5: docs/ZEROOS_MASTER/ARCHITECTURE.md
 
 # ZEROOS — SYSTEM ARCHITECTURE
 Version: 1.0 | Master Architecture
@@ -2558,7 +2558,7 @@ The authoritative detected-versus-operational support matrix is in
 
 ---
 
-# SOURCE 6: docs/HARDWARE.md
+# SOURCE 6: docs/ZEROOS_MASTER/HARDWARE.md
 
 # ZEROOS Hardware Architecture
 
@@ -2635,7 +2635,7 @@ no real-hardware certification is implied by compilation.
 
 ---
 
-# SOURCE 7: docs/BOOT_SPEC.md
+# SOURCE 7: docs/ZEROOS_MASTER/BOOT_SPEC.md
 
 # ZEROOS Boot Specification
 
@@ -2674,7 +2674,7 @@ later production gates.
 
 ---
 
-# SOURCE 8: docs/VALIDATION.md
+# SOURCE 8: docs/ZEROOS_MASTER/VALIDATION.md
 
 # ZEROOS — Stage 5 Validation and Support Matrix
 Status: living evidence ledger for Stage 5 and the binding evidence policy for Stages 1-10.
@@ -2725,7 +2725,7 @@ Stage 10 remains blocked until Stages 1-9 have their declared executable evidenc
 
 ---
 
-# SOURCE 9: docs/ZEROOS_MASTER_PROMPT_10_STAGE.md
+# SOURCE 9: docs/ZEROOS_MASTER/ZEROOS_MASTER_PROMPT_10_STAGE.md
 
 # ZEROOS MASTER PROMPT — 10-STAGE EXECUTION
 
@@ -3066,7 +3066,7 @@ and QEMU cannot close a real-hardware gate.
 
 ---
 
-# SOURCE 11: docs/ZEROOS_AI_HANDOFF.md
+# SOURCE 11: docs/ZEROOS_MASTER/ZEROOS_AI_HANDOFF.md
 
 # ZEROOS — AI Handoff / Continuation Ledger
 
@@ -3332,7 +3332,7 @@ Treat GitHub as the source of truth. Inspect current branch, workflows, issues, 
 
 ---
 
-# SOURCE 12: docs/ZEROOS_FULL_REQUIREMENTS_225_PLUS_QA.md
+# SOURCE 12: docs/ZEROOS_MASTER/ZEROOS_FULL_REQUIREMENTS_225_PLUS_QA.md
 
 # ZEROOS — FULL REQUIREMENTS / NEED / SPEED / Q&A MASTER
 Version: 1.0
@@ -4164,13 +4164,13 @@ A. Must be proven by soak testing on the relevant evidence class.
 
 - Repository: priyanshagrahari54-blip/zeroos
 - Master hardening checklist: [`ZEROOS_10_STAGE_HARDENING.md`](./ZEROOS_10_STAGE_HARDENING.md)
-- Validation source: docs/VALIDATION.md
-- AI handoff source: docs/ZEROOS_AI_HANDOFF.md
-- Core roadmap: docs/ZEROOS_MASTER_ROADMAP.md
-- Blueprint: docs/ZEROOS_MASTER_BLUEPRINT.md
-- Architecture: docs/ARCHITECTURE.md
-- Hardware: docs/HARDWARE.md
-- Boot specification: docs/BOOT_SPEC.md
+- Validation source: docs/ZEROOS_MASTER/VALIDATION.md
+- AI handoff source: docs/ZEROOS_MASTER/ZEROOS_AI_HANDOFF.md
+- Core roadmap: docs/ZEROOS_MASTER/ZEROOS_MASTER_ROADMAP.md
+- Blueprint: docs/ZEROOS_MASTER/ZEROOS_MASTER_BLUEPRINT.md
+- Architecture: docs/ZEROOS_MASTER/ARCHITECTURE.md
+- Hardware: docs/ZEROOS_MASTER/HARDWARE.md
+- Boot specification: docs/ZEROOS_MASTER/BOOT_SPEC.md
 - Stage 1–2 gate: GitHub Issue #10
 - Pipe hardening: PR #6
 - Merged prior work: PR #7
@@ -4919,18 +4919,18 @@ The repository state is authoritative for implementation. Executable evidence is
 
 ## 47. MICRO-TO-MICRO CONTINUATION
 
-For the granular implementation/validation checklist from boot through release, see `docs/ZEROOS_MICRO_REQUIREMENTS_FROM_START.md`. It is intentionally checklist-based and does not mark requirements complete merely because they are documented.
+For the granular implementation/validation checklist from boot through release, see `docs/ZEROOS_MASTER/ZEROOS_MICRO_REQUIREMENTS_FROM_START.md`. It is intentionally checklist-based and does not mark requirements complete merely because they are documented.
 
 ## 48. REMAINING GAP CLOSURE
 
-Cross-cutting details that are easy to miss are tracked in `docs/ZEROOS_REMAINING_GAP_CLOSURE.md`, including toolchain/reproducibility, firmware edge cases, CPU/RAS, locking/memory ordering, crash forensics, time/locale, users/sessions, IPC/filesystem/network security, randomness, graphics robustness, UX reliability, package sandboxing, browser untrusted-content handling, compatibility runtime details, gaming measurement, ZERO AI agent safety/privacy, backups, observability, test infrastructure, formal invariants, documentation consistency, supply-chain security, installer/first boot, shutdown/reboot, and final repository-wide gap searches.
+Cross-cutting details that are easy to miss are tracked in `docs/ZEROOS_MASTER/ZEROOS_REMAINING_GAP_CLOSURE.md`, including toolchain/reproducibility, firmware edge cases, CPU/RAS, locking/memory ordering, crash forensics, time/locale, users/sessions, IPC/filesystem/network security, randomness, graphics robustness, UX reliability, package sandboxing, browser untrusted-content handling, compatibility runtime details, gaming measurement, ZERO AI agent safety/privacy, backups, observability, test infrastructure, formal invariants, documentation consistency, supply-chain security, installer/first boot, shutdown/reboot, and final repository-wide gap searches.
 
 ## End of exhaustive retained context.
 
 
 ---
 
-# SOURCE 13: docs/ZEROOS_MICRO_REQUIREMENTS_FROM_START.md
+# SOURCE 13: docs/ZEROOS_MASTER/ZEROOS_MICRO_REQUIREMENTS_FROM_START.md
 
 # ZEROOS — MICRO-TO-MICRO ENGINEERING REQUIREMENTS FROM START
 Version: 1.0
@@ -6079,7 +6079,7 @@ A future engineer/AI must start at section 0 and proceed in order. For every unc
 
 ---
 
-# SOURCE 14: docs/ZEROOS_REMAINING_GAP_CLOSURE.md
+# SOURCE 14: docs/ZEROOS_MASTER/ZEROOS_REMAINING_GAP_CLOSURE.md
 
 # ZEROOS — REMAINING GAP CLOSURE INVENTORY
 Status: Binding supplemental checklist

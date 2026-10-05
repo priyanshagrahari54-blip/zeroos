@@ -97,6 +97,12 @@ Preferred pattern:
 reference ownership -> last reference -> cleanup.
 Debug builds should detect leaks and use-after-free.
 
+The current allocator is page-granular; no slab/object-cache API is implemented
+or supported. Slab caches remain a roadmap item until backing-page ownership,
+object alignment, double-free detection, cache teardown/reclaim, concurrency,
+and resource-exhaustion behavior have executable tests. The roadmap entry is
+intent only and is not an implementation or support claim.
+
 ## 10. Page Reclamation
 Pressure levels:
 P0 normal

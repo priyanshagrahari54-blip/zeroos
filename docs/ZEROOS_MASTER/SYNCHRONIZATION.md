@@ -1,6 +1,6 @@
 # ZEROOS Synchronization
 
-ZEROOS now has a scheduler-independent synchronization layer.
+ZEROOS has scheduler-independent spin/atomic primitives plus scheduler-integrated wait queues.
 
 ## Spinlocks
 
@@ -32,11 +32,11 @@ higher-level condition instead of spinning indefinitely.
 Kernel spinlocks are acquired irqsave and follow one documented order that is
 never inverted:
 
-    wait_queue::lock  ->  task_lock  ->  memory_lock
-    process_lock / thread_lock      ->  memory_lock
+    wait_queue::lock  ->  task_lock  ->  runqueue::lock  ->  memory_lock
+    process_lock / thread_lock                         ->  memory_lock
 
 - `task_lock` serializes scheduler metadata: task table transitions, the
-  sleep queue, successor selection, per-CPU runqueue ownership and
+  deadline queue, successor selection, per-CPU runqueue ownership and
   context-ownership publication. It is always acquired with interrupts
   disabled and is released before any `context_switch_ex()` handoff. A
   per-CPU handoff-quarantine slot remains published until the destination
@@ -51,18 +51,21 @@ never inverted:
   holds `thread_lock` and then takes `process_lock` (detach); the reverse
   order is never used.
 
-Every mutation of task lifecycle state, sleep-queue membership or context
+Every mutation of task lifecycle state, deadline-queue membership or context
 ownership metadata happens under `task_lock`; wait-queue membership is owned
-by the corresponding `wait_queue::lock`. A lock is never held across a
-context switch.
+by the corresponding `wait_queue::lock`. A finite wait-queue waiter is linked
+to both queues and carries an explicit timeout marker. Timer expiry records
+such waiters under `task_lock`, releases it, then detaches and wakes them under
+the documented wait-queue-to-task lock order. Event wake and endpoint close
+remove a timed waiter from both queues before it resumes. No lock is held
+across a context switch.
 
 ## Design boundary
 
-Mutexes, semaphores and wait queues are not faked here. They will be introduced
-with task blocking/wakeup so a waiter can actually sleep instead of polling.
-
-Linux similarly distinguishes spinning from sleeping locks and connects wait
-queues to task sleep/wakeup. citeturn0search1turn0search0turn0search2
+Wait queues are implemented with real task blocking/wakeup, including finite
+deadlines; they do not poll conditions once per tick. Mutexes and semaphores
+remain higher-level primitives to add only when their ownership, cancellation,
+and priority semantics have executable coverage.
 
 ## Cost
 

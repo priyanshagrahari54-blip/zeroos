@@ -73,11 +73,19 @@ int process_release_live(struct process *process);
  * zero. The pointer is stable until the caller reaps that child. */
 struct process *process_find_child(struct process *parent, process_id_t pid);
 /* Recheck child state while publishing the current task on the parent's wait
- * queue. Returns 1 when a matching zombie is already present, 0 after a
- * waiter is prepared, or a negative ZEROOS_E* value when no child/queue
- * transition is possible. The returned flags are committed by the caller. */
+ * queue. Returns 1 when a matching child is reapable, 0 after a waiter is
+ * prepared, or a negative ZEROOS_E* value when no child/queue transition is
+ * possible. The returned flags are committed by the caller. */
 int process_child_wait_prepare(struct process *parent, process_id_t pid,
                                uint64_t *flags_out);
+/* Finite form; deadline is an absolute scheduler tick. On expiry, the
+ * committed waiter is detached before it is made runnable. */
+int process_child_wait_prepare_timeout(struct process *parent, process_id_t pid,
+                                       uint64_t deadline,
+                                       uint64_t *flags_out);
+/* Called after the exiting thread becomes reapable; closes the small window
+ * between process-zombie publication and the thread's zombie transition. */
+void process_child_exit_complete(struct process *process);
 
 int process_thread_reserve(struct process *process);
 int process_thread_unreserve(struct process *process);
@@ -116,6 +124,17 @@ uint64_t process_address_space_mapped_pages(const struct process *process);
 int process_address_space_is_user_range(const struct process *process,
                                         uint64_t virtual_address,
                                         uint64_t length, uint64_t write);
+/* Copy across a validated user range while holding the process accounting
+ * lock, preventing concurrent map/unmap/reap from invalidating translated
+ * frames during the bounded copy. Nonzero lengths require the full range. */
+int process_address_space_copy_from_user(struct process *process,
+                                         void *destination,
+                                         uint64_t source,
+                                         uint64_t length);
+int process_address_space_copy_to_user(struct process *process,
+                                       uint64_t destination,
+                                       const void *source,
+                                       uint64_t length);
 
 uint64_t process_child_count(const struct process *process);
 uint64_t process_thread_count(const struct process *process);

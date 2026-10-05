@@ -1,6 +1,6 @@
 # ZEROOS STAGE 6 — SECURITY, PACKAGES, UPDATES & RECOVERY
 
-Status: NEXT EXECUTION STAGE — specification and implementation contract. This document does not mark any item implemented.
+Status: IN PROGRESS — this contract has a host-tested snapshot/update state-machine component; the Stage 6 exit gate remains open and no security or recovery subsystem is declared complete.
 
 ## Mission
 Turn security policy and recovery design into real enforcement at the OS boundaries. Stage 6 must be production architecture from the first implementation: no toy sandbox, fake permission dialog, simulated firewall, or throwaway updater.
@@ -41,6 +41,16 @@ Updates must be resumable, cancellable and power-loss safe.
 Snapshot replacement must preserve the active rollback point until the new
 snapshot is captured and verified. Rollback must restore the exact snapshot
 bound to that update, not whichever user snapshot happens to be newest.
+
+Current local implementation is only the bounded, hook-driven host model:
+`zd_snapshots_bind_update` retains the active point against explicit discard
+and generic capacity pruning, captures into the alternate slot, and binds
+rollback to its exact name. The host update state machine also rejects and
+counts callback-driven nested events while stage/activate/commit/rollback hooks
+are running, preventing a hook from replaying a side effect recursively.
+`make desktop-check` and `make sanitize-check` exercise these contracts. There
+is no persistent snapshot backend, signed package pipeline, power-loss
+transaction log, or recovery-boot integration; these remain open Stage 6 work.
 
 ## 6.7 Recovery
 Recovery environment must operate without normal desktop services and provide:

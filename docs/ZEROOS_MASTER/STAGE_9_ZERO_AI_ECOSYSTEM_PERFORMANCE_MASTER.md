@@ -1,6 +1,6 @@
 # ZEROOS STAGE 9 — ZERO AI, AUTOMATION, ECOSYSTEM & PERFORMANCE
 
-Status: NEXT EXECUTION STAGE — specification and implementation contract.
+Status: IN PROGRESS — host-tested AI permission-broker and automation cores exist; the Stage 9 exit gate remains open, with no inference backend or service-wide resource certification claimed.
 
 ## Mission
 Make ZERO AI a deeply integrated but optional operating-system service, then harden the entire service ecosystem for near-zero idle overhead and measurable performance.
@@ -14,6 +14,12 @@ ZERO AI must never have unrestricted kernel access. Core OS must boot and operat
 Capabilities include filesystem read/write scope, process actions, settings changes, package/update actions, network egress, device access, secrets and automation. Each action carries principal, scope, expiry, confirmation policy and audit identity.
 Context grants are revalidated immediately before backend execution; revocation
 while work is queued must prevent that context from reaching any backend.
+
+Current host-tested broker slice: unknown grants/context bits are rejected,
+queued grants are revalidated immediately before execution, and payload/output
+buffers are wiped. A backend callback cannot recursively drain and execute the
+same request; nested drains return `-ZD_EBUSY` and are counted. There is still
+no production inference backend or real permission-service boundary.
 
 ## 9.3 Context engine
 Context providers expose only minimum necessary data: active window/app, selected text, files explicitly granted, system diagnostics, calendar/study context where enabled and relevant device state. Sensitive buffers have bounded lifetime and explicit wipe/release policy.
@@ -39,6 +45,13 @@ All capabilities are permission-scoped and must degrade cleanly when AI is unava
 
 ## 9.7 Automation engine
 Event -> condition -> action workflows with rate limits, permission scopes, loop prevention, persistence, disable switch and audit trail. Automation must never create uncontrolled background polling.
+
+Current host-tested slice: the bounded automation core enforces permission,
+per-rule cooldown and fire caps. Synchronous re-entry from an action callback
+is suppressed and audited, and add/remove mutations are rejected during
+callback dispatch. A regressing injected tick cannot wrap around and bypass a
+cooldown. This is not persistent workflow scheduling or loop prevention across
+asynchronous event sources; those remain open.
 
 ## 9.8 Ecosystem services
 Package manager, app catalog/repository metadata, notification service, settings service, search indexer, diagnostics, backup, update and device services must have explicit lifecycle states and resource budgets.

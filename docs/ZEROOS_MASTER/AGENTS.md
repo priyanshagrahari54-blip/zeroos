@@ -10,10 +10,10 @@ A green-looking demo that hides a scheduler, memory, security or data-integrity 
 
 ## 3. Repository Orientation
 Before changing code, inspect:
-- docs/ARCHITECTURE.md
-- docs/TECHSPEC.md
-- docs/RULES.md
-- docs/PHASES.md
+- docs/ZEROOS_MASTER/ARCHITECTURE.md
+- docs/ZEROOS_MASTER/TECHSPEC.md
+- docs/ZEROOS_MASTER/RULES.md
+- docs/ZEROOS_MASTER/PHASES.md
 - relevant subsystem documentation
 - current CI workflow
 - current test failures

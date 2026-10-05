@@ -5,7 +5,7 @@ Repository: https://github.com/priyanshagrahari54-blip/zeroos
 ## Mission
 Continue from current `main` only after Stage 2–4 contracts are verified. Build the production desktop/platform layer, then integrate the remaining ecosystem capabilities from the ZEROOS master requirements without turning the kernel into desktop policy.
 
-Read docs/MASTER_IMPLEMENTATION_PROMPT.md and all current architecture/UI/security/technical docs first.
+Read docs/ZEROOS_MASTER/MASTER_IMPLEMENTATION_PROMPT.md and all current architecture/UI/security/technical docs first.
 
 ## PART A — Graphics and Desktop
 

@@ -29,56 +29,18 @@ static struct process *current_process(void) {
     return thread ? thread->process : (struct process *)0;
 }
 
-/*
- * User pointers are validated against the owning process before any byte is
- * touched. The physical allocator currently exposes the managed low-memory
- * window through the kernel's identity mapping, so the copy loop translates
- * every page rather than treating a user virtual address as a kernel pointer.
- */
+/* User-copy helpers serialize range validation, page translation and copying
+ * against the process address-space map/unmap/reap paths. The process layer
+ * translates each page through the kernel's physical identity mapping. */
 static int copy_from_user(void *destination, uint64_t source, uint64_t length) {
-    struct process *process=current_process();
-    uint8_t *out=(uint8_t *)destination;
-    uint64_t offset=0;
-
-    if (!destination || !process ||
-        (length && !process_address_space_is_user_range(process,source,length,0)))
-        return -1;
-    while (offset<length) {
-        uint64_t address=source+offset;
-        uint64_t physical=vmm_space_translate(&process->address_space,address);
-        uint64_t within=VMM_PAGE_SIZE-(address & (VMM_PAGE_SIZE-1ULL));
-        uint64_t count=length-offset<within ? length-offset : within;
-        if (!physical)
-            return -1;
-        for (uint64_t i=0; i<count; ++i)
-            out[offset+i]=((const uint8_t *)(uint64_t)(physical+i))[0];
-        offset+=count;
-    }
-    return 0;
+    return process_address_space_copy_from_user(current_process(),destination,
+                                                source,length);
 }
 
 static int copy_to_user(uint64_t destination, const void *source,
                         uint64_t length) {
-    struct process *process=current_process();
-    const uint8_t *in=(const uint8_t *)source;
-    uint64_t offset=0;
-
-    if (!source || !process ||
-        (length && !process_address_space_is_user_range(process,destination,
-                                                        length,1)))
-        return -1;
-    while (offset<length) {
-        uint64_t address=destination+offset;
-        uint64_t physical=vmm_space_translate(&process->address_space,address);
-        uint64_t within=VMM_PAGE_SIZE-(address & (VMM_PAGE_SIZE-1ULL));
-        uint64_t count=length-offset<within ? length-offset : within;
-        if (!physical)
-            return -1;
-        for (uint64_t i=0; i<count; ++i)
-            ((uint8_t *)(uint64_t)(physical+i))[0]=in[offset+i];
-        offset+=count;
-    }
-    return 0;
+    return process_address_space_copy_to_user(current_process(),destination,
+                                              source,length);
 }
 
 static void syscall_write(struct interrupt_frame *frame) {
@@ -108,18 +70,6 @@ static void syscall_write(struct interrupt_frame *frame) {
     frame->rax=length;
 }
 
-static int syscall_child_final_thread_transition_pending(
-    const struct process *child) {
-    if (!child || child->live_thread_count || child->creating_threads ||
-        child->first_child || !child->first_thread)
-        return 0;
-    for (const struct thread *thread=child->first_thread; thread;
-         thread=thread->next_in_process)
-        if (thread->state!=THREAD_ZOMBIE)
-            return 1;
-    return 0;
-}
-
 static int syscall_reap_child(struct process *parent,
                                process_id_t pid,
                                uint64_t *status_out) {
@@ -145,6 +95,14 @@ static int syscall_reap_child(struct process *parent,
     return 0;
 }
 
+static int syscall_prepare_child_wait(struct process *parent, process_id_t pid,
+                                      uint64_t timeout, uint64_t deadline,
+                                      uint64_t *flags_out) {
+    if (timeout)
+        return process_child_wait_prepare_timeout(parent,pid,deadline,
+                                                  flags_out);
+    return process_child_wait_prepare(parent,pid,flags_out);
+}
 
 static void syscall_create_channel(struct interrupt_frame *frame,
                                    struct process *process,
@@ -511,21 +469,31 @@ void syscall_dispatch(struct interrupt_frame *frame) {
                 uint64_t status=0;
                 result=syscall_reap_child(process,child_pid,&status);
                 if (result==-ZEROOS_EBUSY &&
-                    !(frame->rdx&ZEROOS_WAIT_FLAG_NONBLOCK) &&
-                    syscall_child_final_thread_transition_pending(child)) {
-                    /* The final thread publishes process exit before its
-                     * thread object reaches the reapable state. Do not leak
-                     * this internal teardown window as EBUSY to a blocking
-                     * wait; sleep briefly and retry the child predicate. */
+                    !(frame->rdx&ZEROOS_WAIT_FLAG_NONBLOCK)) {
+                    uint64_t wait_flags=0;
+                    int wait_result;
                     if (timeout && (long long)(deadline-timer_ticks())<=0) {
                         result=-ZEROOS_ETIMEDOUT;
                         break;
                     }
-                    if (task_sleep_ticks(1)!=0) {
-                        result=-ZEROOS_EINTR;
+                    wait_result=syscall_prepare_child_wait(process,child_pid,
+                                                           timeout,deadline,
+                                                           &wait_flags);
+                    if (wait_result<0) {
+                        result=wait_result;
                         break;
                     }
-                    continue;
+                    if (wait_result==0) {
+                        if (wait_queue_commit(wait_flags)!=0) {
+                            result=-ZEROOS_EINTR;
+                            break;
+                        }
+                        continue;
+                    }
+                    /* The exit/reap transition completed between the first
+                     * reap attempt and waiter publication. Retry exactly once;
+                     * a persistent EBUSY is reported instead of busy-looping. */
+                    result=syscall_reap_child(process,child_pid,&status);
                 }
                 if (result==0 && status_address &&
                     copy_to_user(status_address,&status,sizeof(status))!=0)
@@ -543,9 +511,14 @@ void syscall_dispatch(struct interrupt_frame *frame) {
                 result=-ZEROOS_EAGAIN;
                 break;
             }
-            if (!timeout) {
+            if (timeout && (long long)(deadline-timer_ticks())<=0) {
+                result=-ZEROOS_ETIMEDOUT;
+                break;
+            }
+            {
                 uint64_t wait_flags=0;
-                int wait_result=process_child_wait_prepare(process,frame->rdi,
+                int wait_result=syscall_prepare_child_wait(process,frame->rdi,
+                                                           timeout,deadline,
                                                            &wait_flags);
                 if (wait_result<0) {
                     result=wait_result;
@@ -557,15 +530,6 @@ void syscall_dispatch(struct interrupt_frame *frame) {
                     result=-ZEROOS_EINTR;
                     break;
                 }
-                continue;
-            }
-            if ((long long)(deadline-timer_ticks())<=0) {
-                result=-ZEROOS_ETIMEDOUT;
-                break;
-            }
-            if (task_sleep_ticks(1)!=0) {
-                result=-ZEROOS_EINTR;
-                break;
             }
         }
         if (result!=0)

@@ -70,13 +70,20 @@ gate remains DPL0. The register ABI is:
 - `RDI`, `RSI`, `RDX`, `R10`, `R8`, `R9`: arguments;
 - negative results are `-ZEROOS_E*` error values;
 - user pointers are validated against the current process address space before
-  copy-in/copy-out;
+  copy-in/copy-out; range validation, page translation and bounded copies run
+  under the process accounting lock so map/unmap/reap cannot invalidate the
+  translated frame mid-copy;
 - length arithmetic is bounded and the write transfer limit is explicit.
 
 `ZEROOS_SYS_ABI_INFO` returns a structure containing an ABI version, structure
 size, feature bitmap and maximum transfer size. This is the extension point:
 future structures must carry their own size/version fields rather than silently
 changing v1 layouts.
+
+The kernel's shared-memory boot probe exercises safe user-copy across a page
+boundary, rejects writes to read-only mappings, and rejects unmapped and
+address-overflow inputs. CI requires its serial marker on the guest boot paths;
+a source/build-only local pass is not guest execution evidence.
 
 The initial v1 calls are:
 
@@ -131,13 +138,17 @@ its initial stack in Ring 3: it checks argc, argv terminators, environment
 termination, and representative argument/environment bytes before emitting
 its success message, so argv/envp delivery is an executing runtime gate rather
 than only a kernel layout check.
-`WAIT` validates child ownership before waiting, publishes an indefinite wait
-on the parent's child wait queue without a lost-wakeup window, and is woken
-when the final child thread exits. Bounded `R10` tick timeouts and
-nonblocking mode retain their explicit polling/expiry behavior, while all
-successful waits revalidate ownership and reap every zombie thread before
-destroying the child address space. The boot gate also exercises the child
-wait/wakeup and reap path with a temporary process pair.
+`WAIT` validates child ownership before waiting and publishes both indefinite
+and finite waits on the parent's child queue without a lost-wakeup window.
+Finite `R10` deadlines use the scheduler timeout queue rather than per-tick
+retries; child exit, final-thread readiness, and completion of an in-flight
+thread reap wake blocked parents. Nonblocking mode returns `-ZEROOS_EAGAIN`.
+Successful waits revalidate ownership and reap every zombie thread before
+destroying the child address space. The Ring-3 boot probe keeps a child blocked
+on a private IPC receive, verifies that a three-tick child wait returns
+`-ZEROOS_ETIMEDOUT`, then performs an ordinary wait/reap after the child's
+longer IPC deadline. A kernel-side deadline probe also verifies waiter
+detachment; both paths are required by the QEMU serial gates.
 
 IPC handles are process-scoped capabilities, not global file-like integers.
 The kernel checks owner, generation, rights and endpoint lifetime on every
@@ -157,10 +168,13 @@ block transition. Enqueue/dequeue and endpoint destruction wake the opposite
 waiter class, so a full or empty queue cannot lose a wakeup and capability
 revocation cancels blocked operations. The timed variants use the `R9` syscall
 argument as a bounded tick timeout (`R9 == 0` means no timeout for ABI
-compatibility); expiry returns `-ZEROOS_ETIMEDOUT`, and a failed scheduler
-block returns `-ZEROOS_EINTR`. `PEEK` does not wake blocked senders because it
-does not free queue capacity. The public kernel helpers expose both infinite
-and timed forms so service code and fault tests use the same semantics. The
+compatibility); finite waits park on the same condition queue with a scheduler
+deadline rather than waking once per tick to poll. Event/close wakeups cancel
+the deadline; expiry detaches the waiter and returns `-ZEROOS_ETIMEDOUT`, and
+a failed scheduler block returns `-ZEROOS_EINTR`. `PEEK` does not wake blocked
+senders because it does not free queue capacity. The public kernel helpers
+expose both infinite and timed forms so service code and fault tests use the
+same semantics. The
 boot gate also blocks a real receiver, closes its peer endpoint, requires the
 receiver to wake with `-ZEROOS_EPIPE`, and then reaps the temporary process;
 peer-close cancellation is therefore covered independently of event signaling. A

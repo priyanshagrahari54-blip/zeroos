@@ -19,4 +19,12 @@ Clean with:
 
     make clean
 
+Run the host-testable kernel helpers, desktop cores, and compatibility tests
+under AddressSanitizer and UndefinedBehaviorSanitizer with:
+
+    make sanitize-check
+
+This is an additional host memory-safety gate; it does not replace the
+freestanding kernel build, QEMU certification, or real-hardware validation.
+
 A feature is complete only when it has an appropriate build and verification path.

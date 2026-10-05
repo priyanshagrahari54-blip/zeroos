@@ -48,8 +48,10 @@ void zd_test_downloads_suite(void) {
     ZD_CHECK_EQ(it->state, ZD_DL_RUNNING);
     /* second start refused while one runs */
     ZD_CHECK_EQ(zd_downloads_start_next(&dl), -16);
-    /* progress: monotonic */
+    /* Progress is monotonic and bounded by one stable known total. */
     ZD_CHECK_EQ(zd_downloads_progress(&dl, 1, 40, 100), 0);
+    ZD_CHECK_EQ(zd_downloads_progress(&dl, 1, 101, 100), -22);
+    ZD_CHECK_EQ(zd_downloads_progress(&dl, 1, 40, 90), -22);
     ZD_CHECK_EQ(zd_downloads_progress(&dl, 1, 20, 0), -22);
     ZD_CHECK_EQ(dl.stats.progress_regressions, 1);
     ZD_CHECK_EQ(zd_downloads_progress(&dl, 99, 1, 0), -2);
@@ -62,6 +64,9 @@ void zd_test_downloads_suite(void) {
     ZD_CHECK_EQ(zd_downloads_active(&dl), 0);
     ZD_CHECK_EQ(zd_downloads_start_next(&dl), 0);
     ZD_CHECK_EQ(zd_downloads_active(&dl), 2);
+    /* Unknown size may be learned once; updates beyond that size fail. */
+    ZD_CHECK_EQ(zd_downloads_progress(&dl, 2, 4, 5), 0);
+    ZD_CHECK_EQ(zd_downloads_progress(&dl, 2, 6, 0), -22);
     /* finish without running -> -22 */
     ZD_CHECK_EQ(zd_downloads_finish(&dl, 1, 0), -22);
     /* fail */
@@ -90,7 +95,16 @@ void zd_test_downloads_suite(void) {
     ZD_CHECK_EQ(dl.stats.failed, 1);
     start_reject = 0;
 
-    /* capacity -> -28 (one item already present from above) */
+    /* Failure errno conversion is defined even for a broken callback's
+     * minimum signed integer (which cannot be negated in `int`). */
+    ZD_CHECK_EQ(zd_downloads_add(&dl, "https://b/min", "min", 1), 0);
+    ZD_CHECK_EQ(zd_downloads_start_next(&dl), 0);
+    ZD_CHECK_EQ(zd_downloads_finish(&dl, 2, (-2147483647 - 1)), 0);
+    it = zd_downloads_find(&dl, 2);
+    ZD_CHECK_EQ(it->state, ZD_DL_FAILED);
+    ZD_CHECK_EQ(it->fail_errno, 2147483647);
+
+    /* capacity -> -28 (two items already present from above) */
     {
         int r = 0;
         while (r == 0)

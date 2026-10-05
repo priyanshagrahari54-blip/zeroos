@@ -175,7 +175,8 @@ int zd_url_parse(const char *input, struct zd_url *out) {
     }
     {
         uint32_t h;
-        int label_len = 0, saw_digit = 0;
+        uint32_t label_len = 0;
+        int label_ends_hyphen = 0;
         for (h = 0; h < host_len; ++h) {
             char c = host_start[h];
             if (c == ' ' || c == '\\' || c == '@' || c == '[' || c == ']' ||
@@ -184,36 +185,30 @@ int zd_url_parse(const char *input, struct zd_url *out) {
                 return -22;
             }
             if (c == '.') {
-                if (label_len == 0) {
+                if (label_len == 0 || label_ends_hyphen) {
                     out->reject_reason = ZD_URL_R_BAD_HOST;
                     return -22;
                 }
                 label_len = 0;
+                label_ends_hyphen = 0;
                 continue;
             }
+            /* This parser deliberately accepts only canonical ASCII DNS
+             * labels. Encoded host bytes need IDNA/percent normalization
+             * before they can safely be used for origin/security checks. */
             if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-                  (c >= '0' && c <= '9') || c == '-' || c == '%')) {
+                  (c >= '0' && c <= '9') || c == '-')) {
                 out->reject_reason = ZD_URL_R_BAD_HOST;
                 return -22;
-            }
-            if (c >= '0' && c <= '9')
-                saw_digit = 1;
-            if (c == '%') { /* percent-encoding in host: need 2 hex */
-                if (h + 2 >= host_len || u_hex(host_start[h + 1]) < 0 ||
-                    u_hex(host_start[h + 2]) < 0) {
-                    out->reject_reason = ZD_URL_R_BAD_HOST;
-                    return -22;
-                }
-                h += 2;
-                continue;
             }
             if (c == '-') {
                 if (label_len == 0) {
                     out->reject_reason = ZD_URL_R_BAD_HOST;
                     return -22;
                 }
-                ++label_len;
-                continue;
+                label_ends_hyphen = 1;
+            } else {
+                label_ends_hyphen = 0;
             }
             ++label_len;
             if (label_len > 63) {
@@ -221,11 +216,10 @@ int zd_url_parse(const char *input, struct zd_url *out) {
                 return -22;
             }
         }
-        if (label_len == 0) { /* trailing dot label empty */
+        if (label_len == 0 || label_ends_hyphen) {
             out->reject_reason = ZD_URL_R_BAD_HOST;
             return -22;
         }
-        (void)saw_digit;
     }
     u_copy(out->host, sizeof(out->host), host_start, host_len);
 
@@ -256,17 +250,18 @@ int zd_url_parse(const char *input, struct zd_url *out) {
         out->path[0] = 0;
         return 0;
     }
-    if (*p == '?' || *p == '#') {
-        out->path[0] = '/';
-        out->path[1] = 0;
-        return 0;
-    }
-    /* path with query: validate escapes and control chars */
+    /* Keep query-only and fragment-only URLs navigable as a root path;
+     * silently dropping either component changes the requested resource. */
     {
         uint32_t plen = u_len(p), k;
+        uint32_t prefix = p[0] == '/' ? 0U : 1U;
+        if (plen > sizeof(out->path) - prefix - 1U) {
+            out->reject_reason = ZD_URL_R_TOO_LONG;
+            return -22;
+        }
         for (k = 0; k < plen; ++k) {
             unsigned char c = (unsigned char)p[k];
-            if (c < 0x20 || c == 0x7f) {
+            if (c < 0x20 || c == 0x7f || c == ' ' || c == '\\') {
                 out->reject_reason = ZD_URL_R_BAD_PATH;
                 return -22;
             }
@@ -285,7 +280,9 @@ int zd_url_parse(const char *input, struct zd_url *out) {
                 k += 2;
             }
         }
-        u_copy(out->path, sizeof(out->path), p, plen);
+        if (prefix)
+            out->path[0] = '/';
+        u_copy(out->path + prefix, sizeof(out->path) - prefix, p, plen);
     }
     return 0;
 }

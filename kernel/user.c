@@ -63,6 +63,8 @@ static void userspace_write_decimal(uint64_t value);
 
 static const char init_message[]=
     "ZEROOS: userspace init syscall path passed.\n";
+static const char init_wait_timeout_message[]=
+    "ZEROOS: Ring-3 finite WAIT timeout/reap path passed.\n";
 
 #define INIT_ELF_DATA_OFFSET 0x1000ULL
 #define INIT_ELF_ENTRY_OFFSET 0x100ULL
@@ -85,6 +87,7 @@ static const char init_message[]=
 /* Input probe event record (struct zeroos_input_event) lands after the
  * display-info record in the same data page. */
 #define INIT_ELF_INPUT_EVENT_OFFSET 0x3870ULL
+#define INIT_ELF_WAIT_TIMEOUT_OFFSET 0x38a0ULL
 #define INIT_ELF_DATA_FILE_END (INIT_ELF_STATUS_OFFSET+sizeof(uint64_t))
 #define INIT_ELF_DATA_MEMORY_SIZE ((INIT_ELF_DATA_FILE_END-INIT_ELF_DATA_OFFSET+\
                                     VMM_PAGE_SIZE-1ULL)&~(VMM_PAGE_SIZE-1ULL))
@@ -99,6 +102,11 @@ static const char init_child_environment_zero[]="ZEROOS_MODE=production";
 
 #define INIT_CHILD_ELF_DATA_OFFSET 0x1000ULL
 #define INIT_CHILD_ELF_ENTRY_OFFSET 0x100ULL
+#define INIT_CHILD_IPC_PAIR_OFFSET 0x100ULL
+#define INIT_CHILD_IPC_BUFFER_OFFSET 0x120ULL
+#define INIT_CHILD_IPC_LENGTH_OFFSET 0x128ULL
+#define INIT_CHILD_IPC_TIMEOUT_TICKS 20U
+#define INIT_PARENT_WAIT_TIMEOUT_TICKS 3U
 #define INIT_CHILD_ELF_IMAGE_SIZE \
     (INIT_CHILD_ELF_DATA_OFFSET+sizeof(init_child_message)-1U)
 static uint8_t init_child_elf_image[INIT_CHILD_ELF_IMAGE_SIZE];
@@ -193,6 +201,42 @@ static uint64_t build_child_code(uint8_t *code) {
     failure_jumps[failure_jump_count++]=offset;
     code[offset++]=0x75; code[offset++]=0;
 
+    /* Keep this child alive beyond its parent's short finite WAIT by
+     * blocking on an empty private IPC endpoint with a longer deadline. */
+    code[offset++]=0xb8;
+    put_u32(&code[offset],ZEROOS_SYS_IPC_CREATE); offset+=4;
+    code[offset++]=0x48; code[offset++]=0xbf;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE+
+            INIT_CHILD_IPC_PAIR_OFFSET); offset+=8;
+    code[offset++]=0xbe;
+    put_u32(&code[offset],(uint32_t)sizeof(struct zeroos_ipc_pair)); offset+=4;
+    code[offset++]=0xcd; code[offset++]=0x80;
+    code[offset++]=0x48; code[offset++]=0x85; code[offset++]=0xc0;
+    failure_jumps[failure_jump_count++]=offset;
+    code[offset++]=0x75; code[offset++]=0;
+
+    code[offset++]=0xb8;
+    put_u32(&code[offset],ZEROOS_SYS_IPC_RECEIVE); offset+=4;
+    code[offset++]=0x48; code[offset++]=0xb8;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE+
+            INIT_CHILD_IPC_PAIR_OFFSET); offset+=8;
+    code[offset++]=0x48; code[offset++]=0x8b; code[offset++]=0x38;
+    code[offset++]=0x48; code[offset++]=0xbe;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE+
+            INIT_CHILD_IPC_BUFFER_OFFSET); offset+=8;
+    code[offset++]=0xba; put_u32(&code[offset],1); offset+=4;
+    code[offset++]=0x45; code[offset++]=0x31; code[offset++]=0xd2;
+    code[offset++]=0x49; code[offset++]=0xb8;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE+
+            INIT_CHILD_IPC_LENGTH_OFFSET); offset+=8;
+    code[offset++]=0x49; code[offset++]=0xb9;
+    put_u64(&code[offset],INIT_CHILD_IPC_TIMEOUT_TICKS); offset+=8;
+    code[offset++]=0xcd; code[offset++]=0x80;
+    code[offset++]=0x48; code[offset++]=0x83;
+    code[offset++]=0xf8; code[offset++]=0x92; /* -ETIMEDOUT */
+    failure_jumps[failure_jump_count++]=offset;
+    code[offset++]=0x75; code[offset++]=0;
+
     code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_WRITE); offset+=4;
     code[offset++]=0xbf; put_u32(&code[offset],1); offset+=4;
     code[offset++]=0x48; code[offset++]=0xbe;
@@ -256,7 +300,12 @@ static uint64_t build_child_elf(void) {
     data_segment->memory_size=VMM_PAGE_SIZE;
     data_segment->alignment=VMM_PAGE_SIZE;
 
-    (void)build_child_code(init_child_elf_image+INIT_CHILD_ELF_ENTRY_OFFSET);
+    uint64_t child_code_size=
+        build_child_code(init_child_elf_image+INIT_CHILD_ELF_ENTRY_OFFSET);
+    if (child_code_size>VMM_PAGE_SIZE-INIT_CHILD_ELF_ENTRY_OFFSET) {
+        serial_write_public("ZEROOS PANIC: child syscall probe exceeds one code page.\n");
+        return 0;
+    }
     for (uint64_t i=0; i<sizeof(init_child_message)-1U; ++i)
         init_child_elf_image[INIT_CHILD_ELF_DATA_OFFSET+i]=
             (uint8_t)init_child_message[i];
@@ -761,6 +810,34 @@ static uint64_t build_init_code(uint8_t *code) {
     code[offset++]=0xcd; code[offset++]=0x80;
     code[offset++]=0x49; code[offset++]=0x89; code[offset++]=0xc4;
 
+    /* The spawned child waits 20 ticks on a private IPC receive. This
+     * 3-tick WAIT must return ETIMEDOUT, after which the ordinary wait reaps
+     * the same child once its own IPC deadline expires. */
+    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_WAIT); offset+=4;
+    code[offset++]=0x4c; code[offset++]=0x89; code[offset++]=0xe7;
+    code[offset++]=0x48; code[offset++]=0xbe;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE+
+            (INIT_ELF_STATUS_OFFSET-INIT_ELF_DATA_OFFSET)); offset+=8;
+    code[offset++]=0x48; code[offset++]=0x31; code[offset++]=0xd2;
+    code[offset++]=0x41; code[offset++]=0xba;
+    put_u32(&code[offset],INIT_PARENT_WAIT_TIMEOUT_TICKS); offset+=4;
+    code[offset++]=0xcd; code[offset++]=0x80;
+    code[offset++]=0x48; code[offset++]=0x83;
+    code[offset++]=0xf8; code[offset++]=0x92; /* -ETIMEDOUT */
+    failure_jumps[failure_jump_count++]=offset;
+    code[offset++]=0x0f; code[offset++]=0x85;
+    put_u32(&code[offset],0); offset+=4;
+
+    code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_WRITE); offset+=4;
+    code[offset++]=0xbf; put_u32(&code[offset],1); offset+=4;
+    code[offset++]=0x48; code[offset++]=0xbe;
+    put_u64(&code[offset],ZEROOS_USER_DATA_BASE+
+            (INIT_ELF_WAIT_TIMEOUT_OFFSET-INIT_ELF_DATA_OFFSET)); offset+=8;
+    code[offset++]=0xba;
+    put_u32(&code[offset],(uint32_t)(sizeof(init_wait_timeout_message)-1U));
+    offset+=4;
+    code[offset++]=0xcd; code[offset++]=0x80;
+
     code[offset++]=0xb8; put_u32(&code[offset],ZEROOS_SYS_WAIT); offset+=4;
     code[offset++]=0x4c; code[offset++]=0x89; code[offset++]=0xe7;
     code[offset++]=0x48; code[offset++]=0xbe;
@@ -818,6 +895,8 @@ static uint64_t build_init_elf(void) {
         (struct zeroos_elf64_phdr *)(uint64_t)(init_elf_image+sizeof(*header));
     struct zeroos_elf64_phdr *data_segment=code_segment+1;
     uint64_t child_image_size=build_child_elf();
+    if (!child_image_size)
+        return 0;
     for (uint64_t i=0; i<sizeof(init_elf_image); ++i)
         init_elf_image[i]=0;
 
@@ -863,6 +942,9 @@ static uint64_t build_init_elf(void) {
     }
     for (uint64_t i=0; i<sizeof(init_message)-1U; ++i)
         init_elf_image[INIT_ELF_DATA_OFFSET+i]=(uint8_t)init_message[i];
+    for (uint64_t i=0; i<sizeof(init_wait_timeout_message)-1U; ++i)
+        init_elf_image[INIT_ELF_WAIT_TIMEOUT_OFFSET+i]=
+            (uint8_t)init_wait_timeout_message[i];
     /* Preload the present-probe payload in the scanout's native format so
      * the Ring-3 positive probe pushes real bytes through the syscall. */
     if (fb_present_active())
@@ -1478,6 +1560,49 @@ static void process_wait_probe_entry(void *argument) {
     (void)argument;
 }
 
+static int userspace_child_wait_timeout_self_test(void) {
+    process_id_t parent_pid=0;
+    process_id_t child_pid=0;
+    struct process *parent=0;
+    struct process *child=0;
+    uint64_t flags=0;
+    uint64_t started;
+    int result=-1;
+
+    if (process_create(0,&parent_pid)!=0)
+        return -1;
+    parent=process_lookup(parent_pid);
+    if (!parent || process_set_limits(parent,1,1,4)!=0 ||
+        process_create(parent,&child_pid)!=0)
+        goto fail;
+    child=process_lookup(child_pid);
+    if (!child)
+        goto fail;
+
+    started=timer_ticks();
+    if (process_child_wait_prepare_timeout(parent,child_pid,
+                                           timer_ticks()+3U,&flags)!=0 ||
+        wait_queue_count(&parent->child_waiters)!=1 ||
+        wait_queue_commit(flags)!=0)
+        goto fail;
+    if (timer_ticks()-started<3U ||
+        wait_queue_count(&parent->child_waiters)!=0 ||
+        child->state!=PROCESS_NEW)
+        goto fail;
+
+    if (process_abort_new(child)!=0 || process_abort_new(parent)!=0 ||
+        process_lookup(child_pid)!=0 || process_lookup(parent_pid)!=0)
+        return -1;
+    return 0;
+
+fail:
+    if (child && child->state==PROCESS_NEW)
+        (void)process_abort_new(child);
+    if (parent && parent->state==PROCESS_NEW && !parent->first_child)
+        (void)process_abort_new(parent);
+    return result;
+}
+
 static int userspace_child_wait_wakeup_self_test(void) {
     process_id_t parent_pid=0;
     process_id_t child_pid=0;
@@ -1509,14 +1634,12 @@ static int userspace_child_wait_wakeup_self_test(void) {
     result=process_child_wait_prepare(parent,child_pid,&wait_flags);
     if (result<0 || (result==0 && wait_queue_commit(wait_flags)!=0))
         goto fail;
-    /* process_thread_exited publishes the process zombie immediately before
-     * thread_exit finishes publishing the thread zombie. The parent wake may
-     * therefore win the SMP race; wait for the reapability boundary rather
-     * than treating that valid ordering as a failed self-test. */
-    uint64_t exit_deadline=timer_ticks()+100U;
-    while (thread->state!=THREAD_ZOMBIE &&
-           (long long)(exit_deadline-timer_ticks())>0)
-        (void)task_sleep_ticks(1);
+    /* Process-zombie publication can wake this first wait before the final
+     * thread reaches THREAD_ZOMBIE. Publish a second condition wait; the
+     * thread-exit completion notification must close that teardown window. */
+    result=process_child_wait_prepare(parent,child_pid,&wait_flags);
+    if (result<0 || (result==0 && wait_queue_commit(wait_flags)!=0))
+        goto fail;
     if (child->state!=PROCESS_ZOMBIE || thread->state!=THREAD_ZOMBIE ||
         thread_reap(thread,&status)!=0 || status!=0 ||
         vmm_activate_kernel()!=0 || process_reap(child,&status)!=0 ||
@@ -1600,6 +1723,9 @@ static int userspace_shmem_self_test(struct process *process) {
     uint64_t target_address=ZEROOS_USER_BASE+0x10000ULL;
     uint64_t mapped=0;
     uint64_t physical=0;
+    uint8_t copy_source[2]={0xa5,0x5a};
+    uint8_t copy_result[2]={0,0};
+    uint64_t copy_address=first_address+VMM_PAGE_SIZE-1ULL;
 
     if (!process || shmem_create(process,0,0,&handle)!=-ZEROOS_EINVAL ||
         shmem_create(process,VMM_PAGE_SIZE*(ZEROOS_SHMEM_MAX_PAGES+1ULL),
@@ -1619,6 +1745,16 @@ static int userspace_shmem_self_test(struct process *process) {
                                              VMM_PAGE_SIZE*2ULL,0))
         goto fail;
     ((uint8_t *)(uint64_t)physical)[0]=0x5a;
+    if (process_address_space_copy_to_user(process,copy_address,copy_source,
+                                           sizeof(copy_source))!=0 ||
+        process_address_space_copy_from_user(process,copy_result,copy_address,
+                                             sizeof(copy_result))!=0 ||
+        copy_result[0]!=copy_source[0] || copy_result[1]!=copy_source[1] ||
+        process_address_space_copy_from_user(
+            process,copy_result,ZEROOS_USER_BASE+0x40000000ULL,1)==0 ||
+        process_address_space_copy_from_user(
+            process,copy_result,~0ULL-1ULL,sizeof(copy_result))==0)
+        goto fail;
 
     if (shmem_map(process,handle,second_address,0,&mapped)!=0 ||
         vmm_space_translate(&process->address_space,second_address)!=physical ||
@@ -1629,7 +1765,13 @@ static int userspace_shmem_self_test(struct process *process) {
         shmem_close(process,handle)!=-ZEROOS_EBUSY ||
         shmem_map(process,handle,first_address,0,&mapped)==0 ||
         shmem_unmap(process,handle,first_address+VMM_PAGE_SIZE)!=-ZEROOS_EINVAL ||
-        shmem_unmap(process,handle+0x100ULL,first_address)!=-ZEROOS_EBADF)
+            shmem_unmap(process,handle+0x100ULL,first_address)!=-ZEROOS_EBADF)
+        goto fail;
+    if (process_address_space_copy_from_user(process,copy_result,
+                                             second_address,1)!=0 ||
+        copy_result[0]!=0x5a ||
+        process_address_space_copy_to_user(process,second_address,
+                                           copy_source,1)!=-1)
         goto fail;
     if (shmem_unmap(process,handle,second_address)!=0 ||
         shmem_unmap(process,handle,first_address)!=0 ||
@@ -1655,6 +1797,7 @@ static int userspace_shmem_self_test(struct process *process) {
     if (shmem_close(process,handle)!=0 || shmem_debug_validate()!=0)
         goto fail;
     handle=0;
+    serial_write_public("ZEROOS: serialized user-copy cross-page/read-only boundary self-test passed.\n");
     return 0;
 
 fail:
@@ -2640,6 +2783,8 @@ int userspace_start_init(void) {
 
     if (!userspace_initialized || init_started)
         return init_started ? 0 : -1;
+    if (!image_size)
+        return -1;
     if (process_create(0,&pid)!=0)
         return -1;
     init_process=process_lookup(pid);
@@ -2661,6 +2806,11 @@ int userspace_start_init(void) {
         goto fail;
     }
     serial_write_public("ZEROOS: IPC capability generation/revocation stress passed.\n");
+    if (userspace_child_wait_timeout_self_test()!=0) {
+        serial_write_public("ZEROOS PANIC: child wait timeout self-test failed.\n");
+        goto fail;
+    }
+    serial_write_public("ZEROOS: finite child wait deadline/detach passed.\n");
     if (userspace_child_wait_wakeup_self_test()!=0) {
         serial_write_public("ZEROOS PANIC: child wait/wakeup self-test failed.\n");
         goto fail;

@@ -20,9 +20,16 @@ CFLAGS += $(EXTRA_CFLAGS)
 ASFLAGS := -m64 -ffreestanding -fno-pic -fno-pie -nostdlib
 LDFLAGS := -m elf_x86_64 -T kernel/linker.ld -nostdlib
 
-.PHONY: all clean elf iso run check storage-tools-check stage1-scheduler-cert stage2-userspace-cert stage3-storage-cert stage4-hardware-cert stage5-desktop-cert kernel-simd-check userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check
+.PHONY: all clean elf iso run check sanitize-check storage-tools-check stage1-scheduler-cert stage2-userspace-cert stage3-storage-cert stage4-hardware-cert stage5-desktop-cert kernel-simd-check userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check
 
 all: iso
+
+# AddressSanitizer + UBSan pass for host-testable subsystem cores. Kept as a
+# separate gate so the normal freestanding kernel build remains uninstrumented.
+HOST_SANITIZER_FLAGS ?= -fsanitize=address,undefined -fno-omit-frame-pointer
+sanitize-check:
+	$(MAKE) --no-print-directory desktop-check compat-check hardware-core-test \
+		CC="$(CC) $(HOST_SANITIZER_FLAGS)"
 
 # Reproducible local release gate: compile, Stage 1 scheduler certification,
 # Stage 2 userspace certification, Stage 3 storage certification, Stage 4
@@ -166,8 +173,10 @@ $(BUILD)/smp.o: kernel/smp.c kernel/smp.h kernel/acpi.h kernel/apic.h kernel/cpu
 $(BUILD)/acpi.o: kernel/acpi.c kernel/acpi.h kernel/types.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
 
+# Keep the portable helper objects in sync with shared headers: struct-layout
+# changes must rebuild both the kernel driver and its paired helper object.
 $(BUILD)/hardware-%.o: kernel/%.c | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+	$(CC) $(CFLAGS) -MMD -MP -Ikernel -c $< -o $@
 
 hardware-core-test: | $(BUILD)
 	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/net_core_test.c kernel/net_core.c -o $(BUILD)/net-core-test
@@ -261,7 +270,7 @@ $(BUILD)/storage/%.o: kernel/storage/%.c | $(BUILD)/storage
 $(BUILD)/ksync.o $(BUILD)/crc.o $(BUILD)/kstring.o $(BUILD)/pci.o $(BUILD)/sandbox.o: $(BUILD)/%.o: kernel/%.c | $(BUILD)
 	$(CC) $(CFLAGS) -MMD -MP -Ikernel -c $< -o $@
 
--include $(STORAGE_OBJS:.o=.d) $(INFRA_OBJS:.o=.d)
+-include $(STORAGE_OBJS:.o=.d) $(INFRA_OBJS:.o=.d) $(HARDWARE_CORE_OBJS:.o=.d)
 
 # Stage 5 Ring-3 session/shell process: desktop display/compositor/input
 # modules linked freestanding and embedded into the kernel image.

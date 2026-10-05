@@ -1,6 +1,6 @@
 # ZEROOS STAGE 8 — WINDOWS, ANDROID, COMPATIBILITY & GAMING
 
-Status: NEXT EXECUTION STAGE — specification and implementation contract.
+Status: IN PROGRESS — host-tested compatibility lifecycle and PE validation cores exist; the Stage 8 exit gate remains open, with no Windows or Android runtime support claim.
 
 ## Mission
 Provide useful compatibility without turning compatibility runtimes into kernel dependencies or compromising native ZEROOS.
@@ -12,6 +12,16 @@ Every compatibility runtime is a supervised user-space process tree with explici
 Define production boundaries for PE/COFF validation, process/thread behavior, virtual memory expectations, Win32/Win64 API translation, synchronization primitives, DLL loading/import resolution, filesystem paths, registry compatibility and graphics/media integration.
 
 Unsupported APIs must return deterministic errors. No fake success.
+
+Current implemented slice: `userspace/compat` has a host-tested lifecycle/path/
+registry/DLL bookkeeping core and a bounded PE32+ header validator. The
+validator checks bounded optional-header directory counts and entries,
+including the security directory's file-offset semantics, SectionAlignment/
+FileAlignment rules, aligned image/header/section extents, and non-overlapping
+ranges; a nonzero entry RVA must fall in an executable section. This is not a
+PE loader: imports, relocations, DLL mapping, Win32/Win64 execution and Windows
+runtime support remain unimplemented. `make compat-check` is host-only
+evidence.
 
 ## 8.3 Windows graphics
 Evaluate a translation architecture suitable for the target hardware and supported APIs. Use measured compatibility tests. Do not copy third-party implementations blindly. GPU reset/crash must not take down the native desktop.

@@ -392,19 +392,22 @@ int input_wait(struct zeroos_input_event *event, uint64_t timeout_flags,
             return -ZEROOS_EAGAIN;
         }
         if (timeout_ticks) {
-            int sleep_result;
             if ((long long)(deadline - timer_ticks()) <= 0) {
                 spin_unlock_irqrestore(&input_lock, irq_flags);
                 return -ZEROOS_ETIMEDOUT;
             }
-            spin_unlock_irqrestore(&input_lock, irq_flags);
-            sleep_result = task_sleep_ticks(1);
-            if (sleep_result != 0)
+            if (wait_queue_prepare_timeout(&input_waiters, deadline,
+                                           &block_flags) != 0) {
+                spin_unlock_irqrestore(&input_lock, irq_flags);
+                return -ZEROOS_EBUSY;
+            }
+            spin_unlock(&input_lock);
+            if (wait_queue_commit(irq_flags) != 0)
                 return -ZEROOS_EINTR;
             continue;
         }
-        /* Same lost-wakeup discipline as ipc.c: publish the waiter while
-         * the queue condition lock is held, then release and commit. */
+        /* Publish the waiter while the queue condition lock is held, then
+         * release and commit. */
         if (wait_queue_prepare(&input_waiters, &block_flags) != 0) {
             spin_unlock_irqrestore(&input_lock, irq_flags);
             return -ZEROOS_EBUSY;

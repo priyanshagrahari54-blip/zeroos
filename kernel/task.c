@@ -1,4 +1,5 @@
 #include "task.h"
+#include "wait.h"
 #include "thread.h"
 #include "memory.h"
 #include "gdt.h"
@@ -78,6 +79,10 @@ static uint32_t task_cpu_index(void) {
 static struct spinlock task_lock;
 static uint64_t next_task_id;
 static struct task *sleep_head;
+struct wait_timeout_expiry {
+    struct wait_queue *queue;
+    struct task *task;
+};
 static uint64_t frame_resume_count;
 
 static int task_stack_guard_ok(const struct task *task) {
@@ -393,7 +398,9 @@ static void task_validate_table_at(const char *where,
         }
 
         if (task->state==TASK_UNUSED) {
-            if (task->run_next || task->runqueue_cpu!=0)
+            if (task->run_next || task->runqueue_cpu!=0 ||
+                task->wait_queue || task->wait_next || task->sleep_next ||
+                task->sleep_armed || task->wait_timeout_armed)
                 task_context_panic("ZEROOS PANIC: unused task remains queued.\n",
                                    task);
             continue;
@@ -441,14 +448,15 @@ static void task_validate_table_at(const char *where,
         if (task->state==TASK_ZOMBIE) {
             if (task->interrupt_frame || task->wait_queue ||
                 task->wait_next || task->sleep_next || task->sleep_armed ||
-                task->run_next)
+                task->wait_timeout_armed || task->run_next)
                 task_context_panic("ZEROOS PANIC: zombie task retains queue/context state.\n",
                                    task);
             continue;
         }
 
-        if (task->wait_queue && task->sleep_armed)
-            task_context_panic("ZEROOS PANIC: task is in wait and sleep queues.\n",
+        if (task->wait_queue && task->sleep_armed &&
+            !task->wait_timeout_armed)
+            task_context_panic("ZEROOS PANIC: untimed task is in wait and sleep queues.\n",
                                task);
 
         if (task->wait_queue && task->wait_next==task)
@@ -515,7 +523,8 @@ static void task_validate_table_at(const char *where,
             int slot=task_slot_for_pointer(task);
             if (slot<2 || slot>=ZEROOS_MAX_TASKS || queue_seen[slot] ||
                 task->state!=TASK_RUNNABLE || task->runqueue_cpu!=cpu ||
-                task->wait_queue || task->sleep_armed)
+                task->wait_queue || task->sleep_armed ||
+                task->wait_timeout_armed)
                 task_context_panic("ZEROOS PANIC: per-CPU runqueue invariant failed.\n",
                                    task);
             if (previous==task)
@@ -677,7 +686,10 @@ static void sleep_queue_remove_locked(struct task *task) {
     task->sleep_armed=0;
 }
 
-static void sleep_queue_wake_expired_locked(uint64_t now) {
+static uint32_t sleep_queue_wake_expired_locked(
+        uint64_t now, struct wait_timeout_expiry *waiters) {
+    uint32_t waiter_count=0;
+
     while (sleep_head && (long long)(now-sleep_head->wake_tick)>=0) {
         struct task *task=sleep_head;
         sleep_head=task->sleep_next;
@@ -685,6 +697,17 @@ static void sleep_queue_wake_expired_locked(uint64_t now) {
         task->wake_tick=0;
         task->sleep_armed=0;
         if (task->state==TASK_BLOCKED) {
+            if (task->wait_queue && task->wait_timeout_armed) {
+                if (waiter_count>=ZEROOS_MAX_TASKS)
+                    task_context_panic("ZEROOS PANIC: timed wait expiry overflow.\n",
+                                       task);
+                waiters[waiter_count].queue=task->wait_queue;
+                waiters[waiter_count].task=task;
+                ++waiter_count;
+                /* Detach/wake outside task_lock to preserve the documented
+                 * wait_queue::lock -> task_lock order. */
+                continue;
+            }
             int owner;
             task->state=TASK_RUNNABLE;
             task->need_resched=1;
@@ -694,6 +717,7 @@ static void sleep_queue_wake_expired_locked(uint64_t now) {
             runqueue_append_locked((uint32_t)owner,task);
         }
     }
+    return waiter_count;
 }
 
 static void reap_zombies_locked(void) {
@@ -736,6 +760,7 @@ static void reap_zombies_locked(void) {
         task->thread=0;
         task->wait_next=0;
         task->wait_queue=0;
+        task->wait_timeout_armed=0;
         task->sleep_next=0;
         task->wake_tick=0;
         task->sleep_armed=0;
@@ -1084,6 +1109,7 @@ int task_system_init(void) {
         tasks[i].thread=0;
         tasks[i].wait_next=0;
         tasks[i].wait_queue=0;
+        tasks[i].wait_timeout_armed=0;
         tasks[i].sleep_next=0;
         tasks[i].wake_tick=0;
         tasks[i].sleep_armed=0;
@@ -1211,6 +1237,7 @@ static int task_create_owned_internal(task_entry_t entry, void *argument,
     task->thread=thread;
     task->wait_next=0;
     task->wait_queue=0;
+    task->wait_timeout_armed=0;
     task->sleep_next=0;
     task->wake_tick=0;
     task->sleep_armed=0;
@@ -1267,7 +1294,8 @@ int task_publish_staged(uint64_t task_id) {
         }
     }
     if (!task || task->state!=TASK_BLOCKED || task->run_next ||
-        task->runqueue_cpu!=0 || task->wait_queue || task->sleep_armed) {
+        task->runqueue_cpu!=0 || task->wait_queue || task->sleep_armed ||
+        task->wait_timeout_armed) {
         spin_unlock_irqrestore(&task_lock,flags);
         return -1;
     }
@@ -1394,8 +1422,54 @@ int task_prepare_block(void) {
         return -1;
 
     flags=spin_lock_irqsave(&task_lock);
+    if (task->state!=TASK_RUNNING || task->preempt_count!=0 ||
+        task->wait_queue || task->sleep_armed || task->wait_timeout_armed) {
+        spin_unlock_irqrestore(&task_lock,flags);
+        return -1;
+    }
     task->scheduler_transition=1;
     task->state=TASK_BLOCKED;
+    task->need_resched=0;
+    spin_unlock_irqrestore(&task_lock,flags);
+    return 0;
+}
+
+int task_arm_wait_timeout(uint64_t deadline) {
+    struct task *task=current_task;
+    uint64_t flags;
+
+    if (!task || task==&tasks[0] || task_is_idle(task))
+        return -1;
+
+    flags=spin_lock_irqsave(&task_lock);
+    if (task->state!=TASK_BLOCKED || !task->scheduler_transition ||
+        !task->wait_queue || !task->wait_timeout_armed ||
+        task->sleep_armed || task->sleep_next) {
+        spin_unlock_irqrestore(&task_lock,flags);
+        return -1;
+    }
+    task->wake_tick=deadline;
+    task->sleep_armed=1;
+    sleep_queue_insert_locked(task);
+    spin_unlock_irqrestore(&task_lock,flags);
+    return 0;
+}
+
+int task_cancel_prepared_block(void) {
+    struct task *task=current_task;
+    uint64_t flags;
+
+    if (!task || task==&tasks[0] || task_is_idle(task))
+        return -1;
+
+    flags=spin_lock_irqsave(&task_lock);
+    if (task->state!=TASK_BLOCKED || !task->scheduler_transition ||
+        task->wait_queue || task->sleep_armed || task->wait_timeout_armed) {
+        spin_unlock_irqrestore(&task_lock,flags);
+        return -1;
+    }
+    task->state=TASK_RUNNING;
+    task->scheduler_transition=0;
     task->need_resched=0;
     spin_unlock_irqrestore(&task_lock,flags);
     return 0;
@@ -1491,7 +1565,8 @@ int task_sleep_until(uint64_t deadline) {
     struct task *next;
 
     if (!task || task==&tasks[0] || task_is_idle(task) ||
-        task->state!=TASK_RUNNING || task->preempt_count!=0)
+        task->state!=TASK_RUNNING || task->preempt_count!=0 ||
+        task->wait_queue || task->wait_timeout_armed || task->sleep_armed)
         return -1;
 
     if ((long long)(deadline-timer_ticks())<=0)
@@ -1500,7 +1575,8 @@ int task_sleep_until(uint64_t deadline) {
     flags=task_irq_save();
     spin_lock(&task_lock);
 
-    if (task->state!=TASK_RUNNING || task->preempt_count!=0) {
+    if (task->state!=TASK_RUNNING || task->preempt_count!=0 ||
+        task->wait_queue || task->wait_timeout_armed || task->sleep_armed) {
         spin_unlock(&task_lock);
         task_irq_restore(flags);
         return -1;
@@ -1689,6 +1765,8 @@ uint64_t task_reschedule_from_interrupt(struct interrupt_frame *frame) {
 
 void task_scheduler_tick(void) {
     struct task *task=current_task;
+    struct wait_timeout_expiry expired_waiters[ZEROOS_MAX_TASKS];
+    uint32_t expired_waiter_count;
     uint64_t now;
 
     if (task && task->state!=TASK_RUNNING)
@@ -1709,7 +1787,8 @@ void task_scheduler_tick(void) {
     now=timer_ticks();
     {
         uint64_t flags=spin_lock_irqsave(&task_lock);
-        sleep_queue_wake_expired_locked(now);
+        expired_waiter_count=
+            sleep_queue_wake_expired_locked(now,expired_waiters);
         for (int i=2;i<ZEROOS_MAX_TASKS;++i) {
             struct task *candidate=&tasks[i];
             if (candidate->state==TASK_RUNNABLE) {
@@ -1722,6 +1801,9 @@ void task_scheduler_tick(void) {
         reap_zombies_locked();
         spin_unlock_irqrestore(&task_lock,flags);
     }
+    for (uint32_t i=0; i<expired_waiter_count; ++i)
+        wait_queue_timeout_wake(expired_waiters[i].queue,
+                                expired_waiters[i].task);
 
     /*
      * The running task's interrupt frame is owned by the in-flight interrupt

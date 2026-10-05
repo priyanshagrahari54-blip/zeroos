@@ -254,8 +254,11 @@ See `pagecache.h` for the full contract. Summary:
 - **fsync:** writes back the inode's dirty pages, then commits the ZJFS
   transaction that contains its metadata, then issues a device FLUSH.
 - **Shutdown flush:** unmount writes back all pages, commits, flushes and
-  writes the CLEAN superblock. Unmount fails (-EBUSY) while files are open
-  and returns the writeback error, if there is one.
+  writes the CLEAN superblock. Unmount fails (-EBUSY) while files, path
+  lookups or mmaps hold references, even with `force=1`; this VFS does not
+  implement detached mounts. Force only permits teardown to continue after
+  writeback/close errors. A lookup-to-unmount handoff reference prevents the
+  superblock from disappearing before the root inode is referenced.
 - **mmap coherence:** mappings map the page-cache frames themselves, so
   `read()` and `write()` see the same bytes. For the dirtying rule, see
   VFS.md §6.

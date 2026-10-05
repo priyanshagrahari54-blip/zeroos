@@ -40,6 +40,17 @@ static int ops_select_invalid(void *ctx, const struct zd_ai_request *r,
     return 0;
 }
 
+static int ops_select_revoke_context(void *ctx,
+                                     const struct zd_ai_request *r,
+                                     uint32_t grants,
+                                     enum zd_ai_backend *out) {
+    struct zd_ai_broker *broker = (struct zd_ai_broker *)ctx;
+    (void)grants;
+    zd_ai_revoke(broker, r->context_mask);
+    *out = ZD_AI_BACKEND_LOCAL;
+    return 0;
+}
+
 static int ops_run_ok(void *ctx, enum zd_ai_backend backend,
                       const struct zd_ai_request *req, char *out,
                       uint32_t out_cap, uint32_t *out_len) {
@@ -75,6 +86,21 @@ static int ops_run_counted(void *ctx, enum zd_ai_backend backend,
                            uint32_t out_cap, uint32_t *out_len) {
     ++backend_run_count;
     return ops_run_ok(ctx, backend, req, out, out_cap, out_len);
+}
+
+struct ai_reentry_context {
+    struct zd_ai_broker *broker;
+    int nested_result;
+    uint32_t nested_done;
+};
+
+static int ops_run_nested_drain(void *ctx, enum zd_ai_backend backend,
+                                const struct zd_ai_request *req, char *out,
+                                uint32_t out_cap, uint32_t *out_len) {
+    struct ai_reentry_context *reentry=(struct ai_reentry_context *)ctx;
+    reentry->nested_result=zd_ai_drain(reentry->broker,1,
+                                       &reentry->nested_done);
+    return ops_run_ok(0,backend,req,out,out_cap,out_len);
 }
 
 static int ops_run_bad_length(void *ctx, enum zd_ai_backend backend,
@@ -140,6 +166,60 @@ static void test_permission_gate(void) {
     ZD_CHECK_EQ(b.active, 0); /* dormant again */
 }
 
+static void test_grant_mask_and_execution_revalidation(void) {
+    struct zd_ai_broker b;
+    struct zd_ai_ops ops = {ops_select_local, ops_run_counted, 0};
+    struct zd_ai_request r;
+    uint32_t done = 0;
+
+    /* Unknown bits in initial/runtime grants are never retained. */
+    zd_ai_broker_init(&b, &ops, 0xffffffffu);
+    ZD_CHECK_EQ(b.grants, ZD_AI_GRANT_ALL);
+    zd_ai_grant(&b, 0xffffffffu);
+    ZD_CHECK_EQ(b.grants, ZD_AI_GRANT_ALL);
+    zd_ai_revoke(&b, 0xfffffff0u);
+    ZD_CHECK_EQ(b.grants, ZD_AI_GRANT_ALL);
+
+    /* Egress is a control permission, not a context capability. */
+    r = make_req(20, ZD_AI_GRANT_REMOTE_EGRESS, 0);
+    ZD_CHECK_EQ(zd_ai_submit(&b, &r), -ZD_EINVAL);
+    r = make_req(21, 0x80000000u, 0);
+    ZD_CHECK_EQ(zd_ai_submit(&b, &r), -ZD_EINVAL);
+    ZD_CHECK_EQ(b.queued, 0);
+    ZD_CHECK_EQ(b.stats.submitted, 0u);
+
+    /* Even direct corruption of the public grant word is masked, and the
+     * queued request schema is checked again before any backend sees it. */
+    r = make_req(22, ZD_AI_GRANT_CONTEXT_SELECTION, 0);
+    b.grants = 0xffffffffu;
+    ZD_CHECK_OK(zd_ai_submit(&b, &r));
+    ZD_CHECK_EQ(b.grants, ZD_AI_GRANT_ALL);
+    b.queue[0].context_mask = ZD_AI_GRANT_REMOTE_EGRESS;
+    backend_run_count = 0;
+    ZD_CHECK_OK(zd_ai_drain(&b, 4, &done));
+    ZD_CHECK_EQ(done, 0);
+    ZD_CHECK_EQ(backend_run_count, 0u);
+    ZD_CHECK_EQ(b.stats.denied_permission, 1u);
+    ZD_CHECK_EQ(b.queued, 0);
+
+    /* A grant revoked by the selector is rechecked before run(). */
+    {
+        struct zd_ai_ops revoke_ops = {
+            ops_select_revoke_context, ops_run_counted, &b
+        };
+        r = make_req(23, ZD_AI_GRANT_CONTEXT_FILES, 0);
+        zd_ai_broker_init(&b, &revoke_ops, ZD_AI_GRANT_CONTEXT_FILES);
+        ZD_CHECK_OK(zd_ai_submit(&b, &r));
+        backend_run_count = 0;
+        ZD_CHECK_OK(zd_ai_drain(&b, 4, &done));
+        ZD_CHECK_EQ(done, 0);
+        ZD_CHECK_EQ(backend_run_count, 0u);
+        ZD_CHECK_EQ(b.stats.denied_permission, 1u);
+        ZD_CHECK_EQ(b.queued, 0);
+        ZD_CHECK_EQ(b.grants, 0u);
+    }
+}
+
 /* --- downgrade and egress ------------------------------------------- */
 
 static void test_remote_downgrade(void) {
@@ -186,17 +266,47 @@ static void test_queue_bounds(void) {
     ZD_CHECK_EQ(b.stats.queue_dropped, 1u);
     ZD_CHECK_EQ(b.stats.wakeups, 1u); /* one dormant -> active edge */
 
+    /* A zero-work/partial drain reports payload bytes still resident. */
+    ZD_CHECK_OK(zd_ai_drain(&b, 0, &done));
+    ZD_CHECK_EQ(done, 0);
+    ZD_CHECK_EQ(b.queued, ZD_AI_QUEUE_DEPTH);
+    ZD_CHECK_EQ(b.stats.resident_bytes_after_drain,
+                (uint64_t)ZD_AI_QUEUE_DEPTH * sizeof(b.queue[0].payload));
+
     /* Drain with max_out=1 completes exactly one and stays active. */
     ZD_CHECK_OK(zd_ai_drain(&b, 1, &done));
     ZD_CHECK_EQ(done, 1);
     ZD_CHECK_EQ(b.queued, ZD_AI_QUEUE_DEPTH - 1);
     ZD_CHECK_EQ(b.active, 1);
+    ZD_CHECK_EQ(b.stats.resident_bytes_after_drain,
+                (uint64_t)(ZD_AI_QUEUE_DEPTH - 1) *
+                    sizeof(b.queue[0].payload));
 
     ZD_CHECK_OK(zd_ai_drain(&b, ZD_AI_QUEUE_DEPTH, &done));
     ZD_CHECK_EQ(done, ZD_AI_QUEUE_DEPTH - 1);
     ZD_CHECK_EQ(b.queued, 0);
     ZD_CHECK_EQ(b.active, 0);
     ZD_CHECK_EQ(b.stats.completed, ZD_AI_QUEUE_DEPTH);
+}
+
+static void test_reentrant_drain_suppressed(void) {
+    struct zd_ai_broker broker;
+    struct ai_reentry_context reentry={&broker,0,~0u};
+    struct zd_ai_ops ops={ops_select_local,ops_run_nested_drain,&reentry};
+    struct zd_ai_request request=make_req(77,0,0);
+    uint32_t completed=0;
+
+    zd_ai_broker_init(&broker,&ops,ZD_AI_GRANT_ALL);
+    ZD_CHECK_OK(zd_ai_submit(&broker,&request));
+    ZD_CHECK_OK(zd_ai_drain(&broker,1,&completed));
+    ZD_CHECK_EQ(reentry.nested_result,-ZD_EBUSY);
+    ZD_CHECK_EQ(reentry.nested_done,0u);
+    ZD_CHECK_EQ(broker.stats.reentrant_drains,1u);
+    ZD_CHECK_EQ(completed,1u);
+    ZD_CHECK_EQ(broker.queued,0u);
+    ZD_CHECK_EQ(broker.active,0u);
+    ZD_CHECK_EQ(broker.draining,0u);
+    ZD_CHECK_EQ(broker.stats.run_failures,0u);
 }
 
 /* --- missing/failing hooks are failures ------------------------------ */
@@ -223,6 +333,24 @@ static void test_failure_paths(void) {
     ZD_CHECK_OK(zd_ai_drain(&b, 4, &done));
     ZD_CHECK_EQ(done, 0);
     ZD_CHECK_EQ(b.stats.run_failures, 1u);
+
+    /* max_out bounds dequeued requests even when execution fails. */
+    {
+        struct zd_ai_ops ops = {ops_select_local, ops_run_fail, 0};
+        zd_ai_broker_init(&b, &ops, ZD_AI_GRANT_ALL);
+    }
+    r = make_req(31, 0, 0);
+    ZD_CHECK_OK(zd_ai_submit(&b, &r));
+    r = make_req(32, 0, 0);
+    ZD_CHECK_OK(zd_ai_submit(&b, &r));
+    ZD_CHECK_OK(zd_ai_drain(&b, 1, &done));
+    ZD_CHECK_EQ(done, 0);
+    ZD_CHECK_EQ(b.queued, 1);
+    ZD_CHECK_EQ(b.stats.run_failures, 1u);
+    ZD_CHECK_OK(zd_ai_drain(&b, 1, &done));
+    ZD_CHECK_EQ(done, 0);
+    ZD_CHECK_EQ(b.queued, 0);
+    ZD_CHECK_EQ(b.stats.run_failures, 2u);
 
     /* select() hard denial. */
     {
@@ -312,8 +440,10 @@ static void test_minimal_resident_state(void) {
 void zd_test_ai_suite(void) {
     printf("  suite: ai broker\n");
     ZD_RUN(test_permission_gate);
+    ZD_RUN(test_grant_mask_and_execution_revalidation);
     ZD_RUN(test_remote_downgrade);
     ZD_RUN(test_queue_bounds);
+    ZD_RUN(test_reentrant_drain_suppressed);
     ZD_RUN(test_failure_paths);
     ZD_RUN(test_malformed_request_and_backend_output);
     ZD_RUN(test_minimal_resident_state);

@@ -20,8 +20,9 @@ static const char *current = "";
 #define MK_TWO_SECTIONS() do {                                              \
         MK_BASE();                                                          \
         img[0x86]=2;                                                        \
+        img[0xD1]=0x30;                                                     \
         img[0x1b8]=0x00; img[0x1b9]=0x01;                                   \
-        img[0x1bc]=0x00; img[0x1bd]=0x03;                                   \
+        img[0x1bc]=0x00; img[0x1bd]=0x20;                                   \
     } while (0)
 
 #define RUN(fn)                                                              \
@@ -29,6 +30,13 @@ static const char *current = "";
         current = #fn;                                                       \
         fn();                                                                \
     } while (0)
+
+static int pe_result_known(int result) {
+    return result == ZPE_OK || result == ZPE_BADARG ||
+           result == ZPE_TRUNCATED || result == ZPE_BAD_MAGIC ||
+           result == ZPE_UNSUPPORTED_MACHINE ||
+           result == ZPE_UNSUPPORTED_FORMAT || result == ZPE_BAD_LAYOUT;
+}
 
 static void test_lifecycle(void) {
     struct zcompat c;
@@ -196,23 +204,65 @@ static void test_pe(void) {
         img[0x86]=1;                                                        \
         img[0x94]=0xf0; img[0x95]=0;                                        \
         img[0x98]=0x0b; img[0x99]=0x02;                                     \
-        img[0xA8]=0x10;                                                     \
-        img[0xD0]=0x00; img[0xD1]=0x10;                                     \
+        img[0xA8]=0x10; img[0xA9]=0x10;                                    \
+        img[0xB8]=0x00; img[0xB9]=0x10; /* SectionAlignment: 0x1000 */       \
+        img[0xBC]=0x00; img[0xBD]=0x02; /* FileAlignment: 0x0200 */          \
+        img[0xD0]=0x00; img[0xD1]=0x20;                                     \
         img[0xD4]=0x00; img[0xD5]=0x02;                                     \
         img[0x190]=0x00; img[0x191]=0x01;                                   \
-        img[0x194]=0x00; img[0x195]=0x02;                                   \
+        img[0x194]=0x00; img[0x195]=0x10;                                   \
+        img[0x198]=0x00; img[0x199]=0x02;                                   \
+        img[0x19c]=0x00; img[0x19d]=0x02;                                   \
+        img[0x1af]=0x20; /* IMAGE_SCN_MEM_EXECUTE */                        \
     } while (0)
 
     MK_BASE();
     rc = zpe_validate(img, sizeof(img), &info);
     CHECK(rc == ZPE_OK);
-    CHECK(info.image_size == 0x1000);
+    CHECK(info.image_size == 0x2000);
     CHECK(info.section_count == 1);
-    CHECK(info.entry_rva == 0x10);
+    CHECK(info.entry_rva == 0x1010);
     CHECK(info.file_size == sizeof(img));
     CHECK(zpe_result_str(ZPE_OK) != NULL);
     CHECK(zpe_result_str(ZPE_BAD_MAGIC) != NULL);
     CHECK(zpe_result_str(-99) != NULL);
+
+    MK_BASE(); img[0x94]=0x70; img[0x95]=0; img[0x104]=1;
+    CHECK(zpe_validate(img, sizeof(img), &info) == ZPE_TRUNCATED);
+    MK_BASE(); img[0x104]=1; /* one RVA data-directory entry */
+    img[0x108]=0x00; img[0x109]=0x11; /* RVA 0x1100 */
+    img[0x10c]=0x10; /* in-range directory is accepted */
+    CHECK(zpe_validate(img, sizeof(img), &info) == ZPE_OK);
+    MK_BASE(); img[0x104]=1;
+    img[0x108]=0xf0; img[0x109]=0x1f; /* RVA 0x1ff0 */
+    img[0x10c]=0x20; /* range crosses SizeOfImage */
+    CHECK(zpe_validate(img, sizeof(img), &info) == ZPE_BAD_LAYOUT);
+    MK_BASE(); img[0x104]=5; /* SECURITY directory is a file offset */
+    img[0x128]=0; img[0x129]=4; img[0x12c]=0; img[0x12d]=2;
+    CHECK(zpe_validate(img, sizeof(img), &info) == ZPE_BAD_LAYOUT);
+    MK_BASE(); img[0x104]=5;
+    img[0x128]=1; img[0x129]=2; /* security file offset not 8-byte aligned */
+    img[0x12c]=0x20;
+    CHECK(zpe_validate(img, sizeof(img), &info) == ZPE_BAD_LAYOUT);
+
+    MK_BASE(); img[0xB8]=0; img[0xB9]=0; /* zero SectionAlignment */
+    CHECK(zpe_validate(img,sizeof(img),&info)==ZPE_BAD_LAYOUT);
+    MK_BASE(); img[0xBC]=0; img[0xBD]=3; /* FileAlignment not a power of 2 */
+    CHECK(zpe_validate(img,sizeof(img),&info)==ZPE_BAD_LAYOUT);
+    MK_BASE(); img[0xB9]=1; img[0xBD]=1; /* permitted sub-page alignment */
+    CHECK(zpe_validate(img,sizeof(img),&info)==ZPE_OK);
+    MK_BASE(); img[0xB9]=1; /* sub-page SectionAlignment requires same file */
+    CHECK(zpe_validate(img,sizeof(img),&info)==ZPE_BAD_LAYOUT);
+    MK_BASE(); img[0xD0]=1; /* SizeOfImage not SectionAlignment-aligned */
+    CHECK(zpe_validate(img,sizeof(img),&info)==ZPE_BAD_LAYOUT);
+    MK_BASE(); img[0xD4]=1; /* SizeOfHeaders not FileAlignment-aligned */
+    CHECK(zpe_validate(img,sizeof(img),&info)==ZPE_BAD_LAYOUT);
+    MK_BASE(); img[0x194]=1; /* section RVA not SectionAlignment-aligned */
+    CHECK(zpe_validate(img,sizeof(img),&info)==ZPE_BAD_LAYOUT);
+    MK_BASE(); img[0x19c]=1; /* raw pointer not FileAlignment-aligned */
+    CHECK(zpe_validate(img,sizeof(img),&info)==ZPE_BAD_LAYOUT);
+    MK_BASE(); img[0x198]=1; /* raw size not FileAlignment-aligned */
+    CHECK(zpe_validate(img,sizeof(img),&info)==ZPE_BAD_LAYOUT);
 
     CHECK(zpe_validate(NULL, 512, &info) == ZPE_BADARG);
     CHECK(zpe_validate(img, 10, &info) == ZPE_TRUNCATED);
@@ -247,34 +297,74 @@ static void test_pe(void) {
     MK_BASE(); img[0xA8]=0x00; img[0xA9]=0x20;  /* entry > image size */
     CHECK(zpe_validate(img, 512, &info) == ZPE_BAD_LAYOUT);
 
+    MK_BASE(); img[0xA8]=0x10; img[0xA9]=0; /* entry points into headers */
+    CHECK(zpe_validate(img,sizeof(img),&info)==ZPE_BAD_LAYOUT);
+    MK_BASE(); img[0xA8]=0; img[0xA9]=0x04; /* entry points into unmapped gap */
+    CHECK(zpe_validate(img,sizeof(img),&info)==ZPE_BAD_LAYOUT);
+    MK_BASE(); img[0xA8]=0xff; img[0xA9]=0x11; /* final byte in section */
+    CHECK(zpe_validate(img,sizeof(img),&info)==ZPE_OK);
+    MK_BASE(); img[0xA8]=0; img[0xA9]=0x12; /* first byte past section end */
+    CHECK(zpe_validate(img,sizeof(img),&info)==ZPE_BAD_LAYOUT);
+    MK_BASE(); img[0x1af]=0; /* entry section is not executable */
+    CHECK(zpe_validate(img,sizeof(img),&info)==ZPE_BAD_LAYOUT);
+    MK_BASE(); img[0xA8]=0; img[0xA9]=0; /* DLL without an entry point */
+    CHECK(zpe_validate(img,sizeof(img),&info)==ZPE_OK);
+
     MK_BASE(); img[0xD4]=0x00; img[0xD5]=0x10;  /* headers > file */
     CHECK(zpe_validate(img, 512, &info) == ZPE_BAD_LAYOUT);
 
     MK_BASE(); img[0x94]=0xff; img[0x95]=0xff;  /* opt hdr beyond file */
     CHECK(zpe_validate(img, 512, &info) == ZPE_TRUNCATED);
 
-    MK_BASE(); img[0x194]=0x00; img[0x195]=0x10; /* section VA outside image */
+    MK_BASE(); img[0x194]=0x00; img[0x195]=0x20; /* section VA outside image */
     CHECK(zpe_validate(img,512,&info)==ZPE_BAD_LAYOUT);
 
-    MK_BASE(); img[0x198]=0x01; img[0x19c]=0x00; img[0x19d]=0x04;
-    /* raw range exceeds file */
+    MK_BASE(); img[0x19c]=0x00; img[0x19d]=0x10; /* raw range exceeds file */
     CHECK(zpe_validate(img,512,&info)==ZPE_BAD_LAYOUT);
 
-    MK_BASE(); img[0x194]=0x00; img[0x195]=0x01; /* overlaps headers */
+    MK_BASE(); img[0x194]=0x00; img[0x195]=0x00; /* overlaps headers */
     CHECK(zpe_validate(img,512,&info)==ZPE_BAD_LAYOUT);
 
-    MK_BASE(); img[0xD4]=0x00; img[0xD5]=0x01; /* table not in headers */
+    MK_BASE();
+    img[0xB8]=0; img[0xB9]=1; /* small, matching section/file alignment */
+    img[0xBC]=0; img[0xBD]=1;
+    img[0xD4]=0; img[0xD5]=1; /* headers do not include section table */
     CHECK(zpe_validate(img,512,&info)==ZPE_BAD_LAYOUT);
 
     MK_TWO_SECTIONS();
     CHECK(zpe_validate(img,sizeof(img),&info)==ZPE_OK);
     MK_TWO_SECTIONS();
-    img[0x1bc]=0x80; img[0x1bd]=0x02; /* virtual ranges overlap */
+    img[0x1bc]=0x00; img[0x1bd]=0x10; /* virtual ranges overlap */
     CHECK(zpe_validate(img,sizeof(img),&info)==ZPE_BAD_LAYOUT);
     MK_TWO_SECTIONS();
-    img[0x198]=0x20; img[0x19c]=0x00; img[0x19d]=0x02;
-    img[0x1c0]=0x20; img[0x1c4]=0x10; img[0x1c5]=0x02;
+    img[0x1c0]=0; img[0x1c1]=0x02; /* second raw size is aligned */
+    img[0x1c4]=0; img[0x1c5]=0x02; /* raw ranges overlap at 0x200 */
     CHECK(zpe_validate(img,sizeof(img),&info)==ZPE_BAD_LAYOUT);
+
+    /* Exhaust every declared truncation boundary with an allocation exactly
+     * as long as file_size; this turns logical over-reads into ASan errors. */
+    MK_BASE();
+    for (uint32_t length = 0; length <= sizeof(img); ++length) {
+        uint8_t exact[length ? length : 1U];
+        if (length)
+            memcpy(exact, img, length);
+        rc = zpe_validate(exact, length, &info);
+        CHECK(pe_result_known(rc));
+    }
+
+    /* Deterministic one-bit mutation sweep through the DOS/PE headers,
+     * section table, and trailing bytes. The validator must reject malformed
+     * layouts using a documented code and never read outside the image. */
+    MK_BASE();
+    for (uint32_t byte = 0; byte < sizeof(img); ++byte) {
+        uint8_t original = img[byte];
+        for (uint32_t bit = 0; bit < 8; ++bit) {
+            img[byte] = (uint8_t)(original ^ (uint8_t)(1U << bit));
+            rc = zpe_validate(img, sizeof(img), &info);
+            CHECK(pe_result_known(rc));
+        }
+        img[byte] = original;
+    }
 #undef MK_BASE
 #undef MK_TWO_SECTIONS
 }

@@ -2,7 +2,9 @@
  * Strict validation with security defaults: only http/https (and
  * explicit internal pages), no javascript:/data: scheme smuggling,
  * no control characters, bounded components, port range checks.
- * Percent-encoding validated; canonical rebuild available. */
+ * Percent-encoding validated in path/query/fragment; canonical rebuild available.
+ * Hostnames in this slice are ASCII DNS labels only (no percent escapes or
+ * IDNA normalization); query-only and fragment-only URLs retain their suffix. */
 #ifndef ZEROOS_DESKTOP_URL_H
 #define ZEROOS_DESKTOP_URL_H
 

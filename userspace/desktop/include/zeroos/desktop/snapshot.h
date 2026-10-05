@@ -1,9 +1,9 @@
 /* User-data snapshot manager (Stage 5 part B).
  * Bounded registry of named snapshot points with explicit lifecycle:
- * CREATING -> READY, or FAILED (never half-registered).  Restore
+ * CREATING -> READY, or FAILED (never half-registered). Restore
  * applies the newest READY snapshot older than the current state;
- * creation beyond capacity prunes the oldest READY snapshot only after
- * its hook confirms the prune.  Hook-driven, host-testable. */
+ * capacity pruning confirms the discard hook first and never evicts the
+ * active update rollback point. Hook-driven, host-testable. */
 #ifndef ZEROOS_DESKTOP_SNAPSHOT_H
 #define ZEROOS_DESKTOP_SNAPSHOT_H
 
@@ -48,15 +48,17 @@ struct zd_snapshots {
 
 void zd_snapshots_init(struct zd_snapshots *s,
                        const struct zd_snapshot_ops *ops);
-/* Begin creation: reserves a slot in CREATING state; capacity prunes
- * the oldest READY via discard hook (hook failure -> -errno, no
- * prune).  Returns 0 and fills *name_out-style slot via created seq. */
+/* Begin creation: reserves CREATING; at capacity, pruning selects the
+ * oldest discardable READY (never the active update rollback point) and
+ * occurs only after the discard hook succeeds. */
 int zd_snapshots_create(struct zd_snapshots *s, const char *name);
 /* Finish (0) or fail (errno) the in-flight creation. */
 int zd_snapshots_create_finish(struct zd_snapshots *s, int err);
 /* Restore the newest READY snapshot (name optional selector: NULL =
  * newest).  Hook error -> -errno counted, state kept READY (retryable). */
 int zd_snapshots_restore(struct zd_snapshots *s, const char *name);
+/* Explicit discard returns -16 (EBUSY) for the active update rollback
+ * point; update glue releases it only after replacement capture is READY. */
 int zd_snapshots_discard(struct zd_snapshots *s, const char *name);
 struct zd_snapshot *zd_snapshots_find(struct zd_snapshots *s,
                                       const char *name);

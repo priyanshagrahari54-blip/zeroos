@@ -56,7 +56,8 @@ int zd_downloads_add(struct zd_downloads *d, const char *url,
  * Another item running -> -16.  Hook failure -> FAILED, counted. */
 int zd_downloads_start_next(struct zd_downloads *d);
 /* Progress from the owner; monotonic enforced (regression -> -22 +
- * counter).  total may be refined once. */
+ * counter). A previously unknown total may be set once; known totals cannot
+ * be changed and received bytes may not exceed the known total. */
 int zd_downloads_progress(struct zd_downloads *d, uint32_t id,
                           uint32_t received, uint32_t total);
 int zd_downloads_finish(struct zd_downloads *d, uint32_t id, int err);

@@ -13,6 +13,15 @@ static char last_target[64];
 static int32_t last_value;
 static uint32_t last_event;
 static int notify_fail;
+static struct zd_automation *callback_engine;
+static uint32_t callback_nested_event;
+static uint64_t callback_nested_tick;
+static uint32_t callback_nested_fired;
+static uint32_t remove_during_callback;
+static int remove_callback_result;
+static struct zd_automation_rule add_during_callback_rule;
+static int try_add_during_callback;
+static int add_callback_result;
 
 static int t_notify(void *context, const char *target) {
     (void)context;
@@ -34,6 +43,21 @@ static int t_callback(void *context, const char *target, uint32_t event) {
     callback_calls++;
     strcpy(last_target, target);
     last_event = event;
+    if (callback_engine) {
+        struct zd_automation *engine = callback_engine;
+        uint32_t remove_id = remove_during_callback;
+        callback_engine = 0;
+        remove_during_callback = 0;
+        if (remove_id)
+            remove_callback_result = zd_automation_remove(engine, remove_id);
+        if (try_add_during_callback) {
+            try_add_during_callback = 0;
+            add_callback_result = zd_automation_add(
+                engine, &add_during_callback_rule, 0);
+        }
+        callback_nested_fired = zd_automation_fire(
+            engine, callback_nested_event, callback_nested_tick);
+    }
     return 0;
 }
 
@@ -73,6 +97,15 @@ static void reset_ops(void) {
     last_target[0] = 0;
     last_value = 0;
     last_event = 0;
+    callback_engine = 0;
+    callback_nested_event = 0;
+    callback_nested_tick = 0;
+    callback_nested_fired = 0;
+    remove_during_callback = 0;
+    remove_callback_result = 0;
+    memset(&add_during_callback_rule, 0, sizeof(add_during_callback_rule));
+    try_add_during_callback = 0;
+    add_callback_result = 0;
 }
 
 static void test_init_and_validation(void) {
@@ -148,9 +181,11 @@ static void test_rate_limit_and_cap(void) {
     ZD_CHECK_EQ(zd_automation_add(&engine, &rule, &id), 0);
 
     ZD_CHECK_EQ(zd_automation_fire(&engine, ZD_AUTO_EV_CALLER_TICK, 100), 1);
+    /* A regressed clock must not unsigned-wrap and bypass cooldown. */
+    ZD_CHECK_EQ(zd_automation_fire(&engine, ZD_AUTO_EV_CALLER_TICK, 90), 0);
     ZD_CHECK_EQ(zd_automation_fire(&engine, ZD_AUTO_EV_CALLER_TICK, 102), 0);
     ZD_CHECK_EQ(zd_automation_fire(&engine, ZD_AUTO_EV_CALLER_TICK, 104), 0);
-    ZD_CHECK_EQ(engine.stats.rate_limited, 2);
+    ZD_CHECK_EQ(engine.stats.rate_limited, 3);
     ZD_CHECK_EQ(zd_automation_fire(&engine, ZD_AUTO_EV_CALLER_TICK, 105), 1);
     ZD_CHECK_EQ(setting_calls, 2);
     ZD_CHECK_EQ(last_value, 30);
@@ -180,6 +215,39 @@ static void test_action_dispatch(void) {
     ZD_CHECK_EQ(zd_automation_fire(&engine, ZD_AUTO_EV_WINDOW_CLOSED, 1), 1);
     ZD_CHECK_EQ(callback_calls, 1);
     ZD_CHECK_EQ(last_event, ZD_AUTO_EV_WINDOW_CLOSED);
+
+    /* A callback cannot recursively generate an unbounded event/action loop
+     * or structurally mutate the rule array during dispatch. */
+    reset_ops();
+    zd_automation_init(&engine, &ops);
+    rule = make_rule(ZD_AUTO_EV_CALLER_TICK, ZD_AUTO_ACT_CALLBACK, "loop");
+    ZD_CHECK_EQ(zd_automation_add(&engine, &rule, &id), 0);
+    callback_engine = &engine;
+    callback_nested_event = ZD_AUTO_EV_CALLER_TICK;
+    callback_nested_tick = 2;
+    remove_during_callback = id;
+    add_during_callback_rule = make_rule(
+        ZD_AUTO_EV_CALLER_TICK, ZD_AUTO_ACT_LOG, "late");
+    try_add_during_callback = 1;
+    ZD_CHECK_EQ(zd_automation_fire(&engine, ZD_AUTO_EV_CALLER_TICK, 1), 1);
+    ZD_CHECK_EQ(callback_calls, 1);
+    ZD_CHECK_EQ(callback_nested_fired, 0);
+    ZD_CHECK_EQ(remove_callback_result, -ZD_EBUSY);
+    ZD_CHECK_EQ(add_callback_result, -ZD_EBUSY);
+    ZD_CHECK_EQ(engine.rule_count, 1);
+    ZD_CHECK(zd_automation_find(&engine, id) != 0);
+    ZD_CHECK_EQ(engine.stats.reentrant_suppressed, 1);
+    ZD_CHECK_EQ(engine.stats.fires, 1);
+    ZD_CHECK_EQ(engine.firing, 0);
+    ZD_CHECK_EQ(zd_automation_drain_audit(&engine, entries, 8, &consumed), 2);
+    ZD_CHECK_EQ(entries[0].rule_id, 0);
+    ZD_CHECK_EQ(entries[0].result, ZD_AUTO_RESULT_REENTRANT_SUPPRESSED);
+    ZD_CHECK_EQ(entries[0].tick, 2);
+    ZD_CHECK_EQ(entries[1].rule_id, id);
+    ZD_CHECK_EQ(entries[1].result, ZD_AUTO_RESULT_FIRED);
+    ZD_CHECK_EQ(entries[1].tick, 1);
+    ZD_CHECK_EQ(zd_automation_fire(&engine, ZD_AUTO_EV_CALLER_TICK, 3), 1);
+    ZD_CHECK_EQ(callback_calls, 2); /* guard clears after the outer dispatch */
 
     rule = make_rule(ZD_AUTO_EV_DISPLAY_DEGRADED, ZD_AUTO_ACT_LOG, "fb");
     ZD_CHECK_EQ(zd_automation_add(&engine, &rule, &id), 0);

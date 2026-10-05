@@ -1,11 +1,11 @@
 /* File manager core.  See filemgr.h. */
 #include <zeroos/desktop/filemgr.h>
 
-static uint32_t f_len(const char *s) {
+static uint32_t f_len_bounded(const char *s, uint32_t limit) {
     uint32_t n = 0;
     if (!s)
-        return 0;
-    while (s[n])
+        return limit;
+    while (n < limit && s[n])
         ++n;
     return n;
 }
@@ -23,38 +23,36 @@ static void f_copy(char *dst, uint32_t cap, const char *src) {
     }
     dst[i] = 0;
 }
-static int f_streq(const char *a, const char *b) {
-    if (!a || !b)
-        return 0;
-    while (*a && *b && *a == *b) {
-        ++a;
-        ++b;
-    }
-    return *a == *b;
-}
-/* absolute path, bounded, no ".." traversal */
+/* Absolute path, bounded, with exact-component parent traversal rejected. */
 static int f_path_ok(const char *p) {
     uint32_t i, n;
     if (!p || p[0] != '/')
         return 0;
-    n = f_len(p);
+    n = f_len_bounded(p, ZD_FM_PATH);
     if (n == 0 || n >= ZD_FM_PATH)
         return 0;
-    for (i = 0; i + 1 < n; ++i)
-        if (p[i] == '.' && p[i + 1] == '.')
+    for (i = 1; i < n;) {
+        uint32_t start = i;
+        while (i < n && p[i] != '/')
+            ++i;
+        if (i - start == 2 && p[start] == '.' && p[start + 1] == '.')
             return 0;
-    if (n >= 2 && p[n - 1] == '.' && p[n - 2] == '.')
-        return 0;
+        if (i < n)
+            ++i;
+    }
     return 1;
 }
 static int f_name_ok(const char *name) {
     uint32_t i, n;
-    if (!name || !name[0])
+    if (!name)
         return 0;
-    n = f_len(name);
-    if (n >= ZD_FM_NAME)
+    n = f_len_bounded(name, ZD_FM_NAME);
+    /* A fixed-width source entry without a NUL is truncated/ambiguous and
+     * must not be exposed as a usable filesystem name. */
+    if (n == 0 || n >= ZD_FM_NAME)
         return 0;
-    if (f_streq(name, ".") || f_streq(name, ".."))
+    if ((n == 1 && name[0] == '.') ||
+        (n == 2 && name[0] == '.' && name[1] == '.'))
         return 0;
     for (i = 0; i < n; ++i)
         if (name[i] == '/')
@@ -158,22 +156,48 @@ static void f_sort(struct zd_fm *fm) {
 
 static int f_load(struct zd_fm *fm) {
     uint32_t n = 0;
+    uint32_t reported_count;
     int r;
-    if (!fm->source)
-        return -22;
     fm->hist_state = 1; /* loading */
+    fm->count = 0;
+    fm->truncated = 0;
+    f_clear_sel(fm);
+    if (!fm->source) {
+        fm->stats.source_errors++;
+        fm->hist_state = 3;
+        return -22;
+    }
     r = fm->source(fm->source_ctx, fm->path, fm->entries, ZD_FM_MAX,
                    &n);
-    if (r < 0) {
+    if (r != 0) {
         fm->stats.source_errors++;
         fm->hist_state = 3; /* failed */
-        fm->count = 0;
-        return r;
+        return r < 0 ? r : -22;
     }
-    if (n > ZD_FM_MAX)
-        n = ZD_FM_MAX;
+    if (n > ZD_FM_MAX) {
+        /* Treat a broken listing provider as a protocol error; clamping its
+         * count would hide the violation and trust uninitialized entries. */
+        fm->stats.source_errors++;
+        fm->hist_state = 3;
+        return -22;
+    }
+    reported_count = n;
+    {
+        uint32_t i, valid = 0;
+        for (i = 0; i < reported_count; ++i) {
+            if (!f_name_ok(fm->entries[i].name) ||
+                (fm->entries[i].flags & ~(ZD_FM_DIR | ZD_FM_HIDDEN))) {
+                fm->stats.rejected++;
+                continue;
+            }
+            if (valid != i)
+                fm->entries[valid] = fm->entries[i];
+            ++valid;
+        }
+        n = valid;
+    }
     fm->count = n;
-    fm->truncated = (n == ZD_FM_MAX) ? 1u : 0u;
+    fm->truncated = (reported_count == ZD_FM_MAX) ? 1u : 0u;
     if (fm->truncated)
         fm->stats.truncations++;
     f_clear_sel(fm);
@@ -352,16 +376,15 @@ uint32_t zd_fm_selected_count(const struct zd_fm *fm) {
 /* full path for an operation: dir + '/' + name */
 static int f_join(const struct zd_fm *fm, const char *name,
                   char *out, uint32_t cap) {
-    uint32_t d = f_len(fm->path);
-    uint32_t n = f_len(name);
-    if (!d || !n || d + 1 + n + 1 > cap)
+    uint32_t d = f_len_bounded(fm->path, ZD_FM_PATH);
+    uint32_t n = f_len_bounded(name, ZD_FM_NAME);
+    uint32_t separator = d > 1 ? 1U : 0U;
+    if (!d || d >= ZD_FM_PATH || !n || n >= ZD_FM_NAME ||
+        d + separator + n + 1U > cap)
         return -22;
     f_copy(out, cap, fm->path);
-    if (d > 1) { /* root already provides the slash */
-        if (d + 1 >= cap)
-            return -22;
+    if (separator)
         out[d++] = '/';
-    }
     if (d + n + 1 > cap)
         return -22;
     {

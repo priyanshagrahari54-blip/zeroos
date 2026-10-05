@@ -8,6 +8,8 @@ required_patterns=(
   "ZEROOS: capability IPC negative/timeout semantics passed."
   "ZEROOS: IPC pipe blocked-writer wakeup passed."
   "ZEROOS: IPC capability generation/revocation stress passed."
+  "ZEROOS: finite child wait deadline/detach passed."
+  "ZEROOS: Ring-3 finite WAIT timeout/reap path passed."
   "ZEROOS: blocking child wait/wakeup path passed."
   "ZEROOS: event and pipe IPC foundations self-test passed."
   "ZEROOS: IPC pipe partial-write byte ordering passed."
@@ -17,6 +19,7 @@ required_patterns=(
   "ZEROOS: shared-memory map/grant/lifecycle self-test passed."
   "ZEROOS: userspace resource exhaustion/recovery passed."
   "ZEROOS: Ring-3 transition, syscall ABI, and init recovery passed."
+  "ZEROOS: serialized user-copy cross-page/read-only boundary self-test passed."
   "ZEROOS: display present contract verified."
 )
 

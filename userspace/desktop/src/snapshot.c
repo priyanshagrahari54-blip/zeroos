@@ -112,16 +112,18 @@ int zd_snapshots_create(struct zd_snapshots *s, const char *name) {
         }
     }
     if (free_idx < 0) {
-        /* capacity: prune the OLDEST READY only */
+        /* Capacity: prune the oldest READY except the active rollback point. */
         int oldest = -1;
         for (i = 0; i < ZD_SNAP_MAX; ++i) {
-            if (s->slots[i].state != ZD_SNAP_READY)
+            if (s->slots[i].state != ZD_SNAP_READY ||
+                (s->update_rollback_name[0] &&
+                 sn_eq(s->slots[i].name,s->update_rollback_name)))
                 continue;
             if (oldest < 0 || s->slots[i].seq < s->slots[oldest].seq)
                 oldest = i;
         }
         if (oldest < 0)
-            return -28; /* ENOSPC: only FAILED/CREATING occupy slots */
+            return -28; /* no discardable READY snapshot exists */
         if (s->ops.discard) {
             int r = s->ops.discard(s->ops.ctx, s->slots[oldest].name);
             if (r < 0) {
@@ -227,7 +229,8 @@ int zd_snapshots_restore(struct zd_snapshots *s, const char *name) {
     return 0;
 }
 
-int zd_snapshots_discard(struct zd_snapshots *s, const char *name) {
+static int sn_discard_internal(struct zd_snapshots *s, const char *name,
+                               int allow_update_rollback) {
     int idx;
     if (!s || !name)
         return sn_bad();
@@ -238,6 +241,9 @@ int zd_snapshots_discard(struct zd_snapshots *s, const char *name) {
         return -2;
     if (s->slots[idx].state == ZD_SNAP_CREATING)
         return -22;
+    if (!allow_update_rollback && s->update_rollback_name[0] &&
+        sn_eq(name,s->update_rollback_name))
+        return -16; /* preserve the active update recovery point */
     if (s->ops.discard) {
         int r = s->ops.discard(s->ops.ctx, s->slots[idx].name);
         if (r < 0)
@@ -247,6 +253,10 @@ int zd_snapshots_discard(struct zd_snapshots *s, const char *name) {
     s->slots[idx].name[0] = 0;
     s->stats.discarded++;
     return 0;
+}
+
+int zd_snapshots_discard(struct zd_snapshots *s, const char *name) {
+    return sn_discard_internal(s,name,0);
 }
 
 /* ---- update pipeline binding (see snapshot.h) ---- */
@@ -278,7 +288,9 @@ static int sn_upd_stage(void *ctx) {
     if (r < 0)
         return r;
     if (previous) {
-        r = zd_snapshots_discard(s, previous);
+        /* Release the old active rollback point only after the replacement
+         * is READY; user-facing discard remains unable to remove it. */
+        r = sn_discard_internal(s, previous, 1);
         if (r < 0)
             return r;
     }

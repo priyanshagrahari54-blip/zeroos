@@ -558,6 +558,11 @@ static int tf_unmount_rules(struct block_device *device) {
     struct vfs_file *f;
     TF_CHECK(vfs_open(&tf_root,"/t/busy",VFS_O_CREAT|VFS_O_RDWR,0644,&f)==0,"busy file");
     TF_CHECK(vfs_unmount("/t",0)==-SE_BUSY,"unmount with open file -> EBUSY");
+    TF_CHECK(vfs_unmount("/t",1)==-SE_BUSY,
+             "forced unmount also refuses live file references");
+    TF_CHECK(vfs_write(f,"held",4)==4,
+             "mount remains usable after refused forced unmount");
+    TF_CHECK(vfs_fsync(f,0)==0,"fsync after refused forced unmount");
     vfs_file_put(f);
     TF_CHECK(vfs_unlink(&tf_root,"/t/busy")==0,"unlink busy");
     TF_CHECK(vfs_unmount("/t",0)==0,"clean unmount");

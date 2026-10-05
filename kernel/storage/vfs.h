@@ -146,7 +146,7 @@ struct vfs_superblock {
     void *fs;
     struct block_device *device;
     struct vfs_inode *root;
-    uint32_t refcount;
+    uint32_t refcount;          /* open files + mount-lookup handoff refs */
     uint32_t flags;
     uint32_t dev_id;
     uint32_t in_use;
@@ -226,6 +226,8 @@ int vfs_init(void);
  * Only filesystems whose signature validates are mounted; nothing is ever
  * formatted implicitly. */
 int vfs_mount(struct block_device *device, const char *path, uint32_t flags);
+/* `force` may bypass writeback/clean-close errors, never live file, path or
+ * mmap references; this VFS has no detached-mount lifetime. */
 int vfs_unmount(const char *path, int force);
 int vfs_unmount_all(void);
 int vfs_sync_all(void);

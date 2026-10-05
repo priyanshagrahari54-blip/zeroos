@@ -31,9 +31,10 @@ struct zd_fm_entry {
     uint32_t flags;          /* ZD_FM_* */
 };
 
-/* source: write up to `cap` entries for `path` into out; *out_n set
- * to the number produced (must not exceed cap).  Returns 0 or
- * -errno. */
+/* source: write up to `cap` entries for `path` into out; every name must
+ * be NUL-terminated, non-empty and a single component. *out_n is the number
+ * produced (must not exceed cap). Returns 0 or -errno. Invalid records and
+ * over-cap counts are rejected by the consumer, not trusted or truncated. */
 typedef int (*zd_fm_source_fn)(void *ctx, const char *path,
                                struct zd_fm_entry *out, uint32_t cap,
                                uint32_t *out_n);

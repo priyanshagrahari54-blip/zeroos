@@ -69,4 +69,27 @@ page discovery/allocation, x86-64 virtual memory, IDT/ISR entry, 8259 PIC,
 PIT, ACPI RSDP/root/MADT validation, and the bounded APIC/SMP functionality
 documented in `ACPI.md`. QEMU and physical-device certification are distinct;
 no real-hardware certification is implied by compilation.
-\n\n## 10-stage hardware alignment\n\nHardware certification is evidence-gated. The Lenovo G560 class is the reference low-resource profile, but exact CPU, RAM, GPU, display and network adapter must be detected per machine. Native 1366x768 is the reference display target; 1080p source playback is a capability test, not a panel-resolution claim. Network throughput is recorded from the actual adapter/link. Thermal, power, HDD, memory-pressure and long-duration results must be recorded in the validation matrix.\n\nDo not convert detection, enumeration or host tests into support claims. Controller/gamepad support is not part of the current ZEROOS hardware target.\n
+
+## PS/2 set-1 decoder bounds
+
+A set-1 scancode uses bit 7 to distinguish make/break, while an `E0` prefix
+selects a second 7-bit key namespace. The decoder therefore keeps 256 key-state
+slots (`E0 << 7 | scancode`); a base-only 128-slot table is insufficient for
+extended navigation keys. `tests/scancode_core_test.c` covers repeated make
+and break handling for the highest mapped extended key, Delete. The
+`make sanitize-check` target instruments this host-tested parser with
+AddressSanitizer and UndefinedBehaviorSanitizer. This is a parser-boundary
+check, not physical keyboard certification.
+
+## 10-stage hardware alignment
+
+Hardware certification is evidence-gated. The Lenovo G560 class is the
+reference low-resource profile, but exact CPU, RAM, GPU, display and network
+adapter must be detected per machine. Native 1366x768 is the reference display
+target; 1080p source playback is a capability test, not a panel-resolution
+claim. Network throughput is recorded from the actual adapter/link. Thermal,
+power, HDD, memory-pressure and long-duration results must be recorded in the
+validation matrix.
+
+Do not convert detection, enumeration or host tests into support claims.
+Controller/gamepad support is not part of the current ZEROOS hardware target.

@@ -39,8 +39,10 @@ printf 'XXXX' | dd of="$TMP/disk.img" bs=1 seek=512 conv=notrunc status=none
 printf 'Z' | dd of="$TMP/disk.img" bs=1 seek=$((64*1024*1024-512+20)) conv=notrunc status=none
 cp "$TMP/disk.img" "$TMP/bad.img"
 rc=0
-python3 "$ROOT/tools/storage/gpt.py" repair "$TMP/disk.img" || rc=$?
+python3 "$ROOT/tools/storage/gpt.py" repair "$TMP/disk.img" \
+  >"$TMP/gpt-refusal.log" 2>&1 || rc=$?
 test "$rc" -eq 2
+grep -q 'both GPT copies invalid.*refusing to write' "$TMP/gpt-refusal.log"
 cmp "$TMP/disk.img" "$TMP/bad.img"
 
 echo 'storage host tools self-test: PASS'

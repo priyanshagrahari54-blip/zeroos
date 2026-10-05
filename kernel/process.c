@@ -266,11 +266,15 @@ struct process *process_find_child(struct process *parent, process_id_t pid) {
     return match;
 }
 
-int process_child_wait_prepare(struct process *parent, process_id_t pid,
-                               uint64_t *flags_out) {
+static int process_child_wait_prepare_internal(struct process *parent,
+                                               process_id_t pid,
+                                               uint64_t deadline,
+                                               int finite_timeout,
+                                               uint64_t *flags_out) {
     struct process *child;
     uint64_t process_flags;
     uint64_t wait_flags;
+    int prepare_result;
 
     if (!parent || !flags_out)
         return -ZEROOS_EINVAL;
@@ -291,16 +295,27 @@ int process_child_wait_prepare(struct process *parent, process_id_t pid,
         return -ZEROOS_ECHILD;
     }
     if (child->state==PROCESS_ZOMBIE) {
-        spin_unlock_irqrestore(&process_lock,process_flags);
-        return 1;
+        if (child->first_child || child->live_thread_count ||
+            child->creating_threads) {
+            spin_unlock_irqrestore(&process_lock,process_flags);
+            return -ZEROOS_EBUSY;
+        }
+        if (child->reaping_threads==0 && thread_process_all_zombie(child)) {
+            spin_unlock_irqrestore(&process_lock,process_flags);
+            return 1;
+        }
     }
-    if (wait_queue_prepare(&parent->child_waiters,&wait_flags)!=0) {
+    prepare_result=finite_timeout ?
+        wait_queue_prepare_timeout(&parent->child_waiters,deadline,
+                                   &wait_flags) :
+        wait_queue_prepare(&parent->child_waiters,&wait_flags);
+    if (prepare_result!=0) {
         spin_unlock_irqrestore(&process_lock,process_flags);
         return -ZEROOS_EBUSY;
     }
-    /* wait_queue_prepare intentionally leaves interrupts disabled. Release
-     * the process lock without restoring them so the condition check and the
-     * eventual task_block remain one atomic publication boundary. */
+    /* Both wait-queue prepare forms intentionally leave interrupts disabled.
+     * Release the process lock without restoring them so the condition check
+     * and eventual task_block remain one atomic publication boundary. */
     spin_unlock(&process_lock);
     /* wait_flags were sampled after process_lock already disabled IRQs, so
      * they always carry IF=0. The commit must restore the caller's original
@@ -308,6 +323,19 @@ int process_child_wait_prepare(struct process *parent, process_id_t pid,
     (void)wait_flags;
     *flags_out=process_flags;
     return 0;
+}
+
+int process_child_wait_prepare(struct process *parent, process_id_t pid,
+                               uint64_t *flags_out) {
+    return process_child_wait_prepare_internal(parent,pid,0,0,flags_out);
+}
+
+int process_child_wait_prepare_timeout(struct process *parent,
+                                        process_id_t pid,
+                                        uint64_t deadline,
+                                        uint64_t *flags_out) {
+    return process_child_wait_prepare_internal(parent,pid,deadline,1,
+                                               flags_out);
 }
 
 int process_thread_reserve(struct process *process) {
@@ -428,6 +456,21 @@ int process_thread_exited(struct thread *thread, uint64_t exit_status) {
     return 0;
 }
 
+void process_child_exit_complete(struct process *process) {
+    struct process *parent_to_wake=0;
+    uint64_t flags;
+
+    if (!process)
+        return;
+    flags=spin_lock_irqsave(&process_lock);
+    if (process_lookup_locked(process->pid)==process &&
+        process->state==PROCESS_ZOMBIE)
+        parent_to_wake=process->parent;
+    spin_unlock_irqrestore(&process_lock,flags);
+    if (parent_to_wake)
+        (void)wait_queue_wake_all(&parent_to_wake->child_waiters);
+}
+
 int process_thread_detach(struct thread *thread) {
     struct process *process;
     struct thread **cursor;
@@ -497,6 +540,7 @@ int process_thread_reap_begin(struct thread *thread,
 }
 
 int process_thread_reap_finish(struct process *process) {
+    struct process *parent_to_wake=0;
     uint64_t flags;
     if (!process) return -1;
     flags=spin_lock_irqsave(&process_lock);
@@ -506,7 +550,11 @@ int process_thread_reap_finish(struct process *process) {
         return -1;
     }
     --process->reaping_threads;
+    if (process->state==PROCESS_ZOMBIE && process->reaping_threads==0)
+        parent_to_wake=process->parent;
     spin_unlock_irqrestore(&process_lock,flags);
+    if (parent_to_wake)
+        (void)wait_queue_wake_all(&parent_to_wake->child_waiters);
     return 0;
 }
 
@@ -761,6 +809,67 @@ int process_address_space_is_user_range(const struct process *process,
                                       virtual_address,length,write);
     spin_unlock_irqrestore(&process_lock,irq_flags);
     return valid;
+}
+
+/* Called with process_lock held: address-space mutation and teardown use the
+ * same lock, so the validated translations remain owned until the copy ends. */
+static int process_copy_user_locked(struct process *process,
+                                    uint64_t user_address,
+                                    void *kernel_buffer,
+                                    uint64_t length, int to_user) {
+    uint8_t *kernel_bytes=(uint8_t *)kernel_buffer;
+    uint64_t offset=0;
+
+    if (process_lookup_locked(process->pid)!=process ||
+        process->state==PROCESS_UNUSED ||
+        (length && !vmm_space_is_user_range(&process->address_space,
+                                             user_address,length,to_user)))
+        return -1;
+    while (offset<length) {
+        uint64_t address=user_address+offset;
+        uint64_t physical=vmm_space_translate(&process->address_space,address);
+        uint64_t within=VMM_PAGE_SIZE-(address&(VMM_PAGE_SIZE-1ULL));
+        uint64_t count=length-offset<within ? length-offset : within;
+        if (!physical)
+            return -1;
+        for (uint64_t i=0; i<count; ++i) {
+            uint8_t *user_byte=(uint8_t *)(uint64_t)(physical+i);
+            if (to_user)
+                *user_byte=kernel_bytes[offset+i];
+            else
+                kernel_bytes[offset+i]=*user_byte;
+        }
+        offset+=count;
+    }
+    return 0;
+}
+
+int process_address_space_copy_from_user(struct process *process,
+                                         void *destination,
+                                         uint64_t source,
+                                         uint64_t length) {
+    uint64_t flags;
+    int result;
+    if (!process || !destination)
+        return -1;
+    flags=spin_lock_irqsave(&process_lock);
+    result=process_copy_user_locked(process,source,destination,length,0);
+    spin_unlock_irqrestore(&process_lock,flags);
+    return result;
+}
+
+int process_address_space_copy_to_user(struct process *process,
+                                       uint64_t destination,
+                                       const void *source,
+                                       uint64_t length) {
+    uint64_t flags;
+    int result;
+    if (!process || !source)
+        return -1;
+    flags=spin_lock_irqsave(&process_lock);
+    result=process_copy_user_locked(process,destination,(void *)source,length,1);
+    spin_unlock_irqrestore(&process_lock,flags);
+    return result;
 }
 
 uint64_t process_child_count(const struct process *process) {
