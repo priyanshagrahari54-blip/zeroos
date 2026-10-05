@@ -658,3 +658,15 @@ A roadmap statement is never evidence of implementation.
 ## Cross-Cutting Master Contract
 
 See [`ZEROOS_MASTER_CONTRACT_AND_FEATURE_EXPANSION.md`](./ZEROOS_MASTER_CONTRACT_AND_FEATURE_EXPANSION.md) for the mandatory cross-cutting engineering contract and the expanded ZEROOS feature/platform catalog. Applicable requirements cover ownership/lifetime/concurrency, boot/firmware, hardware certification, networking, packages, SDK, observability, accounts, backup/recovery, privacy, supply-chain security, accessibility/i18n, virtualization, power-loss certification, performance/compatibility labs, ZERO AI safety, and additional product features. This is a specification link only; implementation status remains evidence-based.
+
+
+## Live Implementation Snapshot — 2026-10-04
+See `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md` for the authoritative current estimate and claim policy. Current estimate: **~44% overall**; S1 92%, S2 82%, S3 45%, S4 39%, S5 41%, S6 20%, S7 12%, S8 12%, S9 12%, S10 6%. Recent hardening includes H2/H3 certification/security work, exec pointer validation, timed-wait overflow/range validation, IPv6 firewall enforcement, and fail-closed rejection of unsupported ELF PT_INTERP/PT_DYNAMIC.
+
+### Immediate execution order
+1. Stage 2 process/thread/exec failure cleanup and lifecycle certification.
+2. Stage 1 scheduler/SMP/QEMU evidence closure.
+3. Stage 3 persistence/recovery correctness.
+4. Stage 4 operational hardware/driver coverage.
+5. Stage 5 live display/accelerated graphics path.
+6. Stage 6 security/update/recovery enforcement.
