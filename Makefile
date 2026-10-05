@@ -34,7 +34,7 @@ all: iso
 # The certification build intentionally runs the embedded session in finite
 # probe mode. A normal `make` produces the persistent interactive session.
 check: EXTRA_CFLAGS += -DZEROOS_BOOT_CERTIFICATION
-check: elf userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check storage-tools-check stage1-scheduler-cert stage2-userspace-cert stage3-storage-cert stage4-hardware-cert stage5-desktop-cert stage6-security-cert stage7-gpu-media-cert stage8-compat-cert stage9-ai-perf-cert stage10-certification-release
+check: iso userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check storage-tools-check stage1-scheduler-cert stage2-userspace-cert stage3-storage-cert stage4-hardware-cert stage5-desktop-cert stage6-security-cert stage7-gpu-media-cert stage8-compat-cert stage9-ai-perf-cert stage10-certification-release
 
 storage-tools-check:
 	bash tools/storage/host_selftest.sh
