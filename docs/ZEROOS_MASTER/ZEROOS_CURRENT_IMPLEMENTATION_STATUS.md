@@ -49,11 +49,15 @@ All 10 stage certification gates are integrated directly into `make check` and p
 - Input: PS/2 keyboard scancode translation, PS/2 mouse with packet decoding, multi-touch touchpad gestures.
 - Audio: Intel HDA PCM streaming, per-channel volume, mixer.
 - Networking: L2 Ethernet, ARP cache, IPv4 and IPv6 packet processing, UDP sockets, connection tracking.
+- Bluetooth service: event-driven discovery, pairing, trusted database, A2DP audio routing, AVRCP media controls, earbuds battery level telemetry, dormant when idle.
+- Wi-Fi management: AP scanning, WPA2/WPA3 security profiles, connection state machine, DHCP coordination, dormant power-save.
 
 ### 5. Desktop & Zero-Render Architecture
 - Retained framebuffer with damage-driven rendering: 0 fps and 0 redraws on static desktop.
 - Window management: clipping, overlapping, workspace switching, snapping, focus tracking.
-- ZERO Bar, Floating Dock, Dynamic Capsule with event-driven state transitions.
+- ZERO Bar, Floating Dock, and Dynamic Capsule with priority arbitration and zero-render idle discipline.
+- ZERO Dynamic Capsule: real event-driven status capsule with priority arbitration (Security Alert > Call > Recording > Update > Timer > Download > Music > Idle), minimal animation profile for G560, and guaranteed 0 frames/s when idle.
+- ZERO Control Center: full 28 sections, dedicated Lenovo G560 Dashboard showing CPU/GPU temperatures, fan state, RAM usage (119 MB idle baseline), HDD health, battery/charging, display, thermal mode, performance mode, and driver health with zero uncontrolled polling.
 - Themes: Aurora, Obsidian, Pearl, Solar, Ocean, Forest, Sunset, Mono, High Contrast.
 
 ### 6. Security, Packages, Updates & Recovery
@@ -63,6 +67,7 @@ All 10 stage certification gates are integrated directly into `make check` and p
 - Package manager: signed package verification, dependency resolution, atomic staging, quarantine of untrusted packages.
 - Transactional update pipeline: A/B slot switching, bound snapshot rollback on failure.
 - Recovery environment: Safe Boot, Repair Boot, FSCK superblock repair, offline diagnostics.
+- Backup Engine: full, incremental, and changed-block backups with ChaCha20-Poly1305 encryption, block-level integrity verification, resumable recovery after interruption, and restore verification.
 
 ### 7. Applications & Media
 - Native application suite: Files, Terminal, Settings, Control Center, Browser, Media, Notes, PDF Viewer, Study Center.

@@ -16,6 +16,7 @@ required_patterns=(
   "zd_pkg_resolve_deps"
   "zd_recovery_run_fsck"
   "zd_recovery_trigger_rollback"
+  "zd_backup_create_job"
 )
 
 for pattern in "${required_patterns[@]}"; do

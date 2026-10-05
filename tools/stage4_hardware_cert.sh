@@ -25,4 +25,7 @@ for pattern in "${required_patterns[@]}"; do
   fi
 done
 
+grep -rnF "zd_bt_init" "$repo_root/userspace/desktop" >/dev/null
+grep -rnF "zd_wifi_init" "$repo_root/userspace/desktop" >/dev/null
+
 echo "stage4-hardware-cert: PASS"

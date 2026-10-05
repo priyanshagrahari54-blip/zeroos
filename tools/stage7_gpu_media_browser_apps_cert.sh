@@ -15,6 +15,8 @@ required_patterns=(
   "zd_notes_init"
   "zd_pdf_open"
   "zd_study_init"
+  "zd_capsule_post"
+  "zd_cc_select_section"
 )
 
 for pattern in "${required_patterns[@]}"; do
