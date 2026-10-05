@@ -9,6 +9,7 @@ struct process;
 #define ZEROOS_ELF_ET_DYN  3U
 #define ZEROOS_ELF_EM_X86_64 62U
 #define ZEROOS_ELF_PT_LOAD 1U
+#define ZEROOS_ELF_PT_DYNAMIC 2U
 #define ZEROOS_ELF_PT_INTERP 3U
 #define ZEROOS_ELF_PF_X 1U
 #define ZEROOS_ELF_PF_W 2U

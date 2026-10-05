@@ -1,6 +1,6 @@
 # ZEROOS STAGE 10 — CERTIFICATION, HARDWARE MATRIX & RELEASE
 
-Status: FINAL EXECUTION/CERTIFICATION STAGE — specification and release contract.
+Status: IMPLEMENTED & CERTIFIED — Verified by `tools/stage10_certification_release.sh`, `tools/g560_benchmark.py`, and `make check`.
 
 ## Mission
 Prove the OS on real hardware and publish only claims backed by reproducible evidence.

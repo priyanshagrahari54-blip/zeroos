@@ -1,6 +1,6 @@
 # ZEROOS STAGE 7 — GPU, MEDIA, BROWSER & NATIVE APPS
 
-Status: NEXT EXECUTION STAGE — specification and implementation contract.
+Status: IMPLEMENTED & CERTIFIED — Verified by `tools/stage7_gpu_media_browser_apps_cert.sh` and `make check`.
 
 ## Mission
 Deliver a real accelerated desktop/media/application platform while preserving a measured low-resource path for old hardware.

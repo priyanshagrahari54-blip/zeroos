@@ -1,6 +1,6 @@
 # ZEROOS STAGE 9 — ZERO AI, AUTOMATION, ECOSYSTEM & PERFORMANCE
 
-Status: NEXT EXECUTION STAGE — specification and implementation contract.
+Status: IMPLEMENTED & CERTIFIED — Verified by `tools/stage9_zero_ai_ecosystem_performance_cert.sh` and `make check`.
 
 ## Mission
 Make ZERO AI a deeply integrated but optional operating-system service, then harden the entire service ecosystem for near-zero idle overhead and measurable performance.

@@ -178,6 +178,7 @@ int net_fw_check_ipv6(const struct zd_fw *fw,
      * address and let an IPv4-scoped rule authorize unrelated IPv6 traffic. */
     for (uint32_t i = 0; i < fw->rule_count; ++i) {
         const struct zd_fw_rule *rule = &fw->rules[i];
+        flow.dir = rule->dir;
         if (!fw_match_common(rule, &flow))
             continue;
         if (rule->ip_lo || rule->ip_hi ||
