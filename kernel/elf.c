@@ -421,7 +421,8 @@ int elf_debug_validate(void) {
     if (sizeof(struct zeroos_elf64_ehdr)!=64U ||
         sizeof(struct zeroos_elf64_phdr)!=56U ||
         VMM_PAGE_SIZE==0 || ZEROOS_ELF_MAX_PROGRAM_HEADERS==0 ||
-        ZEROOS_ELF_MAX_TOTAL_PAGES==0)
+        ZEROOS_ELF_MAX_TOTAL_PAGES==0 ||
+        ZEROOS_ELF_MAX_TOTAL_PAGES%8U!=0)
         return -1;
     return 0;
 }
