@@ -502,10 +502,23 @@ Attribution:
   IPC/child-wait IF-restore, AP idle-stack size and cross-CPU handoff
   validation bugs that cause that hang.
 
-These are treated as residual Stage 1 SMP races and are **not fixed**.
-The mount-after-abort case is suspected to be a race between the 500-tick
-periodic commit and the fault injection. It is also not yet fixed.
-`userspace_start_init` now reports the failing stage, error, entry check and
-free-page count so that CI triage can classify failures. Boots at `-smp 1/2`
-and single runs at `-smp 4` pass. A single green CI run is therefore not
-proof of absence.
+The scheduler/ELF observations remain as attributed above; this storage
+investigation does not alter them. The mount-after-abort case remains
+unverified. A source review on 2026-10-05 found that the documented 500-tick
+periodic-commit explanation does not fit the current test order:
+`storage_main()` runs `storage_selftest_fs()` before it creates
+`storage_worker`, and the worker is
+the only caller of `vfs_periodic()`. Thus that periodic commit cannot overlap
+`tf_io_errors()` in the current tree.
+
+The abort test also used to ignore the forced-unmount result, so a refused
+unmount could be reported later as a remount failure. It now checks that the
+journal-range fault actually fired, distinguishes a busy unmount from a mount
+failure, requires the block queue to be drained, and logs the unmount/remount
+results. No filesystem recovery or error semantics were changed. The
+intermittent runtime signature has not been reproduced in this environment;
+QEMU is unavailable here, so the issue remains open without a confirmed root
+cause. `userspace_start_init` now reports the failing stage, error, entry
+check and free-page count so that CI triage can classify failures. Boots at
+`-smp 1/2` and single runs at `-smp 4` pass. A single green CI run is therefore
+not proof of absence.
