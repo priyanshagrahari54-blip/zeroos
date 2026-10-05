@@ -41,7 +41,9 @@ static void session_main(void *argument) {
     struct thread *thread;
     void *stack;
     uint64_t status = ~0ULL;
+#ifdef ZEROOS_BOOT_CERTIFICATION
     uint64_t t0;
+#endif
 
     (void)argument;
     serial_write_public("ZEROOS: session shell process started.\n");
