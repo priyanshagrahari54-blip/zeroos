@@ -670,3 +670,14 @@ See `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md` for the authoritative current esti
 4. Stage 4 operational hardware/driver coverage.
 5. Stage 5 live display/accelerated graphics path.
 6. Stage 6 security/update/recovery enforcement.
+
+
+## Live execution update — 2026-10-05
+The current evidence-weighted implementation snapshot is **~44% overall**: S1 92%, S2 82%, S3 45%, S4 39%, S5 41%, S6 20%, S7 12%, S8 12%, S9 12%, S10 6%.
+
+Recent hardening includes Stage 2 stack/ELF/timeout certification and ZERO AI action-capability separation with revocation-before-backend regression coverage. These changes improve correctness but do not by themselves certify the later stages.
+
+### Rule for the lowest stages
+Work proceeds from the lowest implementation stages first, but a stage percentage only increases when the real exit gate gains implementation + tests + integration evidence. Host-only modules, contracts, parsers or detection are not counted as a working OS feature until they are bound to the booted userspace/kernel path.
+
+Immediate order: **S9 brokered actions/lifecycle → S8 isolated compatibility execution → S7 accelerated/media/browser integration → S6 kernel-enforced security/update/recovery → S10 real hardware certification**, while maintaining S1–S5 regression gates.
