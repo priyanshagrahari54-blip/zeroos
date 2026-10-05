@@ -298,10 +298,10 @@ SESSION_DEPS := userspace/session/session.c userspace/session/session_start.S \
 	$(wildcard userspace/desktop/include/zeroos/desktop/*.h) \
 	$(SESSION_DESKTOP_SRCS)
 $(BUILD)/session_probe.elf: $(SESSION_DEPS) | $(BUILD)
-	$(CC) $(SESSION_CFLAGS) -c userspace/session/session_start.S -o $(BUILD)/session_start.o
-	$(CC) $(SESSION_CFLAGS) -c userspace/session/session.c -o $(BUILD)/session_probe_user.o
+	$(CC) $(SESSION_CFLAGS) $(EXTRA_CFLAGS) -c userspace/session/session_start.S -o $(BUILD)/session_start.o
+	$(CC) $(SESSION_CFLAGS) $(EXTRA_CFLAGS) -c userspace/session/session.c -o $(BUILD)/session_probe_user.o
 	@set -e; for src in $(SESSION_DESKTOP_SRCS); do \
-		$(CC) $(SESSION_CFLAGS) -c $$src -o $(BUILD)/session_desktop_$$(basename $$src .c).o; \
+		$(CC) $(SESSION_CFLAGS) $(EXTRA_CFLAGS) -c $src -o $(BUILD)/session_desktop_$(basename $src .c).o; \
 	done
 	$(LD) -m elf_x86_64 -T userspace/session/session.ld -nostdlib -o $@ \
 		$(BUILD)/session_start.o $(BUILD)/session_probe_user.o $(SESSION_DESKTOP_OBJS)
