@@ -294,8 +294,11 @@ int thread_create_kernel(struct process *process,
 int thread_create_user(struct process *process, uint64_t user_entry,
                        uint64_t user_stack, thread_id_t *tid_out) {
     if (!process || user_entry==0 || user_stack==0 ||
-        (user_entry >> 48) != 0 || (user_stack >> 48) != 0)
-        return thread_create_failure("user entry validation",process);
+        (user_entry >> 48) != 0 || (user_stack >> 48) != 0 ||
+        (user_stack & 0xfULL) != 0 ||
+        !process_address_space_is_executable(process,user_entry,1) ||
+        !process_address_space_is_user_range(process,user_stack-1ULL,1,1))
+        return thread_create_failure("user entry/stack validation",process);
     return thread_create_common(process,0,0,1,user_entry,user_stack,tid_out);
 }
 
