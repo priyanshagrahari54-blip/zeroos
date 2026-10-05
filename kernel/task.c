@@ -1489,13 +1489,25 @@ int task_sleep_until(uint64_t deadline) {
     struct task *task=current_task;
     uint64_t flags;
     struct task *next;
+    uint64_t now;
+    uint64_t delta;
 
     if (!task || task==&tasks[0] || task_is_idle(task) ||
         task->state!=TASK_RUNNING || task->preempt_count!=0)
         return -1;
 
-    if ((long long)(deadline-timer_ticks())<=0)
+    /*
+     * Timer deadlines use signed half-range ordering. A deadline more than
+     * INT64_MAX ticks away is ambiguous after wrap and must never be queued:
+     * otherwise a malformed/overflowed timeout could become effectively
+     * indefinite or fire immediately after wrap.
+     */
+    now=timer_ticks();
+    delta=deadline-now;
+    if (delta==0)
         return 0;
+    if (delta>0x7fffffffffffffffULL)
+        return -1;
 
     flags=task_irq_save();
     spin_lock(&task_lock);
@@ -1506,10 +1518,17 @@ int task_sleep_until(uint64_t deadline) {
         return -1;
     }
 
-    if ((long long)(deadline-timer_ticks())<=0) {
+    now=timer_ticks();
+    delta=deadline-now;
+    if (delta==0) {
         spin_unlock(&task_lock);
         task_irq_restore(flags);
         return 0;
+    }
+    if (delta>0x7fffffffffffffffULL) {
+        spin_unlock(&task_lock);
+        task_irq_restore(flags);
+        return -1;
     }
 
     task->wake_tick=deadline;
@@ -1536,6 +1555,13 @@ int task_sleep_until(uint64_t deadline) {
 int task_sleep_ticks(uint64_t ticks) {
     if (ticks==0)
         return 0;
+
+    /* Keep relative waits inside the timer comparator's signed half-range.
+     * The addition itself may wrap, which is intentional and safe because
+     * task_sleep_until() validates the resulting modular distance. */
+    if (ticks>0x7fffffffffffffffULL)
+        return -1;
+
     return task_sleep_until(timer_ticks()+ticks);
 }
 
