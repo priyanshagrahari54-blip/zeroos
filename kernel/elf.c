@@ -119,8 +119,9 @@ static int elf_collect(const void *image, uint64_t image_size,
         uint64_t page_start;
         uint64_t page_count;
 
-        if (program->type==ZEROOS_ELF_PT_INTERP)
-            return -ZEROOS_EINVAL; /* No implicit dynamic loader policy in v1. */
+        if (program->type==ZEROOS_ELF_PT_INTERP ||
+            program->type==ZEROOS_ELF_PT_DYNAMIC)
+            return -ZEROOS_EINVAL; /* No implicit dynamic loader in v1. */
         if (program->type!=ZEROOS_ELF_PT_LOAD)
             continue;
         if (segment_count>=ZEROOS_ELF_MAX_PROGRAM_HEADERS ||
