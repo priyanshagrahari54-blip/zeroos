@@ -124,10 +124,11 @@ static int elf_collect(const void *image, uint64_t image_size,
             return -ZEROOS_EINVAL; /* No implicit dynamic loader in v1. */
         if (program->type!=ZEROOS_ELF_PT_LOAD)
             continue;
+        uint64_t file_end;
         if (segment_count>=ZEROOS_ELF_MAX_PROGRAM_HEADERS ||
             program->memory_size==0 || program->file_size>program->memory_size ||
-            program->offset>image_size ||
-            program->file_size>image_size-program->offset ||
+            range_end(program->offset,program->file_size,&file_end)!=0 ||
+            file_end>image_size ||
             ((program->flags&ZEROOS_ELF_PF_W) &&
              (program->flags&ZEROOS_ELF_PF_X)))
             return -ZEROOS_EINVAL;
@@ -215,8 +216,10 @@ static int elf_collect(const void *image, uint64_t image_size,
     if (phdr_end>=header->phoff) {
         for (uint32_t i=0; i<segment_count; ++i) {
             const struct zeroos_elf64_phdr *program=&segments[i].header;
-            uint64_t file_end=program->offset+program->file_size;
+            uint64_t file_end;
             uint64_t table_offset;
+            if (range_end(program->offset,program->file_size,&file_end)!=0)
+                continue;
             uint64_t table_address;
             uint64_t table_end;
             if (!(program->flags&ZEROOS_ELF_PF_R) ||
