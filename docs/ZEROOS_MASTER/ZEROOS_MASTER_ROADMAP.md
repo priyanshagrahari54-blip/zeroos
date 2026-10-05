@@ -9,6 +9,15 @@ Never create a basic version merely to replace it later.
 
 ## Current state
 
+### Live boot/session status — 2026-10-05
+- The normal `make` image now keeps the Ring-3 desktop/session process alive after its display, compositor and input bring-up.
+- Production session idle lifetime is event-driven through the native input wait syscall; it does not use a polling/render loop just to stay alive.
+- `make check` builds with `ZEROOS_BOOT_CERTIFICATION` so CI retains the finite session/reap contract for deterministic certification.
+- ISO generation remains the normal `make` output path; QEMU boot certification is part of the repository workflow.
+- This is a real bootable native x86-64 kernel + Ring-3 session path, but it is not yet a complete consumer OS: application suite, dynamic linking, full GPU/media/browser stacks, compatibility runtimes, recovery/update UX, and hardware-matrix validation remain staged work.
+
+Already substantially implemented:
+
 Already substantially implemented:
 - Multiboot2 bootstrap
 - x86-64 long mode
