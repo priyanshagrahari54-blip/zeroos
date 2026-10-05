@@ -29,6 +29,9 @@ all: iso
 # hardware certification, Stage 5 desktop certification, ABI, core,
 # desktop, compatibility, storage-image recovery, and SIMD-safety checks
 # before guest boot.
+# The certification build intentionally runs the embedded session in finite
+# probe mode. A normal `make` produces the persistent interactive session.
+check: EXTRA_CFLAGS += -DZEROOS_BOOT_CERTIFICATION
 check: elf userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check storage-tools-check stage1-scheduler-cert stage2-userspace-cert stage3-storage-cert stage4-hardware-cert stage5-desktop-cert
 
 storage-tools-check:
