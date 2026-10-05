@@ -160,7 +160,7 @@ int net_fw_check_ipv6(const struct zd_fw *fw,
     if (!fw || !src || !dst) return -22;
     struct zd_fw_flow flow = {0};
     struct zd_fw *mutable_fw = (struct zd_fw *)fw;
-    flow.dir = ZD_FW_OUT;
+    flow.dir = ZD_FW_IN;
     mutable_fw->stats.flows++;
     if (nexthdr == 6)
         flow.proto = ZD_FW_TCP;
