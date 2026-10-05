@@ -318,7 +318,10 @@ int exec_debug_validate(void) {
     if (!exec_workspace.initialized ||
         ZEROOS_EXEC_MAX_ARGUMENTS==0 ||
         ZEROOS_EXEC_MAX_STRING<2 ||
-        ZEROOS_EXEC_MAX_IMAGE<VMM_PAGE_SIZE)
+        ZEROOS_EXEC_MAX_IMAGE<VMM_PAGE_SIZE ||
+        ZEROOS_USER_STACK_PAGE>=ZEROOS_USER_STACK_TOP ||
+        ZEROOS_USER_STACK_TOP>ZEROOS_USER_STACK_PAGE+VMM_PAGE_SIZE ||
+        (ZEROOS_USER_STACK_TOP&0xfULL)!=0)
         return -1;
     return 0;
 }
