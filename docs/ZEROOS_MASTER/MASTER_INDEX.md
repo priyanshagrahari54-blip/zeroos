@@ -50,3 +50,7 @@ See `ZEROOS_MASTER_CONTRACT_AND_FEATURE_EXPANSION.md` for boot/firmware, hardwar
 
 ## Documentation synchronization
 When implementation changes a contract, update the closest subsystem document and the affected master/roadmap/stage plan in the same change. Never mark an item implemented without evidence.
+
+
+## Current implementation status
+The live percentage/evidence snapshot is maintained in `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md`. Current overall implementation estimate is ~44%: Stage 1 92%, Stage 2 82%, Stage 3 45%, Stage 4 39%, Stage 5 41%, Stage 6 20%, Stage 7 12%, Stage 8 12%, Stage 9 12%, Stage 10 6%. These are engineering estimates, not source-line percentages; documentation maturity is not counted as implementation.

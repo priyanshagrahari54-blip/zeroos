@@ -64,14 +64,16 @@ int zd_ai_submit(struct zd_ai_broker *broker,
         return -ZD_EINVAL;
     if (request->kind < ZD_AI_REQ_COMPLETE ||
         request->kind > ZD_AI_REQ_COMMAND || request->want_remote > 1 ||
-        (request->context_mask & ~ZD_AI_GRANT_CONTEXT_MASK))
+        (request->context_mask & ~ZD_AI_GRANT_CONTEXT_MASK) ||
+        (request->action_mask & ~ZD_AI_GRANT_ACTION_ALL))
         return -ZD_EINVAL;
 
     /* Defend even if an invalid bit was written directly into public state. */
     broker->grants &= ZD_AI_GRANT_ALL;
 
     /* Permission gate: requested context must be fully granted. */
-    if (request->context_mask & ~broker->grants) {
+    if (request->context_mask & ~broker->grants ||
+        request->action_mask & ~(broker->grants & ZD_AI_GRANT_ACTION_ALL)) {
         broker->stats.denied_permission++;
         return -ZD_EPERM;
     }
@@ -90,6 +92,7 @@ int zd_ai_submit(struct zd_ai_broker *broker,
     safe_request.id = request->id;
     safe_request.kind = request->kind;
     safe_request.context_mask = request->context_mask;
+    safe_request.action_mask = request->action_mask;
     safe_request.want_remote = request->want_remote;
     safe_request.active = 0;
     for (i = 0; i < sizeof(safe_request.payload); ++i)
@@ -106,6 +109,7 @@ int zd_ai_submit(struct zd_ai_broker *broker,
             slot->id = safe_request.id;
             slot->kind = safe_request.kind;
             slot->context_mask = safe_request.context_mask;
+            slot->action_mask = safe_request.action_mask;
             slot->want_remote = safe_request.want_remote;
             for (k = 0; k < sizeof(slot->payload); ++k)
                 slot->payload[k] = safe_request.payload[k];
@@ -158,7 +162,8 @@ int zd_ai_drain(struct zd_ai_broker *broker, uint32_t max_out,
         ++processed;
 
         /* Queue contents are validated again at the execution boundary. */
-        if (req->context_mask & ~ZD_AI_GRANT_CONTEXT_MASK) {
+        if ((req->context_mask & ~ZD_AI_GRANT_CONTEXT_MASK) ||
+            (req->action_mask & ~ZD_AI_GRANT_ACTION_ALL)) {
             broker->stats.denied_permission++;
             wipe_request(req);
             broker->queued--;
@@ -171,7 +176,8 @@ int zd_ai_drain(struct zd_ai_broker *broker, uint32_t max_out,
             broker->queued--;
             continue;
         }
-        if (req->context_mask & ~broker->grants) {
+        if (req->context_mask & ~broker->grants ||
+            req->action_mask & ~(broker->grants & ZD_AI_GRANT_ACTION_ALL)) {
             broker->stats.denied_permission++;
             wipe_request(req);
             broker->queued--;
@@ -205,7 +211,10 @@ int zd_ai_drain(struct zd_ai_broker *broker, uint32_t max_out,
         /* Revalidate grants after the selector and immediately before run. */
         broker->grants &= ZD_AI_GRANT_ALL;
         if ((req->context_mask & ~ZD_AI_GRANT_CONTEXT_MASK) ||
-            (req->context_mask & ~broker->grants)) {
+            (req->action_mask & ~ZD_AI_GRANT_ACTION_ALL) ||
+            (req->context_mask & ~broker->grants) ||
+            (req->action_mask &
+             ~(broker->grants & ZD_AI_GRANT_ACTION_ALL))) {
             broker->stats.denied_permission++;
             wipe_request(req);
             broker->queued--;

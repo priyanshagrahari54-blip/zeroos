@@ -236,6 +236,37 @@ int main(void) {
     assert(stack.ipv4_firewall.stats.allowed==allowed_before+1);
     assert(stack.stats.unsupported==2);
 
+    /* IPv6 packets must pass the firewall before unsupported transport
+     * handling. IPv4-scoped rules must never accidentally authorize IPv6. */
+    net_stack_init(&stack,net_udp_socket_dispatch,&sockets);
+    uint8_t ipv6_frame[14U + 40U + 8U];
+    memset(ipv6_frame,0,sizeof(ipv6_frame));
+    ipv6_frame[0]=0x02; ipv6_frame[5]=0x01;
+    ipv6_frame[6]=0x10; ipv6_frame[11]=0x15;
+    ipv6_frame[12]=0x86; ipv6_frame[13]=0xdd;
+    ipv6_frame[14]=0x60;
+    ipv6_frame[18]=0; ipv6_frame[19]=8;
+    ipv6_frame[20]=17; ipv6_frame[21]=64;
+    ipv6_frame[22]=0x20; ipv6_frame[23]=0x01;
+    ipv6_frame[24]=0x0d; ipv6_frame[25]=0xb8; ipv6_frame[37]=1;
+    ipv6_frame[38]=0x20; ipv6_frame[39]=0x01;
+    ipv6_frame[40]=0x0d; ipv6_frame[41]=0xb8; ipv6_frame[53]=2;
+    ipv6_frame[54]=0x04; ipv6_frame[55]=0xd2;
+    ipv6_frame[56]=0x27; ipv6_frame[57]=0x0f;
+    ipv6_frame[58]=0; ipv6_frame[59]=8;
+    uint64_t ipv6_denied_before=stack.ipv4_firewall.stats.denied;
+    assert(net_stack_input(&stack,&interface,ipv6_frame,sizeof(ipv6_frame))==1);
+    assert(stack.ipv4_firewall.stats.denied==ipv6_denied_before+1);
+    struct zd_fw_rule ipv6_allow = {
+        .dir=ZD_FW_IN, .proto=ZD_FW_UDP, .action=ZD_FW_ALLOW,
+        .port_lo=9999, .port_hi=9999
+    };
+    assert(net_fw_add(&stack.ipv4_firewall,&ipv6_allow,0)==0);
+    uint64_t ipv6_allowed_before=stack.ipv4_firewall.stats.allowed;
+    assert(net_stack_input(&stack,&interface,ipv6_frame,sizeof(ipv6_frame))==1);
+    assert(stack.ipv4_firewall.stats.allowed==ipv6_allowed_before+1);
+    assert(stack.stats.unsupported==1);
+
     /* The kernel sandbox's interface-scoped network gate sits before UDP
      * delivery, and an allow must name the actual ingress interface. */
     net_stack_init(&stack,net_udp_socket_dispatch,&sockets);

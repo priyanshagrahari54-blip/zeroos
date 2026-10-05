@@ -226,10 +226,36 @@ int net_stack_input(struct net_stack *stack, const struct netif *interface,
             stack->stats.malformed++;
             return -1;
         }
-        /* IPv6 delivery remains intentionally fail-closed until an explicit
-         * IPv6 firewall/routing policy and packet reassembly are implemented. */
+
+        /* Apply the IPv6 firewall before the transport is rejected as
+         * unsupported. Only TCP/UDP have port-aware rules today; all other
+         * next headers fail closed in net_fw_check_ipv6(). */
+        uint16_t src_port = 0, dst_port = 0;
+        if (ipv6.next_header == 6U || ipv6.next_header == 17U) {
+            if (ipv6.upper_layer_length < 4U) {
+                stack->stats.malformed++;
+                return -1;
+            }
+            src_port = read_be16(ipv6.payload);
+            dst_port = read_be16(ipv6.payload + 2U);
+            if (ipv6.next_header == 6U && ipv6.upper_layer_length < 20U) {
+                stack->stats.malformed++;
+                return -1;
+            }
+            if (ipv6.next_header == 17U && ipv6.upper_layer_length < 8U) {
+                stack->stats.malformed++;
+                return -1;
+            }
+        }
+        if (net_fw_check_ipv6(&stack->ipv4_firewall,
+                              ipv6.source, ipv6.destination,
+                              ipv6.next_header, src_port, dst_port)
+                != ZD_FW_ALLOW) {
+            stack->stats.policy_drops++;
+            return 1;
+        }
+
         stack->stats.unsupported++;
-        stack->stats.policy_drops++;
         return 1;
     }
 

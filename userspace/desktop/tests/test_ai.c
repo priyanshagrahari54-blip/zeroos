@@ -177,8 +177,15 @@ static void test_grant_mask_and_execution_revalidation(void) {
     ZD_CHECK_EQ(b.grants, ZD_AI_GRANT_ALL);
     zd_ai_grant(&b, 0xffffffffu);
     ZD_CHECK_EQ(b.grants, ZD_AI_GRANT_ALL);
-    zd_ai_revoke(&b, 0xfffffff0u);
+    /* Bits above the defined grant set are ignored by grant/revoke. */
+    zd_ai_grant(&b, 0xfffffc00u);
     ZD_CHECK_EQ(b.grants, ZD_AI_GRANT_ALL);
+    zd_ai_revoke(&b, 0xfffffc00u);
+    ZD_CHECK_EQ(b.grants, ZD_AI_GRANT_ALL);
+    /* Defined action grants are revocable independently of context/egress. */
+    zd_ai_revoke(&b, ZD_AI_GRANT_ACTION_ALL | ZD_AI_GRANT_PERSIST);
+    ZD_CHECK_EQ(b.grants,
+                ZD_AI_GRANT_CONTEXT_MASK | ZD_AI_GRANT_REMOTE_EGRESS);
 
     /* Egress is a control permission, not a context capability. */
     r = make_req(20, ZD_AI_GRANT_REMOTE_EGRESS, 0);
@@ -202,6 +209,12 @@ static void test_grant_mask_and_execution_revalidation(void) {
     ZD_CHECK_EQ(b.stats.denied_permission, 1u);
     ZD_CHECK_EQ(b.queued, 0);
 
+    /* Unknown action capabilities are malformed, not silently retained. */
+    r = make_req(24, 0, 0);
+    r.action_mask = 0x80000000u;
+    ZD_CHECK_EQ(zd_ai_submit(&b, &r), -ZD_EINVAL);
+    ZD_CHECK_EQ(b.queued, 0);
+
     /* A grant revoked by the selector is rechecked before run(). */
     {
         struct zd_ai_ops revoke_ops = {
@@ -218,6 +231,36 @@ static void test_grant_mask_and_execution_revalidation(void) {
         ZD_CHECK_EQ(b.queued, 0);
         ZD_CHECK_EQ(b.grants, 0u);
     }
+}
+
+/* --- action capability separation ---------------------------------- */
+
+static void test_action_permissions(void) {
+    struct zd_ai_broker b;
+    struct zd_ai_ops ops = {ops_select_local, ops_run_counted, 0};
+    struct zd_ai_request r = make_req(70, 0, 0);
+    uint32_t done = 0;
+
+    zd_ai_broker_init(&b, &ops, ZD_AI_GRANT_CONTEXT_FILES);
+    r.action_mask = ZD_AI_GRANT_ACTION_FILE_READ;
+    ZD_CHECK_EQ(zd_ai_submit(&b, &r), -ZD_EPERM);
+    ZD_CHECK_EQ(b.stats.denied_permission, 1u);
+
+    zd_ai_grant(&b, ZD_AI_GRANT_ACTION_FILE_READ);
+    ZD_CHECK_OK(zd_ai_submit(&b, &r));
+    zd_ai_revoke(&b, ZD_AI_GRANT_ACTION_FILE_READ);
+    backend_run_count = 0;
+    ZD_CHECK_OK(zd_ai_drain(&b, 1, &done));
+    ZD_CHECK_EQ(done, 0);
+    ZD_CHECK_EQ(backend_run_count, 0u);
+    ZD_CHECK_EQ(b.stats.denied_permission, 2u);
+
+    zd_ai_grant(&b, ZD_AI_GRANT_ACTION_FILE_WRITE);
+    r = make_req(71, 0, 0);
+    r.action_mask = ZD_AI_GRANT_ACTION_FILE_WRITE;
+    ZD_CHECK_OK(zd_ai_submit(&b, &r));
+    ZD_CHECK_OK(zd_ai_drain(&b, 1, &done));
+    ZD_CHECK_EQ(done, 1u);
 }
 
 /* --- downgrade and egress ------------------------------------------- */
@@ -441,6 +484,7 @@ void zd_test_ai_suite(void) {
     printf("  suite: ai broker\n");
     ZD_RUN(test_permission_gate);
     ZD_RUN(test_grant_mask_and_execution_revalidation);
+    ZD_RUN(test_action_permissions);
     ZD_RUN(test_remote_downgrade);
     ZD_RUN(test_queue_bounds);
     ZD_RUN(test_reentrant_drain_suppressed);

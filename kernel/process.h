@@ -135,6 +135,9 @@ int process_address_space_copy_to_user(struct process *process,
                                        uint64_t destination,
                                        const void *source,
                                        uint64_t length);
+int process_address_space_is_executable(const struct process *process,
+                                        uint64_t virtual_address,
+                                        uint64_t length);
 
 uint64_t process_child_count(const struct process *process);
 uint64_t process_thread_count(const struct process *process);

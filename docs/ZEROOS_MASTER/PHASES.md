@@ -254,3 +254,7 @@ Every stage must pass:
 10. documentation synchronization.
 
 A stage may remain PARTIAL when a genuine external dependency blocks activation, but its final production contract must already be defined and its independent implementation must be mature.
+
+
+## Current Stage Snapshot — 2026-10-04
+Implementation estimates: Stage 1 **92%**, Stage 2 **82%**, Stage 3 **45%**, Stage 4 **39%**, Stage 5 **41%**, Stage 6 **20%**, Stage 7 **12%**, Stage 8 **12%**, Stage 9 **12%**, Stage 10 **6%**; overall **~44%**. These are evidence-weighted engineering estimates, not code-line percentages. Stage 2 is the active priority after recent exec/timed-wait/ELF hardening.

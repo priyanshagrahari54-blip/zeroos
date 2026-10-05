@@ -31,4 +31,15 @@ for pattern in "${required_patterns[@]}"; do
   fi
 done
 
+# Static hardening gates: protect the live Ring-3 contract even when the
+# full guest certification is not available on a host.
+grep -Fq "process_address_space_is_executable" "$repo_root/kernel/process.c"
+grep -Fq "user entry/stack validation" "$repo_root/kernel/thread.c"
+grep -Fq "ipc_deadline_init" "$repo_root/kernel/ipc.c"
+grep -Fq "ipc_deadline_expired" "$repo_root/kernel/ipc.c"
+grep -Fq "ZEROOS_ELF_PT_INTERP ||" "$repo_root/kernel/elf.c"
+grep -Fq "ZEROOS_ELF_PT_DYNAMIC" "$repo_root/kernel/elf.c"
+grep -Fq "range_end(program->offset,program->file_size,&file_end)" "$repo_root/kernel/elf.c"
+grep -Fq "ZEROOS_USER_STACK_TOP>ZEROOS_USER_STACK_PAGE+VMM_PAGE_SIZE" "$repo_root/kernel/exec.c"
+
 echo "stage2-userspace-cert: PASS"

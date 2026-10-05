@@ -62,6 +62,8 @@ static int exec_copy_string(const struct process *process, uint64_t source,
         return -ZEROOS_EFAULT;
     while (length<ZEROOS_EXEC_MAX_STRING) {
         uint8_t byte=0;
+        if (source>~0ULL-length)
+            return -ZEROOS_EFAULT;
         int result=exec_copy_from_user(process,source+length,&byte,1);
         if (result!=0)
             return result;
@@ -228,8 +230,8 @@ int exec_spawn(struct process *parent, uint64_t user_image,
         argc>ZEROOS_EXEC_MAX_ARGUMENTS || envc>ZEROOS_EXEC_MAX_ARGUMENTS ||
         (argc && !user_argv) || (envc && !user_envp))
         return -ZEROOS_EINVAL;
-    if ((argc && user_argv>~0ULL/sizeof(uint64_t)) ||
-        (envc && user_envp>~0ULL/sizeof(uint64_t)))
+    if ((argc && argc>0 && user_argv>~0ULL-(argc-1ULL)*sizeof(uint64_t)) ||
+        (envc && envc>0 && user_envp>~0ULL-(envc-1ULL)*sizeof(uint64_t)))
         return -ZEROOS_EFAULT;
 
     lock_flags=spin_lock_irqsave(&exec_workspace.lock);
@@ -316,7 +318,10 @@ int exec_debug_validate(void) {
     if (!exec_workspace.initialized ||
         ZEROOS_EXEC_MAX_ARGUMENTS==0 ||
         ZEROOS_EXEC_MAX_STRING<2 ||
-        ZEROOS_EXEC_MAX_IMAGE<VMM_PAGE_SIZE)
+        ZEROOS_EXEC_MAX_IMAGE<VMM_PAGE_SIZE ||
+        ZEROOS_USER_STACK_PAGE>=ZEROOS_USER_STACK_TOP ||
+        ZEROOS_USER_STACK_TOP>ZEROOS_USER_STACK_PAGE+VMM_PAGE_SIZE ||
+        (ZEROOS_USER_STACK_TOP&0xfULL)!=0)
         return -1;
     return 0;
 }

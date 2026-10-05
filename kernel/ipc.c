@@ -42,6 +42,29 @@ struct ipc_capability {
 };
 
 static struct spinlock ipc_lock;
+static int ipc_deadline_init(uint64_t timeout_ticks, uint64_t *deadline_out) {
+    uint64_t now;
+    uint64_t deadline;
+
+    if (!deadline_out)
+        return -1;
+    if (timeout_ticks==ZEROOS_IPC_TIMEOUT_FOREVER) {
+        *deadline_out=0;
+        return 0;
+    }
+    if (timeout_ticks>0x7fffffffffffffffULL)
+        return -1;
+    now=timer_ticks();
+    deadline=now+timeout_ticks;
+    *deadline_out=deadline;
+    return 0;
+}
+
+static int ipc_deadline_expired(uint64_t deadline) {
+    uint64_t delta=deadline-timer_ticks();
+    return delta==0 || delta>0x7fffffffffffffffULL;
+}
+
 static struct ipc_endpoint endpoints[ZEROOS_IPC_MAX_ENDPOINTS];
 static struct ipc_capability capabilities[ZEROOS_IPC_MAX_CAPABILITIES];
 static uint64_t next_sequence;
@@ -346,11 +369,8 @@ int ipc_send_timeout(struct process *owner, zeroos_ipc_handle_t handle,
     if (!process_can_use(owner) || !data || length==0 ||
         length>ZEROOS_IPC_MAX_MESSAGE || (flags&~ZEROOS_IPC_VALID_FLAGS))
         return -ZEROOS_EINVAL;
-    if (timeout_ticks!=ZEROOS_IPC_TIMEOUT_FOREVER) {
-        deadline=timer_ticks()+timeout_ticks;
-        if (deadline<timer_ticks())
-            deadline=~0ULL;
-    }
+    if (ipc_deadline_init(timeout_ticks,&deadline)!=0)
+        return -ZEROOS_EINVAL;
 
     for (;;) {
         uint64_t irq_flags;
@@ -380,7 +400,7 @@ int ipc_send_timeout(struct process *owner, zeroos_ipc_handle_t handle,
                 return -ZEROOS_EAGAIN;
             }
             if (timeout_ticks!=ZEROOS_IPC_TIMEOUT_FOREVER) {
-                if ((long long)(deadline-timer_ticks())<=0) {
+                if (ipc_deadline_expired(deadline)) {
                     spin_unlock_irqrestore(&ipc_lock,irq_flags);
                     return -ZEROOS_ETIMEDOUT;
                 }
@@ -433,11 +453,8 @@ int ipc_receive_timeout(struct process *owner, zeroos_ipc_handle_t handle,
     if (!process_can_use(owner) || !data || capacity==0 || !length_out ||
         (flags&~ZEROOS_IPC_VALID_FLAGS))
         return -ZEROOS_EINVAL;
-    if (timeout_ticks!=ZEROOS_IPC_TIMEOUT_FOREVER) {
-        deadline=timer_ticks()+timeout_ticks;
-        if (deadline<timer_ticks())
-            deadline=~0ULL;
-    }
+    if (ipc_deadline_init(timeout_ticks,&deadline)!=0)
+        return -ZEROOS_EINVAL;
 
     for (;;) {
         uint64_t irq_flags;
@@ -468,7 +485,7 @@ int ipc_receive_timeout(struct process *owner, zeroos_ipc_handle_t handle,
                 return -ZEROOS_EAGAIN;
             }
             if (timeout_ticks!=ZEROOS_IPC_TIMEOUT_FOREVER) {
-                if ((long long)(deadline-timer_ticks())<=0) {
+                if (ipc_deadline_expired(deadline)) {
                     spin_unlock_irqrestore(&ipc_lock,irq_flags);
                     return -ZEROOS_ETIMEDOUT;
                 }
@@ -521,11 +538,8 @@ int ipc_pipe_write_timeout(struct process *owner, zeroos_ipc_handle_t handle,
         (flags&~ZEROOS_IPC_FLAG_NONBLOCK))
         return length>ZEROOS_SYSCALL_MAX_TRANSFER ? -ZEROOS_EOVERFLOW :
                -ZEROOS_EINVAL;
-    if (timeout_ticks!=ZEROOS_IPC_TIMEOUT_FOREVER) {
-        deadline=timer_ticks()+timeout_ticks;
-        if (deadline<timer_ticks())
-            deadline=~0ULL;
-    }
+    if (ipc_deadline_init(timeout_ticks,&deadline)!=0)
+        return -ZEROOS_EINVAL;
     for (;;) {
         uint64_t irq_flags=spin_lock_irqsave(&ipc_lock);
         struct ipc_capability *capability=capability_lookup_locked(owner,handle);
@@ -551,7 +565,7 @@ int ipc_pipe_write_timeout(struct process *owner, zeroos_ipc_handle_t handle,
             }
             if (timeout_ticks!=ZEROOS_IPC_TIMEOUT_FOREVER) {
                 uint64_t block_flags;
-                if ((long long)(deadline-timer_ticks())<=0) {
+                if (ipc_deadline_expired(deadline)) {
                     spin_unlock_irqrestore(&ipc_lock,irq_flags);
                     return -ZEROOS_ETIMEDOUT;
                 }
@@ -601,11 +615,8 @@ int ipc_pipe_read_timeout(struct process *owner, zeroos_ipc_handle_t handle,
         (flags&~ZEROOS_IPC_VALID_FLAGS))
         return capacity>ZEROOS_SYSCALL_MAX_TRANSFER ? -ZEROOS_EOVERFLOW :
                -ZEROOS_EINVAL;
-    if (timeout_ticks!=ZEROOS_IPC_TIMEOUT_FOREVER) {
-        deadline=timer_ticks()+timeout_ticks;
-        if (deadline<timer_ticks())
-            deadline=~0ULL;
-    }
+    if (ipc_deadline_init(timeout_ticks,&deadline)!=0)
+        return -ZEROOS_EINVAL;
     for (;;) {
         uint64_t irq_flags=spin_lock_irqsave(&ipc_lock);
         struct ipc_capability *capability=capability_lookup_locked(owner,handle);
@@ -631,7 +642,7 @@ int ipc_pipe_read_timeout(struct process *owner, zeroos_ipc_handle_t handle,
                 return -ZEROOS_EAGAIN;
             }
             if (timeout_ticks!=ZEROOS_IPC_TIMEOUT_FOREVER) {
-                if ((long long)(deadline-timer_ticks())<=0) {
+                if (ipc_deadline_expired(deadline)) {
                     spin_unlock_irqrestore(&ipc_lock,irq_flags);
                     return -ZEROOS_ETIMEDOUT;
                 }
@@ -710,11 +721,8 @@ int ipc_event_wait_timeout(struct process *owner, zeroos_ipc_handle_t handle,
 
     if (!process_can_use(owner) || (flags&~ZEROOS_IPC_VALID_FLAGS)!=0)
         return -ZEROOS_EINVAL;
-    if (timeout_ticks!=ZEROOS_IPC_TIMEOUT_FOREVER) {
-        deadline=timer_ticks()+timeout_ticks;
-        if (deadline<timer_ticks())
-            deadline=~0ULL;
-    }
+    if (ipc_deadline_init(timeout_ticks,&deadline)!=0)
+        return -ZEROOS_EINVAL;
 
     for (;;) {
         uint64_t irq_flags;
@@ -745,7 +753,7 @@ int ipc_event_wait_timeout(struct process *owner, zeroos_ipc_handle_t handle,
         }
         if (timeout_ticks!=ZEROOS_IPC_TIMEOUT_FOREVER) {
             uint64_t block_flags;
-            if ((long long)(deadline-timer_ticks())<=0) {
+            if (ipc_deadline_expired(deadline)) {
                 spin_unlock_irqrestore(&ipc_lock,irq_flags);
                 return -ZEROOS_ETIMEDOUT;
             }

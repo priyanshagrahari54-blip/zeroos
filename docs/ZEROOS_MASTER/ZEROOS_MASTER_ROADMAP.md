@@ -9,6 +9,15 @@ Never create a basic version merely to replace it later.
 
 ## Current state
 
+### Live boot/session status — 2026-10-05
+- The normal `make` image now keeps the Ring-3 desktop/session process alive after its display, compositor and input bring-up.
+- Production session idle lifetime is event-driven through the native input wait syscall; it does not use a polling/render loop just to stay alive.
+- `make check` builds with `ZEROOS_BOOT_CERTIFICATION` so CI retains the finite session/reap contract for deterministic certification.
+- ISO generation remains the normal `make` output path; QEMU boot certification is part of the repository workflow.
+- This is a real bootable native x86-64 kernel + Ring-3 session path, but it is not yet a complete consumer OS: application suite, dynamic linking, full GPU/media/browser stacks, compatibility runtimes, recovery/update UX, and hardware-matrix validation remain staged work.
+
+Already substantially implemented:
+
 Already substantially implemented:
 - Multiboot2 bootstrap
 - x86-64 long mode
@@ -658,3 +667,26 @@ A roadmap statement is never evidence of implementation.
 ## Cross-Cutting Master Contract
 
 See [`ZEROOS_MASTER_CONTRACT_AND_FEATURE_EXPANSION.md`](./ZEROOS_MASTER_CONTRACT_AND_FEATURE_EXPANSION.md) for the mandatory cross-cutting engineering contract and the expanded ZEROOS feature/platform catalog. Applicable requirements cover ownership/lifetime/concurrency, boot/firmware, hardware certification, networking, packages, SDK, observability, accounts, backup/recovery, privacy, supply-chain security, accessibility/i18n, virtualization, power-loss certification, performance/compatibility labs, ZERO AI safety, and additional product features. This is a specification link only; implementation status remains evidence-based.
+
+
+## Live Implementation Snapshot — 2026-10-04
+See `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md` for the authoritative current estimate and claim policy. Current estimate: **~44% overall**; S1 92%, S2 82%, S3 45%, S4 39%, S5 41%, S6 20%, S7 12%, S8 12%, S9 12%, S10 6%. Recent hardening includes H2/H3 certification/security work, exec pointer validation, timed-wait overflow/range validation, IPv6 firewall enforcement, and fail-closed rejection of unsupported ELF PT_INTERP/PT_DYNAMIC.
+
+### Immediate execution order
+1. Stage 2 process/thread/exec failure cleanup and lifecycle certification.
+2. Stage 1 scheduler/SMP/QEMU evidence closure.
+3. Stage 3 persistence/recovery correctness.
+4. Stage 4 operational hardware/driver coverage.
+5. Stage 5 live display/accelerated graphics path.
+6. Stage 6 security/update/recovery enforcement.
+
+
+## Live execution update — 2026-10-05
+The current evidence-weighted implementation snapshot is **~44% overall**: S1 92%, S2 82%, S3 45%, S4 39%, S5 41%, S6 20%, S7 12%, S8 12%, S9 12%, S10 6%.
+
+Recent hardening includes Stage 2 stack/ELF/timeout certification and ZERO AI action-capability separation with revocation-before-backend regression coverage. These changes improve correctness but do not by themselves certify the later stages.
+
+### Rule for the lowest stages
+Work proceeds from the lowest implementation stages first, but a stage percentage only increases when the real exit gate gains implementation + tests + integration evidence. Host-only modules, contracts, parsers or detection are not counted as a working OS feature until they are bound to the booted userspace/kernel path.
+
+Immediate order: **S9 brokered actions/lifecycle → S8 isolated compatibility execution → S7 accelerated/media/browser integration → S6 kernel-enforced security/update/recovery → S10 real hardware certification**, while maintaining S1–S5 regression gates.

@@ -40,8 +40,10 @@ static void session_main(void *argument) {
     struct process *process;
     struct thread *thread;
     void *stack;
+#ifdef ZEROOS_BOOT_CERTIFICATION
     uint64_t status = ~0ULL;
     uint64_t t0;
+#endif
 
     (void)argument;
     serial_write_public("ZEROOS: session shell process started.\n");
@@ -73,6 +75,7 @@ static void session_main(void *argument) {
         session_fail("thread create");
 
     thread = thread_lookup(tid);
+#ifdef ZEROOS_BOOT_CERTIFICATION
     t0 = timer_ticks();
     while (thread && thread->state != THREAD_ZOMBIE &&
            timer_ticks() - t0 < 3000U)
@@ -93,6 +96,15 @@ static void session_main(void *argument) {
     serial_write_public("ZEROOS: session shell process reaped cleanly.\n");
     session_done = 1;
     task_exit();
+#else
+    /* Production: the Ring-3 desktop owns its process for the whole boot.
+     * It blocks in input_wait(), so the launcher task can finish without
+     * reclaiming the live session address space. */
+    (void)thread;
+    (void)process;
+    session_done = 1;
+    task_exit();
+#endif
 }
 
 void session_start(void) {

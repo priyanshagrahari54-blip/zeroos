@@ -89,7 +89,7 @@ int main(void) {
 
     struct zd_fw ipv6_firewall;
     struct zd_fw_rule ipv6_allow = {
-        .dir = ZD_FW_OUT, .proto = ZD_FW_UDP, .action = ZD_FW_ALLOW
+        .dir = ZD_FW_IN, .proto = ZD_FW_UDP, .action = ZD_FW_ALLOW
     };
     const uint8_t ipv6_source[16] =
         { 0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 };
@@ -106,7 +106,7 @@ int main(void) {
     assert(net_fw_remove(&ipv6_firewall,
                          ipv6_firewall.rules[0].id) == 0);
     assert(net_fw_add(&ipv6_firewall, &(struct zd_fw_rule) {
-                          .dir = ZD_FW_OUT, .proto = ZD_FW_UDP,
+                          .dir = ZD_FW_IN, .proto = ZD_FW_UDP,
                           .action = ZD_FW_ALLOW
                       }, 0) == 0);
     assert(net_fw_check_ipv6(&ipv6_firewall, ipv6_source, ipv6_destination,
