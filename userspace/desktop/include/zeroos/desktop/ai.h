@@ -4,7 +4,7 @@
  * from Forge AI: this module is only the local request broker, and it
  * is event-driven (dormant while no request exists), demand-driven
  * (backends are invoked only inside submit/drain), permission-aware
- * (every context bit and the remote egress need explicit grants) and
+ * (every context bit, action grant and the remote egress need explicit grants) and
  * minimal-resident (request payloads are cleared when drained; nothing
  * is retained across calls unless ZD_AI_GRANT_PERSIST is set).
  *
@@ -20,7 +20,13 @@
 #define ZD_AI_GRANT_CONTEXT_SELECTION 0x0004u
 #define ZD_AI_GRANT_REMOTE_EGRESS 0x0008u
 #define ZD_AI_GRANT_PERSIST 0x0010u
-#define ZD_AI_GRANT_ALL 0x001fu
+#define ZD_AI_GRANT_ACTION_FILE_READ 0x0020u
+#define ZD_AI_GRANT_ACTION_FILE_WRITE 0x0040u
+#define ZD_AI_GRANT_ACTION_PROCESS_EXEC 0x0080u
+#define ZD_AI_GRANT_ACTION_NETWORK 0x0100u
+#define ZD_AI_GRANT_ACTION_DESTRUCTIVE 0x0200u
+#define ZD_AI_GRANT_ACTION_ALL 0x03e0u
+#define ZD_AI_GRANT_ALL 0x03ffu
 
 enum zd_ai_backend {
     ZD_AI_BACKEND_NONE = 0,
@@ -38,6 +44,7 @@ struct zd_ai_request {
     uint32_t id;
     enum zd_ai_request_kind kind;
     uint32_t context_mask;    /* which ZD_AI_GRANT_CONTEXT_* it wants */
+    uint32_t action_mask;     /* which action grants are required */
     uint8_t want_remote;      /* requester prefers remote backend */
     uint8_t active;           /* queue slot occupancy */
     /* Payload is opaque to the broker and wiped after drain. */
