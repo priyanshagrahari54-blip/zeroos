@@ -61,8 +61,8 @@ static int ipc_deadline_init(uint64_t timeout_ticks, uint64_t *deadline_out) {
 }
 
 static int ipc_deadline_expired(uint64_t deadline) {
-    return (uint64_t)(deadline-timer_ticks())==0 ||
-           (uint64_t)(deadline-timer_ticks())>0x7fffffffffffffffULL;
+    uint64_t delta=deadline-timer_ticks();
+    return delta==0 || delta>0x7fffffffffffffffULL;
 }
 
 static struct ipc_endpoint endpoints[ZEROOS_IPC_MAX_ENDPOINTS];
