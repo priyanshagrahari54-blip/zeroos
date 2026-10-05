@@ -44,3 +44,6 @@ Never claim literal zero CPU/RAM/latency, universal compatibility, or untested h
 ## Release rule
 
 Stage 10 remains blocked until Stages 1-9 have their declared executable evidence and the physical hardware matrix, recovery, security, performance and long-duration soak gates are complete.
+
+## Current implementation status — 2026-10-04
+For the live evidence-weighted stage percentages and recent hardening, see `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md`. Current estimate: ~44% overall; S1 92%, S2 82%, S3 45%, S4 39%, S5 41%, S6 20%, S7 12%, S8 12%, S9 12%, S10 6%.
