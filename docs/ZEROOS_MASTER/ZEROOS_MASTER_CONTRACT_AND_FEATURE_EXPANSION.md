@@ -386,7 +386,7 @@ This expansion is accepted as a documentation requirement only when:
 
 
 ## Implementation synchronization — 2026-10-05
-The cross-cutting contract remains specification-only unless backed by code and evidence. Current implementation is **~44% overall** (S1 92%, S2 82%, S3 45%, S4 39%, S5 41%, S6 20%, S7 12%, S8 12%, S9 12%, S10 6%).
+The cross-cutting contract remains specification-only unless backed by code and evidence. Current implementation is **~44% overall** (S1 92%, S2 83%, S3 45%, S4 39%, S5 41%, S6 20%, S7 12%, S8 12%, S9 12%, S10 6%).
 
 Newly enforced cross-cutting evidence: ZERO AI action capabilities are distinct from context grants and are rechecked after queueing, so permission revocation prevents execution. This satisfies part of the AI safety contract; it does not certify the complete Stage 9 platform.
 

@@ -39,6 +39,7 @@ static uint64_t abort_calls;
 static uint64_t thread_create_calls;
 static uint64_t last_user_entry;
 static uint64_t last_user_stack;
+static uint64_t elf_program_header_address;
 static int copy_error;
 static int create_result;
 static int elf_load_result;
@@ -70,6 +71,7 @@ static void reset_fixture(void) {
     thread_create_calls=0;
     last_user_entry=0;
     last_user_stack=0;
+    elf_program_header_address=TEST_PHDR;
     copy_error=0;
     create_result=0;
     elf_load_result=0;
@@ -82,21 +84,67 @@ static void reset_fixture(void) {
     memcpy(fake_user_memory,&header,sizeof(header));
 }
 
-static void add_argument(const char *argument) {
-    uint64_t argument_address=FAKE_USER_BASE+0x300ULL;
-    size_t length=strlen(argument)+1U;
+static void add_vector_string(uint64_t vector_offset, uint64_t index,
+                              uint64_t string_offset, const char *string) {
+    uint64_t pointer=FAKE_USER_BASE+string_offset;
+    uint64_t pointer_offset=vector_offset+index*sizeof(pointer);
+    size_t length=strlen(string)+1U;
 
-    assert(length<=FAKE_USER_MEMORY_SIZE-0x300ULL);
-    memcpy(fake_user_memory+0x100ULL,&argument_address,
-           sizeof(argument_address));
-    memcpy(fake_user_memory+0x300ULL,argument,length);
+    assert(pointer_offset<=FAKE_USER_MEMORY_SIZE-sizeof(pointer));
+    assert(string_offset<=FAKE_USER_MEMORY_SIZE);
+    assert(length<=FAKE_USER_MEMORY_SIZE-string_offset);
+    memcpy(fake_user_memory+pointer_offset,&pointer,sizeof(pointer));
+    memcpy(fake_user_memory+string_offset,string,length);
+}
+
+static void add_argument(const char *argument) {
+    add_vector_string(0x100ULL,0,0x300ULL,argument);
+}
+
+static int run_spawn_vectors(uint64_t user_argv, uint64_t argc,
+                             uint64_t user_envp, uint64_t envc,
+                             struct zeroos_exec_spawn_result *result) {
+    return exec_spawn(&parent_process,FAKE_USER_BASE,
+                      sizeof(struct zeroos_elf64_ehdr),user_argv,argc,
+                      user_envp,envc,result);
 }
 
 static int run_spawn(uint64_t user_argv, uint64_t argc,
                      struct zeroos_exec_spawn_result *result) {
-    return exec_spawn(&parent_process,FAKE_USER_BASE,
-                      sizeof(struct zeroos_elf64_ehdr),user_argv,argc,
-                      0,0,result);
+    return run_spawn_vectors(user_argv,argc,0,0,result);
+}
+
+static uint64_t stack_word(uint64_t address) {
+    uint64_t word;
+    uint64_t offset;
+
+    assert(address>=ZEROOS_USER_STACK_PAGE);
+    offset=address-ZEROOS_USER_STACK_PAGE;
+    assert(offset<=VMM_PAGE_SIZE-sizeof(word));
+    memcpy(&word,fake_stack_page+offset,sizeof(word));
+    return word;
+}
+
+static void assert_stack_string(uint64_t address, const char *expected) {
+    size_t length=strlen(expected)+1U;
+    uint64_t offset;
+
+    assert(address>=ZEROOS_USER_STACK_PAGE);
+    offset=address-ZEROOS_USER_STACK_PAGE;
+    assert(offset<=VMM_PAGE_SIZE && length<=VMM_PAGE_SIZE-offset);
+    assert(memcmp(fake_stack_page+offset,expected,length)==0);
+}
+
+static void assert_auxv(uint64_t address, uint64_t program_header_address) {
+    const uint64_t types[]={3,4,5,6,7,9,0};
+    const uint64_t values[]={program_header_address,
+                             sizeof(struct zeroos_elf64_phdr),1,
+                             VMM_PAGE_SIZE,0,TEST_ENTRY,0};
+    for (uint32_t i=0; i<sizeof(types)/sizeof(types[0]); ++i) {
+        assert(stack_word(address)==types[i]);
+        assert(stack_word(address+sizeof(uint64_t))==values[i]);
+        address+=2U*sizeof(uint64_t);
+    }
 }
 
 /* Minimal, deterministic kernel-service fakes for the exec transaction. */
@@ -203,7 +251,7 @@ int elf_load_image(struct process *process, const void *image,
     assert(header->phnum==1);
     if (elf_load_result==0) {
         result->entry=TEST_ENTRY;
-        result->program_header_address=TEST_PHDR;
+        result->program_header_address=elf_program_header_address;
         result->mapped_pages=1;
     }
     return elf_load_result;
@@ -292,6 +340,63 @@ static void test_success_publishes_pid_tid_and_stack(void) {
            initial_word<ZEROOS_USER_STACK_PAGE+VMM_PAGE_SIZE);
 }
 
+static void test_stack_vectors_and_auxv_are_well_formed(void) {
+    struct zeroos_exec_spawn_result result={0,0};
+    uint64_t cursor;
+    uint64_t argv0, argv1, envp0, envp1;
+
+    reset_fixture();
+    add_vector_string(0x100ULL,0,0x300ULL,"zeroos-init");
+    add_vector_string(0x100ULL,1,0x320ULL,"--safe-mode");
+    add_vector_string(0x180ULL,0,0x340ULL,"PATH=/bin");
+    add_vector_string(0x180ULL,1,0x360ULL,"LANG=en");
+    thread_create_result=0;
+    assert(run_spawn_vectors(FAKE_USER_BASE+0x100ULL,2,
+                             FAKE_USER_BASE+0x180ULL,2,&result)==0);
+    assert(result.pid==TEST_CHILD_PID && result.tid==TEST_CHILD_TID);
+    assert((last_user_stack&0xfULL)==0);
+
+    cursor=last_user_stack;
+    assert(stack_word(cursor)==2);
+    cursor+=sizeof(uint64_t);
+    argv0=stack_word(cursor);
+    cursor+=sizeof(uint64_t);
+    argv1=stack_word(cursor);
+    cursor+=sizeof(uint64_t);
+    assert(stack_word(cursor)==0);             /* argv terminator */
+    cursor+=sizeof(uint64_t);
+    envp0=stack_word(cursor);
+    cursor+=sizeof(uint64_t);
+    envp1=stack_word(cursor);
+    cursor+=sizeof(uint64_t);
+    assert(stack_word(cursor)==0);             /* envp terminator */
+    cursor+=sizeof(uint64_t);
+
+    assert_stack_string(argv0,"zeroos-init");
+    assert_stack_string(argv1,"--safe-mode");
+    assert_stack_string(envp0,"PATH=/bin");
+    assert_stack_string(envp1,"LANG=en");
+    assert_auxv(cursor,TEST_PHDR);
+}
+
+static void test_auxv_phdr_is_zero_when_unmapped(void) {
+    struct zeroos_exec_spawn_result result={0,0};
+    uint64_t cursor;
+
+    reset_fixture();
+    elf_program_header_address=0;
+    thread_create_result=0;
+    assert(run_spawn(0,0,&result)==0);
+    cursor=last_user_stack;
+    assert(stack_word(cursor)==0);             /* argc */
+    cursor+=sizeof(uint64_t);
+    assert(stack_word(cursor)==0);             /* argv terminator */
+    cursor+=sizeof(uint64_t);
+    assert(stack_word(cursor)==0);             /* envp terminator */
+    cursor+=sizeof(uint64_t);
+    assert_auxv(cursor,0);
+}
+
 static void test_loader_failure_aborts_unpublished_child(void) {
     struct zeroos_exec_spawn_result result={99,88};
 
@@ -332,9 +437,11 @@ int main(void) {
     test_copy_failure_is_efault_and_creates_no_child();
     test_thread_failure_rolls_back_and_returns_error();
     test_success_publishes_pid_tid_and_stack();
+    test_stack_vectors_and_auxv_are_well_formed();
+    test_auxv_phdr_is_zero_when_unmapped();
     test_loader_failure_aborts_unpublished_child();
     test_mapping_failure_releases_stack_and_child();
     test_abort_failure_is_reported_as_io_error();
-    puts("exec_spawn_test: PASS (6 transaction and user-copy scenarios)");
+    puts("exec_spawn_test: PASS (8 transaction, stack, and user-copy scenarios)");
     return 0;
 }

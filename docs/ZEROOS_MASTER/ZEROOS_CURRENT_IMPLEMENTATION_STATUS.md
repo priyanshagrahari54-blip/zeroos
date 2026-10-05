@@ -1,14 +1,15 @@
 # ZEROOS — CURRENT IMPLEMENTATION STATUS
 
 Updated: 2026-10-05
-HEAD reviewed through latest main (`8f1d3ac`) plus the current cross-stage hardening batch.
+Baseline reviewed at `983f733` on `arena/01a10720-zeroos`; this batch adds exec
+initial-stack coverage and synchronizes the evidence ledger.
 
 ## Honest stage completion estimate
 
 | Stage | Current | Assessment |
 |---|---:|---|
 | 1 | 92% | Kernel foundation strong; scheduler/SMP certification and final evidence still gate completion |
-| 2 | 82% | Ring-3/syscalls/IPC/userspace foundations strong; exec/runtime and lifecycle failure cleanup remain |
+| 2 | 83% | Ring-3/syscalls/IPC/userspace foundations strong; exec/runtime and lifecycle failure cleanup plus guest evidence remain |
 | 3 | 45% | Block/AHCI/NVMe/GPT/page-cache/VFS/ZJFS/file syscalls implemented; recovery/persistence maturity remains |
 | 4 | 39% | PCI/ACPI/DMA/input/audio/display/network/firewall/power foundations present; hardware coverage remains |
 | 5 | 41% | Desktop/compositor/session/shell/settings/a11y foundations present; live production graphics/acceleration and app surfaces remain |
@@ -26,7 +27,7 @@ These are engineering estimates, not measured percentages of source-code lines. 
 
 - H2: Stage 1–5 certification gates wired into the main check path; IPv4/IPv6 firewall enforcement and network sandbox foundations.
 - H3: scheduler/IPC/firewall/sandbox/update/snapshot/AI/compositor/window/lifecycle hardening plus expanded QEMU certification.
-- Stage 2 exec hardening: user-pointer/vector overflow checks.
+- Stage 2 exec hardening: user-pointer/vector overflow checks and host assertions for initial-stack argv/envp/auxv contents.
 - Stage 2 timed-wait hardening: deadline half-range/overflow validation.
 - ELF hardening: unsupported PT_INTERP and PT_DYNAMIC are rejected fail-closed; ZEROOS currently remains static-ELF-only and does not claim dynamic-loader support.
 - IPv6 ingress firewall regression coverage.
@@ -55,7 +56,7 @@ Latest verified work after the H3 baseline:
 - ZERO AI action capabilities are now separated from context permissions: file-read, file-write, process-exec, network and destructive actions require explicit grants, and revocation is rechecked before backend execution.
 - AI action revocation has regression coverage proving revoked queued requests never reach the backend.
 
-Stage percentages remain evidence-weighted: **S1 92%, S2 82%, S3 45%, S4 39%, S5 41%, S6 20%, S7 12%, S8 12%, S9 12%, S10 6%, overall ~44%**. The new AI permission work is a hardening increment, not enough evidence to inflate Stage 9.
+Stage percentages remain evidence-weighted: **S1 92%, S2 83%, S3 45%, S4 39%, S5 41%, S6 20%, S7 12%, S8 12%, S9 12%, S10 6%, overall ~44%**. The new AI permission work is a hardening increment, not enough evidence to inflate Stage 9.
 
 ### Low-stage execution order
 1. Stage 10: certification/release evidence (cannot be claimed until real hardware evidence exists).
@@ -116,19 +117,23 @@ and is superseded by this repository's stage-weighted assessment.
   refusal now returns `ENOMEM` instead of falling through with a zero result;
   rollback reports `EIO` if the unpublished child cannot be aborted.
 - Added `tests/exec_spawn_test.c` and wired it into `make check` and
-  `make sanitize-check`. Six host scenarios cover copy faults, spawn success
-  and stack layout, loader/map failures, thread-creation rollback, and abort
-  failure reporting. Stage 2 static certification also forbids reintroducing
-  raw `vmm_space_translate` reads in `kernel/exec.c`.
+  `make sanitize-check`. Eight host scenarios cover copy faults, spawn success,
+  loader/map failures, thread-creation rollback and abort failure reporting.
+  Stack checks validate argc, argv/envp pointers and copied strings, vector
+  terminators, all seven auxv pairs, 16-byte alignment, and zero `AT_PHDR`
+  when the program-header table is unavailable. Stage 2 static certification
+  also forbids reintroducing raw `vmm_space_translate` reads in `kernel/exec.c`.
 - Validation passed: `make -j4 check` (desktop 121,665 checks; compatibility
   9,352; certification gates), `make sanitize-check` (including the exec
   harness under ASan/UBSan), and `make BUILD=build/production-check -j4 elf`
   (kernel SIMD check clean). These are host/build results only; no guest boot,
   QEMU lifecycle run, or hardware certification was performed.
 
-This closes a concrete Stage 2 exec failure path but does not close the stage's
-lifecycle or guest-certification gates. Estimates therefore remain **Stage 2
-82%, overall ~44% implemented (~56% remaining)**.
+This closes a concrete Stage 2 exec failure path and improves host coverage of
+the initial-stack contract, but does not close the stage's lifecycle or
+guest-certification gates. Estimates therefore remain **Stage 2 83%, overall
+~44% implemented (~56% remaining)**. The current host evidence is not a guest
+boot or lifecycle certification.
 
 ### Update — 2026-10-05: wrap-safe finite wait deadlines
 
@@ -149,5 +154,5 @@ lifecycle or guest-certification gates. Estimates therefore remain **Stage 2
   hardware certification was performed.
 
 This removes a bounded-deadline correctness gap across Stages 1, 2 and 5, but
-it does not close any stage exit gate. Estimates remain **S1 92%, S2 82%, S5
+it does not close any stage exit gate. Estimates remain **S1 92%, S2 83%, S5
 41%, overall ~44% implemented (~56% remaining)**.

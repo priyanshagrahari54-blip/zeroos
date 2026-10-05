@@ -948,12 +948,12 @@ The following documents must remain synchronized:
 A roadmap statement is never evidence of implementation.
 
 
-## Current implementation status — 2026-10-04
-For the live evidence-weighted stage percentages and recent hardening, see `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md`. Current estimate: ~44% overall; S1 92%, S2 82%, S3 45%, S4 39%, S5 41%, S6 20%, S7 12%, S8 12%, S9 12%, S10 6%.
+## Current implementation status — 2026-10-05
+For the live evidence-weighted stage percentages and recent hardening, see `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md`. Current estimate: ~44% overall; S1 92%, S2 83%, S3 45%, S4 39%, S5 41%, S6 20%, S7 12%, S8 12%, S9 12%, S10 6%.
 
 
 ## Live implementation update — 2026-10-05
-Current evidence-weighted status: **~44% overall**. S1 92%, S2 82%, S3 45%, S4 39%, S5 41%, S6 20%, S7 12%, S8 12%, S9 12%, S10 6%.
+Current evidence-weighted status: **~44% overall**. S1 92%, S2 83%, S3 45%, S4 39%, S5 41%, S6 20%, S7 12%, S8 12%, S9 12%, S10 6%.
 
 ZERO AI now has an explicit action-capability layer separate from context permissions. File read/write, process execution, network egress and destructive actions can be independently granted/revoked; a queued request is rechecked at drain time so revocation prevents backend execution. Regression tests cover this boundary.
 

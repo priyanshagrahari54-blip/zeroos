@@ -21,11 +21,11 @@ All existing ZEROOS documentation files are kept here together under one directo
 See [`ZEROOS_MASTER_CONTRACT_AND_FEATURE_EXPANSION.md`](./ZEROOS_MASTER_CONTRACT_AND_FEATURE_EXPANSION.md) for the mandatory cross-cutting engineering contract and the expanded ZEROOS feature/platform catalog. Applicable requirements cover ownership/lifetime/concurrency, boot/firmware, hardware certification, networking, packages, SDK, observability, accounts, backup/recovery, privacy, supply-chain security, accessibility/i18n, virtualization, power-loss certification, performance/compatibility labs, ZERO AI safety, and additional product features. This is a specification link only; implementation status remains evidence-based.
 
 
-## Current implementation status — 2026-10-04
-For the live evidence-weighted stage percentages and recent hardening, see `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md`. Current estimate: ~44% overall; S1 92%, S2 82%, S3 45%, S4 39%, S5 41%, S6 20%, S7 12%, S8 12%, S9 12%, S10 6%.
+## Current implementation status — 2026-10-05
+For the live evidence-weighted stage percentages and recent hardening, see `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md`. Current estimate: ~44% overall; S1 92%, S2 83%, S3 45%, S4 39%, S5 41%, S6 20%, S7 12%, S8 12%, S9 12%, S10 6%.
 
 
 ## Live implementation status — 2026-10-05
-**~44% overall** — S1 92%, S2 82%, S3 45%, S4 39%, S5 41%, S6 20%, S7 12%, S8 12%, S9 12%, S10 6%.
+**~44% overall** — S1 92%, S2 83%, S3 45%, S4 39%, S5 41%, S6 20%, S7 12%, S8 12%, S9 12%, S10 6%.
 
 Current execution is intentionally focused on the lowest later-stage gaps. Latest hardening added explicit ZERO AI action permissions and revocation enforcement; later-stage percentages remain unchanged until integration evidence is produced.

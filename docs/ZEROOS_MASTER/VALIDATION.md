@@ -43,12 +43,13 @@ command; CI has not yet run against this working-tree change.
 
 ## Local verification — 2026-10-05
 
-The current working tree passed `make check`, including the Stage 1–5 local
-certification scripts, the kernel/userspace build and the host suites. The
-run reported 121,651 desktop checks and 9,352 compatibility checks with zero
-failures. `make sanitize-check` also passed the desktop, compatibility and
-hardware-core suites under AddressSanitizer and UndefinedBehaviorSanitizer;
-`make elf` linked the kernel and reported no FP/SIMD instructions.
+The current working tree passed `make -j4 check`, including the Stage 1–5
+local certification scripts, the kernel/userspace build and the host suites.
+The run reported 121,665 desktop checks and 9,352 compatibility checks with
+zero failures. `make sanitize-check` also passed the desktop, compatibility,
+hardware-core, exec, timed-wait and userspace-runtime suites under
+AddressSanitizer and UndefinedBehaviorSanitizer; `make elf` linked the kernel
+and reported no FP/SIMD instructions.
 
 These are local build/host results, not a CI run or guest boot. QEMU/ISO
 certification and all real-hardware gates remain open; do not infer that the
@@ -68,6 +69,10 @@ ELF build alone.
   translation and the bounded copy; a kernel self-test exercises cross-page,
   read-only, unmapped and overflow cases. Its serial marker has not been
   observed in a guest; source checks and linking do not close that runtime gate.
+- `tests/exec_spawn_test.c` now checks stack `argc`, argv/envp pointers and
+  copied strings, vector terminators, all auxv pairs, 16-byte alignment, and
+  `AT_PHDR` both when available and absent. All eight harness scenarios passed
+  in `make -j4 check` and `make sanitize-check`; this is host-only evidence.
 - Guest lifecycle, syscall-boundary negatives, IPC races and resource-exhaustion
   recovery still require the declared QEMU evidence.
 
@@ -159,4 +164,4 @@ ELF build alone.
 Stage 10 remains blocked until Stages 1-9 have their declared executable evidence and the physical hardware matrix, recovery, security, performance and long-duration soak gates are complete.
 
 ## Current implementation status — 2026-10-05
-For the live evidence-weighted stage percentages, recent hardening and remaining-gate rationale, see `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md`. Current estimate: ~44% implemented (~56% remaining); S1 92%, S2 82%, S3 45%, S4 39%, S5 41%, S6 20%, S7 12%, S8 12%, S9 12%, S10 6%.
+For the live evidence-weighted stage percentages, recent hardening and remaining-gate rationale, see `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md`. Current estimate: ~44% implemented (~56% remaining); S1 92%, S2 83%, S3 45%, S4 39%, S5 41%, S6 20%, S7 12%, S8 12%, S9 12%, S10 6%.
