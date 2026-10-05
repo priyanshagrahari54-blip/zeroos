@@ -47,3 +47,22 @@ These are engineering estimates, not measured percentages of source-code lines. 
 - Windows/Android/browser/AI support is not claimed merely from contracts or host tests.
 - “Zero resource” means near-zero unnecessary idle/background work, not literal zero CPU/GPU/RAM while active.
 - No benchmark multiplier is claimed without controlled measurements.
+
+
+## Update — 2026-10-05
+Latest verified work after the H3 baseline:
+- Stage 2 userspace certification was extended with stack/ELF loader invariants and timeout/overflow hardening.
+- ZERO AI action capabilities are now separated from context permissions: file-read, file-write, process-exec, network and destructive actions require explicit grants, and revocation is rechecked before backend execution.
+- AI action revocation has regression coverage proving revoked queued requests never reach the backend.
+
+Stage percentages remain evidence-weighted: **S1 92%, S2 82%, S3 45%, S4 39%, S5 41%, S6 20%, S7 12%, S8 12%, S9 12%, S10 6%, overall ~44%**. The new AI permission work is a hardening increment, not enough evidence to inflate Stage 9.
+
+### Low-stage execution order
+1. Stage 10: certification/release evidence (cannot be claimed until real hardware evidence exists).
+2. Stage 9: finish brokered actions, service lifecycle and performance instrumentation.
+3. Stage 8: turn compatibility cores into isolated tested runtimes; no support claim without matrix evidence.
+4. Stage 7: integrate real accelerated/media/browser paths.
+5. Stage 6: bind security/package/update/recovery cores to kernel-enforced boundaries.
+6. Keep Stage 2–5 gates green while these are integrated.
+
+This status intentionally distinguishes **host-tested platform cores** from **booted-kernel production integration**.
