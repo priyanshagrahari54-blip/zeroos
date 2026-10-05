@@ -105,3 +105,27 @@ security/update/recovery, production AI/service wiring, and hardware/soak
 certification. Assertion counts are evidence, not a feature-completion
 denominator. The earlier `~85% remaining` figure was an uncalibrated estimate
 and is superseded by this repository's stage-weighted assessment.
+
+### Update — 2026-10-05: Stage 2 exec transaction hardening
+
+- `exec_spawn` now routes image, argument-vector and string copies through
+  `process_address_space_copy_from_user`, keeping address-space validation and
+  physical translation serialized against mapping changes. Its user-copy
+  wrapper consistently reports `EFAULT` for invalid/unavailable user memory.
+- Spawn result IDs are cleared before validation. A post-load thread-creation
+  refusal now returns `ENOMEM` instead of falling through with a zero result;
+  rollback reports `EIO` if the unpublished child cannot be aborted.
+- Added `tests/exec_spawn_test.c` and wired it into `make check` and
+  `make sanitize-check`. Six host scenarios cover copy faults, spawn success
+  and stack layout, loader/map failures, thread-creation rollback, and abort
+  failure reporting. Stage 2 static certification also forbids reintroducing
+  raw `vmm_space_translate` reads in `kernel/exec.c`.
+- Validation passed: `make -j4 check` (desktop 121,665 checks; compatibility
+  9,352; certification gates), `make sanitize-check` (including the exec
+  harness under ASan/UBSan), and `make BUILD=build/production-check -j4 elf`
+  (kernel SIMD check clean). These are host/build results only; no guest boot,
+  QEMU lifecycle run, or hardware certification was performed.
+
+This closes a concrete Stage 2 exec failure path but does not close the stage's
+lifecycle or guest-certification gates. Estimates therefore remain **Stage 2
+82%, overall ~44% implemented (~56% remaining)**.

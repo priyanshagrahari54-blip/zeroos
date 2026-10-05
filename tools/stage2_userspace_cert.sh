@@ -41,5 +41,10 @@ grep -Fq "ZEROOS_ELF_PT_INTERP ||" "$repo_root/kernel/elf.c"
 grep -Fq "ZEROOS_ELF_PT_DYNAMIC" "$repo_root/kernel/elf.c"
 grep -Fq "range_end(program->offset,program->file_size,&file_end)" "$repo_root/kernel/elf.c"
 grep -Fq "ZEROOS_USER_STACK_TOP>ZEROOS_USER_STACK_PAGE+VMM_PAGE_SIZE" "$repo_root/kernel/exec.c"
+grep -Fq "process_address_space_copy_from_user" "$repo_root/kernel/exec.c"
+if grep -Fq "vmm_space_translate" "$repo_root/kernel/exec.c"; then
+  echo "stage2-userspace-cert: exec must use the serialized user-copy helper" >&2
+  exit 1
+fi
 
 echo "stage2-userspace-cert: PASS"

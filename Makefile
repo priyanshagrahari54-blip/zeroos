@@ -20,7 +20,7 @@ CFLAGS += $(EXTRA_CFLAGS)
 ASFLAGS := -m64 -ffreestanding -fno-pic -fno-pie -nostdlib
 LDFLAGS := -m elf_x86_64 -T kernel/linker.ld -nostdlib
 
-.PHONY: all clean elf iso run check sanitize-check storage-tools-check stage1-scheduler-cert stage2-userspace-cert stage3-storage-cert stage4-hardware-cert stage5-desktop-cert kernel-simd-check userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check
+.PHONY: all clean elf iso run check sanitize-check storage-tools-check stage1-scheduler-cert stage2-userspace-cert stage3-storage-cert stage4-hardware-cert stage5-desktop-cert kernel-simd-check userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test exec-host-test desktop-check compat-check
 
 all: iso
 
@@ -29,7 +29,7 @@ all: iso
 HOST_SANITIZER_FLAGS ?= -fsanitize=address,undefined -fno-omit-frame-pointer
 sanitize-check:
 	$(MAKE) --no-print-directory desktop-check compat-check hardware-core-test \
-		CC="$(CC) $(HOST_SANITIZER_FLAGS)"
+		exec-host-test CC="$(CC) $(HOST_SANITIZER_FLAGS)"
 
 # Reproducible local release gate: compile, Stage 1 scheduler certification,
 # Stage 2 userspace certification, Stage 3 storage certification, Stage 4
@@ -39,7 +39,7 @@ sanitize-check:
 # The certification build intentionally runs the embedded session in finite
 # probe mode. A normal `make` produces the persistent interactive session.
 check: CFLAGS += -DZEROOS_BOOT_CERTIFICATION
-check: elf userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check storage-tools-check stage1-scheduler-cert stage2-userspace-cert stage3-storage-cert stage4-hardware-cert stage5-desktop-cert
+check: elf userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test exec-host-test desktop-check compat-check storage-tools-check stage1-scheduler-cert stage2-userspace-cert stage3-storage-cert stage4-hardware-cert stage5-desktop-cert
 
 storage-tools-check:
 	bash tools/storage/host_selftest.sh
@@ -230,6 +230,13 @@ hardware-core-test: | $(BUILD)
 	$(BUILD)/net-socket-test
 	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/crypto_test.c kernel/crypto.c -o $(BUILD)/crypto-core-test
 	$(BUILD)/crypto-core-test
+
+# Hosted transaction-level tests exercise kernel exec code with bounded fakes.
+# The target is also included by sanitize-check for ASan/UBSan coverage.
+exec-host-test: | $(BUILD)
+	$(CC) -std=c11 -Wall -Wextra -Werror -O2 -Ikernel \
+		tests/exec_spawn_test.c kernel/exec.c -o $(BUILD)/exec-spawn-test
+	$(BUILD)/exec-spawn-test
 
 $(BUILD)/gdt.o: kernel/gdt.c kernel/gdt.h kernel/memory.h kernel/cpu.h kernel/types.h | $(BUILD)
 	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
