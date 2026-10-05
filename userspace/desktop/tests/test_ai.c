@@ -98,6 +98,7 @@ static struct zd_ai_request make_req(uint32_t id, uint32_t ctx_mask,
     r.id = id;
     r.kind = ZD_AI_REQ_COMPLETE;
     r.context_mask = ctx_mask;
+    r.action_mask = 0;
     r.want_remote = want_remote;
     r.payload[0] = 'h';
     r.payload[1] = 'i';
@@ -138,6 +139,36 @@ static void test_permission_gate(void) {
     ZD_CHECK_EQ(backend_run_count, 0u);
     ZD_CHECK_EQ(b.queued, 0);
     ZD_CHECK_EQ(b.active, 0); /* dormant again */
+}
+
+/* --- action capability separation ---------------------------------- */
+
+static void test_action_permissions(void) {
+    struct zd_ai_broker b;
+    struct zd_ai_ops ops = {ops_select_local, ops_run_counted, 0};
+    struct zd_ai_request r = make_req(70, 0, 0);
+    uint32_t done = 0;
+
+    zd_ai_broker_init(&b, &ops, ZD_AI_GRANT_CONTEXT_FILES);
+    r.action_mask = ZD_AI_GRANT_ACTION_FILE_READ;
+    ZD_CHECK_EQ(zd_ai_submit(&b, &r), -ZD_EPERM);
+    ZD_CHECK_EQ(b.stats.denied_permission, 1u);
+
+    zd_ai_grant(&b, ZD_AI_GRANT_ACTION_FILE_READ);
+    ZD_CHECK_OK(zd_ai_submit(&b, &r));
+    zd_ai_revoke(&b, ZD_AI_GRANT_ACTION_FILE_READ);
+    backend_run_count = 0;
+    ZD_CHECK_OK(zd_ai_drain(&b, 1, &done));
+    ZD_CHECK_EQ(done, 0);
+    ZD_CHECK_EQ(backend_run_count, 0u);
+    ZD_CHECK_EQ(b.stats.denied_permission, 2u);
+
+    zd_ai_grant(&b, ZD_AI_GRANT_ACTION_FILE_WRITE);
+    r = make_req(71, 0, 0);
+    r.action_mask = ZD_AI_GRANT_ACTION_FILE_WRITE;
+    ZD_CHECK_OK(zd_ai_submit(&b, &r));
+    ZD_CHECK_OK(zd_ai_drain(&b, 1, &done));
+    ZD_CHECK_EQ(done, 1);
 }
 
 /* --- downgrade and egress ------------------------------------------- */
@@ -313,6 +344,7 @@ void zd_test_ai_suite(void) {
     printf("  suite: ai broker\n");
     ZD_RUN(test_permission_gate);
     ZD_RUN(test_remote_downgrade);
+    ZD_RUN(test_action_permissions);
     ZD_RUN(test_queue_bounds);
     ZD_RUN(test_failure_paths);
     ZD_RUN(test_malformed_request_and_backend_output);
