@@ -296,6 +296,8 @@ int thread_create_user(struct process *process, uint64_t user_entry,
     if (!process || user_entry==0 || user_stack==0 ||
         (user_entry >> 48) != 0 || (user_stack >> 48) != 0 ||
         (user_stack & 0xfULL) != 0 ||
+        user_stack<ZEROOS_USER_STACK_PAGE ||
+        user_stack>ZEROOS_USER_STACK_PAGE+VMM_PAGE_SIZE ||
         !process_address_space_is_executable(process,user_entry,1) ||
         !process_address_space_is_user_range(process,user_stack-1ULL,1,1))
         return thread_create_failure("user entry/stack validation",process);
