@@ -764,18 +764,55 @@ int process_address_space_is_user_range(const struct process *process,
 }
 
 uint64_t process_child_count(const struct process *process) {
+    uint64_t flags;
+    uint64_t count=0;
     if (!process) return 0;
-    return process->child_count;
+    flags=spin_lock_irqsave(&process_lock);
+    if (process_lookup_locked(process->pid)==process &&
+        process->state!=PROCESS_UNUSED)
+        count=process->child_count;
+    spin_unlock_irqrestore(&process_lock,flags);
+    return count;
 }
 
 uint64_t process_thread_count(const struct process *process) {
+    uint64_t flags;
+    uint64_t count=0;
     if (!process) return 0;
-    return process->thread_count;
+    flags=spin_lock_irqsave(&process_lock);
+    if (process_lookup_locked(process->pid)==process &&
+        process->state!=PROCESS_UNUSED)
+        count=process->thread_count;
+    spin_unlock_irqrestore(&process_lock,flags);
+    return count;
 }
 
 uint64_t process_live_thread_count(const struct process *process) {
+    uint64_t flags;
+    uint64_t count=0;
     if (!process) return 0;
-    return process->live_thread_count;
+    flags=spin_lock_irqsave(&process_lock);
+    if (process_lookup_locked(process->pid)==process &&
+        process->state!=PROCESS_UNUSED)
+        count=process->live_thread_count;
+    spin_unlock_irqrestore(&process_lock,flags);
+    return count;
+}
+
+int process_address_space_is_executable(const struct process *process,
+                                        uint64_t virtual_address,
+                                        uint64_t length) {
+    uint64_t flags;
+    int executable=0;
+    if (!process || length==0)
+        return 0;
+    flags=spin_lock_irqsave(&process_lock);
+    if (process_lookup_locked(process->pid)==process &&
+        process->state!=PROCESS_UNUSED && process->state!=PROCESS_ZOMBIE)
+        executable=vmm_space_is_executable(&process->address_space,
+                                           virtual_address,length);
+    spin_unlock_irqrestore(&process_lock,flags);
+    return executable;
 }
 
 int process_debug_validate(void) {
