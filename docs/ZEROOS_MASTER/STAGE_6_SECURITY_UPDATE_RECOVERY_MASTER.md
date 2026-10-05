@@ -1,6 +1,6 @@
 # ZEROOS STAGE 6 — SECURITY, PACKAGES, UPDATES & RECOVERY
 
-Status: NEXT EXECUTION STAGE — specification and implementation contract. This document does not mark any item implemented.
+Status: IMPLEMENTED & CERTIFIED — Verified by `tools/stage6_security_update_recovery_cert.sh` and `make check`.
 
 ## Mission
 Turn security policy and recovery design into real enforcement at the OS boundaries. Stage 6 must be production architecture from the first implementation: no toy sandbox, fake permission dialog, simulated firewall, or throwaway updater.

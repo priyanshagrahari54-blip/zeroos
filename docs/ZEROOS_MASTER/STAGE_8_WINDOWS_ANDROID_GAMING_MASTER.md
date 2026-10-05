@@ -1,6 +1,6 @@
 # ZEROOS STAGE 8 — WINDOWS, ANDROID, COMPATIBILITY & GAMING
 
-Status: NEXT EXECUTION STAGE — specification and implementation contract.
+Status: IMPLEMENTED & CERTIFIED — Verified by `tools/stage8_windows_android_gaming_cert.sh` and `make check`.
 
 ## Mission
 Provide useful compatibility without turning compatibility runtimes into kernel dependencies or compromising native ZEROOS.

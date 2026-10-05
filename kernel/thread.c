@@ -1,6 +1,8 @@
 #include "thread.h"
 #include "process.h"
 #include "sync.h"
+#include "vmm.h"
+#include "user.h"
 
 extern void serial_write_public(const char *text);
 extern int user_thread_enter(struct thread *thread);

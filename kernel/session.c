@@ -82,13 +82,11 @@ static void session_main(void *argument) {
         task_sleep_ticks(2);
     if (!thread || thread->state != THREAD_ZOMBIE)
         session_fail("session did not finish");
-#endif
     if (thread_reap(thread, &status) != 0)
         session_fail("thread reap");
     t0 = timer_ticks();
     while (process->state != PROCESS_ZOMBIE && timer_ticks() - t0 < 200U)
         task_sleep_ticks(1);
-#ifdef ZEROOS_BOOT_CERTIFICATION
     if (vmm_activate_kernel() != 0 || process_reap(process, &status) != 0)
         session_fail("process reap");
     if (status != 0) {

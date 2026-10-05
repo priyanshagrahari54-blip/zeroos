@@ -279,6 +279,8 @@ static void test_pe(void) {
 #undef MK_TWO_SECTIONS
 }
 
+extern void test_android_suite(int *p_checks, int *p_failures);
+
 int main(void) {
     RUN(test_lifecycle);
     RUN(test_capacity);
@@ -286,6 +288,7 @@ int main(void) {
     RUN(test_registry);
     RUN(test_dlls);
     RUN(test_pe);
+    test_android_suite(&checks, &failures);
     printf("checks=%d failures=%d\n", checks, failures);
     return failures ? 1 : 0;
 }

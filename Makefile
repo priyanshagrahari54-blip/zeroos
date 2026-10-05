@@ -20,19 +20,21 @@ CFLAGS += $(EXTRA_CFLAGS)
 ASFLAGS := -m64 -ffreestanding -fno-pic -fno-pie -nostdlib
 LDFLAGS := -m elf_x86_64 -T kernel/linker.ld -nostdlib
 
-.PHONY: all clean elf iso run check storage-tools-check stage1-scheduler-cert stage2-userspace-cert stage3-storage-cert stage4-hardware-cert stage5-desktop-cert kernel-simd-check userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check
+.PHONY: all clean elf iso run check storage-tools-check stage1-scheduler-cert stage2-userspace-cert stage3-storage-cert stage4-hardware-cert stage5-desktop-cert stage6-security-cert stage7-gpu-media-cert stage8-compat-cert stage9-ai-perf-cert stage10-certification-release kernel-simd-check userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check
 
 all: iso
 
 # Reproducible local release gate: compile, Stage 1 scheduler certification,
 # Stage 2 userspace certification, Stage 3 storage certification, Stage 4
-# hardware certification, Stage 5 desktop certification, ABI, core,
+# hardware certification, Stage 5 desktop certification, Stage 6 security/recovery,
+# Stage 7 GPU/media/browser, Stage 8 Windows/Android compatibility,
+# Stage 9 AI/ecosystem performance, Stage 10 release certification, ABI, core,
 # desktop, compatibility, storage-image recovery, and SIMD-safety checks
 # before guest boot.
 # The certification build intentionally runs the embedded session in finite
 # probe mode. A normal `make` produces the persistent interactive session.
 check: EXTRA_CFLAGS += -DZEROOS_BOOT_CERTIFICATION
-check: elf userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check storage-tools-check stage1-scheduler-cert stage2-userspace-cert stage3-storage-cert stage4-hardware-cert stage5-desktop-cert
+check: elf userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check storage-tools-check stage1-scheduler-cert stage2-userspace-cert stage3-storage-cert stage4-hardware-cert stage5-desktop-cert stage6-security-cert stage7-gpu-media-cert stage8-compat-cert stage9-ai-perf-cert stage10-certification-release
 
 storage-tools-check:
 	bash tools/storage/host_selftest.sh
@@ -51,6 +53,21 @@ stage4-hardware-cert:
 
 stage5-desktop-cert:
 	bash tools/stage5_desktop_cert.sh
+
+stage6-security-cert:
+	bash tools/stage6_security_update_recovery_cert.sh
+
+stage7-gpu-media-cert:
+	bash tools/stage7_gpu_media_browser_apps_cert.sh
+
+stage8-compat-cert:
+	bash tools/stage8_windows_android_gaming_cert.sh
+
+stage9-ai-perf-cert:
+	bash tools/stage9_zero_ai_ecosystem_performance_cert.sh
+
+stage10-certification-release:
+	bash tools/stage10_certification_release.sh
 
 elf: $(KERNEL)
 
@@ -332,7 +349,13 @@ iso: $(KERNEL)
 	mkdir -p $(BUILD)/iso/boot/grub
 	cp $(KERNEL) $(BUILD)/iso/boot/zeroos.elf
 	cp grub/grub.cfg $(BUILD)/iso/boot/grub/grub.cfg
-	grub-mkrescue -o $(ISO) $(BUILD)/iso
+	@if command -v grub-mkrescue >/dev/null 2>&1; then \
+		grub-mkrescue -o $(ISO) $(BUILD)/iso; \
+	elif command -v xorriso >/dev/null 2>&1; then \
+		xorriso -as mkisofs -R -J -o $(ISO) $(BUILD)/iso; \
+	else \
+		python3 tools/build_iso.py $(ISO) $(BUILD)/iso; \
+	fi
 
 run: iso
 	qemu-system-x86_64 -cdrom $(ISO) -serial stdio -display none

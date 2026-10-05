@@ -52,6 +52,13 @@ void zd_test_stress_suite(void);
 void zd_test_fps_suite(void);
 void zd_test_ai_suite(void);
 void zd_test_integration_suite(void);
+void zd_test_package_suite(void);
+void zd_test_recovery_suite(void);
+void zd_test_bluetooth_suite(void);
+void zd_test_wifi_suite(void);
+void zd_test_backup_suite(void);
+void zd_test_capsule_suite(void);
+void zd_test_control_center_suite(void);
 
 int main(void) {
     printf("ZEROOS desktop platform core tests\n");
@@ -101,6 +108,13 @@ int main(void) {
     zd_test_fps_suite();
     zd_test_ai_suite();
     zd_test_integration_suite();
+    zd_test_package_suite();
+    zd_test_recovery_suite();
+    zd_test_bluetooth_suite();
+    zd_test_wifi_suite();
+    zd_test_backup_suite();
+    zd_test_capsule_suite();
+    zd_test_control_center_suite();
     printf("checks=%d failures=%d\n", zd_test_checks, zd_test_failures);
     if (zd_test_failures) {
         printf("RESULT: FAIL\n");
