@@ -3,6 +3,9 @@ set -euo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# Build tree to certify; passed by the Makefile so BUILD= overrides are honored.
+build_dir="${1:-build}"
+
 required_patterns=(
   "zd_ai_broker_init"
   "zd_ai_submit"
@@ -22,6 +25,6 @@ for pattern in "${required_patterns[@]}"; do
 done
 
 # Run resource core and scheduler stress verification
-"$repo_root/build/resource-core-test" >/dev/null
+"$repo_root/$build_dir/resource-core-test" >/dev/null
 
 echo "stage9-zero-ai-ecosystem-performance-cert: PASS"
