@@ -169,3 +169,33 @@ never touches a partition table. Roll back with:
     sudo tools/install/dualboot_install.sh --uninstall
 
 A feature is complete only when it has an appropriate build and verification path.
+
+## Release hygiene and reproducibility
+
+`make repro-check` closes six items from
+`docs/ZEROOS_MASTER/ZEROOS_REMAINING_GAP_CLOSURE.md` section A that can be
+settled without hardware. Each one is a command that actually ran against the
+built artifacts; the target fails if any of them does not hold:
+
+| Check | What it proves |
+| --- | --- |
+| no `NEEDED`/`SONAME` in `readelf -d` | the kernel image does not link a host library |
+| image type is `EXEC`, not `DYN` | the image is a freestanding executable |
+| no undefined `memcpy`/`printf`/`malloc`/... | no host-libc symbol is expected at link time |
+| `zeroos_build_revision` present in the ELF | the image names the git revision it was built from |
+| `KERNEL_OBJS` stable across two `make -p` reads | link order is explicit, not glob-derived |
+| two `build_iso.py` runs byte-identical | image creation is deterministic |
+
+Provenance is generated into `$(BUILD)/build_info.c` and linked into the kernel
+as `zeroos_build_revision`, `zeroos_build_toolchain` and `zeroos_build_cflags`.
+`tools/build_iso.py` reads `SOURCE_DATE_EPOCH` for every date field it writes
+(the eleven ISO 9660 recording and volume dates), so a pinned epoch yields
+byte-identical images from identical inputs; without it, images differ only in
+those date fields.
+
+`tools/release.sh` runs the whole chain end to end - toolchain check, all ten
+stage gates, `repro-check`, both images, structural verification of both, and
+the boot gate on both. It refuses to start if `grub-mkrescue`, `xorriso` or
+`qemu-system-x86_64` is missing, because an image built without `grub-mkrescue`
+has no El Torito boot record and will not boot. Use `--skip-boot-test` to build
+the images anyway, and `--install-toolchain` to install the missing tools first.

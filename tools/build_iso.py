@@ -150,18 +150,34 @@ def iter_files(node):
             yield from iter_files(child)
 
 
+def build_time():
+    """Timestamp used for every field in the image.
+
+    SOURCE_DATE_EPOCH is honoured so two builds of the same inputs produce
+    byte-identical images; without it every image differs in eleven date fields
+    and "reproducible image" cannot be claimed.
+    """
+    import os
+    import time
+    epoch = os.environ.get("SOURCE_DATE_EPOCH")
+    if epoch:
+        try:
+            return time.gmtime(int(epoch))
+        except ValueError:
+            raise SystemExit(f"SOURCE_DATE_EPOCH is not an integer: {epoch!r}")
+    return time.gmtime()
+
+
 def dir_date_record():
     """ECMA-119 9.1.5 recording date: 7 bytes (year-1900, mon, mday, h, m, s, GMT)."""
-    import time
-    t = time.gmtime()
+    t = build_time()
     return bytes([t.tm_year - 1900, t.tm_mon, t.tm_mday,
                   t.tm_hour, t.tm_min, t.tm_sec, 0])
 
 
 def pvd_date_stamp():
     """ECMA-119 8.4.26.1 volume date: 17 bytes (YYYYMMDDHHMMSSCC + GMT offset)."""
-    import time
-    t = time.gmtime()
+    t = build_time()
     return (f"{t.tm_year:04d}{t.tm_mon:02d}{t.tm_mday:02d}"
             f"{t.tm_hour:02d}{t.tm_min:02d}{t.tm_sec:02d}00").encode("ascii") + b"\x00"
 
