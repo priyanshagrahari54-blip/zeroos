@@ -199,3 +199,32 @@ the boot gate on both. It refuses to start if `grub-mkrescue`, `xorriso` or
 `qemu-system-x86_64` is missing, because an image built without `grub-mkrescue`
 has no El Torito boot record and will not boot. Use `--skip-boot-test` to build
 the images anyway, and `--install-toolchain` to install the missing tools first.
+
+## Local intent engine (`userspace/desktop/src/nlp.c`)
+
+`ai.h` brokers AI requests to an *injected* backend; nothing in the tree
+supplied one, so `ZD_AI_REQ_COMMAND` ("intent -> action") had no local
+implementation. `nlp.c` is that implementation - a deterministic,
+lexicon-driven parser, not a learned model.
+
+    utterance -> zd_nlp_parse -> intent -> zd_nlp_plan -> plan
+              -> zd_nlp_command (grants) -> zd_nlp_drive_update
+
+| Call | Does |
+| --- | --- |
+| `zd_nlp_normalize` | lowercase, punctuation to separators, collapse runs |
+| `zd_nlp_parse` | match a 60-phrase English/Hinglish table (longest wins, word-boundary checked), extract target noun and version, score confidence 0-1000 |
+| `zd_nlp_plan` | ordered, permission-annotated step list |
+| `zd_nlp_command` | gate on `ZD_AI_GRANT_*`, refuse negated utterances |
+| `zd_nlp_drive_update` | walk the `zd_update` lifecycle to `ZD_UPD_DONE` |
+
+Recognised intents: update, install, uninstall, launch, terminate, backup,
+restore, search, power-off, reboot. `"system band karo"` resolves to power-off
+and `"browser band karo"` to a process kill. An utterance that matches nothing
+returns `-ZD_ENOENT` with confidence 0 and `ZD_NLP_INTENT_UNKNOWN`; it is never
+mapped to a default action. A plan with no version is refused rather than
+given one.
+
+`stage9-ai-perf-cert` requires `zd_nlp_*` to be linked into the built
+`build/desktop-tests` binary and refuses a binary older than
+`userspace/desktop/src/*.c`, so the gate cannot certify a stale artifact.
