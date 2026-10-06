@@ -59,6 +59,7 @@ void zd_test_wifi_suite(void);
 void zd_test_backup_suite(void);
 void zd_test_capsule_suite(void);
 void zd_test_control_center_suite(void);
+void zd_test_nlp_suite(void);
 
 int main(void) {
     printf("ZEROOS desktop platform core tests\n");
@@ -115,6 +116,7 @@ int main(void) {
     zd_test_backup_suite();
     zd_test_capsule_suite();
     zd_test_control_center_suite();
+    zd_test_nlp_suite();
     printf("checks=%d failures=%d\n", zd_test_checks, zd_test_failures);
     if (zd_test_failures) {
         printf("RESULT: FAIL\n");

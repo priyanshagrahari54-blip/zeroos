@@ -78,7 +78,7 @@ stage7-gpu-media-cert: hardware-core-test
 stage8-compat-cert: compat-check
 	bash tools/stage8_windows_android_gaming_cert.sh $(BUILD)
 
-stage9-ai-perf-cert: hardware-core-test
+stage9-ai-perf-cert: hardware-core-test desktop-check
 	bash tools/stage9_zero_ai_ecosystem_performance_cert.sh $(BUILD)
 
 stage10-certification-release: elf
