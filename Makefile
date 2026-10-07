@@ -39,7 +39,7 @@ check: SESSION_CFLAGS += -DZEROOS_BOOT_CERTIFICATION
 # the end of the iso recipe, which keeps it ordered after the image is written;
 # listing it as a sibling prerequisite lets `make -j check` run it before the
 # image exists.
-check: iso completion-matrix userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check storage-tools-check stage1-scheduler-cert stage2-userspace-cert stage3-storage-cert stage4-hardware-cert stage5-desktop-cert stage6-security-cert stage7-gpu-media-cert stage8-compat-cert stage9-ai-perf-cert stage10-certification-release
+check: iso completion-matrix userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check session-font-check compat-check storage-tools-check stage1-scheduler-cert stage2-userspace-cert stage3-storage-cert stage4-hardware-cert stage5-desktop-cert stage6-security-cert stage7-gpu-media-cert stage8-compat-cert stage9-ai-perf-cert stage10-certification-release
 
 storage-tools-check:
 	bash tools/storage/host_selftest.sh
@@ -113,6 +113,14 @@ desktop-check: | $(BUILD)
 	$(CC) $(DESKTOP_CFLAGS) -o $(BUILD)/desktop-tests $(DESKTOP_SRC) $(DESKTOP_TEST_SRC) kernel/crypto.c
 	$(BUILD)/desktop-tests
 	@echo "desktop-check: PASS"
+
+# The session renders font8x8.h onto the panel, so a corrupt glyph is a defect
+# the person at the machine sees. Gate the table on the host.
+session-font-check: | $(BUILD)
+	$(CC) -std=c11 -Wall -Wextra -Werror -O2 -Iuserspace/session \
+		-o $(BUILD)/font8x8-check userspace/session/font8x8_check.c
+	$(BUILD)/font8x8-check
+	@echo "session-font-check: PASS"
 
 COMPAT_DIR := userspace/compat
 COMPAT_SRC := $(wildcard $(COMPAT_DIR)/src/*.c)
@@ -222,15 +230,26 @@ $(BUILD)/storage/%.o: kernel/storage/%.c | $(BUILD)/storage
 
 # Stage 5 Ring-3 session/shell process: desktop display/compositor/input
 # modules linked freestanding and embedded into the kernel image.
+#
+# Build provenance, recorded inside the kernel image AND rendered on screen by
+# the session. A released binary that does not name the revision it was built
+# from cannot be tied back to source - and a boot that only reports over serial
+# cannot be identified by the person looking at the panel. Defined here rather
+# than next to build_info.c because SESSION_CFLAGS uses ':=' and expands
+# immediately.
+BUILD_REVISION := $(shell git -C . rev-parse --short HEAD 2>/dev/null || echo unknown)
+BUILD_DIRTY := $(shell test -n "$$(git -C . status --porcelain 2>/dev/null)" && echo -dirty || echo "")
 SESSION_CFLAGS := -std=c11 -m64 -ffreestanding -fno-builtin -fno-stack-protector \
 	-fno-pic -fno-pie -nostdlib -mno-red-zone -mgeneral-regs-only -mcmodel=large \
-	-Wall -Wextra -Werror -O2 -Iuserspace/include -Iuserspace/desktop/include
+	-Wall -Wextra -Werror -O2 -Iuserspace/include -Iuserspace/desktop/include \
+	-DSESSION_BUILD_REVISION='"$(BUILD_REVISION)$(BUILD_DIRTY)"'
 SESSION_DESKTOP_SRCS := userspace/desktop/src/common.c \
 	userspace/desktop/src/window.c userspace/desktop/src/compositor.c \
 	userspace/desktop/src/input.c userspace/desktop/src/display.c \
 	userspace/desktop/src/metrics.c
 SESSION_DESKTOP_OBJS := $(patsubst userspace/desktop/src/%.c,$(BUILD)/session_desktop_%.o,$(SESSION_DESKTOP_SRCS))
 SESSION_DEPS := userspace/session/session.c userspace/session/session_start.S \
+	userspace/session/font8x8.h \
 	userspace/session/session.ld userspace/include/zeroos/syscall.h \
 	$(wildcard userspace/desktop/include/zeroos/desktop/*.h) \
 	$(SESSION_DESKTOP_SRCS)
@@ -274,10 +293,6 @@ $(BUILD)/session_launch.o: kernel/session.c | $(BUILD)
 $(BUILD)/%.o: kernel/%.c | $(BUILD)
 	$(CC) $(CFLAGS) -MMD -MP -Ikernel -c $< -o $@
 
-# Build provenance, recorded inside the kernel image. A released binary that
-# does not name the revision it was built from cannot be tied back to source.
-BUILD_REVISION := $(shell git -C . rev-parse --short HEAD 2>/dev/null || echo unknown)
-BUILD_DIRTY := $(shell test -n "$$(git -C . status --porcelain 2>/dev/null)" && echo -dirty || echo "")
 TOOLCHAIN_ID := $(shell $(CC) -dumpmachine 2>/dev/null || echo unknown)
 
 $(BUILD)/build_info.c: | $(BUILD)

@@ -20,7 +20,7 @@ ZEROOS: runtime GDT/TSS self-test passed.
 ZEROOS: exception IST routing self-test passed.
 ZEROOS: IRQ controller capability:
 re:ZEROOS: (LAPIC/IOAPIC timer routing activated|legacy PIC timer routing retained)\.
-re:ZEROOS: display primitive (ready|degraded \(serial-only\))\.
+re:ZEROOS: display primitive ready\.
 ZEROOS: display present contract verified.
 re:ZEROOS: (PS/2 keyboard input stack ready|input stack degraded \([^)]*\))\.
 ZEROOS: input blocking wait/wake path passed.
@@ -96,7 +96,7 @@ ZEROOS: storage userspace probe passed.
 ZEROOS: storage userspace probe reaped; descriptors and mappings released
 ZEROOS: storage Stage 3 certification complete.
 re:ZEROOS: session display service attached \((live|degraded)\)\.
-re:ZEROOS: session desktop (painted across the full panel|paint degraded \(no live scanout\))\.
+re:ZEROOS: session desktop painted across the full panel at [0-9]+x[0-9]+ \(build [0-9a-zA-Z.-]+\)\.
 ZEROOS: session compositor frame path passed.
 re:ZEROOS: session (scanout present contract|scanout degraded path) passed\.
 ZEROOS: session input pump passed.
