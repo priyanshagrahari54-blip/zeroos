@@ -20,7 +20,7 @@ CFLAGS += $(EXTRA_CFLAGS)
 ASFLAGS := -m64 -ffreestanding -fno-pic -fno-pie -nostdlib
 LDFLAGS := -m elf_x86_64 -T kernel/linker.ld -nostdlib
 
-.PHONY: all clean elf iso iso-test verify-iso verify-multiboot2 repro-check boot-test run run-test check storage-tools-check stage1-scheduler-cert stage2-userspace-cert stage3-storage-cert stage4-hardware-cert stage5-desktop-cert stage6-security-cert stage7-gpu-media-cert stage8-compat-cert stage9-ai-perf-cert stage10-certification-release kernel-simd-check userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check
+.PHONY: all clean elf iso iso-test verify-iso verify-multiboot2 repro-check boot-test completion-matrix run run-test check storage-tools-check stage1-scheduler-cert stage2-userspace-cert stage3-storage-cert stage4-hardware-cert stage5-desktop-cert stage6-security-cert stage7-gpu-media-cert stage8-compat-cert stage9-ai-perf-cert stage10-certification-release kernel-simd-check userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check
 
 all: iso
 
@@ -39,7 +39,7 @@ check: SESSION_CFLAGS += -DZEROOS_BOOT_CERTIFICATION
 # the end of the iso recipe, which keeps it ordered after the image is written;
 # listing it as a sibling prerequisite lets `make -j check` run it before the
 # image exists.
-check: iso userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check storage-tools-check stage1-scheduler-cert stage2-userspace-cert stage3-storage-cert stage4-hardware-cert stage5-desktop-cert stage6-security-cert stage7-gpu-media-cert stage8-compat-cert stage9-ai-perf-cert stage10-certification-release
+check: iso completion-matrix userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check storage-tools-check stage1-scheduler-cert stage2-userspace-cert stage3-storage-cert stage4-hardware-cert stage5-desktop-cert stage6-security-cert stage7-gpu-media-cert stage8-compat-cert stage9-ai-perf-cert stage10-certification-release
 
 storage-tools-check:
 	bash tools/storage/host_selftest.sh
@@ -378,6 +378,21 @@ ISO_ELTORITO_FLAG := $(if $(ZEROOS_ELTORITO),--eltorito $(ZEROOS_ELTORITO),)
 # revision it came from, and must be reproducible from the same inputs.
 repro-check: $(KERNEL)
 	bash tools/check_release_hygiene.sh $(BUILD)
+
+# Section 58 of the G560 master prompt: one authoritative completion matrix,
+# derived from the built tree rather than written by hand. --strict turns the
+# current state into a floor, so a regression fails here instead of showing up
+# as a silently downgraded document.
+completion-matrix: elf hardware-core-test desktop-check
+	python3 tools/completion_matrix.py --build-dir $(BUILD) --write \
+		--strict Boot=QEMU_CERTIFIED \
+		--strict Memory=QEMU_CERTIFIED \
+		--strict Process=QEMU_CERTIFIED \
+		--strict ELF=QEMU_CERTIFIED \
+		--strict Input=QEMU_CERTIFIED \
+		--strict Display=QEMU_CERTIFIED \
+		--strict IPC=QEMU_CERTIFIED \
+		--strict Scheduler=QEMU_CERTIFIED
 
 verify-multiboot2:
 	@test -f $(KERNEL) || { echo "verify-multiboot2: $(KERNEL) missing"; exit 1; }
