@@ -8,6 +8,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # publish the bootable image as a release asset
     steps:
       - uses: actions/checkout@v4
 
@@ -288,6 +290,31 @@ jobs:
             build-production/qemu.log
             build-production/debug.log
           if-no-files-found: error
+
+      - name: Publish bootable image as a GitHub release
+        # The development sandbox has no grub-mkrescue and no emulator, so it can
+        # neither build nor test a bootable image. This runner has both, and it
+        # has already booted this exact file under SeaBIOS by the time this step
+        # runs - so publish it somewhere a browser can download it from.
+        if: github.event_name == 'push'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          tag="zeroos-bootable"
+          sha="$(git rev-parse --short HEAD)"
+          title="ZEROOS bootable image (built and boot-tested by CI)"
+          notes="Built with grub-mkrescue from commit ${sha} and booted under QEMU SeaBIOS in the same run - legacy BIOS, El Torito platform id 0x00. Download zeroos.iso, burn it to a DVD (Windows 7: right-click the file, choose Burn disc image) or write it to USB, then boot it from the firmware boot menu. This gives a live session; there is no disk installer."
+          cp build-production/zeroos.iso zeroos.iso
+          cp build-production/zeroos.iso "zeroos-${sha}.iso"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" zeroos.iso "zeroos-${sha}.iso" --clobber \
+              --notes "$notes"
+          else
+            gh release create "$tag" zeroos.iso "zeroos-${sha}.iso" \
+              --title "$title" --notes "$notes"
+          fi
 
       - name: Serial summary
         if: always()
