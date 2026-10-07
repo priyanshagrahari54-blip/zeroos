@@ -28,11 +28,12 @@ SECTOR = 2048
 
 
 class Report:
-    def __init__(self, allow_unbootable=False):
+    def __init__(self, allow_unbootable=False, require_bios_boot=False):
         self.failures = []
         self.warnings = []
         self.notes = []
         self.allow_unbootable = allow_unbootable
+        self.require_bios_boot = require_bios_boot
 
     def ok(self, msg):
         self.notes.append(f"  ok   {msg}")
@@ -94,8 +95,9 @@ def read_dir_records(blob):
     return out
 
 
-def verify(path, required_files, allow_unbootable=False):
-    rep = Report(allow_unbootable)
+def verify(path, required_files, allow_unbootable=False,
+           require_bios_boot=False):
+    rep = Report(allow_unbootable, require_bios_boot)
     with open(path, "rb") as fh:
         img = fh.read()
 
@@ -236,6 +238,19 @@ def verify(path, required_files, allow_unbootable=False):
     else:
         rep.ok("initial/default entry is bootable (indicator 0x88)")
     media = initial[1]
+    # Platform id decides which firmware can boot the image. A pre-UEFI
+    # machine can only use platform 0x00 (x86 BIOS); an EFI-only image is
+    # unbootable there no matter how correct its ISO 9660 layout is.
+    platform = initial[2]
+    platform_names = {0x00: "x86 BIOS", 0x01: "PowerPC", 0x02: "Mac",
+                      0xEF: "EFI"}
+    platform_msg = (f"boot platform id = 0x{platform:02x} "
+                    f"({platform_names.get(platform, 'unknown')})")
+    if rep.require_bios_boot and platform != 0x00:
+        rep.fail(f"{platform_msg}, but --require-bios-boot was given: a legacy "
+                 f"BIOS-only machine could not boot this image")
+    else:
+        rep.ok(platform_msg)
     load_rba = struct.unpack_from("<I", initial, 8)[0]
     sector_count = struct.unpack_from("<H", initial, 6)[0]
     media_names = {0: "no emulation", 1: "1.2MB floppy", 2: "1.44MB floppy", 3: "2.88MB floppy", 4: "hard disk"}
@@ -303,7 +318,9 @@ def main(argv):
             i += 1
 
     allow = "--allow-unbootable" in args
-    rep = verify(path, required, allow_unbootable=allow)
+    bios = "--require-bios-boot" in args
+    rep = verify(path, required, allow_unbootable=allow,
+                 require_bios_boot=bios)
     if not rep.failures:
         cross_check_pycdlib(path, rep)
     for line in rep.notes:

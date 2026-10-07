@@ -109,8 +109,13 @@ make iso-test || die "make iso-test"
 
 # ---------------------------------------------------------------- structure
 step "6/7 image structure"
-python3 tools/verify_iso.py build/zeroos.iso           || die "verify_iso (production)"
-python3 tools/verify_iso.py build-test/zeroos.iso      || die "verify_iso (testing)"
+# --require-bios-boot: the El Torito platform id must be 0x00 (x86 BIOS). A
+# pre-UEFI machine cannot boot an EFI-only image no matter how correct its
+# ISO 9660 layout is, and that failure is invisible without this check.
+python3 tools/verify_iso.py build/zeroos.iso --require-bios-boot \
+  || die "verify_iso (production) is not BIOS-bootable"
+python3 tools/verify_iso.py build-test/zeroos.iso --require-bios-boot \
+  || die "verify_iso (testing) is not BIOS-bootable"
 python3 tools/verify_multiboot2.py build/zeroos.elf --expect-wxhxb 1024x768x32 \
   || die "verify_multiboot2 (production)"
 python3 tools/verify_multiboot2.py build-test/zeroos.elf --expect-wxhxb 1024x768x32 \

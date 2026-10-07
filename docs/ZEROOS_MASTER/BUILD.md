@@ -228,3 +228,39 @@ given one.
 `stage9-ai-perf-cert` requires `zd_nlp_*` to be linked into the built
 `build/desktop-tests` binary and refuses a binary older than
 `userspace/desktop/src/*.c`, so the gate cannot certify a stale artifact.
+
+## Requiring a BIOS-bootable image
+
+`tools/verify_iso.py --require-bios-boot` fails unless the El Torito
+initial/default entry's platform id byte (offset 2 of the entry, i.e.
+`catalog_lba*2048 + 34`) is `0x00` (x86 BIOS). A pre-UEFI machine - a 2010-era
+laptop, for instance - cannot boot an image whose only boot path is EFI, and
+that failure is completely invisible to a validator that only checks the
+ISO 9660 layout. `tools/release.sh` passes the flag for both images, so a
+release cannot ship an EFI-only image by accident.
+
+Platform ids: `0x00` x86 BIOS, `0x01` PowerPC, `0x02` Mac, `0xEF` EFI.
+
+## Getting a bootable image without a Linux toolchain
+
+Building a bootable image needs `grub-mkrescue`, which is Linux-only. A host
+that does not have it (Windows, or a Linux box without the GRUB tools) can
+still obtain a bootable image, because CI builds and publishes one:
+
+1. Open the workflow run for the commit you want:
+   `https://github.com/<owner>/<repo>/actions/workflows/build.yml`
+2. Open the run, scroll to **Artifacts**, download `zeroos-release`.
+3. Unzip it. `zeroos.iso` is the `grub-mkrescue` image; CI booted that exact
+   file under QEMU's SeaBIOS (legacy BIOS) and asserted
+   `ZEROOS: interactive desktop session ready.` before publishing it.
+4. Write it to a DVD (Windows 7: right-click the ISO -> *Burn disc image*) or
+   to USB with a tool such as Rufus, and boot it from the firmware boot menu.
+
+Without `grub-mkrescue`, `make iso` falls back to `tools/build_iso.py`, which
+produces a layout-valid image with **no** El Torito boot record. That is a
+deliberate, visible degradation: `verify_iso.py` prints
+`THIS IMAGE WILL NOT BOOT` rather than letting the image pass as releaseable.
+
+What a booted image gives you is a live session. There is no installer that
+writes ZEROOS to a disk; the dual-boot route is `tools/install/dualboot_install.sh`,
+which adds an entry to an existing GRUB 2.
