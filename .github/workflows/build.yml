@@ -297,7 +297,6 @@ jobs:
         # has already booted this exact file under SeaBIOS by the time this step
         # runs - so publish it somewhere a browser can download it from.
         if: github.event_name == 'push'
-        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -308,13 +307,22 @@ jobs:
           notes="Built with grub-mkrescue from commit ${sha} and booted under QEMU SeaBIOS in the same run - legacy BIOS, El Torito platform id 0x00. Download zeroos.iso, burn it to a DVD (Windows 7: right-click the file, choose Burn disc image) or write it to USB, then boot it from the firmware boot menu. This gives a live session; there is no disk installer."
           cp build-production/zeroos.iso zeroos.iso
           cp build-production/zeroos.iso "zeroos-${sha}.iso"
+          # `gh release upload` has no --notes flag (that belongs to
+          # create/edit); passing it fails with "unknown flag", and this step
+          # used to hide that behind continue-on-error while still reporting
+          # success. Notes are set with `gh release edit` instead.
           if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" zeroos.iso "zeroos-${sha}.iso" --clobber \
-              --notes "$notes"
+            gh release upload "$tag" zeroos.iso "zeroos-${sha}.iso" --clobber
+            gh release edit "$tag" --notes "$notes"
           else
             gh release create "$tag" zeroos.iso "zeroos-${sha}.iso" \
               --title "$title" --notes "$notes"
           fi
+          # Prove the asset really moved: a publish that silently no-ops is
+          # worse than one that fails loudly.
+          gh release view "$tag" --json assets \
+            --jq '.assets[].name' | grep -qx "zeroos-${sha}.iso" \
+            || { echo "release asset zeroos-${sha}.iso is missing" >&2; exit 1; }
 
       - name: Serial summary
         if: always()
