@@ -15,9 +15,19 @@
 #define SESSION_WINDOW_W 180
 #define SESSION_WINDOW_H 70
 
+/* The compositor contract test above runs against a small fixed frame. What
+ * the panel actually shows is painted separately, a bounded strip at a time:
+ * session.ld caps this image at 2 MB, so a framebuffer-sized buffer (3 MB at
+ * 1024x768x32) cannot live here. Painting strips is what lets the desktop
+ * cover the whole panel instead of a patch in its corner. */
+#define SESSION_PANEL_MAX_W 1366
+#define SESSION_STRIP_H 64
+#define SESSION_BAR_H 28
+
 static char line_buf[256];
 static uint32_t staging[SESSION_TARGET_W * SESSION_TARGET_H];
 static uint32_t window_pixels[SESSION_WINDOW_W * SESSION_WINDOW_H];
+static uint32_t strip_pixels[SESSION_PANEL_MAX_W * SESSION_STRIP_H];
 
 static uint64_t slen(const char *s) {
     uint64_t n = 0;
@@ -275,6 +285,60 @@ int session_main(void) {
     if (delivery.result != ZD_INPUT_TO_WINDOW)
         return fail("click release", delivery.result);
     say("ZEROOS: session input routing passed.");
+
+    /* 7. Paint the real desktop over the whole panel. Everything above proves
+     * the frame path; this is what a person in front of the machine sees. */
+    if (live) {
+        int32_t panel_w = (int32_t)raw_info.width;
+        int32_t panel_h = (int32_t)raw_info.height;
+
+        if (panel_w <= 0 || panel_h <= SESSION_BAR_H + 1)
+            return fail("panel geometry cannot host a desktop", 0);
+        if (panel_w > SESSION_PANEL_MAX_W) {
+            say("ZEROOS: session desktop unsupported - panel is wider than the "
+                "strip buffer; refusing to present a clipped desktop.\n");
+            return fail("panel wider than the supported cap", 0);
+        }
+        for (int32_t y0 = 0; y0 < panel_h; y0 += SESSION_STRIP_H) {
+            struct zd_rect band;
+            int32_t rows = panel_h - y0;
+            int32_t r;
+            int32_t x;
+
+            if (rows > SESSION_STRIP_H)
+                rows = SESSION_STRIP_H;
+            for (r = 0; r < rows; ++r) {
+                int32_t y = y0 + r;
+                for (x = 0; x < panel_w; ++x) {
+                    if (y < SESSION_BAR_H) {
+                        strip_pixels[r * panel_w + x] = 0xFF101418U;
+                    } else {
+                        uint32_t g = ((uint32_t)x * 200U) /
+                                     (uint32_t)(panel_w - 1);
+                        uint32_t b = ((uint32_t)(y - SESSION_BAR_H) * 255U) /
+                                     (uint32_t)(panel_h - SESSION_BAR_H - 1);
+                        strip_pixels[r * panel_w + x] =
+                            0xFF000000U | (g << 8) | b;
+                    }
+                }
+            }
+            band.x = 0;
+            band.y = y0;
+            band.w = panel_w;
+            band.h = rows;
+            if (zd_display_service_damage(&display, band) != 0)
+                return fail("desktop strip damage", 0);
+            sys_result = zd_display_service_present_rect(
+                &display, band, (uint32_t)panel_w * 4U, strip_pixels,
+                session_ticks(0));
+            if (sys_result != 0)
+                return fail("desktop strip present", sys_result);
+        }
+        say("ZEROOS: session desktop painted across the full panel.\n");
+    } else {
+        /* No live scanout: say so instead of implying a desktop is up. */
+        say("ZEROOS: session desktop paint degraded (no live scanout).\n");
+    }
 
 #ifdef ZEROOS_BOOT_CERTIFICATION
     say("ZEROOS: session shell process complete.");

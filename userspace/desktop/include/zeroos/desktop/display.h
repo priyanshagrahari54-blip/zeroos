@@ -109,4 +109,21 @@ int zd_display_service_present(struct zd_display_service *service,
                                const void *frame_base,
                                uint32_t stride_bytes, uint64_t now_tick);
 
+/* Present an explicit source rectangle instead of deriving the source pointer
+ * from a full-frame base. zd_display_service_present() forces every caller to
+ * hold a framebuffer-sized buffer; the session image is capped at 2 MB by
+ * session.ld, so a 1024x768x32 frame (3 MB) cannot fit in it. That cap is why
+ * the production desktop composited a 180x70 patch into the corner of an
+ * otherwise untouched panel. This entry point lets a caller present the panel
+ * a bounded strip at a time.
+ *
+ * rect is the destination in scanout pixels and must equal the pending damage;
+ * pixels points at that rect's top-left in the source, whose row pitch is
+ * stride_bytes. Same state machine, pacing and error contract as
+ * zd_display_service_present(). */
+int zd_display_service_present_rect(struct zd_display_service *service,
+                                    struct zd_rect rect,
+                                    uint32_t stride_bytes,
+                                    const void *pixels, uint64_t now_tick);
+
 #endif
