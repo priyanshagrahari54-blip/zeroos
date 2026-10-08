@@ -10,14 +10,42 @@
  */
 #include <zeroos/desktop/desktop.h>
 
+#include <zeroos/font8x8.h>
+
 #define SESSION_TARGET_W 320
 #define SESSION_TARGET_H 200
 #define SESSION_WINDOW_W 180
 #define SESSION_WINDOW_H 70
 
+/* The compositor contract test above runs against a small fixed frame. What
+ * the panel actually shows is painted separately, a bounded strip at a time:
+ * session.ld caps this image at 2 MB, so a framebuffer-sized buffer (3 MB at
+ * 1024x768x32) cannot live here. Painting strips is what lets the desktop
+ * cover the whole panel instead of a patch in its corner. */
+#define SESSION_PANEL_MAX_W 1366
+#define SESSION_STRIP_H 64
+#define SESSION_BAR_H 28
+
+/* Flat, legible desktop colours. Deliberately not a gradient: a ramp is what
+ * the panel showed when only the contract-test window was composited, so a
+ * gradient wallpaper would make a working desktop indistinguishable from the
+ * bug it replaced. */
+#define SESSION_COLOUR_WALL 0xFF1B2733U
+#define SESSION_COLOUR_BAR 0xFF101418U
+#define SESSION_COLOUR_BAR_EDGE 0xFF3A5068U
+#define SESSION_COLOUR_TEXT 0xFFE6EDF3U
+#define SESSION_COLOUR_TEXT_DIM 0xFF8B98A5U
+
+#ifndef SESSION_BUILD_REVISION
+/* Set by the Makefile from `git rev-parse --short HEAD`. The fallback keeps
+ * this file compilable outside the build (host tools include the font only). */
+#define SESSION_BUILD_REVISION "unknown"
+#endif
+
 static char line_buf[256];
 static uint32_t staging[SESSION_TARGET_W * SESSION_TARGET_H];
 static uint32_t window_pixels[SESSION_WINDOW_W * SESSION_WINDOW_H];
+static uint32_t strip_pixels[SESSION_PANEL_MAX_W * SESSION_STRIP_H];
 
 static uint64_t slen(const char *s) {
     uint64_t n = 0;
@@ -69,6 +97,50 @@ static int fail(const char *what, int64_t value) {
     out[k] = 0;
     say(out);
     return 1;
+}
+
+/* ---- Small string builders (no libc in Ring 3) ---- */
+
+static uint64_t append_str(char *buf, uint64_t cap, uint64_t pos,
+                           const char *s) {
+    for (uint64_t i = 0; s[i] && pos + 1 < cap; ++i)
+        buf[pos++] = s[i];
+    return pos;
+}
+
+static uint64_t append_uint(char *buf, uint64_t cap, uint64_t pos,
+                            uint32_t value) {
+    char tmp[12];
+    int n = 0;
+    uint32_t u = value;
+    do {
+        tmp[n++] = (char)('0' + (u % 10U));
+        u /= 10U;
+    } while (u && n < 12);
+    while (n > 0 && pos + 1 < cap)
+        buf[pos++] = tmp[--n];
+    return pos;
+}
+
+/* Rasterise text into dst (dst_w x dst_h, one uint32 per pixel) at (ox,oy)
+ * using the 8x8 font. Pixels that fall outside the destination are skipped, so
+ * a strip shorter than the glyph is safe rather than a buffer overrun. */
+static void draw_text(uint32_t *dst, int32_t dst_w, int32_t dst_h, int32_t ox,
+                      int32_t oy, const char *text, uint32_t colour) {
+    int32_t cx = ox;
+    for (uint64_t i = 0; text[i] && cx >= 0 && cx + 8 <= dst_w; ++i) {
+        const unsigned char *glyph = font8x8_glyph((unsigned char)text[i]);
+        for (int32_t row = 0; row < FONT8X8_ROWS; ++row) {
+            int32_t y = oy + row;
+            if (y < 0 || y >= dst_h)
+                continue;
+            for (int32_t col = 0; col < 8; ++col) {
+                if (glyph[row] & (0x80U >> col))
+                    dst[y * dst_w + cx + col] = colour;
+            }
+        }
+        cx += 8;
+    }
 }
 
 /* Display-service ops bound to the real kernel syscalls. */
@@ -275,6 +347,105 @@ int session_main(void) {
     if (delivery.result != ZD_INPUT_TO_WINDOW)
         return fail("click release", delivery.result);
     say("ZEROOS: session input routing passed.");
+
+    /* 7. Paint the real desktop over the whole panel. Everything above proves
+     * the frame path; this is what a person in front of the machine sees. */
+    if (live) {
+        int32_t panel_w = (int32_t)raw_info.width;
+        int32_t panel_h = (int32_t)raw_info.height;
+        char label[96];
+        char geometry[32];
+        char report[192];
+        uint64_t label_len;
+        uint64_t geo_len;
+        uint64_t report_len;
+
+        if (panel_w <= 0 || panel_h <= SESSION_BAR_H + 1)
+            return fail("panel geometry cannot host a desktop", 0);
+        if (panel_w > SESSION_PANEL_MAX_W) {
+            say("ZEROOS: session desktop unsupported - panel is wider than the "
+                "strip buffer; refusing to present a clipped desktop.\n");
+            return fail("panel wider than the supported cap", 0);
+        }
+
+        /* Build identity, assembled once. The revision is compiled in by the
+         * Makefile from `git rev-parse --short HEAD`, so the panel itself names
+         * the build the person in front of it is looking at - no serial cable
+         * and no download log needed to tell two ISOs apart. */
+        label_len = 0;
+        label_len = append_str(label, sizeof(label), label_len,
+                               "ZEROOS  build ");
+        label_len = append_str(label, sizeof(label), label_len,
+                               SESSION_BUILD_REVISION);
+        label[label_len] = 0;
+
+        geo_len = 0;
+        geo_len = append_uint(geometry, sizeof(geometry), geo_len,
+                              raw_info.width);
+        geo_len = append_str(geometry, sizeof(geometry), geo_len, "x");
+        geo_len = append_uint(geometry, sizeof(geometry), geo_len,
+                              raw_info.height);
+        geometry[geo_len] = 0;
+
+        for (int32_t y0 = 0; y0 < panel_h; y0 += SESSION_STRIP_H) {
+            struct zd_rect band;
+            int32_t rows = panel_h - y0;
+            int32_t r;
+            int32_t x;
+
+            if (rows > SESSION_STRIP_H)
+                rows = SESSION_STRIP_H;
+            for (r = 0; r < rows; ++r) {
+                int32_t y = y0 + r;
+                uint32_t colour = SESSION_COLOUR_WALL;
+                if (y < SESSION_BAR_H - 1)
+                    colour = SESSION_COLOUR_BAR;
+                else if (y == SESSION_BAR_H - 1)
+                    colour = SESSION_COLOUR_BAR_EDGE;
+                for (x = 0; x < panel_w; ++x)
+                    strip_pixels[r * panel_w + x] = colour;
+            }
+            if (y0 == 0) {
+                /* Identity in the bar: build on the left, panel size on the
+                 * right, skipped if the panel is too narrow to fit both. */
+                int32_t right = panel_w - (int32_t)geo_len * 8 - 12;
+                draw_text(strip_pixels, panel_w, rows, 12, 10, label,
+                          SESSION_COLOUR_TEXT);
+                if (right >= 12 + (int32_t)label_len * 8)
+                    draw_text(strip_pixels, panel_w, rows, right, 10, geometry,
+                              SESSION_COLOUR_TEXT_DIM);
+            }
+            band.x = 0;
+            band.y = y0;
+            band.w = panel_w;
+            band.h = rows;
+            if (zd_display_service_damage(&display, band) != 0)
+                return fail("desktop strip damage", 0);
+            sys_result = zd_display_service_present_rect(
+                &display, band, (uint32_t)panel_w * 4U, strip_pixels,
+                session_ticks(0));
+            if (sys_result != 0)
+                return fail("desktop strip present", sys_result);
+        }
+
+        /* Geometry and revision on one line. The boot gate asserts this exact
+         * shape, so a green run means the live branch really painted. */
+        report_len = 0;
+        report_len = append_str(report, sizeof(report), report_len,
+                                "ZEROOS: session desktop painted across the "
+                                "full panel at ");
+        report_len = append_str(report, sizeof(report), report_len, geometry);
+        report_len = append_str(report, sizeof(report), report_len,
+                                " (build ");
+        report_len = append_str(report, sizeof(report), report_len,
+                                SESSION_BUILD_REVISION);
+        report_len = append_str(report, sizeof(report), report_len, ").\n");
+        report[report_len] = 0;
+        say(report);
+    } else {
+        /* No live scanout: say so instead of implying a desktop is up. */
+        say("ZEROOS: session desktop paint degraded (no live scanout).\n");
+    }
 
 #ifdef ZEROOS_BOOT_CERTIFICATION
     say("ZEROOS: session shell process complete.");

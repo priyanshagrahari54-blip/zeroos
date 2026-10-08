@@ -15,12 +15,12 @@ AS := gcc
 # replaces them (observed: init code immediates 16->0 and 12->0xffffffff,
 # random IPC/storage self-test failures on SMP). kernel-simd-check enforces
 # the invariant on the linked image.
-CFLAGS := -m64 -mno-red-zone -mgeneral-regs-only -mcmodel=small -ffreestanding -fno-pic -fno-pie -fno-stack-protector -fno-builtin -nostdinc -Wall -Wextra -Werror -O2
+CFLAGS := -m64 -mno-red-zone -mgeneral-regs-only -mcmodel=small -ffreestanding -fno-pic -fno-pie -fno-stack-protector -fno-builtin -nostdinc -Wall -Wextra -Werror -O2 -Iuserspace/include
 CFLAGS += $(EXTRA_CFLAGS)
 ASFLAGS := -m64 -ffreestanding -fno-pic -fno-pie -nostdlib
 LDFLAGS := -m elf_x86_64 -T kernel/linker.ld -nostdlib
 
-.PHONY: all clean elf iso run check storage-tools-check stage1-scheduler-cert stage2-userspace-cert stage3-storage-cert stage4-hardware-cert stage5-desktop-cert stage6-security-cert stage7-gpu-media-cert stage8-compat-cert stage9-ai-perf-cert stage10-certification-release kernel-simd-check userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check
+.PHONY: all clean elf iso iso-test verify-iso verify-multiboot2 repro-check boot-test completion-matrix run run-test check storage-tools-check stage1-scheduler-cert stage2-userspace-cert stage3-storage-cert stage4-hardware-cert stage5-desktop-cert stage6-security-cert stage7-gpu-media-cert stage8-compat-cert stage9-ai-perf-cert stage10-certification-release kernel-simd-check userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check
 
 all: iso
 
@@ -35,40 +35,54 @@ all: iso
 # probe mode. A normal `make` produces the persistent interactive session.
 check: CFLAGS += -DZEROOS_BOOT_CERTIFICATION
 check: SESSION_CFLAGS += -DZEROOS_BOOT_CERTIFICATION
-check: iso userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check storage-tools-check stage1-scheduler-cert stage2-userspace-cert stage3-storage-cert stage4-hardware-cert stage5-desktop-cert stage6-security-cert stage7-gpu-media-cert stage8-compat-cert stage9-ai-perf-cert stage10-certification-release
+# NOTE: verify-iso is deliberately NOT a prerequisite here. It is invoked at
+# the end of the iso recipe, which keeps it ordered after the image is written;
+# listing it as a sibling prerequisite lets `make -j check` run it before the
+# image exists.
+check: iso completion-matrix userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check session-font-check compat-check storage-tools-check stage1-scheduler-cert stage2-userspace-cert stage3-storage-cert stage4-hardware-cert stage5-desktop-cert stage6-security-cert stage7-gpu-media-cert stage8-compat-cert stage9-ai-perf-cert stage10-certification-release
 
 storage-tools-check:
 	bash tools/storage/host_selftest.sh
 
-stage1-scheduler-cert:
-	bash tools/stage1_scheduler_cert.sh
+# Stage certification gates. Every gate receives $(BUILD) and declares the
+# targets that produce the artifacts it consumes.
+#
+# (a) Without the prerequisites `make -j check` starts a certification before
+#     its test binaries or the linked kernel exist and the whole gate fails
+#     (reproduced deterministically as "stage10-cert: zeroos.elf missing").
+# (b) Without $(BUILD) the gates certified a stale ./build even when the caller
+#     selected another tree with BUILD=, e.g. make BUILD=build-fault check.
+# Stages 1-5 inspect the linked image and run host suites, so they declare the
+# targets that produce those artifacts as well.
+stage1-scheduler-cert: elf
+	bash tools/stage1_scheduler_cert.sh $(BUILD)
 
-stage2-userspace-cert:
-	bash tools/stage2_userspace_cert.sh
+stage2-userspace-cert: elf
+	bash tools/stage2_userspace_cert.sh $(BUILD)
 
-stage3-storage-cert:
-	bash tools/stage3_storage_cert.sh
+stage3-storage-cert: elf
+	bash tools/stage3_storage_cert.sh $(BUILD)
 
-stage4-hardware-cert:
-	bash tools/stage4_hardware_cert.sh
+stage4-hardware-cert: elf hardware-core-test
+	bash tools/stage4_hardware_cert.sh $(BUILD)
 
-stage5-desktop-cert:
-	bash tools/stage5_desktop_cert.sh
+stage5-desktop-cert: elf desktop-check
+	bash tools/stage5_desktop_cert.sh $(BUILD)
 
-stage6-security-cert:
-	bash tools/stage6_security_update_recovery_cert.sh
+stage6-security-cert: hardware-core-test
+	bash tools/stage6_security_update_recovery_cert.sh $(BUILD)
 
-stage7-gpu-media-cert:
-	bash tools/stage7_gpu_media_browser_apps_cert.sh
+stage7-gpu-media-cert: hardware-core-test
+	bash tools/stage7_gpu_media_browser_apps_cert.sh $(BUILD)
 
-stage8-compat-cert:
-	bash tools/stage8_windows_android_gaming_cert.sh
+stage8-compat-cert: compat-check
+	bash tools/stage8_windows_android_gaming_cert.sh $(BUILD)
 
-stage9-ai-perf-cert:
-	bash tools/stage9_zero_ai_ecosystem_performance_cert.sh
+stage9-ai-perf-cert: hardware-core-test desktop-check
+	bash tools/stage9_zero_ai_ecosystem_performance_cert.sh $(BUILD)
 
-stage10-certification-release:
-	bash tools/stage10_certification_release.sh
+stage10-certification-release: elf
+	bash tools/stage10_certification_release.sh $(BUILD)
 
 elf: $(KERNEL)
 
@@ -99,6 +113,14 @@ desktop-check: | $(BUILD)
 	$(CC) $(DESKTOP_CFLAGS) -o $(BUILD)/desktop-tests $(DESKTOP_SRC) $(DESKTOP_TEST_SRC) kernel/crypto.c
 	$(BUILD)/desktop-tests
 	@echo "desktop-check: PASS"
+
+# The session renders font8x8.h onto the panel, so a corrupt glyph is a defect
+# the person at the machine sees. Gate the table on the host.
+session-font-check: | $(BUILD)
+	$(CC) -std=c11 -Wall -Wextra -Werror -O2 -Iuserspace/include \
+		-o $(BUILD)/font8x8-check userspace/session/font8x8_check.c
+	$(BUILD)/font8x8-check
+	@echo "session-font-check: PASS"
 
 COMPAT_DIR := userspace/compat
 COMPAT_SRC := $(wildcard $(COMPAT_DIR)/src/*.c)
@@ -133,62 +155,8 @@ $(BUILD)/ap_trampoline.o: boot/ap_trampoline.S | $(BUILD)
 $(BUILD)/user_entry.o: kernel/user_entry.S | $(BUILD)
 	$(AS) $(ASFLAGS) -c $< -o $@
 
-$(BUILD)/kernel.o: kernel/kernel.c kernel/storage/storage.h kernel/types.h kernel/cpu.h kernel/apic.h kernel/acpi.h kernel/memory.h kernel/timer.h kernel/vmm.h kernel/gdt.h kernel/sync.h kernel/tlb.h kernel/task.h kernel/thread.h kernel/process.h kernel/scheduler.h kernel/smp.h kernel/wait.h kernel/user.h kernel/ipc.h kernel/shmem.h kernel/fb.h kernel/input.h kernel/session.h | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
-
-$(BUILD)/interrupts.o: kernel/interrupts.c kernel/interrupts.h kernel/sync.h kernel/types.h kernel/cpu.h kernel/apic.h kernel/pic.h kernel/timer.h kernel/gdt.h kernel/task.h kernel/thread.h kernel/tlb.h kernel/scheduler.h kernel/syscall.h | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
-
-$(BUILD)/syscall.o: kernel/syscall.c kernel/syscall.h kernel/interrupts.h kernel/process.h kernel/thread.h kernel/task.h kernel/timer.h kernel/vmm.h kernel/ipc.h kernel/shmem.h kernel/exec.h kernel/fb.h kernel/display_core.h kernel/input.h | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
-
-$(BUILD)/fb.o: kernel/fb.c kernel/fb.h kernel/memory.h kernel/vmm.h kernel/sync.h kernel/types.h | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
-
-$(BUILD)/input.o: kernel/input.c kernel/input.h kernel/input_core.h kernel/scancode_core.h kernel/mouse_core.h kernel/interrupts.h kernel/apic.h kernel/pic.h kernel/wait.h kernel/sync.h kernel/timer.h kernel/task.h kernel/syscall.h | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
-
-$(BUILD)/ipc.o: kernel/ipc.c kernel/ipc.h kernel/process.h kernel/sync.h kernel/wait.h kernel/task.h kernel/timer.h kernel/syscall.h | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
-
-$(BUILD)/shmem.o: kernel/shmem.c kernel/shmem.h kernel/memory.h kernel/process.h kernel/sync.h kernel/user.h kernel/vmm.h kernel/syscall.h | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
-
-$(BUILD)/elf.o: kernel/elf.c kernel/elf.h kernel/memory.h kernel/process.h kernel/user.h kernel/vmm.h kernel/syscall.h | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
-
-$(BUILD)/exec.o: kernel/exec.c kernel/exec.h kernel/elf.h kernel/memory.h kernel/process.h kernel/thread.h kernel/sync.h kernel/syscall.h kernel/user.h kernel/vmm.h | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
-
-$(BUILD)/user.o: kernel/user.c kernel/user.h kernel/exec.h kernel/memory.h kernel/process.h kernel/thread.h kernel/vmm.h kernel/syscall.h kernel/ipc.h kernel/elf.h kernel/fb.h | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
-
-$(BUILD)/pic.o: kernel/pic.c kernel/pic.h kernel/types.h | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
-
-$(BUILD)/timer.o: kernel/timer.c kernel/timer.h kernel/types.h kernel/cpu.h kernel/sync.h | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
-
-$(BUILD)/sync.o: kernel/sync.c kernel/sync.h kernel/types.h | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
-
-$(BUILD)/memory.o: kernel/memory.c kernel/memory.h kernel/types.h kernel/sync.h kernel/linker.ld | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
-
-$(BUILD)/cpu.o: kernel/cpu.c kernel/cpu.h kernel/types.h | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
-
-$(BUILD)/apic.o: kernel/apic.c kernel/apic.h kernel/acpi.h kernel/cpu.h kernel/pic.h kernel/timer.h kernel/vmm.h kernel/task.h kernel/types.h | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
-
-$(BUILD)/smp.o: kernel/smp.c kernel/smp.h kernel/acpi.h kernel/apic.h kernel/cpu.h kernel/gdt.h kernel/interrupts.h kernel/memory.h kernel/timer.h kernel/tlb.h kernel/vmm.h kernel/task.h kernel/types.h | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
-
-$(BUILD)/acpi.o: kernel/acpi.c kernel/acpi.h kernel/types.h | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
-
 $(BUILD)/hardware-%.o: kernel/%.c | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+	$(CC) $(CFLAGS) -MMD -MP -Ikernel -c $< -o $@
 
 hardware-core-test: | $(BUILD)
 	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/net_core_test.c kernel/net_core.c -o $(BUILD)/net-core-test
@@ -240,30 +208,6 @@ hardware-core-test: | $(BUILD)
 	$(CC) -std=c11 -Wall -Wextra -Werror -Ikernel tests/crypto_test.c kernel/crypto.c -o $(BUILD)/crypto-core-test
 	$(BUILD)/crypto-core-test
 
-$(BUILD)/gdt.o: kernel/gdt.c kernel/gdt.h kernel/memory.h kernel/cpu.h kernel/types.h | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
-
-$(BUILD)/vmm.o: kernel/vmm.c kernel/vmm.h kernel/memory.h kernel/tlb.h kernel/cpu.h kernel/types.h | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
-
-$(BUILD)/tlb.o: kernel/tlb.c kernel/tlb.h kernel/sync.h kernel/cpu.h kernel/types.h | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
-
-$(BUILD)/task.o: kernel/task.c kernel/task.h kernel/types.h kernel/memory.h kernel/gdt.h kernel/sync.h kernel/timer.h kernel/thread.h kernel/cpu.h kernel/smp.h kernel/tlb.h kernel/apic.h | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
-
-$(BUILD)/wait.o: kernel/wait.c kernel/wait.h kernel/task.h kernel/types.h kernel/sync.h | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -Ikernel -c $< -o $@
-
-$(BUILD)/thread.o: kernel/thread.c kernel/thread.h kernel/task.h kernel/process.h kernel/types.h kernel/sync.h kernel/vmm.h kernel/user.h | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
-
-$(BUILD)/process.o: kernel/process.c kernel/process.h kernel/thread.h kernel/vmm.h kernel/types.h kernel/sync.h kernel/ipc.h kernel/shmem.h | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
-
-$(BUILD)/scheduler.o: kernel/scheduler.c kernel/scheduler.h kernel/task.h kernel/timer.h kernel/sync.h kernel/cpu.h kernel/apic.h kernel/smp.h | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
-
 # Stage 3 storage stack and shared kernel infrastructure. These objects use
 # compiler-generated dependency files so header changes rebuild dependants.
 STORAGE_SRCS := $(wildcard kernel/storage/*.c)
@@ -279,22 +223,33 @@ $(BUILD)/storage:
 $(BUILD)/storage/%.o: kernel/storage/%.c | $(BUILD)/storage
 	$(CC) $(CFLAGS) -MMD -MP -Ikernel -c $< -o $@
 
-$(BUILD)/ksync.o $(BUILD)/crc.o $(BUILD)/kstring.o $(BUILD)/pci.o $(BUILD)/sandbox.o: $(BUILD)/%.o: kernel/%.c | $(BUILD)
-	$(CC) $(CFLAGS) -MMD -MP -Ikernel -c $< -o $@
-
--include $(STORAGE_OBJS:.o=.d) $(INFRA_OBJS:.o=.d)
+# Compiler-generated dependency files. Including them is what makes a new
+# #include rebuild its dependants; without this every header set is maintained
+# by hand and a missed entry silently links stale objects.
+-include $(wildcard $(BUILD)/*.d) $(wildcard $(BUILD)/storage/*.d)
 
 # Stage 5 Ring-3 session/shell process: desktop display/compositor/input
 # modules linked freestanding and embedded into the kernel image.
+#
+# Build provenance, recorded inside the kernel image AND rendered on screen by
+# the session. A released binary that does not name the revision it was built
+# from cannot be tied back to source - and a boot that only reports over serial
+# cannot be identified by the person looking at the panel. Defined here rather
+# than next to build_info.c because SESSION_CFLAGS uses ':=' and expands
+# immediately.
+BUILD_REVISION := $(shell git -C . rev-parse --short HEAD 2>/dev/null || echo unknown)
+BUILD_DIRTY := $(shell test -n "$$(git -C . status --porcelain 2>/dev/null)" && echo -dirty || echo "")
 SESSION_CFLAGS := -std=c11 -m64 -ffreestanding -fno-builtin -fno-stack-protector \
 	-fno-pic -fno-pie -nostdlib -mno-red-zone -mgeneral-regs-only -mcmodel=large \
-	-Wall -Wextra -Werror -O2 -Iuserspace/include -Iuserspace/desktop/include
+	-Wall -Wextra -Werror -O2 -Iuserspace/include -Iuserspace/desktop/include \
+	-DSESSION_BUILD_REVISION='"$(BUILD_REVISION)$(BUILD_DIRTY)"'
 SESSION_DESKTOP_SRCS := userspace/desktop/src/common.c \
 	userspace/desktop/src/window.c userspace/desktop/src/compositor.c \
 	userspace/desktop/src/input.c userspace/desktop/src/display.c \
 	userspace/desktop/src/metrics.c
 SESSION_DESKTOP_OBJS := $(patsubst userspace/desktop/src/%.c,$(BUILD)/session_desktop_%.o,$(SESSION_DESKTOP_SRCS))
 SESSION_DEPS := userspace/session/session.c userspace/session/session_start.S \
+	userspace/include/zeroos/font8x8.h \
 	userspace/session/session.ld userspace/include/zeroos/syscall.h \
 	$(wildcard userspace/desktop/include/zeroos/desktop/*.h) \
 	$(SESSION_DESKTOP_SRCS)
@@ -313,9 +268,6 @@ $(BUILD)/session_probe.elf: $(SESSION_DEPS) | $(BUILD)
 $(BUILD)/session_probe_image.o: kernel/session_probe_image.S $(BUILD)/session_probe.elf | $(BUILD)
 	$(AS) $(ASFLAGS) -DPROBE_PATH='"$(BUILD)/session_probe.elf"' -c $< -o $@
 
-$(BUILD)/session_launch.o: kernel/session.c kernel/session.h kernel/types.h kernel/kstring.h kernel/memory.h kernel/vmm.h kernel/timer.h kernel/task.h kernel/process.h kernel/thread.h kernel/elf.h kernel/user.h kernel/syscall.h | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -c kernel/session.c -o $@
-
 # Freestanding Ring-3 storage probe (C), embedded into the kernel image.
 PROBE_CFLAGS := -std=c11 -m64 -ffreestanding -fno-builtin -fno-stack-protector \
 	-fno-pic -fno-pie -nostdlib -mno-red-zone -mgeneral-regs-only -mcmodel=large \
@@ -329,13 +281,35 @@ $(BUILD)/storage_probe.elf: userspace/storage/probe.c userspace/storage/probe_st
 $(BUILD)/storage_probe_image.o: kernel/storage_probe_image.S $(BUILD)/storage_probe.elf | $(BUILD)
 	$(AS) $(ASFLAGS) -DPROBE_PATH='"$(BUILD)/storage_probe.elf"' -c $< -o $@
 
-$(BUILD)/scheduler_stress.o: kernel/scheduler_stress.c | $(BUILD)
-	$(CC) $(CFLAGS) -Ikernel -c $< -o $@
+# One rule builds every kernel C object, with compiler-generated dependency
+# files. It replaces 28 hand-written rules that each listed their headers by
+# hand - a new #include did not rebuild the object, so a header change could
+# silently link a stale object into the kernel.
+# session_launch.o is built from kernel/session.c: the target name differs from
+# the source name, so the pattern rule below cannot produce it.
+$(BUILD)/session_launch.o: kernel/session.c | $(BUILD)
+	$(CC) $(CFLAGS) -MMD -MP -Ikernel -c kernel/session.c -o $@
 
-KERNEL_OBJS := $(BUILD)/session_launch.o $(BUILD)/boot.o $(BUILD)/isr.o $(BUILD)/context.o $(BUILD)/ap_trampoline.o $(BUILD)/user_entry.o $(BUILD)/kernel.o $(BUILD)/cpu.o $(BUILD)/apic.o $(BUILD)/smp.o $(BUILD)/acpi.o $(BUILD)/interrupts.o $(BUILD)/syscall.o $(BUILD)/ipc.o $(BUILD)/shmem.o $(BUILD)/fb.o $(BUILD)/input.o $(BUILD)/elf.o $(BUILD)/exec.o $(BUILD)/user.o $(BUILD)/pic.o $(BUILD)/timer.o $(BUILD)/sync.o $(BUILD)/memory.o $(BUILD)/gdt.o $(BUILD)/vmm.o $(BUILD)/tlb.o $(BUILD)/task.o $(BUILD)/wait.o $(BUILD)/scheduler.o $(BUILD)/thread.o $(BUILD)/process.o $(BUILD)/scheduler_stress.o $(EXTRA_OBJS) $(HARDWARE_CORE_OBJS)
+$(BUILD)/%.o: kernel/%.c | $(BUILD)
+	$(CC) $(CFLAGS) -MMD -MP -Ikernel -c $< -o $@
+
+TOOLCHAIN_ID := $(shell $(CC) -dumpmachine 2>/dev/null || echo unknown)
+
+$(BUILD)/build_info.c: | $(BUILD)
+	@{ \
+	  echo '/* Generated by the Makefile. Do not edit. */'; \
+	  echo 'const char zeroos_build_revision[] = "$(BUILD_REVISION)$(BUILD_DIRTY)";'; \
+	  echo 'const char zeroos_build_toolchain[] = "$(CC) $(TOOLCHAIN_ID) $(LD)";'; \
+	  echo 'const char zeroos_build_cflags[] = "$(CFLAGS)";'; \
+	} > $@.tmp
+	@if cmp -s $@.tmp $@ 2>/dev/null; then rm -f $@.tmp; else mv $@.tmp $@; fi
+
+BUILD_INFO_OBJ := $(BUILD)/build_info.o
+
+KERNEL_OBJS := $(BUILD_INFO_OBJ) $(BUILD)/session_launch.o $(BUILD)/boot.o $(BUILD)/isr.o $(BUILD)/context.o $(BUILD)/ap_trampoline.o $(BUILD)/user_entry.o $(BUILD)/kernel.o $(BUILD)/cpu.o $(BUILD)/apic.o $(BUILD)/smp.o $(BUILD)/acpi.o $(BUILD)/interrupts.o $(BUILD)/syscall.o $(BUILD)/ipc.o $(BUILD)/shmem.o $(BUILD)/fb.o $(BUILD)/input.o $(BUILD)/elf.o $(BUILD)/exec.o $(BUILD)/user.o $(BUILD)/pic.o $(BUILD)/timer.o $(BUILD)/sync.o $(BUILD)/memory.o $(BUILD)/gdt.o $(BUILD)/vmm.o $(BUILD)/tlb.o $(BUILD)/task.o $(BUILD)/wait.o $(BUILD)/scheduler.o $(BUILD)/thread.o $(BUILD)/process.o $(BUILD)/scheduler_stress.o $(EXTRA_OBJS) $(HARDWARE_CORE_OBJS)
 $(KERNEL): $(KERNEL_OBJS) kernel/linker.ld
 	$(LD) $(LDFLAGS) -o $@ $(KERNEL_OBJS)
-	@$(MAKE) --no-print-directory kernel-simd-check
+	@$(MAKE) --no-print-directory kernel-simd-check verify-multiboot2
 
 # Fails the build if the linked kernel contains any x87/MMX/SSE/AVX
 # instruction (see the CFLAGS note: that state is never saved).
@@ -348,6 +322,97 @@ kernel-simd-check:
 		echo "kernel-simd-check: FP/SIMD instructions in kernel image:"; head -20 $(BUILD)/kernel-simd.txt; exit 1; \
 	fi; echo "kernel-simd-check: no FP/SIMD instructions in kernel image."
 
+# ---------------------------------------------------------------------------
+# Compile-flag fingerprint.
+#
+# `make check` adds -DZEROOS_BOOT_CERTIFICATION through a target-specific
+# variable. Make keys rebuilds on timestamps only, so without this the
+# certification objects stay in $(BUILD) and the next plain `make iso` links
+# them straight into an image that is labelled production but exits after the
+# finite session probes instead of staying interactive. Verified before the
+# fix: build/session_launch.o still contained the certification-only string
+# "session did not finish" after a certification-free `make iso`.
+#
+# The recipe rewrites the fingerprint only when the flags actually change, so
+# a normal rebuild is untouched; switching between flavours rebuilds once.
+FLAGS_FILE := $(BUILD)/.compile-flags
+
+# Two targets on purpose. A plain file target whose only prerequisite is
+# order-only is treated as up to date, so its comparison recipe never runs and
+# a flag change is missed. The phony probe always runs the comparison but only
+# rewrites the real file when the flags actually differ, so dependants are
+# rebuilt exactly when the flavour changes and never otherwise.
+.PHONY: flags-probe
+flags-probe: | $(BUILD)
+	@printf 'CFLAGS=%s\nSESSION_CFLAGS=%s\nPROBE_CFLAGS=%s\n' \
+		'$(CFLAGS)' '$(SESSION_CFLAGS)' '$(PROBE_CFLAGS)' > $(FLAGS_FILE).tmp
+	@if cmp -s $(FLAGS_FILE).tmp $(FLAGS_FILE) 2>/dev/null; then \
+		rm -f $(FLAGS_FILE).tmp; \
+	else \
+		mv $(FLAGS_FILE).tmp $(FLAGS_FILE); \
+		echo "compile flags changed - rebuilding objects"; \
+	fi
+
+$(FLAGS_FILE): flags-probe ; @:
+
+# Everything compiled with $(CFLAGS), $(SESSION_CFLAGS) or $(PROBE_CFLAGS)
+# depends on the fingerprint. The two probe ELFs are listed rather than their
+# objects: those .o files are produced inside the probe recipes and have no
+# rules of their own, so declaring them as prerequisites does nothing. Listing
+# the ELF targets makes the whole recipe re-run, which is what recompiles the
+# embedded Ring-3 session under the current SESSION_CFLAGS.
+
+$(KERNEL_OBJS) $(BUILD)/session_probe.elf $(BUILD)/storage_probe.elf: $(FLAGS_FILE)
+
+# ISO images.
+#
+# A release ISO is only useful if firmware can boot it, so the writer refuses
+# to emit an image with no boot path. grub-mkrescue is the supported route: it
+# supplies the GRUB El Torito boot image that a multiboot2 kernel needs. The
+# previous xorriso branch (`xorriso -as mkisofs -R -J`) and the old
+# tools/build_iso.py both produced images that tooling accepted and firmware
+# could not boot - no El Torito boot record at all, and in the script's case a
+# flattened directory tree, so even a loaded GRUB could not find
+# /boot/grub/grub.cfg. Both are gone.
+#
+# On a host without GRUB, set ZEROOS_ISO_ALLOW_UNBOOTABLE=1 to force a
+# data-only image (for ISO-layout testing only); verify-iso then reports it as
+# not bootable rather than letting it pass silently.
+ISO_UNBOOTABLE_FLAG := $(if $(ZEROOS_ISO_ALLOW_UNBOOTABLE),--no-boot,)
+ISO_VERIFY_FLAG := $(if $(ZEROOS_ISO_ALLOW_UNBOOTABLE),--allow-unbootable,)
+# Hosts that have grub-mkimage but not grub-mkrescue can point this at the El
+# Torito boot image they generated: make ZEROOS_ELTORITO=/path/to/eltorito.img iso
+ISO_ELTORITO_FLAG := $(if $(ZEROOS_ELTORITO),--eltorito $(ZEROOS_ELTORITO),)
+
+# Validates the Multiboot2 header of the linked image against the
+# specification: magic/architecture/checksum arithmetic, 8-byte alignment,
+# containment in a PT_LOAD segment inside the 32 KiB search window, tag list
+# termination, and agreement between the framebuffer tag and grub.cfg. A
+# header defect is invisible to every host test but fatal at boot.
+# Release hygiene: the image must be freestanding (no host libc), must name the
+# revision it came from, and must be reproducible from the same inputs.
+repro-check: $(KERNEL)
+	bash tools/check_release_hygiene.sh $(BUILD)
+
+# Section 58 of the G560 master prompt: one authoritative completion matrix,
+# derived from the built tree rather than written by hand. --strict turns the
+# current state into a floor, so a regression fails here instead of showing up
+# as a silently downgraded document.
+completion-matrix: elf hardware-core-test desktop-check
+	python3 tools/completion_matrix.py --build-dir $(BUILD) --write \
+		--strict Boot=QEMU_CERTIFIED \
+		--strict Memory=QEMU_CERTIFIED \
+		--strict Process=QEMU_CERTIFIED \
+		--strict ELF=QEMU_CERTIFIED \
+		--strict Input=QEMU_CERTIFIED \
+		--strict Display=QEMU_CERTIFIED \
+		--strict IPC=QEMU_CERTIFIED \
+		--strict Scheduler=QEMU_CERTIFIED
+
+verify-multiboot2:
+	@test -f $(KERNEL) || { echo "verify-multiboot2: $(KERNEL) missing"; exit 1; }
+	python3 tools/verify_multiboot2.py $(KERNEL) --expect-wxhxb 1024x768x32
+
 iso: $(KERNEL)
 	rm -rf $(BUILD)/iso
 	mkdir -p $(BUILD)/iso/boot/grub
@@ -355,14 +420,54 @@ iso: $(KERNEL)
 	cp grub/grub.cfg $(BUILD)/iso/boot/grub/grub.cfg
 	@if command -v grub-mkrescue >/dev/null 2>&1; then \
 		grub-mkrescue -o $(ISO) $(BUILD)/iso; \
-	elif command -v xorriso >/dev/null 2>&1; then \
-		xorriso -as mkisofs -R -J -o $(ISO) $(BUILD)/iso; \
 	else \
-		python3 tools/build_iso.py $(ISO) $(BUILD)/iso; \
+		python3 tools/build_iso.py $(ISO) $(BUILD)/iso $(ISO_ELTORITO_FLAG) $(ISO_UNBOOTABLE_FLAG); \
+	fi
+	@$(MAKE) --no-print-directory verify-iso
+
+# Independent check that the produced image is a structurally bootable ISO 9660
+# / El Torito image. Runs the project's own parser and, when pycdlib is
+# installed, cross-checks the tree with a third-party implementation.
+verify-iso:
+	@test -f $(ISO) || { echo "verify-iso: $(ISO) missing - build it first"; exit 1; }
+	python3 tools/verify_iso.py $(ISO) $(ISO_VERIFY_FLAG)
+
+# Testing-mode image: the same kernel with ZEROOS_BOOT_CERTIFICATION, so the
+# embedded Ring-3 session runs its finite display/compositor/input probes and
+# exits instead of blocking on the interactive input wait. Built in its own
+# tree so it never overwrites the production image. Boot this one for
+# automated/repeatable testing; boot zeroos.iso for the persistent desktop.
+TEST_BUILD := $(BUILD)-test
+iso-test:
+	@$(MAKE) --no-print-directory ZEROOS_CERTIFICATION=1 BUILD=$(TEST_BUILD) iso
+	@echo "iso-test: testing-mode image at $(TEST_BUILD)/zeroos.iso"
+
+# Real boot test: boots the image in QEMU and asserts the guest serial log
+# against every milestone in tools/boot_milestones.txt - the same list CI uses.
+# This is the only gate that executes kernel code, so it is the only one that
+# can catch a kernel which compiles and links but hangs during boot. Requires
+# qemu-system-x86_64; pass ZEROOS_SERIAL_LOG=<file> to assert a captured log
+# without an emulator.
+boot-test:
+	@if [ -n "$(ZEROOS_SERIAL_LOG)" ]; then \
+		bash tools/boot_test.sh --serial-log $(ZEROOS_SERIAL_LOG); \
+	else \
+		bash tools/boot_test.sh --build-dir $(BUILD) --iterations 3; \
 	fi
 
 run: iso
 	qemu-system-x86_64 -cdrom $(ISO) -serial stdio -display none
 
+run-test:
+	qemu-system-x86_64 -cdrom $(TEST_BUILD)/zeroos.iso -serial stdio -display none
+
 clean:
-	rm -rf $(BUILD)
+	rm -rf $(BUILD) $(TEST_BUILD)
+
+# ZEROOS_CERTIFICATION=1 builds the finite-probe certification flavour of both
+# the kernel and the embedded session. It must be a command-line variable so
+# the recursive `make iso-test` sees it while this file is parsed.
+ifeq ($(ZEROOS_CERTIFICATION),1)
+CFLAGS += -DZEROOS_BOOT_CERTIFICATION
+SESSION_CFLAGS += -DZEROOS_BOOT_CERTIFICATION
+endif

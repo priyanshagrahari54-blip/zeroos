@@ -1,0 +1,110 @@
+# ZEROOS boot milestones - single source of truth, shared by CI and
+# tools/boot_test.sh.
+#
+# Matched against the guest serial log from
+#   qemu-system-x86_64 ... -serial file:<build>/serial.log
+#
+#   (blank / '#' comment)   ignored
+#   re:PATTERN              must be present, extended regular expression
+#   never:PATTERN           must NOT be present (basic regular expression)
+#   anything else           must be present, basic regular expression
+#                           (same semantics as the CI grep, so `.*` is a
+#                           wildcard rather than literal text)
+
+ZEROOS: foundation milestone reached.
+ZEROOS: bootstrap stack guard verified.
+ZEROOS: CPU capabilities detected
+ZEROOS: physical page allocator initialized.
+ZEROOS: TLB shootdown boundary self-test passed.
+ZEROOS: runtime GDT/TSS self-test passed.
+ZEROOS: exception IST routing self-test passed.
+ZEROOS: IRQ controller capability:
+re:ZEROOS: (LAPIC/IOAPIC timer routing activated|legacy PIC timer routing retained)\.
+re:ZEROOS: display primitive ready\.
+re:ZEROOS: framebuffer splash painted \(build [0-9a-zA-Z.-]+\)\.
+ZEROOS: display present contract verified.
+re:ZEROOS: (PS/2 keyboard input stack ready|input stack degraded \([^)]*\))\.
+ZEROOS: input blocking wait/wake path passed.
+re:ZEROOS: (PS/2 mouse pointer ready|mouse pointer degraded \([^)]*\))\.
+ZEROOS: user fault containment policy armed.
+ZEROOS: ACPI routing discovery:
+ZEROOS: SMP startup self-test passed.
+ZEROOS: SMP startup recovery contract self-test passed.
+ZEROOS: remote TLB shootdown self-test passed.
+ZEROOS: AP local LAPIC clock-event contract verified.
+ZEROOS: PIT timer configured at .*clocksource=
+ZEROOS: synchronization primitives self-test passed.
+ZEROOS: timer tick 100.
+ZEROOS: scheduler context bounds self-test passed.
+ZEROOS: task context-switch self-test passed.
+ZEROOS: wait queue integration verified.
+ZEROOS: timed sleep integration verified.
+ZEROOS: scheduler policy and affinity self-test passed.
+ZEROOS: timer-only preemption stress passed.
+ZEROOS: scheduler fairness and latency stress passed.
+ZEROOS: zombie reaping and slot-reuse stress passed.
+ZEROOS: interrupt-frame ownership invariant verified.
+ZEROOS: scheduler certification passed.
+ZEROOS: scheduler deterministic trace: 01-02-04-08-10-20-40.
+ZEROOS: per-CPU scheduler ownership verified.
+ZEROOS: CPU hot-offline queue evacuation and parking passed.
+ZEROOS: process/thread object model self-test passed.
+ZEROOS: process address-space ownership self-test passed.
+ZEROOS: PID/TID reuse protection self-test passed.
+ZEROOS: per-task kernel-stack/TSS handoff self-test passed.
+ZEROOS: Ring-3 GDT and versioned syscall ABI initialized.
+ZEROOS: bounded capability IPC core initialized.
+ZEROOS: ELF loader, W^X mapping, and capability IPC gates initialized.
+ZEROOS: executable spawn/argv/auxv and wait ABI initialized.
+ZEROOS: userspace init process published.
+ZEROOS: capability IPC queue/backpressure self-test passed.
+ZEROOS: capability IPC negative/timeout semantics passed.
+ZEROOS: IPC pipe blocked-writer wakeup passed.
+ZEROOS: IPC capability generation/revocation stress passed.
+ZEROOS: blocking child wait/wakeup path passed.
+ZEROOS: event and pipe IPC foundations self-test passed.
+ZEROOS: IPC pipe partial-write byte ordering passed.
+ZEROOS: blocking event wait/wake path passed.
+ZEROOS: blocking IPC close-wakeup path passed.
+ZEROOS: blocking IPC send-wakeup path passed.
+ZEROOS: isolated service process setup complete.
+ZEROOS: shared-memory map/grant/lifecycle self-test passed.
+ZEROOS: userspace resource exhaustion/recovery passed.
+ZEROOS: service capability least-privilege grant passed.
+ZEROOS: service worker grant denial passed.
+ZEROOS: service manager launched isolated IPC service attempt 1.
+ZEROOS: blocking IPC wait/wake path passed.
+ZEROOS: service manager restarted failed service after IPC delivery.
+ZEROOS: service manager launched isolated IPC service attempt 2.
+ZEROOS: isolated service IPC/restart recovery passed.
+ZEROOS: userspace service manager dependency/restart lifecycle passed.
+ZEROOS: userspace service manager process published.
+ZEROOS: persistent userspace service manager published.
+ZEROOS: persistent service manager shutdown event delivered.
+ZEROOS: userspace service manager reaped cleanly.
+ZEROOS: persistent userspace service manager reaped cleanly.
+ZEROOS: userspace init syscall path passed.
+ZEROOS: userspace negative syscall/fault/malformed-ELF probes passed.
+ZEROOS: init userspace process reaped cleanly.
+ZEROOS: Ring-3 transition, syscall ABI, and init recovery passed.
+ZEROOS: storage block layer scheduler/fault/timeout self-test passed.
+ZEROOS: storage GPT validation/recovery self-test passed.
+ZEROOS: storage VFS/ZJFS/page-cache self-test passed.
+ZEROOS: storage crash-consistency (power-cut/replay/fsck) self-test passed.
+ZEROOS: storage stack certification passed
+ZEROOS: storage worker periodic commit verified
+ZEROOS: storage userspace probe passed.
+ZEROOS: storage userspace probe reaped; descriptors and mappings released
+ZEROOS: storage Stage 3 certification complete.
+re:ZEROOS: session display service attached \((live|degraded)\)\.
+re:ZEROOS: session desktop painted across the full panel at [0-9]+x[0-9]+ \(build [0-9a-zA-Z.-]+\)\.
+ZEROOS: session compositor frame path passed.
+re:ZEROOS: session (scanout present contract|scanout degraded path) passed\.
+ZEROOS: session input pump passed.
+ZEROOS: session input routing passed.
+ZEROOS: session shell process complete.
+ZEROOS: session shell process reaped cleanly.
+
+# Negative gates: these indicate a failed or panicked boot.
+never:storage.*FAILED
+never:ZEROOS PANIC:

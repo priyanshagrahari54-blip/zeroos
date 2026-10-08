@@ -137,13 +137,17 @@ int zd_display_service_damage(struct zd_display_service *service,
     return 0;
 }
 
+static int present_submit(struct zd_display_service *service,
+                          uint32_t x, uint32_t y, uint32_t w, uint32_t h,
+                          uint32_t stride_bytes, const void *rect_ptr,
+                          uint64_t now_tick);
+
 int zd_display_service_present(struct zd_display_service *service,
                                const void *frame_base,
                                uint32_t stride_bytes, uint64_t now_tick) {
     uint32_t x, y, w, h;
     uint32_t bytes_pp;
     const uint8_t *rect_ptr;
-    int result;
 
     if (!service || !frame_base)
         return -ZD_EINVAL;
@@ -181,8 +185,57 @@ int zd_display_service_present(struct zd_display_service *service,
     bytes_pp = service->info.bpp / 8U;
     rect_ptr = (const uint8_t *)frame_base +
                (uint64_t)y * stride_bytes + (uint64_t)x * bytes_pp;
+    return present_submit(service, x, y, w, h, stride_bytes, rect_ptr,
+                          now_tick);
+}
 
-    result = service->ops.present(service->ops.context, x, y, w, h,
+int zd_display_service_present_rect(struct zd_display_service *service,
+                                    struct zd_rect rect,
+                                    uint32_t stride_bytes,
+                                    const void *pixels, uint64_t now_tick) {
+    if (!service || !pixels)
+        return -ZD_EINVAL;
+    if (service->state == ZD_DISPLAY_DEGRADED) {
+        service->stats.presents_refused_degraded++;
+        zd_metrics_add(service->metrics, ZD_METRIC_FRAMES_REFUSED, 1);
+        return -ZD_ENOENT;
+    }
+    if (service->state == ZD_DISPLAY_SUSPENDED) {
+        service->stats.presents_refused_suspended++;
+        zd_metrics_add(service->metrics, ZD_METRIC_FRAMES_REFUSED, 1);
+        return -ZD_ESTATE;
+    }
+    if (service->state != ZD_DISPLAY_LIVE)
+        return -ZD_ESTATE;
+    if (!service->pending_valid) {
+        service->stats.presents_refused_empty++;
+        zd_metrics_add(service->metrics, ZD_METRIC_FRAMES_REFUSED, 1);
+        return -ZD_EAGAIN;
+    }
+    if (service->min_present_interval_ticks && service->has_presented) {
+        uint64_t elapsed = now_tick - service->last_present_tick;
+        if (elapsed < service->min_present_interval_ticks) {
+            service->stats.presents_refused_paced++;
+            zd_metrics_add(service->metrics, ZD_METRIC_FRAMES_REFUSED, 1);
+            return -ZD_EAGAIN;
+        }
+    }
+    /* The submitted rect must be the damage that was recorded, so a caller
+     * cannot present pixels the damage tracker never accounted for. */
+    if (rect.x != service->pending_damage.x || rect.y != service->pending_damage.y ||
+        rect.w != service->pending_damage.w || rect.h != service->pending_damage.h)
+        return -ZD_EINVAL;
+    return present_submit(service, (uint32_t)rect.x, (uint32_t)rect.y,
+                          (uint32_t)rect.w, (uint32_t)rect.h, stride_bytes,
+                          pixels, now_tick);
+}
+
+/* Shared tail: hand the rect to the kernel op and account for the result. */
+static int present_submit(struct zd_display_service *service,
+                          uint32_t x, uint32_t y, uint32_t w, uint32_t h,
+                          uint32_t stride_bytes, const void *rect_ptr,
+                          uint64_t now_tick) {
+    int result = service->ops.present(service->ops.context, x, y, w, h,
                                   stride_bytes, rect_ptr);
     if (result != 0) {
         service->stats.present_failures++;

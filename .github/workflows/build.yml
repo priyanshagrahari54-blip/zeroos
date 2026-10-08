@@ -8,6 +8,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # publish the bootable image as a release asset
     steps:
       - uses: actions/checkout@v4
 
@@ -38,123 +40,14 @@ jobs:
 
       - name: Boot test
         run: |
-          # Three sequential QEMU boots: scheduler/context certification is a
-          # runtime invariant suite, and the interrupt-frame ownership defect
-          # this gates against was nondeterministic. A single green boot is
-          # not sufficient evidence.
-          # On any grep failure, surface the serial tail so the exact missing
-          # milestone (or the lines before a hang) is visible in annotations.
+          # On failure, surface the serial tail so the exact missing milestone
+          # (or the lines before a hang) is visible in annotations.
           trap 'echo "boot milestone failed; log END follows first"; echo "::error title=serial end::$(tail -c 1800 build/serial.log | tr "\\r\\n" "  ")"; echo "boot milestone failed; serial tail follows"; tail -c 6000 build/serial.log | tr "\\r\\n" "  "; echo' ERR
-          for iteration in 1 2 3; do
-            echo "===== ZEROOS boot certification iteration ${iteration} ====="
-            timeout 45s qemu-system-x86_64             -smp 2             -cdrom build/zeroos.iso             -serial file:build/serial.log             -display none             -no-reboot             -no-shutdown             -debugcon file:build/debug.log             -global isa-debugcon.iobase=0xe9             -d int,guest_errors,cpu_reset             -D build/qemu.log || true
-            grep -q "ZEROOS: foundation milestone reached." build/serial.log
-            grep -q "ZEROOS: bootstrap stack guard verified." build/serial.log
-            grep -q "ZEROOS: CPU capabilities detected" build/serial.log
-            grep -q "ZEROOS: physical page allocator initialized." build/serial.log
-            grep -q "ZEROOS: TLB shootdown boundary self-test passed." build/serial.log
-            grep -q "ZEROOS: runtime GDT/TSS self-test passed." build/serial.log
-            grep -q "ZEROOS: exception IST routing self-test passed." build/serial.log
-            grep -q "ZEROOS: IRQ controller capability:" build/serial.log
-            grep -Eq 'ZEROOS: (LAPIC/IOAPIC timer routing activated|legacy PIC timer routing retained)\.' build/serial.log
-          grep -Eq 'ZEROOS: display primitive (ready|degraded \(serial-only\))\.' build/serial.log
-          grep -q "ZEROOS: display present contract verified." build/serial.log
-          grep -Eq 'ZEROOS: (PS/2 keyboard input stack ready|input stack degraded \([^)]*\))\.' build/serial.log
-          grep -q "ZEROOS: input blocking wait/wake path passed." build/serial.log
-          grep -Eq 'ZEROOS: (PS/2 mouse pointer ready|mouse pointer degraded \([^)]*\))\.' build/serial.log
-            grep -q "ZEROOS: user fault containment policy armed." build/serial.log
-            grep -q "ZEROOS: ACPI routing discovery:" build/serial.log
-            grep -q "ZEROOS: SMP startup self-test passed." build/serial.log
-            grep -q "ZEROOS: SMP startup recovery contract self-test passed." build/serial.log
-            grep -q "ZEROOS: remote TLB shootdown self-test passed." build/serial.log
-            grep -q "ZEROOS: AP local LAPIC clock-event contract verified." build/serial.log
-            grep -q "ZEROOS: PIT timer configured at .*clocksource=" build/serial.log
-            grep -q "ZEROOS: synchronization primitives self-test passed." build/serial.log
-            test -s build/debug.log
-            grep -q "B" build/debug.log
-            grep -q "L" build/debug.log
-            grep -q "ZEROOS: timer tick 100." build/serial.log
-
-            echo "===== ZEROOS scheduler certification gates ====="
-            grep -q "ZEROOS: scheduler context bounds self-test passed." build/serial.log
-            grep -q "ZEROOS: task context-switch self-test passed." build/serial.log
-            grep -q "ZEROOS: wait queue integration verified." build/serial.log
-            grep -q "ZEROOS: timed sleep integration verified." build/serial.log
-            grep -q "ZEROOS: scheduler policy and affinity self-test passed." build/serial.log
-            grep -q "ZEROOS: timer-only preemption stress passed." build/serial.log
-            grep -q "ZEROOS: scheduler fairness and latency stress passed." build/serial.log
-            grep -q "ZEROOS: zombie reaping and slot-reuse stress passed." build/serial.log
-            grep -q "ZEROOS: interrupt-frame ownership invariant verified." build/serial.log
-            grep -q "ZEROOS: scheduler certification passed." build/serial.log
-            grep -q "ZEROOS: scheduler deterministic trace: 01-02-04-08-10-20-40." build/serial.log
-            grep -q "ZEROOS: per-CPU scheduler ownership verified." build/serial.log
-            grep -q "ZEROOS: CPU hot-offline queue evacuation and parking passed." build/serial.log
-            grep -q "ZEROOS: process/thread object model self-test passed." build/serial.log
-            grep -q "ZEROOS: process address-space ownership self-test passed." build/serial.log
-            grep -q "ZEROOS: PID/TID reuse protection self-test passed." build/serial.log
-            grep -q "ZEROOS: per-task kernel-stack/TSS handoff self-test passed." build/serial.log
-            grep -q "ZEROOS: Ring-3 GDT and versioned syscall ABI initialized." build/serial.log
-            grep -q "ZEROOS: bounded capability IPC core initialized." build/serial.log
-            grep -q "ZEROOS: ELF loader, W^X mapping, and capability IPC gates initialized." build/serial.log
-            grep -q "ZEROOS: executable spawn/argv/auxv and wait ABI initialized." build/serial.log
-            grep -q "ZEROOS: userspace init process published." build/serial.log
-            grep -q "ZEROOS: capability IPC queue/backpressure self-test passed." build/serial.log
-            grep -q "ZEROOS: capability IPC negative/timeout semantics passed." build/serial.log
-            grep -q "ZEROOS: IPC pipe blocked-writer wakeup passed." build/serial.log
-            grep -q "ZEROOS: IPC capability generation/revocation stress passed." build/serial.log
-            grep -q "ZEROOS: blocking child wait/wakeup path passed." build/serial.log
-            grep -q "ZEROOS: event and pipe IPC foundations self-test passed." build/serial.log
-            grep -q "ZEROOS: IPC pipe partial-write byte ordering passed." build/serial.log
-            grep -q "ZEROOS: blocking event wait/wake path passed." build/serial.log
-            grep -q "ZEROOS: blocking IPC close-wakeup path passed." build/serial.log
-            grep -q "ZEROOS: blocking IPC send-wakeup path passed." build/serial.log
-            grep -q "ZEROOS: isolated service process setup complete." build/serial.log
-            grep -q "ZEROOS: shared-memory map/grant/lifecycle self-test passed." build/serial.log
-            grep -q "ZEROOS: userspace resource exhaustion/recovery passed." build/serial.log
-            grep -q "ZEROOS: service capability least-privilege grant passed." build/serial.log
-            grep -q "ZEROOS: service worker grant denial passed." build/serial.log
-            grep -q "ZEROOS: service manager launched isolated IPC service attempt 1." build/serial.log
-            grep -q "ZEROOS: blocking IPC wait/wake path passed." build/serial.log
-            grep -q "ZEROOS: service manager restarted failed service after IPC delivery." build/serial.log
-            grep -q "ZEROOS: service manager launched isolated IPC service attempt 2." build/serial.log
-            grep -q "ZEROOS: isolated service IPC/restart recovery passed." build/serial.log
-            grep -q "ZEROOS: userspace service manager dependency/restart lifecycle passed." build/serial.log
-            grep -q "ZEROOS: userspace service manager process published." build/serial.log
-            grep -q "ZEROOS: persistent userspace service manager published." build/serial.log
-            grep -q "ZEROOS: persistent service manager shutdown event delivered." build/serial.log
-            grep -q "ZEROOS: userspace service manager reaped cleanly." build/serial.log
-            grep -q "ZEROOS: persistent userspace service manager reaped cleanly." build/serial.log
-            grep -q "ZEROOS: userspace init syscall path passed." build/serial.log
-            grep -q "ZEROOS: userspace negative syscall/fault/malformed-ELF probes passed." build/serial.log
-            grep -q "ZEROOS: init userspace process reaped cleanly." build/serial.log
-            grep -q "ZEROOS: Ring-3 transition, syscall ABI, and init recovery passed." build/serial.log
-            grep -q "ZEROOS: storage block layer scheduler/fault/timeout self-test passed." build/serial.log
-            grep -q "ZEROOS: storage GPT validation/recovery self-test passed." build/serial.log
-            grep -q "ZEROOS: storage VFS/ZJFS/page-cache self-test passed." build/serial.log
-            grep -q "ZEROOS: storage crash-consistency (power-cut/replay/fsck) self-test passed." build/serial.log
-            grep -q "ZEROOS: storage stack certification passed" build/serial.log
-            grep -q "ZEROOS: storage worker periodic commit verified" build/serial.log
-            grep -q "ZEROOS: storage userspace probe passed." build/serial.log
-            grep -q "ZEROOS: storage userspace probe reaped; descriptors and mappings released" build/serial.log
-            grep -q "ZEROOS: storage Stage 3 certification complete." build/serial.log
-            grep -Eq 'ZEROOS: session display service attached \((live|degraded)\)\.' build/serial.log
-            grep -q "ZEROOS: session compositor frame path passed." build/serial.log
-            grep -Eq 'ZEROOS: session (scanout present contract|scanout degraded path) passed\.' build/serial.log
-            grep -q "ZEROOS: session input pump passed." build/serial.log
-            grep -q "ZEROOS: session input routing passed." build/serial.log
-            grep -q "ZEROOS: session shell process complete." build/serial.log
-            grep -q "ZEROOS: session shell process reaped cleanly." build/serial.log
-            if grep -q "storage.*FAILED" build/serial.log; then
-              grep "FAILED" build/serial.log
-              exit 1
-            fi
-
-            if grep -q "ZEROOS PANIC:" build/serial.log; then
-              echo "ZEROOS scheduler/runtime panic detected:"
-              grep "ZEROOS PANIC:" build/serial.log
-              exit 1
-            fi
-          done
+          # Three sequential QEMU boots, driven by tools/boot_test.sh. The
+          # milestone list lives in tools/boot_milestones.txt and is shared
+          # between CI and local runs, so the two cannot drift - this step used
+          # to carry all 91 assertions inline, three times over.
+          bash tools/boot_test.sh --build-dir build --iterations 3 --smp 2 --timeout 45
 
           echo "===== ZEROOS four-vCPU SMP certification ====="
           timeout 45s qemu-system-x86_64 \
@@ -397,6 +290,39 @@ jobs:
             build-production/qemu.log
             build-production/debug.log
           if-no-files-found: error
+
+      - name: Publish bootable image as a GitHub release
+        # The development sandbox has no grub-mkrescue and no emulator, so it can
+        # neither build nor test a bootable image. This runner has both, and it
+        # has already booted this exact file under SeaBIOS by the time this step
+        # runs - so publish it somewhere a browser can download it from.
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          tag="zeroos-bootable"
+          sha="$(git rev-parse --short HEAD)"
+          title="ZEROOS bootable image (built and boot-tested by CI)"
+          notes="Built with grub-mkrescue from commit ${sha} and booted under QEMU SeaBIOS in the same run - legacy BIOS, El Torito platform id 0x00. Download zeroos.iso, burn it to a DVD (Windows 7: right-click the file, choose Burn disc image) or write it to USB, then boot it from the firmware boot menu. This gives a live session; there is no disk installer."
+          cp build-production/zeroos.iso zeroos.iso
+          cp build-production/zeroos.iso "zeroos-${sha}.iso"
+          # `gh release upload` has no --notes flag (that belongs to
+          # create/edit); passing it fails with "unknown flag", and this step
+          # used to hide that behind continue-on-error while still reporting
+          # success. Notes are set with `gh release edit` instead.
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" zeroos.iso "zeroos-${sha}.iso" --clobber
+            gh release edit "$tag" --notes "$notes"
+          else
+            gh release create "$tag" zeroos.iso "zeroos-${sha}.iso" \
+              --title "$title" --notes "$notes"
+          fi
+          # Prove the asset really moved: a publish that silently no-ops is
+          # worse than one that fails loudly.
+          gh release view "$tag" --json assets \
+            --jq '.assets[].name' | grep -qx "zeroos-${sha}.iso" \
+            || { echo "release asset zeroos-${sha}.iso is missing" >&2; exit 1; }
 
       - name: Serial summary
         if: always()
