@@ -10,7 +10,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "font8x8.h"
+#include <zeroos/font8x8.h>
 
 static int checks = 0;
 static int failures = 0;

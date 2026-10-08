@@ -10,7 +10,7 @@
  */
 #include <zeroos/desktop/desktop.h>
 
-#include "font8x8.h"
+#include <zeroos/font8x8.h>
 
 #define SESSION_TARGET_W 320
 #define SESSION_TARGET_H 200

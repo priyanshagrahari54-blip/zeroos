@@ -15,7 +15,7 @@ AS := gcc
 # replaces them (observed: init code immediates 16->0 and 12->0xffffffff,
 # random IPC/storage self-test failures on SMP). kernel-simd-check enforces
 # the invariant on the linked image.
-CFLAGS := -m64 -mno-red-zone -mgeneral-regs-only -mcmodel=small -ffreestanding -fno-pic -fno-pie -fno-stack-protector -fno-builtin -nostdinc -Wall -Wextra -Werror -O2
+CFLAGS := -m64 -mno-red-zone -mgeneral-regs-only -mcmodel=small -ffreestanding -fno-pic -fno-pie -fno-stack-protector -fno-builtin -nostdinc -Wall -Wextra -Werror -O2 -Iuserspace/include
 CFLAGS += $(EXTRA_CFLAGS)
 ASFLAGS := -m64 -ffreestanding -fno-pic -fno-pie -nostdlib
 LDFLAGS := -m elf_x86_64 -T kernel/linker.ld -nostdlib
@@ -117,7 +117,7 @@ desktop-check: | $(BUILD)
 # The session renders font8x8.h onto the panel, so a corrupt glyph is a defect
 # the person at the machine sees. Gate the table on the host.
 session-font-check: | $(BUILD)
-	$(CC) -std=c11 -Wall -Wextra -Werror -O2 -Iuserspace/session \
+	$(CC) -std=c11 -Wall -Wextra -Werror -O2 -Iuserspace/include \
 		-o $(BUILD)/font8x8-check userspace/session/font8x8_check.c
 	$(BUILD)/font8x8-check
 	@echo "session-font-check: PASS"
@@ -249,7 +249,7 @@ SESSION_DESKTOP_SRCS := userspace/desktop/src/common.c \
 	userspace/desktop/src/metrics.c
 SESSION_DESKTOP_OBJS := $(patsubst userspace/desktop/src/%.c,$(BUILD)/session_desktop_%.o,$(SESSION_DESKTOP_SRCS))
 SESSION_DEPS := userspace/session/session.c userspace/session/session_start.S \
-	userspace/session/font8x8.h \
+	userspace/include/zeroos/font8x8.h \
 	userspace/session/session.ld userspace/include/zeroos/syscall.h \
 	$(wildcard userspace/desktop/include/zeroos/desktop/*.h) \
 	$(SESSION_DESKTOP_SRCS)

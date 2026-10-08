@@ -3,7 +3,10 @@
 #include "vmm.h"
 #include "sync.h"
 
+#include <zeroos/font8x8.h>
+
 extern void serial_write_public(const char *text);
+extern const char zeroos_build_revision[];
 
 /* Multiboot2 boot-info tag types (info stream, not the header). */
 #define MB2_INFO_TAG_END 0U
@@ -179,6 +182,77 @@ static int fb_map_and_verify(struct zeroos_display_info *info) {
     return 0;
 }
 
+/* Boot splash: the instant the framebuffer is acquired, before any userspace
+ * runs, the kernel paints the whole panel and stamps the build revision. This
+ * is the earliest possible on-screen proof of which image is booting and that
+ * every scanout byte is writable on this hardware; the Ring-3 session later
+ * overpaints it with the desktop. It also consumes the build_info revision
+ * string, which would otherwise sit unread inside the image. */
+static void fb_splash_pixel(uint32_t x, uint32_t y, uint32_t c) {
+    uint32_t bytes_pp = (display_state.bpp + 7U) / 8U;
+    volatile uint8_t *p = (volatile uint8_t *)(fb_kernel_virtual +
+                          (uint64_t)y * display_state.pitch +
+                          (uint64_t)x * bytes_pp);
+    if (display_state.bpp == 32U) {
+        p[0] = (uint8_t)(c & 0xFFU);
+        p[1] = (uint8_t)((c >> 8) & 0xFFU);
+        p[2] = (uint8_t)((c >> 16) & 0xFFU);
+        p[3] = 0xFFU;
+    } else if (display_state.bpp == 24U) {
+        p[0] = (uint8_t)(c & 0xFFU);
+        p[1] = (uint8_t)((c >> 8) & 0xFFU);
+        p[2] = (uint8_t)((c >> 16) & 0xFFU);
+    } else {
+        uint16_t v = (uint16_t)(((((c >> 16) & 0xFFU) >> 3) << 11) |
+                                ((((c >> 8) & 0xFFU) >> 2) << 5) |
+                                ((c & 0xFFU) >> 3));
+        p[0] = (uint8_t)(v & 0xFFU);
+        p[1] = (uint8_t)(v >> 8);
+    }
+}
+
+static void fb_splash_text(uint32_t ox, uint32_t oy, const char *text,
+                           uint32_t colour) {
+    uint32_t cx = ox;
+    for (uint64_t i = 0; text[i] && cx + 8U <= display_state.width; ++i) {
+        const unsigned char *glyph = font8x8_glyph((unsigned char)text[i]);
+        for (uint32_t row = 0; row < FONT8X8_ROWS; ++row) {
+            uint32_t y = oy + row;
+            if (y >= display_state.height)
+                continue;
+            for (uint32_t col = 0; col < 8U; ++col)
+                if (glyph[row] & (0x80U >> col))
+                    fb_splash_pixel(cx + col, y, colour);
+        }
+        cx += 8U;
+    }
+}
+
+static void fb_splash(void) {
+    char line[96];
+    uint64_t n = 0;
+    uint32_t x, y;
+    const char *s;
+
+    if (!fb_present_active())
+        return;
+    for (y = 0; y < display_state.height; ++y)
+        for (x = 0; x < display_state.width; ++x)
+            fb_splash_pixel(x, y, 0xFF141B24U);
+    for (y = 0; y < 27U && y < display_state.height; ++y)
+        for (x = 0; x < display_state.width; ++x)
+            fb_splash_pixel(x, y, 0xFF101418U);
+    for (s = "ZEROOS  boot "; *s && n + 1 < sizeof(line); ++s)
+        line[n++] = *s;
+    for (s = zeroos_build_revision; *s && n + 1 < sizeof(line); ++s)
+        line[n++] = *s;
+    line[n] = 0;
+    fb_splash_text(12U, 10U, line, 0xFFE6EDF3U);
+    serial_write_public("ZEROOS: framebuffer splash painted (build ");
+    serial_write_public(zeroos_build_revision);
+    serial_write_public(").\n");
+}
+
 int fb_init(uint64_t multiboot_info) {
     const struct mb2_info_tag *tag;
     const struct mb2_info_tag *end;
@@ -230,6 +304,7 @@ int fb_init(uint64_t multiboot_info) {
                 fb_write_u64(display_state.byte_size);
                 serial_write_public(" bytes.\n");
                 serial_write_public("ZEROOS: display primitive ready.\n");
+                fb_splash();
                 return 0;
             }
         }

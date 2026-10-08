@@ -21,6 +21,7 @@ ZEROOS: exception IST routing self-test passed.
 ZEROOS: IRQ controller capability:
 re:ZEROOS: (LAPIC/IOAPIC timer routing activated|legacy PIC timer routing retained)\.
 re:ZEROOS: display primitive ready\.
+re:ZEROOS: framebuffer splash painted \(build [0-9a-zA-Z.-]+\)\.
 ZEROOS: display present contract verified.
 re:ZEROOS: (PS/2 keyboard input stack ready|input stack degraded \([^)]*\))\.
 ZEROOS: input blocking wait/wake path passed.
