@@ -9,6 +9,7 @@
  * gate, and still completes. Exits nonzero on any contract violation.
  */
 #include <zeroos/desktop/desktop.h>
+#include <zeroos/storage.h>
 
 #include <zeroos/font8x8.h>
 
@@ -140,6 +141,126 @@ static void draw_text(uint32_t *dst, int32_t dst_w, int32_t dst_h, int32_t ox,
             }
         }
         cx += 8;
+    }
+}
+
+/* ---- Interactive shell: real VFS commands over the file syscall ABI ----
+ *
+ * Output goes through say()/fd 1, which the kernel mirrors onto the
+ * framebuffer console, so the shell needs no renderer of its own. Input is the
+ * existing PS/2 keycode stream. Commands operate on the real /ram filesystem. */
+
+static char shell_line[128];
+static uint64_t shell_len;
+
+static void shell_puts(const char *s) {
+    say(s);
+    say("\n");
+}
+
+static void shell_prompt(void) {
+    say("zeroos:/ram$ ");
+}
+
+static int starts_with(const char *s, const char *prefix) {
+    uint64_t i = 0;
+    while (prefix[i]) {
+        if (s[i] != prefix[i])
+            return 0;
+        ++i;
+    }
+    return 1;
+}
+
+static const char *skip_ws(const char *s) {
+    while (*s == ' ')
+        ++s;
+    return s;
+}
+
+static void shell_ls(const char *path) {
+    struct zeroos_dirent entry;
+    int64_t fd = zeroos_open(path, ZEROOS_O_RDONLY | ZEROOS_O_DIRECTORY, 0);
+    uint64_t i, k;
+
+    if (fd < 0) {
+        shell_puts("ls: cannot open directory");
+        return;
+    }
+    while (zeroos_readdir(fd, &entry) == 0) {
+        char out[280];
+        k = 0;
+        for (i = 0; i < sizeof(entry.name) && entry.name[i] && k < 278; ++i)
+            out[k++] = entry.name[i];
+        out[k] = 0;
+        shell_puts(out);
+    }
+    zeroos_close(fd);
+}
+
+static void shell_cat(const char *path) {
+    uint8_t buf[256];
+    int64_t fd = zeroos_open(path, ZEROOS_O_RDONLY, 0);
+    int64_t n, i;
+
+    if (fd < 0) {
+        shell_puts("cat: no such file");
+        return;
+    }
+    for (;;) {
+        char tmp[257];
+        n = zeroos_read(fd, buf, sizeof(buf));
+        if (n <= 0)
+            break;
+        for (i = 0; i < n; ++i)
+            tmp[i] = (char)buf[i];
+        tmp[i] = 0;
+        say(tmp);
+    }
+    say("\n");
+    zeroos_close(fd);
+}
+
+static void shell_write(const char *args) {
+    char path[64];
+    uint64_t k = 0;
+    const char *p = skip_ws(args);
+    int64_t fd;
+
+    while (*p && *p != ' ' && k < sizeof(path) - 1)
+        path[k++] = *p++;
+    path[k] = 0;
+    fd = zeroos_open(path, ZEROOS_O_WRONLY | ZEROOS_O_CREAT | ZEROOS_O_TRUNC,
+                     0644);
+    if (fd < 0) {
+        shell_puts("write: cannot create");
+        return;
+    }
+    zeroos_file_write(fd, skip_ws(p), slen(skip_ws(p)));
+    zeroos_close(fd);
+    shell_puts("write: ok");
+}
+
+static void shell_execute(const char *cmd) {
+    const char *c = skip_ws(cmd);
+
+    if (!*c)
+        return;
+    if (starts_with(c, "help")) {
+        shell_puts("commands: help | ls [dir] | cat <file> | "
+                   "write <file> <text> | rm <file>");
+    } else if (starts_with(c, "ls")) {
+        const char *arg = skip_ws(c + 2);
+        shell_ls(*arg ? arg : "/ram");
+    } else if (starts_with(c, "cat ")) {
+        shell_cat(skip_ws(c + 3));
+    } else if (starts_with(c, "write ")) {
+        shell_write(c + 5);
+    } else if (starts_with(c, "rm ")) {
+        shell_puts(zeroos_unlink(skip_ws(c + 2)) == 0 ? "rm: ok"
+                                                      : "rm: failed");
+    } else {
+        shell_puts("unknown command (try 'help')");
     }
 }
 
@@ -464,6 +585,44 @@ int session_main(void) {
     say("ZEROOS: session input routing passed.");
 
 
+    /* 8. Shell self-test: exercise the real VFS from this Ring-3 process so
+     * the file ABI is certified end-to-end on every boot. */
+    {
+        const char *path = "/ram/shell_selftest.txt";
+        uint8_t rb[32];
+        int64_t fd, n;
+        int ok;
+
+        fd = zeroos_open(path, ZEROOS_O_WRONLY | ZEROOS_O_CREAT |
+                                 ZEROOS_O_TRUNC, 0644);
+        ok = fd >= 0;
+        if (ok) {
+            ok = zeroos_file_write(fd, "zeroos", 6) == 6;
+            zeroos_close(fd);
+        }
+        fd = zeroos_open(path, ZEROOS_O_RDONLY, 0);
+        ok = ok && fd >= 0;
+        if (fd >= 0) {
+            n = zeroos_read(fd, rb, sizeof(rb));
+            ok = ok && n == 6 && rb[0] == 'z' && rb[5] == 's';
+            zeroos_close(fd);
+        }
+        ok = ok && zeroos_unlink(path) == 0;
+        if (!ok)
+            return fail("shell file self-test", 0);
+        /* Also drive the interactive command engine so it is exercised (and
+         * referenced) in both the certification and production builds. */
+        shell_len = 0;
+        shell_line[0] = 0;
+        shell_prompt();
+        shell_execute("help");
+        shell_execute("write /ram/shell_probe.txt hi");
+        shell_execute("cat /ram/shell_probe.txt");
+        shell_execute("ls /ram");
+        shell_execute("rm /ram/shell_probe.txt");
+        say("ZEROOS: session shell file self-test passed.\n");
+    }
+
 #ifdef ZEROOS_BOOT_CERTIFICATION
     say("ZEROOS: session shell process complete.");
     return 0;
@@ -472,11 +631,38 @@ int session_main(void) {
      * process. The kernel input wait is the lifetime boundary, so idle CPU
      * usage stays event-driven instead of polling. */
     say("ZEROOS: interactive desktop session ready.");
+    shell_puts("ZEROOS shell ready - type 'help' for commands.");
+    shell_prompt();
     for (;;) {
         sys_result = zeroos_input_wait(&event, 0, 0);
-        if (sys_result == 0 || sys_result == -ZEROOS_EINTR)
+        if (sys_result == -ZEROOS_EINTR)
             continue;
-        return fail("persistent input wait", sys_result);
+        if (sys_result != 0)
+            return fail("persistent input wait", sys_result);
+        if (event.kind != ZEROOS_INPUT_KIND_KEY ||
+            !(event.flags & ZEROOS_INPUT_FLAG_DOWN))
+            continue;
+        if (event.code == ZEROOS_KEY_ENTER) {
+            say("\n");
+            shell_execute(shell_line);
+            shell_len = 0;
+            shell_line[0] = 0;
+            shell_prompt();
+        } else if (event.code == ZEROOS_KEY_BACKSPACE) {
+            if (shell_len) {
+                shell_len--;
+                shell_line[shell_len] = 0;
+            }
+        } else if (event.code >= 32 && event.code < 127) {
+            if (shell_len + 1 < sizeof(shell_line)) {
+                char echo[2];
+                echo[0] = (char)event.code;
+                echo[1] = 0;
+                shell_line[shell_len++] = (char)event.code;
+                shell_line[shell_len] = 0;
+                say(echo);
+            }
+        }
     }
 #endif
 }

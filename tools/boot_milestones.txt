@@ -98,6 +98,7 @@ ZEROOS: storage userspace probe reaped; descriptors and mappings released
 ZEROOS: storage Stage 3 certification complete.
 re:ZEROOS: session display service attached \((live|degraded)\)\.
 re:ZEROOS: session desktop painted across the full panel at [0-9]+x[0-9]+ \(build [0-9a-zA-Z.-]+\)\.
+ZEROOS: session shell file self-test passed.
 ZEROOS: session compositor frame path passed.
 re:ZEROOS: session (scanout present contract|scanout degraded path) passed\.
 ZEROOS: session input pump passed.
