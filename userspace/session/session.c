@@ -593,6 +593,24 @@ int session_main(void) {
         int64_t fd, n;
         int ok;
 
+        /* /ram is mounted by the asynchronous storage task, so wait for it
+         * (cooperatively) before touching the filesystem. */
+        {
+            int mounted = 0, i;
+            for (i = 0; i < 200000; ++i) {
+                int64_t d = zeroos_open("/ram", ZEROOS_O_RDONLY |
+                                                  ZEROOS_O_DIRECTORY, 0);
+                if (d >= 0) {
+                    zeroos_close(d);
+                    mounted = 1;
+                    break;
+                }
+                zeroos_yield();
+            }
+            if (!mounted)
+                return fail("shell /ram mount wait", 0);
+        }
+
         fd = zeroos_open(path, ZEROOS_O_WRONLY | ZEROOS_O_CREAT |
                                  ZEROOS_O_TRUNC, 0644);
         ok = fd >= 0;
