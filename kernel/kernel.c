@@ -62,6 +62,7 @@ void serial_write_public(const char *text) {
      * writes prevents AP diagnostics from interleaving individual bytes and
      * destroying the line-oriented boot certification markers. */
     flags=spin_lock_irqsave(&serial_lock);
+    fb_console_write(text);
     while (*text) {
         if (*text=='\n') serial_putc('\r');
         serial_putc(*text++);
@@ -69,6 +70,7 @@ void serial_write_public(const char *text) {
     spin_unlock_irqrestore(&serial_lock,flags);
 }
 
+extern void fb_console_write(const char *text);
 extern void interrupts_init(void);
 extern int boot_stack_guard_ok(void);
 

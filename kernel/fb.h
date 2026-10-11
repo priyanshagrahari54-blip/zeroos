@@ -51,6 +51,11 @@ const struct zeroos_display_info *fb_display_info(void);
 #define FB_PRESENT_PROBE_H 4U
 
 int fb_present_active(void);
+
+/* On-screen console mirror: draws serial text into the live framebuffer so a
+ * machine without a serial cable can still read the boot/session log. No-op
+ * until fb_init has acquired a scanout. */
+void fb_console_write(const char *text);
 int fb_write_pixels(uint32_t x, uint32_t y, uint32_t count,
                     const uint8_t *source);
 int fb_read_pixel(uint32_t x, uint32_t y, uint32_t *xrgb_out);
