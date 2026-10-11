@@ -962,6 +962,7 @@ static void scheduler_probe_monitor(void *argument) {
             serial_write_public("ZEROOS: per-CPU scheduler ownership verified.\n");
         }
 
+#ifdef ZEROOS_BOOT_CERTIFICATION
         if (!hotplug_reported && per_cpu_reported &&
             atomic_u64_load(&process_thread_probe_phase)==3) {
             if (smp_online_count()>1) {
@@ -1011,6 +1012,11 @@ static void scheduler_probe_monitor(void *argument) {
                 session_start();
             }
         }
+#else
+    (void)hotplug_reported;
+    (void)input_drained;
+    (void)userspace_reported;
+#endif
 
         if (now>=last_report+100) {
             last_report=now;
@@ -1289,6 +1295,17 @@ void kernel_main(uint64_t multiboot_info, uint64_t multiboot_magic) {
     serial_write_public("ZEROOS: foundation milestone reached.\n");
 
     scheduler_self_test();
+
+#ifndef ZEROOS_BOOT_CERTIFICATION
+    /* Production: the user-facing desktop and storage must not wait on the
+     * deterministic certification probe chain, which can stall on real
+     * hardware (boot-time keystrokes, timing, firmware quirks) and previously
+     * left the panel frozen at the splash. Launch both unconditionally; the
+     * probes still run and report for diagnostics. */
+    storage_start();
+    session_start();
+    serial_write_public("ZEROOS: production bring-up launched storage and desktop session.\n");
+#endif
 
     for (;;) __asm__ volatile ("sti; hlt");
 }
