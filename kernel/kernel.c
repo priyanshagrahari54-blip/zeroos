@@ -962,7 +962,6 @@ static void scheduler_probe_monitor(void *argument) {
             serial_write_public("ZEROOS: per-CPU scheduler ownership verified.\n");
         }
 
-#ifdef ZEROOS_BOOT_CERTIFICATION
         if (!hotplug_reported && per_cpu_reported &&
             atomic_u64_load(&process_thread_probe_phase)==3) {
             if (smp_online_count()>1) {
@@ -1012,12 +1011,6 @@ static void scheduler_probe_monitor(void *argument) {
                 session_start();
             }
         }
-#else
-    (void)hotplug_reported;
-    (void)input_drained;
-    (void)userspace_reported;
-    (void)stress_start;
-#endif
 
         if (now>=last_report+100) {
             last_report=now;
@@ -1033,8 +1026,7 @@ static void scheduler_probe_monitor(void *argument) {
          * production boot launches storage/session unconditionally and must
          * never panic because the cert probes did not run.
          */
-#ifdef ZEROOS_BOOT_CERTIFICATION
-        if (now-stress_start>2000 &&
+        if (now-stress_start>400 &&
             (!preempt_reported || !lifecycle_reported ||
              !fairness_reported || !frame_invariant_reported ||
              !hotplug_reported ||
@@ -1047,7 +1039,6 @@ static void scheduler_probe_monitor(void *argument) {
             atomic_u64_fetch_add(&scheduler_stress_failures,1);
             kernel_panic("scheduler stress certification timed out");
         }
-#endif
 
         __asm__ volatile ("hlt");
         scheduler_yield();
