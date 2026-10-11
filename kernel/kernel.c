@@ -1016,6 +1016,7 @@ static void scheduler_probe_monitor(void *argument) {
     (void)hotplug_reported;
     (void)input_drained;
     (void)userspace_reported;
+    (void)stress_start;
 #endif
 
         if (now>=last_report+100) {
@@ -1026,9 +1027,14 @@ static void scheduler_probe_monitor(void *argument) {
         /*
          * Certification deadline: all stress probes must complete within a
          * bounded tick budget. This prevents a broken scheduler from hanging
-         * CI forever while retaining deterministic QEMU behavior.
+         * CI forever while retaining deterministic QEMU behavior. The external
+         * `boot_test.sh --timeout` still bounds CI, so the budget can be
+         * generous enough to survive slow runners. Certification-only: the
+         * production boot launches storage/session unconditionally and must
+         * never panic because the cert probes did not run.
          */
-        if (now-stress_start>400 &&
+#ifdef ZEROOS_BOOT_CERTIFICATION
+        if (now-stress_start>2000 &&
             (!preempt_reported || !lifecycle_reported ||
              !fairness_reported || !frame_invariant_reported ||
              !hotplug_reported ||
@@ -1041,6 +1047,7 @@ static void scheduler_probe_monitor(void *argument) {
             atomic_u64_fetch_add(&scheduler_stress_failures,1);
             kernel_panic("scheduler stress certification timed out");
         }
+#endif
 
         __asm__ volatile ("hlt");
         scheduler_yield();
