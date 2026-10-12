@@ -57,8 +57,10 @@
 #define RTL_TX_TUN  0x00004000U
 #define RTL_TX_TABT 0x00008000U
 
-/* 8 KiB ring plus the 16 bytes of wrap slack the hardware requires. */
-#define RTL_RX_BUF_SZ (8192U + 16U)
+/* The ring wraps at the size programmed into RxConfig (8 KiB); the extra 16
+ * bytes are allocation slack for a packet that straddles the wrap, not part
+ * of the modulo. The buffer itself is three pages so that slack is real. */
+#define RTL_RX_BUF_SZ 8192U
 #define RTL_RX_PAGES  3U
 #define RTL_TX_BUF_SZ 1536U
 #define RTL_TX_DESCS  4U
@@ -502,6 +504,16 @@ static int rtl8139_attach(struct pci_device *pci) {
     }
     for (i = 0; i < 6U; ++i)
         rtl_device.mac[i] = rtl_read8(&rtl_device, RTL_MAC0 + i);
+    /* A zero MAC means the register window is not answering; bringing the
+     * interface up would produce frames nobody can reply to. */
+    if (rtl_device.mac[0] == 0U && rtl_device.mac[1] == 0U &&
+        rtl_device.mac[2] == 0U && rtl_device.mac[3] == 0U &&
+        rtl_device.mac[4] == 0U && rtl_device.mac[5] == 0U) {
+        klog("ZEROOS: net0: rtl8139 MAC read back as all zeros; "
+             "register window not responding.");
+        rtl_device.present = 0;
+        return -1;
+    }
 
     rtl_device.rx_buf = (uint8_t *)page_alloc_contiguous(RTL_RX_PAGES);
     if (!rtl_device.rx_buf) {

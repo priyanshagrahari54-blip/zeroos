@@ -399,8 +399,13 @@ jobs:
             fi
           done
           if test -s build/serial.log; then
-            summary=$(tr '\r\n' '  ' < build/serial.log | cut -c1-6000)
-            echo "::error title=ZEROOS serial log::$summary"
+            # The periodic 'timer tick 100' report floods the log and pushes
+            # the failing stage out of any truncated view, so drop it and keep
+            # the end of the log, which is where the failure actually is.
+            summary=$(grep -v "timer tick 100" build/serial.log | tr '\r\n' '  ' | tail -c 6000)
+            echo "::error title=ZEROOS serial tail::${summary}"
+            netlines=$(grep -o "ZEROOS: net0:.*" build/serial.log | tr '\r\n' '  ' | cut -c1-1800)
+            echo "::error title=ZEROOS net0 diagnostics::${netlines:-none}"
           fi
           if test -s build/qemu.log; then
             qsummary=$(tail -c 2200 build/qemu.log | tr '\r\n' '  ')
