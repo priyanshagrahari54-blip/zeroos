@@ -99,6 +99,7 @@ ZEROOS: storage Stage 3 certification complete.
 re:ZEROOS: session display service attached \((live|degraded)\)\.
 re:ZEROOS: session desktop painted across the full panel at [0-9]+x[0-9]+ \(build [0-9a-zA-Z.-]+\)\.
 ZEROOS: session shell file self-test passed.
+re:ZEROOS: session pci enumeration visible to Ring-3 \(devices=[0-9]+, first=[0-9a-f]{4}:[0-9a-f]{4}\)\.
 ZEROOS: session compositor frame path passed.
 re:ZEROOS: session (scanout present contract|scanout degraded path) passed\.
 ZEROOS: session input pump passed.

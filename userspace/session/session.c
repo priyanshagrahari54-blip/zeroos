@@ -123,6 +123,20 @@ static uint64_t append_uint(char *buf, uint64_t cap, uint64_t pos,
     return pos;
 }
 
+static uint64_t append_hex(char *buf, uint64_t cap, uint64_t pos,
+                           uint32_t value, uint32_t digits) {
+    static const char hex_digits[] = "0123456789abcdef";
+    uint32_t i;
+
+    for (i = 0; i < digits; ++i) {
+        uint32_t shift = (digits - 1U - i) * 4U;
+
+        if (pos + 1 < cap)
+            buf[pos++] = hex_digits[(value >> shift) & 0xFU];
+    }
+    return pos;
+}
+
 /* Rasterise text into dst (dst_w x dst_h, one uint32 per pixel) at (ox,oy)
  * using the 8x8 font. Pixels that fall outside the destination are skipped, so
  * a strip shorter than the glyph is safe rather than a buffer overrun. */
@@ -241,6 +255,45 @@ static void shell_write(const char *args) {
     shell_puts("write: ok");
 }
 
+/* List the PCI devices the kernel enumerated at boot, read through the
+ * ZEROOS_SYS_PCI_LIST ABI. */
+static void shell_pci(void) {
+    struct zeroos_pci_device_info devices[16];
+    int64_t n = zeroos_pci_list(devices, 16);
+    int64_t i;
+
+    if (n < 0) {
+        shell_puts("pci: query failed");
+        return;
+    }
+    if (n == 0) {
+        shell_puts("pci: no devices enumerated yet");
+        return;
+    }
+    for (i = 0; i < n; ++i) {
+        char out[112];
+        uint64_t k = 0;
+
+        k = append_uint(out, sizeof(out), k, devices[i].bus);
+        k = append_str(out, sizeof(out), k, ":");
+        k = append_uint(out, sizeof(out), k, devices[i].slot);
+        k = append_str(out, sizeof(out), k, ".");
+        k = append_uint(out, sizeof(out), k, devices[i].function);
+        k = append_str(out, sizeof(out), k, "  ");
+        k = append_hex(out, sizeof(out), k, devices[i].vendor, 4);
+        k = append_str(out, sizeof(out), k, ":");
+        k = append_hex(out, sizeof(out), k, devices[i].device, 4);
+        k = append_str(out, sizeof(out), k, "  class=");
+        k = append_hex(out, sizeof(out), k, devices[i].class_code, 2);
+        k = append_hex(out, sizeof(out), k, devices[i].subclass, 2);
+        k = append_hex(out, sizeof(out), k, devices[i].prog_if, 2);
+        out[k < sizeof(out) ? k : sizeof(out) - 1] = 0;
+        shell_puts(out);
+    }
+    if (n == 16)
+        shell_puts("pci: (list capped at 16 devices)");
+}
+
 static void shell_execute(const char *cmd) {
     const char *c = skip_ws(cmd);
 
@@ -248,7 +301,7 @@ static void shell_execute(const char *cmd) {
         return;
     if (starts_with(c, "help")) {
         shell_puts("commands: help | ls [dir] | cat <file> | "
-                   "write <file> <text> | rm <file>");
+                   "write <file> <text> | rm <file> | pci");
     } else if (starts_with(c, "ls")) {
         const char *arg = skip_ws(c + 2);
         shell_ls(*arg ? arg : "/ram");
@@ -256,6 +309,8 @@ static void shell_execute(const char *cmd) {
         shell_cat(skip_ws(c + 3));
     } else if (starts_with(c, "write ")) {
         shell_write(c + 5);
+    } else if (starts_with(c, "pci")) {
+        shell_pci();
     } else if (starts_with(c, "rm ")) {
         shell_puts(zeroos_unlink(skip_ws(c + 2)) == 0 ? "rm: ok"
                                                       : "rm: failed");
@@ -639,6 +694,33 @@ int session_main(void) {
         shell_execute("ls /ram");
         shell_execute("rm /ram/shell_probe.txt");
         say("ZEROOS: session shell file self-test passed.\n");
+    }
+
+    /* 9. PCI enumeration is reachable from Ring-3 through the syscall ABI.
+     * pci_init() runs before storage_mount_ram() in the storage task, so the
+     * /ram wait above already guarantees enumeration has completed. */
+    {
+        struct zeroos_pci_device_info devices[16];
+        int64_t n = zeroos_pci_list(devices, 16);
+        uint64_t pos = 0;
+
+        if (n <= 0)
+            return fail("pci enumeration from Ring-3", n);
+        if (devices[0].vendor == 0xFFFFU || devices[0].vendor == 0U ||
+            devices[0].bus != 0U)
+            return fail("pci device record", devices[0].vendor);
+        pos = append_str(line_buf, sizeof(line_buf), pos,
+                         "ZEROOS: session pci enumeration visible to Ring-3 "
+                         "(devices=");
+        pos = append_uint(line_buf, sizeof(line_buf), pos, (uint32_t)n);
+        pos = append_str(line_buf, sizeof(line_buf), pos,
+                         ", first=");
+        pos = append_hex(line_buf, sizeof(line_buf), pos, devices[0].vendor, 4);
+        pos = append_str(line_buf, sizeof(line_buf), pos, ":");
+        pos = append_hex(line_buf, sizeof(line_buf), pos, devices[0].device, 4);
+        pos = append_str(line_buf, sizeof(line_buf), pos, ").\n");
+        line_buf[pos < sizeof(line_buf) ? pos : sizeof(line_buf) - 1] = 0;
+        say(line_buf);
     }
 
 #ifdef ZEROOS_BOOT_CERTIFICATION

@@ -63,6 +63,7 @@ enum zeroos_syscall_id {
     ZEROOS_SYS_DISPLAY_PRESENT = 52,
     ZEROOS_SYS_INPUT_POLL = 53,
     ZEROOS_SYS_INPUT_WAIT = 54,
+    ZEROOS_SYS_PCI_LIST = 55,
     ZEROOS_SYS_MAX
 };
 
@@ -118,6 +119,7 @@ enum zeroos_syscall_error {
 #define ZEROOS_ABI_FEATURE_DISPLAY  (1ULL << 8)
 #define ZEROOS_ABI_FEATURE_PRESENT  (1ULL << 9)
 #define ZEROOS_ABI_FEATURE_INPUT    (1ULL << 10)
+#define ZEROOS_ABI_FEATURE_PCI      (1ULL << 11)
 
 /* Display geometry: ABI copy of kernel/fb.h (abi_consistency.py gates the
  * struct body against the public header). */
@@ -274,6 +276,23 @@ struct zeroos_input_event {
     int32_t x, y, value;
     uint16_t code;
     uint8_t kind, flags;
+};
+
+/* Ring-3 view of an enumerated PCI device (ZEROOS_SYS_PCI_LIST). Must stay
+ * byte-identical to struct zeroos_pci_device_info in the public header. */
+struct zeroos_pci_device_info {
+    uint8_t bus;
+    uint8_t slot;
+    uint8_t function;
+    uint8_t revision;
+    uint16_t vendor;
+    uint16_t device;
+    uint8_t class_code;
+    uint8_t subclass;
+    uint8_t prog_if;
+    uint8_t header_type;
+    uint64_t bar_base[6];
+    uint64_t bar_size[6];
 };
 
 struct zeroos_syscall_abi_info {
