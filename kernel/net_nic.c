@@ -98,6 +98,7 @@ static uint32_t net_arp_sent;
 static uint32_t net_arp_seen;
 static uint32_t net_frame_logged;
 static uint32_t net_arp_parse_fail;
+static uint32_t rx_desc_logged;
 
 static uint8_t rtl_read8(struct rtl8139 *device, uint32_t offset) {
     return *(volatile uint8_t *)(device->regs + offset);
@@ -276,6 +277,14 @@ static int rtl_receive(struct rtl8139 *device) {
         rtl_write16(device, RTL_RXBUFPTR,
                     (uint16_t)((device->rx_offset + RTL_RX_BUF_SZ - 16U) %
                                RTL_RX_BUF_SZ));
+        if (rx_desc_logged < 4U) {
+            ++rx_desc_logged;
+            klog("ZEROOS: net0: rx desc %u off=%u status=0x%x len=%u "
+                 "cmd=0x%x next_off=%u capr=%u.",
+                 rx_desc_logged, offset, header, length,
+                 rtl_read8(device, RTL_CHIPCMD), device->rx_offset,
+                 rtl_read16(device, RTL_RXBUFPTR));
+        }
     }
     return received;
 }
@@ -523,7 +532,17 @@ static void net_resolve_gateway(void) {
              (unsigned long long)arp_cache.rejected,
              (unsigned long long)arp_cache.unsolicited_replies,
              (unsigned long long)arp_cache.pending_expired);
-    (void)netif_send(&net_interface, request, (uint32_t)built);
+    {
+        int tx_rc = netif_send(&net_interface, request, (uint32_t)built);
+
+        if (net_arp_sent <= 3U)
+            klog("ZEROOS: net0: arp tx rc=%d tx_packets=%llu tx_dropped=%llu "
+                 "rx_packets=%llu.",
+                 tx_rc,
+                 (unsigned long long)net_interface.stats.tx_packets,
+                 (unsigned long long)net_interface.stats.tx_dropped,
+                 (unsigned long long)net_interface.stats.rx_packets);
+    }
 }
 
 /* ---- device attach ---- */
