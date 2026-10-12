@@ -94,6 +94,8 @@ static uint8_t net_gateway_mac[6];
 static int net_gateway_resolved;
 static uint64_t net_stats_frames;
 static uint64_t net_stats_tx;
+static uint32_t net_arp_sent;
+static uint32_t net_arp_seen;
 
 static uint8_t rtl_read8(struct rtl8139 *device, uint32_t offset) {
     return *(volatile uint8_t *)(device->regs + offset);
@@ -400,11 +402,21 @@ static void net_handle_arp(const uint8_t *frame, uint32_t length) {
             (void)netif_send(&net_interface, reply, sizeof(reply));
         return;
     }
-    if (arp.operation == NET_ARP_REPLY && net_local_ipv4)
-        (void)net_arp_cache_accept_reply(&arp_cache, frame, length,
-                                         net_local_ipv4,
-                                         net_interface.address, timer_ticks(),
-                                         timer_ticks() + 6000U);
+    if (arp.operation == NET_ARP_REPLY && net_local_ipv4) {
+        int rc = net_arp_cache_accept_reply(&arp_cache, frame, length,
+                                            net_local_ipv4,
+                                            net_interface.address,
+                                            timer_ticks(),
+                                            timer_ticks() + 6000U);
+
+        if (net_arp_seen < 4U)
+            klog("ZEROOS: net0: arp reply from %u.%u.%u.%u admit=%d "
+                 "ethdst=%x:%x:%x:%x:%x:%x.",
+                 (arp.sender_ipv4 >> 24) & 0xFFU, (arp.sender_ipv4 >> 16) & 0xFFU,
+                 (arp.sender_ipv4 >> 8) & 0xFFU, arp.sender_ipv4 & 0xFFU, rc,
+                 frame[0], frame[1], frame[2], frame[3], frame[4], frame[5]);
+        ++net_arp_seen;
+    }
 }
 
 static void net_handle_ipv4(const uint8_t *frame, uint32_t length) {
@@ -474,8 +486,23 @@ static void net_resolve_gateway(void) {
                                        timer_ticks() + 300U) != 0)
         return;
     if (net_arp_build_request(net_interface.address, net_local_ipv4,
-                              net_gateway_ipv4, request) == 0)
-        (void)netif_send(&net_interface, request, sizeof(request));
+                              net_gateway_ipv4, request) != 0) {
+        klog("ZEROOS: net0: arp request build failed.");
+        return;
+    }
+    ++net_arp_sent;
+    if (net_arp_sent <= 3U || net_arp_sent % 20U == 0U)
+        klog("ZEROOS: net0: arp request %u for %u.%u.%u.%u sent; "
+             "cache learned=%llu rejected=%llu unsolicited=%llu "
+             "pending_expired=%llu.",
+             net_arp_sent, (net_gateway_ipv4 >> 24) & 0xFFU,
+             (net_gateway_ipv4 >> 16) & 0xFFU, (net_gateway_ipv4 >> 8) & 0xFFU,
+             net_gateway_ipv4 & 0xFFU,
+             (unsigned long long)arp_cache.learned,
+             (unsigned long long)arp_cache.rejected,
+             (unsigned long long)arp_cache.unsolicited_replies,
+             (unsigned long long)arp_cache.pending_expired);
+    (void)netif_send(&net_interface, request, sizeof(request));
 }
 
 /* ---- device attach ---- */
