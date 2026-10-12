@@ -52,10 +52,14 @@
 #define RTL_RCR_AM  0x04U
 #define RTL_RCR_AB  0x08U
 
-/* TxStatus bits. */
-#define RTL_TX_TOK  0x00002000U
-#define RTL_TX_TUN  0x00004000U
-#define RTL_TX_TABT 0x00008000U
+/* TxStatus bits: bits 0-12 are the size, bit 13 is TOK, bit 24 is OWN, which
+ * the NIC sets when it hands the descriptor back to the host. Completion is
+ * either one; checking only TOK leaves every successful transmit looking like
+ * a timeout. */
+#define RTL_TX_TOK       0x00002000U
+#define RTL_TX_TUN       0x00004000U
+#define RTL_TX_TABT      0x00008000U
+#define RTL_TX_HOST_OWNS 0x01000000U
 
 /* The ring wraps at the size programmed into RxConfig (8 KiB); the extra 16
  * bytes are allocation slack for a packet that straddles the wrap, not part
@@ -99,6 +103,7 @@ static uint32_t net_arp_seen;
 static uint32_t net_frame_logged;
 static uint32_t net_arp_parse_fail;
 static uint32_t rx_desc_logged;
+static uint32_t tx_timeout_logged;
 
 static uint8_t rtl_read8(struct rtl8139 *device, uint32_t offset) {
     return *(volatile uint8_t *)(device->regs + offset);
@@ -225,11 +230,16 @@ static int rtl_transmit(void *context, const uint8_t *frame, uint16_t length) {
 
         if (status & (RTL_TX_TABT | RTL_TX_TUN))
             return -2;
-        if (status & RTL_TX_TOK) {
+        if (status & (RTL_TX_TOK | RTL_TX_HOST_OWNS)) {
             device->tx_next++;
             ++net_stats_tx;
             return 0;
         }
+    }
+    if (tx_timeout_logged < 3U) {
+        ++tx_timeout_logged;
+        klog("ZEROOS: net0: tx completion timeout slot=%u status=0x%x.", slot,
+             rtl_read32(device, RTL_TXSTATUS0 + slot * 4U));
     }
     return -3;
 }
