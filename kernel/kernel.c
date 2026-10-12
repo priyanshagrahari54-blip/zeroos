@@ -18,6 +18,7 @@
 #include "shmem.h"
 #include "storage/storage.h"
 #include "session.h"
+#include "net_nic.h"
 #include "fb.h"
 #include "input.h"
 
@@ -1020,6 +1021,10 @@ static void scheduler_probe_monitor(void *argument) {
                 serial_write_public("ZEROOS: display present contract verified.\n");
                 /* Stage 3: storage bring-up runs in its own task. */
                 storage_start();
+                /* Stage 3b: the NIC driver probes PCI (published by the
+                 * storage task) and brings up IPv4. Absent hardware only
+                 * yields a diagnostic; it never blocks or fails the boot. */
+                net_start();
                 /* Stage 5: the session/shell process certifies the
                  * display service, compositor and input paths. */
                 session_start();
@@ -1315,8 +1320,9 @@ void kernel_main(uint64_t multiboot_info, uint64_t multiboot_magic) {
      * left the panel frozen at the splash. Launch both unconditionally; the
      * probes still run and report for diagnostics. */
     storage_start();
+    net_start();
     session_start();
-    serial_write_public("ZEROOS: production bring-up launched storage and desktop session.\n");
+    serial_write_public("ZEROOS: production bring-up launched storage, network and desktop session.\n");
 #endif
 
     for (;;) __asm__ volatile ("sti; hlt");

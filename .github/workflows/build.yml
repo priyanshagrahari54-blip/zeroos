@@ -268,11 +268,12 @@ jobs:
           set -e
           rm -f build-production/serial.log build-production/qemu.log
           set +e
-          timeout 20s qemu-system-x86_64 -smp 2 -cdrom build-production/zeroos.iso -serial file:build-production/serial.log -display none -no-reboot -no-shutdown -debugcon file:build-production/debug.log -global isa-debugcon.iobase=0xe9 -d int,guest_errors,cpu_reset -D build-production/qemu.log
+          timeout 20s qemu-system-x86_64 -smp 2 -netdev user,id=net0 -device rtl8139,netdev=net0 -cdrom build-production/zeroos.iso -serial file:build-production/serial.log -display none -no-reboot -no-shutdown -debugcon file:build-production/debug.log -global isa-debugcon.iobase=0xe9 -d int,guest_errors,cpu_reset -D build-production/qemu.log
           rc=$?
           set -e
           test "$rc" -eq 124 || test "$rc" -eq 0
           grep -q "ZEROOS: interactive desktop session ready." build-production/serial.log
+          grep -q "ZEROOS: net0: rtl8139 attached at " build-production/serial.log
           if grep -q "ZEROOS PANIC:" build-production/serial.log; then
             grep "ZEROOS PANIC:" build-production/serial.log
             exit 1

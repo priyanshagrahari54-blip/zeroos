@@ -1,7 +1,7 @@
 BUILD := build
 KERNEL := $(BUILD)/zeroos.elf
 ISO := $(BUILD)/zeroos.iso
-HARDWARE_CORE_NAMES := net_core net_route net_transport net_conntrack net_l2 net_arp net_ipv6 netif net_stack net_socket firewall dns_core dhcp_core input_core usb_core audio_core display_core driver_core dma resource_core scancode_core mouse_core crypto
+HARDWARE_CORE_NAMES := net_core net_route net_transport net_conntrack net_l2 net_arp net_ipv6 netif net_stack net_socket firewall dns_core dhcp_core input_core usb_core audio_core display_core driver_core dma resource_core scancode_core mouse_core crypto net_nic
 HARDWARE_CORE_OBJS := $(addprefix $(BUILD)/hardware-,$(addsuffix .o,$(HARDWARE_CORE_NAMES)))
 
 CC := gcc

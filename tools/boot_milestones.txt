@@ -100,6 +100,9 @@ re:ZEROOS: session display service attached \((live|degraded)\)\.
 re:ZEROOS: session desktop painted across the full panel at [0-9]+x[0-9]+ \(build [0-9a-zA-Z.-]+\)\.
 ZEROOS: session shell file self-test passed.
 re:ZEROOS: session pci enumeration visible to Ring-3 \(devices=[0-9]+, first=[0-9a-f]{4}:[0-9a-f]{4}\)\.
+ZEROOS: net0: rtl8139 attached at 
+re:ZEROOS: net0: dhcp bound address=10\.0\.2\.15 lease=[0-9]+s\.
+re:ZEROOS: net0: first hop 10\.0\.2\.2 resolved to ([0-9a-f]{1,2}:){5}[0-9a-f]{1,2}\.
 ZEROOS: session compositor frame path passed.
 re:ZEROOS: session (scanout present contract|scanout degraded path) passed\.
 ZEROOS: session input pump passed.

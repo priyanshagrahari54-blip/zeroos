@@ -36,7 +36,7 @@ result from the physical machine under `docs/ZEROOS_MASTER/hardware/`.
 | Input | QEMU_CERTIFIED | source: 4/4; linked: input_; reached from the boot path: input_; host-tested by input-core-test, scancode-core-test, mouse-core-test; boot gate asserts 2 milestone(s) |
 | Display | QEMU_CERTIFIED | source: 2/2; linked: fb_; reached from the boot path: fb_; host-tested by display-core-test; boot gate asserts 2 milestone(s) |
 | UI | TESTED | source: 3/3; host-tested by desktop-tests; no boot-gate coverage for: desktop session |
-| Networking | TESTED | source: 5/5; linked: net_, netif_; linked into the image but NOT called from the boot path; host-tested by net-core-test, net-stack-test, netif-test, net-socket-test, net-route-test, net-transport-test, net-l2-test, net-arp-test, net-ipv6-test, net-conntrack-test |
+| Networking | TESTED | source: 5/5; linked: net_, netif_; reached from the boot path: net_; host-tested by net-core-test, net-stack-test, netif-test, net-socket-test, net-route-test, net-transport-test, net-l2-test, net-arp-test, net-ipv6-test, net-conntrack-test |
 | Wi-Fi | SPEC_ONLY | no source in the tree |
 | Audio | TESTED | source: 1/1; linked: audio_; linked into the image but NOT called from the boot path; host-tested by audio-core-test |
 | Bluetooth | TESTED | source: 1/1; host-tested by desktop-tests |

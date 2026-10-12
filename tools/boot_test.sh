@@ -123,6 +123,7 @@ for iteration in $(seq 1 "$iterations"); do
   timeout "${timeout_s}s" qemu-system-x86_64 \
     -smp "$smp" \
     -cdrom "$iso" \
+    -netdev user,id=net0 -device rtl8139,netdev=net0 \
     -serial "file:$build_root/serial.log" \
     -display none -no-reboot -no-shutdown \
     -debugcon "file:$build_root/debug.log" \
