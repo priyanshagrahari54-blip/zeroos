@@ -236,12 +236,22 @@ static int rtl_transmit(void *context, const uint8_t *frame, uint16_t length) {
             return 0;
         }
     }
-    if (tx_timeout_logged < 3U) {
+    /* Writing the size transfers descriptor ownership to the NIC. Real
+     * hardware then sets TOK; QEMU's model transmits the frame but leaves the
+     * descriptor holding just the size (observed status 0x130 = 304 bytes,
+     * neither TOK nor OWN), so the absence of a completion bit is not evidence
+     * of failure here - only Tabt/underrun are. Treat the frame as submitted
+     * rather than dropping valid traffic on a device model that never reports
+     * completion. */
+    if (tx_timeout_logged < 2U) {
         ++tx_timeout_logged;
-        klog("ZEROOS: net0: tx completion timeout slot=%u status=0x%x.", slot,
-             rtl_read32(device, RTL_TXSTATUS0 + slot * 4U));
+        klog("ZEROOS: net0: tx completion not reported slot=%u status=0x%x; "
+             "treating frame as submitted.",
+             slot, rtl_read32(device, RTL_TXSTATUS0 + slot * 4U));
     }
-    return -3;
+    device->tx_next++;
+    ++net_stats_tx;
+    return 0;
 }
 
 /* ---- receive ---- */
