@@ -396,10 +396,12 @@ static void net_handle_arp(const uint8_t *frame, uint32_t length) {
     if (arp.operation == NET_ARP_REQUEST && net_local_ipv4 &&
         arp.target_ipv4 == net_local_ipv4) {
         uint8_t reply[NET_ARP_ETHERNET_FRAME_SIZE];
+        /* The builder returns the frame length on success, negative on error. */
+        int built = net_arp_build_reply(net_interface.address, net_local_ipv4,
+                                        arp.sender_mac, arp.sender_ipv4, reply);
 
-        if (net_arp_build_reply(net_interface.address, net_local_ipv4,
-                                arp.sender_mac, arp.sender_ipv4, reply) == 0)
-            (void)netif_send(&net_interface, reply, sizeof(reply));
+        if (built > 0)
+            (void)netif_send(&net_interface, reply, (uint32_t)built);
         return;
     }
     if (arp.operation == NET_ARP_REPLY && net_local_ipv4) {
@@ -485,9 +487,14 @@ static void net_resolve_gateway(void) {
                                        net_gateway_ipv4, timer_ticks(),
                                        timer_ticks() + 300U) != 0)
         return;
-    if (net_arp_build_request(net_interface.address, net_local_ipv4,
-                              net_gateway_ipv4, request) != 0) {
-        klog("ZEROOS: net0: arp request build failed.");
+    /* The builder returns the frame length on success, negative on error. */
+    int built = net_arp_build_request(net_interface.address, net_local_ipv4,
+                                      net_gateway_ipv4, request);
+
+    if (built <= 0) {
+        if (net_arp_sent < 3U)
+            klog("ZEROOS: net0: arp request build failed.");
+        ++net_arp_sent;
         return;
     }
     ++net_arp_sent;
@@ -502,7 +509,7 @@ static void net_resolve_gateway(void) {
              (unsigned long long)arp_cache.rejected,
              (unsigned long long)arp_cache.unsolicited_replies,
              (unsigned long long)arp_cache.pending_expired);
-    (void)netif_send(&net_interface, request, sizeof(request));
+    (void)netif_send(&net_interface, request, (uint32_t)built);
 }
 
 /* ---- device attach ---- */
