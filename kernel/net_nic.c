@@ -96,6 +96,8 @@ static uint64_t net_stats_frames;
 static uint64_t net_stats_tx;
 static uint32_t net_arp_sent;
 static uint32_t net_arp_seen;
+static uint32_t net_frame_logged;
+static uint32_t net_arp_parse_fail;
 
 static uint8_t rtl_read8(struct rtl8139 *device, uint32_t offset) {
     return *(volatile uint8_t *)(device->regs + offset);
@@ -391,8 +393,14 @@ static void net_apply_lease(void) {
 static void net_handle_arp(const uint8_t *frame, uint32_t length) {
     struct net_arp_ipv4 arp;
 
-    if (net_arp_parse_ipv4(frame, length, &arp) != 0)
+    if (net_arp_parse_ipv4(frame, length, &arp) != 0) {
+        if (net_arp_parse_fail < 3U) {
+            ++net_arp_parse_fail;
+            klog("ZEROOS: net0: arp parse rejected len=%u type=0x%x.", length,
+                 length >= 14U ? get_be16(frame + 12U) : 0U);
+        }
         return;
+    }
     if (arp.operation == NET_ARP_REQUEST && net_local_ipv4 &&
         arp.target_ipv4 == net_local_ipv4) {
         uint8_t reply[NET_ARP_ETHERNET_FRAME_SIZE];
@@ -454,6 +462,12 @@ static void net_handle_ipv4(const uint8_t *frame, uint32_t length) {
 static void net_handle_frame(const uint8_t *frame, uint16_t length) {
     if (length < 14U)
         return;
+    if (net_frame_logged < 6U) {
+        ++net_frame_logged;
+        klog("ZEROOS: net0: rx frame %u len=%u type=0x%x dst=%x:%x:%x:%x:%x:%x.",
+             net_frame_logged, length, get_be16(frame + 12U), frame[0],
+             frame[1], frame[2], frame[3], frame[4], frame[5]);
+    }
     switch (get_be16(frame + 12U)) {
     case NET_ETHERTYPE_ARP:
         net_handle_arp(frame, length);
