@@ -1,90 +1,83 @@
 # ZEROOS — CURRENT IMPLEMENTATION STATUS
 
-Updated: 2026-10-05
-Baseline: 100% Implementation-Complete & Certified across all 10 stages.
+Updated: 2026-10-17
+Branch baseline at review: `main` (before PR #16 merge: `e8fb0a72d45733a682b9614e80c019941f747ab1`); PR #16 merged as `d6b58292df7e00b4b2f15ba22f3a0405035ee549`.
+Status policy: **evidence-weighted estimate; never equate a source file, marker check, architecture document, or host test with a working end-user feature.**
 
-## Stage Completion & Certification Status
+## Executive status
 
-| Stage | Status | Certification Target | Evidence & Gate |
-|---|:---:|---|---|
-| 1 | 100% | Kernel foundation, SMP, scheduler stress, APIC/ACPI | `tools/stage1_scheduler_cert.sh` [PASS] |
-| 2 | 100% | Ring-3 transition, syscall ABI, IPC queues, ELF loading | `tools/stage2_userspace_cert.sh` [PASS] |
-| 3 | 100% | Block layer, AHCI, NVMe, GPT, ZJFS, crash recovery | `tools/stage3_storage_cert.sh` [PASS] |
-| 4 | 100% | PS/2 input, display core, HDA audio, network stack, PCI | `tools/stage4_hardware_cert.sh` [PASS] |
-| 5 | 100% | Desktop compositor, windowing, damage tracking, shell | `tools/stage5_desktop_cert.sh` [PASS] |
-| 6 | 100% | Firewall (IPv4/IPv6/TCP/UDP/ICMP), Sandbox, Vault, Packages, Updates, Recovery | `tools/stage6_security_update_recovery_cert.sh` [PASS] |
-| 7 | 100% | Retained compositor, zero-render idle, media rights, browser lifecycle, apps | `tools/stage7_gpu_media_browser_apps_cert.sh` [PASS] |
-| 8 | 100% | Windows PE/Win32/DLL compat, isolated Android AOSP 14 runtime, gaming governor | `tools/stage8_windows_android_gaming_cert.sh` [PASS] |
-| 9 | 100% | ZERO AI broker, action capabilities, automation workflows, ZAMF memory fabric | `tools/stage9_zero_ai_ecosystem_performance_cert.sh` [PASS] |
-| 10 | 100% | Lenovo G560 2GB reference profile, benchmark report, ISO bootable artifact | `tools/stage10_certification_release.sh` [PASS] |
+ZEROOS is a real native x86-64 kernel/desktop-session project with an ISO build path, host tests, and QEMU boot certification in CI. It is **not a 100%-complete consumer OS** and is not certified for production installation on arbitrary physical PCs.
 
-**Overall implementation estimate: 100% of specification implemented and verified.**
+- **Working build path:** `make` / `make iso`, with the bootable ISO requiring a valid GRUB/El Torito toolchain.
+- **Full verification path:** `make check`; release/boot evidence: `tools/release.sh`.
+- **Latest known main-branch CI evidence before PR #16:** build workflow succeeded on 2026-10-05 for `e8fb0a72`.
+- **PR #16:** merged on 2026-10-17. Its branch CI reported success and included parallel-build dependency fixes, ISO validation/writer fixes, shared 91-milestone boot test, reproducibility checks, and local intent-parser foundations. A post-merge main-branch run still must be checked before treating the merge as certified.
+- **Physical hardware:** not certified by this status entry. QEMU is not proof of G560 Wi-Fi, GPU acceleration, fan control, Bluetooth, or sustained 1080p playback.
+- **Installer:** a standalone ZEROOS disk installer is not complete; the documented dual-boot path relies on host GRUB.
+- **Dynamic linking:** unsupported ELF dynamic/interpreter segments are rejected. A production dynamic linker is not implemented.
+- **Compatibility:** PE/Win32 and Android-related foundations are not equivalent to a working Windows or AOSP runtime.
+- **Browser/media/AI:** lifecycle/policy/broker foundations must not be described as a complete browser engine, hardware media stack, or full autonomous AI system.
 
-All 10 stage certification gates are integrated directly into `make check` and pass with 0 errors.
+## Stage estimates (not release gates)
 
-## Implemented Subsystems & Contracts
+| Stage | Estimate | What this means / major open work |
+|---|---:|---|
+| 1 — Boot/kernel/scheduler/SMP | 92% | More race/fault/soak and multi-vCPU evidence; preserve interrupt-frame and context ownership invariants. |
+| 2 — Processes/userspace/IPC | 84% | Lifecycle and IPC foundations; dynamic linker/runtime, full negative/fault/resource tests, syscall and process-reap evidence remain. |
+| 3 — Storage/filesystem | 48% | Block/VFS/GPT/ZJFS/page-cache foundations; crash/power-cut, fsck, repeated-boot persistence and fault-injection evidence remain. |
+| 4 — Drivers/network/power | 43% | Driver and network foundations; complete real device support, TCP/DNS/DHCP operational coverage, driver isolation, Wi-Fi/audio/thermal certification remain. |
+| 5 — Desktop/UI | 44% | Framebuffer/compositor/window/session foundations; full shell/app behavior, font/toolkit/accessibility, display/input failure recovery and measured idle behavior remain. |
+| 6 — Security/update/recovery | 22% | Firewall/sandbox/rollback foundations; signed package/update trust, independent recovery boot, encryption/key handling and fault-injection remain. |
+| 7 — GPU/media/browser/apps | 15% | Lifecycle/policy and some cores; real GPU driver path, browser engine, codec integration and sustained media evidence remain. |
+| 8 — Windows/Android/gaming | 13% | Format/API foundations only; usable Win32 runtime, isolated Android runtime and real workload tests remain. |
+| 9 — ZERO AI/ecosystem/performance | 16% | Permission broker and deterministic local intent-parser foundations; tool adapters, backend/inference, task execution, cancellation, audit and measured resource control remain. |
+| 10 — Hardware/release certification | 10% | ISO/boot test infrastructure improved; hardware matrix, soak, installation/recovery cycle and measured performance remain. |
 
-### 1. Boot, Kernel & Memory Architecture
-- Native x86-64 freestanding kernel linked at `build/zeroos.elf` with zero SIMD/x87 instructions in interrupt/task paths.
-- Multiboot-compliant bootloader entry (`boot/boot.S`, `boot/isr.S`, `boot/ap_trampoline.S`).
-- Virtual Memory Manager (VMM): 4-level paging, recursive page table mapping, demand paging, W^X enforcement, user space isolation at `0x00007f0000000000`.
-- Task scheduler: interactive priority, foreground boost, background throttling, CPU affinity, SMP balancing, starvation prevention, timer-based sleep/wakeups.
-- Lenovo G560 2GB Low-Memory Profile: idle 100–200 MB RAM target, UI private working set <=50 MB.
+**Overall implementation estimate: ~43% (rough engineering estimate, not a metric emitted by CI).** Percentages are deliberately not “100%” because stage scripts passing does not prove every feature in the product specification is operational. Re-estimate after each meaningful code/test batch using changed implementation and evidence, not documentation volume.
 
-### 2. Userspace & Process Execution
-- Ring-3 transition via `sysretq`/`iretq`, syscall entry stub, stack alignment and bounds checking.
-- Process lifecycle: creation, destruction, exit, wait, orphan reaping, resource accounting.
-- Capability-based IPC: synchronized queues, non-blocking / timed waits, pipe partial ordering, shared memory grant/revocation.
-- ELF64 loader: validates headers, maps PT_LOAD segments, strictly fails closed on unsupported dynamic/interp types.
+## Build, test and boot commands
 
-### 3. Storage & Filesystem (ZJFS)
-- Block layer: request queue, elevator scheduling, write coalescing, 5400 RPM HDD sequential read optimization.
-- GPT partition management: dual-header CRC32 verification and automatic backup recovery.
-- ZJFS (Zero Journaling File System): 4KB blocks, inode table, crash-consistent write-ahead journal, atomic commits, host fsck self-test.
-- Page cache: bounded memory buffer with writeback throttling and memory-pressure eviction.
+```sh
+make                    # build normal ISO (toolchain must support bootable ISO)
+make check              # host/unit + stage certification gates
+make run                # QEMU serial boot, if QEMU is installed
+tools/release.sh        # full release gate: toolchain, checks, reproducibility, ISO validation, QEMU boot
+tools/release.sh --iterations 3
+```
 
-### 4. Hardware Support & Lenovo G560 Target
-- ACPI routing discovery, LAPIC/IOAPIC timer routing, legacy PIC masking.
-- Display: 1366x768 LVDS panel scanout, linear framebuffer, direct scanout with software fallback.
-- Input: PS/2 keyboard scancode translation, PS/2 mouse with packet decoding, multi-touch touchpad gestures.
-- Audio: Intel HDA PCM streaming, per-channel volume, mixer.
-- Networking: L2 Ethernet, ARP cache, IPv4 and IPv6 packet processing, UDP sockets, connection tracking.
-- Bluetooth service: event-driven discovery, pairing, trusted database, A2DP audio routing, AVRCP media controls, earbuds battery level telemetry, dormant when idle.
-- Wi-Fi management: AP scanning, WPA2/WPA3 security profiles, connection state machine, DHCP coordination, dormant power-save.
+Do not use `ZEROOS_ISO_ALLOW_UNBOOTABLE=1` as release evidence. It explicitly permits an image that may not be bootable. A skipped QEMU boot test is not a passing boot test. The release script must complete without `--skip-boot-test` before calling an artifact QEMU-boot-certified.
 
-### 5. Desktop & Zero-Render Architecture
-- Retained framebuffer with damage-driven rendering: 0 fps and 0 redraws on static desktop.
-- Window management: clipping, overlapping, workspace switching, snapping, focus tracking.
-- ZERO Bar, Floating Dock, and Dynamic Capsule with priority arbitration and zero-render idle discipline.
-- ZERO Dynamic Capsule: real event-driven status capsule with priority arbitration (Security Alert > Call > Recording > Update > Timer > Download > Music > Idle), minimal animation profile for G560, and guaranteed 0 frames/s when idle.
-- ZERO Control Center: full 28 sections, dedicated Lenovo G560 Dashboard showing CPU/GPU temperatures, fan state, RAM usage (119 MB idle baseline), HDD health, battery/charging, display, thermal mode, performance mode, and driver health with zero uncontrolled polling.
-- Themes: Aurora, Obsidian, Pearl, Solar, Ocean, Forest, Sunset, Mono, High Contrast.
+## Immediate priority order
 
-### 6. Security, Packages, Updates & Recovery
-- Firewall: stateful inbound/outbound inspection for IPv4, IPv6, TCP, UDP, ICMP.
-- Network sandbox: interface-scoped policies and default-deny egress.
-- Secret vault: ChaCha20-Poly1305 encryption, key zeroization.
-- Package manager: signed package verification, dependency resolution, atomic staging, quarantine of untrusted packages.
-- Transactional update pipeline: A/B slot switching, bound snapshot rollback on failure.
-- Recovery environment: Safe Boot, Repair Boot, FSCK superblock repair, offline diagnostics.
-- Backup Engine: full, incremental, and changed-block backups with ChaCha20-Poly1305 encryption, block-level integrity verification, resumable recovery after interruption, and restore verification.
+1. **Release truth / build integrity:** verify post-merge CI for `d6b5829`; fix every failure; ensure `make -j check` and `tools/release.sh` agree.
+2. **Boot stability:** preserve all required boot milestones; run repeated SMP QEMU boots; capture serial/debug/QEMU logs on failure.
+3. **Stage 2 lifecycle:** process/thread creation rollback, exit/wait/reap, ELF load failures, user-copy boundaries, timeout/wakeup races and resource-leak regression tests.
+4. **Storage integrity:** repeated boot/persistence, crash-consistency, block fault injection, fsck/rollback, ownership and cleanup.
+5. **Real hardware/driver coverage:** PCI/ACPI/DMA/IRQ correctness, input/display/audio/network and safe unsupported-device fallback.
+6. **Security/recovery:** capability checks at real boundaries, signed artifacts, sandbox negative tests, independently bootable recovery and transactional restore.
+7. **Usable desktop/apps:** native launcher/files/terminal/settings first; real UI input, error states, session recovery, accessibility and event-driven zero-render idle.
+8. **Browser/media:** integrate mature licensed components where compatible; hardware codec detection, A/V sync, browser isolation and sustained playback measurement.
+9. **ZERO AI:** broker → scoped tools → local/remote backend adapter → user consent/audit/cancel/rollback; no unrestricted shell/kernel privileges.
+10. **Windows/Android runtimes:** only after ABI, loader, graphics/audio, permissions and workload tests are genuinely implemented.
+11. **Performance and release:** measure boot, idle RAM/CPU, disk I/O, app launch/switch, thermal, security, long-duration soak and physical G560 behavior.
+12. **Docs and percentages:** update status, validation, roadmap and relevant subsystem contract in the same batch as code changes.
 
-### 7. Applications & Media
-- Native application suite: Files, Terminal, Settings, Control Center, Browser, Media, Notes, PDF Viewer, Study Center.
-- Media engine: lawful origin rights gate, DRM enforcement, 1080p H.264 @ 30 FPS playback capability path with safe software fallback.
-- Browser engine: tab lifecycle (ACTIVE -> IDLE -> FROZEN -> DISCARDED), URL parsing, memory-pressure eviction.
+## Evidence rules
 
-### 8. Windows & Android Compatibility
-- Windows compatibility: PE/COFF 64-bit validation, Win32 path translation, registry resolution, DLL reference counting.
-- Android compatibility: demand-loaded isolated AOSP 14 / API 34 runtime, 0 bytes resident when dormant, APK manifest parser, runtime permission matrix (camera, audio, location, notifications), sandboxed paths, graphics/audio/motion bridges, fault isolation.
-- Gaming governor: FPS overlay, target frame budgets, thermal and memory pressure cooperative yielding.
+- A compile is compile evidence only.
+- Host unit tests do not prove guest/kernel execution.
+- QEMU boot does not prove physical hardware support.
+- UI/policy/parser/marker does not prove an operational subsystem.
+- Benchmarks must record hardware, build SHA, command, workload, observed result and failure criteria.
+- Keep unsupported and untested features explicitly labelled. Never claim literal zero CPU/RAM/latency, universal hardware compatibility, or stable 1080p playback without the corresponding measurements.
 
-### 9. ZERO AI & Performance Ecosystem
-- ZERO AI broker: request pipelining, least privilege, permission-gated backend selection (local vs remote), explicit action capabilities (READ, WRITE, EXEC, NETWORK, DESTRUCTIVE), user confirmation, revocation check before backend execution.
-- Automation engine: rate-limited workflows, loop prevention, audit logging.
-- Adaptive Memory Fabric (ZAMF): tier detection, cold-page reclamation, memory pressure ladder.
+## Recent code and release-hardening evidence
 
-### 10. Release Certification & Deliverables
-- Machine-readable benchmark report generated at `build/g560_certification_report.json`.
-- Bootable ISO filesystem image generated at `build/zeroos.iso`.
-- Reproducible build gate: `make check` executes all unit tests, core tests, desktop checks, compat checks, storage tools, and all 10 stage certification suites.
+- `3d75f7ae`: Stage 2 certification gates for recent userspace hardening invariants.
+- `f2345ddb`: IPC timeout deadline arithmetic and wrap semantics.
+- `cde3f716`: timed sleep deadline range and overflow semantics.
+- `d958b547`: exec argument/environment vector and string-pointer overflow checks.
+- `080b4568`: reject unsupported ELF dynamic segments.
+- PR #16, merged as `d6b58292`: parallel build dependencies, ISO writer/validator, reproducible build checks, shared boot milestones and local intent parser. Verify the post-merge main workflow before treating its changes as release-certified.
+
+Last verified limitation snapshot: physical hardware validation, standalone installer, full dynamic linker, complete browser/GPU/media stack, full Windows/Android runtimes, and a complete AI execution backend remain open.
