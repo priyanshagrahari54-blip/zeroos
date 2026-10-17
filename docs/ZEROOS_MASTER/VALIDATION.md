@@ -1,49 +1,42 @@
-# ZEROOS — Stage 5 Validation and Support Matrix
-Status: living evidence ledger for Stage 5 and the binding evidence policy for Stages 1-10.
+# ZEROOS — Validation and Support Matrix
 
-The 10-stage hardening acceptance checklist is authoritative:
-[ZEROOS_10_STAGE_HARDENING.md](./ZEROOS_10_STAGE_HARDENING.md)
+Updated: 2026-10-17. This is the evidence policy for Stages 1-10; it must not overstate support.
 
-Every row is backed by a command that runs in this repository or by a CI run of a recorded commit. Where evidence does not exist yet, the row says so — no claim is made without it.
-
-## Binding 10-stage rule
-
-For Stages 1-10, a capability can move to Supported only when the corresponding item in [ZEROOS_10_STAGE_HARDENING.md](./ZEROOS_10_STAGE_HARDENING.md) has executable evidence at the required execution class.
-
-A host test cannot close a QEMU gate. QEMU cannot close a real-hardware gate. Detection, parsing, an architectural contract, or a mock cannot close an operational-support claim.
-
-Never claim literal zero CPU/RAM/latency, universal compatibility, or untested hardware support.
+The binding acceptance checklist is [ZEROOS_10_STAGE_HARDENING.md](./ZEROOS_10_STAGE_HARDENING.md). Current estimates and known limitations are in [ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md](./ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md).
 
 ## Evidence classes
 
-| Class | Evidence | Status |
+| Class | What it proves | Current limitation |
 |---|---|---|
-| UNIT | Host unit suites | Recorded green where listed |
-| INTEGRATION | Full guest boot and service lifecycle | Recorded green where listed |
-| NEGATIVE | Error/denial paths | Required |
-| FAULT | Injected failures and recovery | Required |
-| STRESS | Capacity/concurrency loops | Required |
-| SOAK | Long-duration stability | Required; hardware pending |
-| SECURITY | Enforcement and crypto boundaries | IPv4/UDP directional policy is packet-stack-bound and host-tested; live-path and other protocol gates remain pending |
-| RECOVERY | Crash/update/filesystem recovery | Covered paths recorded; full recovery gate pending |
-| QEMU | Guest certification | Required |
-| REAL-HARDWARE | Physical certified ISO | Not run — no claim |
-| PERFORMANCE | CPU/RAM/I/O/GPU/latency/thermal measurements | On-device evidence pending |
+| UNIT | Host code path exercised | Does not prove kernel execution |
+| BUILD | Freestanding objects and kernel link | Does not prove the ISO boots |
+| ISO-STRUCTURE | ISO/El Torito/Multiboot structure validated | Does not prove guest execution |
+| QEMU | Guest reached every required boot milestone | Does not prove physical hardware support |
+| NEGATIVE / FAULT | Denial, malformed input and failure recovery | Must be recorded per subsystem |
+| STRESS / SOAK | Repeated/concurrent/long-duration behavior | Coverage is still incomplete |
+| REAL-HARDWARE | Physical machine and adapter behavior | G560 matrix not certified here |
+| PERFORMANCE | Measured CPU/RAM/I/O/GPU/latency/thermal | No blanket performance claim without workload data |
 
-## Stage 5 current support limits
+## Current release status
 
-- Graphics/compositor/window/input foundations exist; full GPU acceleration is not yet a certified operational path.
-- Windows compatibility core and PE validation exist; no Windows runtime claim.
-- Android baseline is documented; runtime is absent and unclaimed.
-- Browser lifecycle exists; renderer/engine binding remains pending.
-- ZERO AI broker exists; backend/inference adapters remain pending.
-- Media policy exists; decoder/playback integration remains pending.
-- Gaming profiles/metrics exist; live game runtime remains pending.
-- Real-hardware validation remains open.
+- ZEROOS has a native x86-64 kernel, Ring-3 session path, build targets, host tests and QEMU boot-test infrastructure.
+- PR #16 was merged as `d6b58292df7e00b4b2f15ba22f3a0405035ee549`; its PR workflow passed before merge. Post-merge `main` CI must be checked separately.
+- The release gate is `tools/release.sh`; it requires GCC/binutils, GRUB/xorriso and QEMU, runs `make check`, reproducibility checks, ISO structure checks and boot milestones.
+- An ISO built with `ZEROOS_ISO_ALLOW_UNBOOTABLE=1`, or a run with `--skip-boot-test`, is not a boot-certified release.
+- Physical Lenovo G560 certification is pending. Hardware-dependent claims (Wi-Fi, GPU acceleration, fan control, Bluetooth and sustained 1080p) must remain conditional until measured.
+- Standalone disk installation, full dynamic linking, production browser/media stacks, Windows and Android runtime compatibility, and a complete ZERO AI tool/backend execution stack remain incomplete.
 
-## Release rule
+## Stage completion rule
 
-Stage 10 remains blocked until Stages 1-9 have their declared executable evidence and the physical hardware matrix, recovery, security, performance and long-duration soak gates are complete.
+No stage is 100% complete until its hardening checklist has executable evidence at the required class. A host test cannot close a QEMU gate; QEMU cannot close a real-hardware gate. Detection, parsing, UI, architecture docs, source-marker checks and mocked APIs do not establish operational support.
 
-## Current implementation status — 2026-10-04
-For the live evidence-weighted stage percentages and recent hardening, see `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md`. Current estimate: ~44% overall; S1 92%, S2 82%, S3 45%, S4 39%, S5 41%, S6 20%, S7 12%, S8 12%, S9 12%, S10 6%.
+## Release blockers
+
+1. Post-merge CI is green on the exact main SHA.
+2. `make -j check` is green and deterministic.
+3. `tools/release.sh` completes with no boot-test skip.
+4. All required boot milestones pass over repeated SMP QEMU boots.
+5. Storage persistence and recovery survive repeated guest boots and injected failures.
+6. Security, package trust, update rollback and independent recovery have negative/fault evidence.
+7. The physical hardware support matrix and performance/soak results are published.
+8. Unsupported features and installation limits are explicit in release notes.
