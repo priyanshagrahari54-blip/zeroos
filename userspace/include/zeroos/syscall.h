@@ -68,6 +68,7 @@ enum zeroos_syscall_id {
     ZEROOS_SYS_DISPLAY_PRESENT = 52,
     ZEROOS_SYS_INPUT_POLL = 53,
     ZEROOS_SYS_INPUT_WAIT = 54,
+    ZEROOS_SYS_PCI_LIST = 55,
     ZEROOS_SYS_MAX
 };
 
@@ -149,6 +150,7 @@ enum zeroos_error {
 #define ZEROOS_ABI_FEATURE_DISPLAY (1ULL << 8)
 #define ZEROOS_ABI_FEATURE_PRESENT (1ULL << 9)
 #define ZEROOS_ABI_FEATURE_INPUT (1ULL << 10)
+#define ZEROOS_ABI_FEATURE_PCI   (1ULL << 11)
 
 /* Display geometry (ABI): must match kernel/fb.h and kernel/syscall.h. */
 #define ZEROOS_DISPLAY_FORMAT_INDEXED     0U
@@ -307,6 +309,24 @@ struct zeroos_dirent {
     uint32_t type;
     uint32_t name_len;
     char name[256];
+};
+
+/* PCI device snapshot returned by ZEROOS_SYS_PCI_LIST. Fixed layout so the
+ * kernel and a freestanding Ring-3 runtime agree without shared headers.
+ * A BAR entry is zero-filled when that BAR is absent. */
+struct zeroos_pci_device_info {
+    uint8_t bus;
+    uint8_t slot;
+    uint8_t function;
+    uint8_t revision;
+    uint16_t vendor;
+    uint16_t device;
+    uint8_t class_code;
+    uint8_t subclass;
+    uint8_t prog_if;
+    uint8_t header_type;
+    uint64_t bar_base[6];
+    uint64_t bar_size[6];
 };
 
 struct zeroos_abi_info {
@@ -529,6 +549,15 @@ static inline int64_t zeroos_input_wait(struct zeroos_input_event *event,
     return zeroos_syscall_result(zeroos_syscall6(
         ZEROOS_SYS_INPUT_WAIT,(uint64_t)(uintptr_t)event,flags,
         timeout_ticks,0,0,0));
+}
+
+/* PCI: fill `devices` with up to `capacity` snapshots of the devices the
+ * kernel enumerated at boot. Returns the number of entries written, or a
+ * negative errno. */
+static inline int64_t zeroos_pci_list(struct zeroos_pci_device_info *devices,
+                                      uint64_t capacity) {
+    return zeroos_syscall_result(zeroos_syscall6(
+        ZEROOS_SYS_PCI_LIST,(uint64_t)(uintptr_t)devices,capacity,0,0,0,0));
 }
 
 #endif

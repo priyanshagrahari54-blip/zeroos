@@ -2,34 +2,265 @@
 
 The first milestone uses GCC/binutils, GRUB Multiboot2 tooling, xorriso, and QEMU.
 
-Build with:
+## Toolchain
 
-    make
+A **bootable** ISO needs GRUB's El Torito boot image. Install it before
+building a release image:
 
-When the host does not have GRUB/xorriso installed, build and inspect only
-the linked kernel ELF with:
+    sudo apt-get install grub-pc-bin grub-common xorriso mtools qemu-system-x86
 
-    make elf
+Without it `make iso` **fails on purpose**. The previous fallbacks silently
+produced an image that tooling accepted and firmware could not boot: the naive
+`xorriso -as mkisofs` branch passed no boot options, and the old
+`tools/build_iso.py` wrote no El Torito boot record at all and flattened
+`boot/zeroos.elf` into `BOOT_ZEROOS.ELF;1` in the root directory, so even a
+loaded GRUB could not have found `/boot/grub/grub.cfg`. Neither path exists
+any more.
 
-Run with:
+## Build
 
-    make run
+    make              # production image -> build/zeroos.iso
+    make elf          # linked kernel ELF only (no ISO tooling required)
+    make iso-test     # testing-mode image -> build-test/zeroos.iso
+    make clean        # removes both trees
 
-The normal image is a persistent desktop/session build: after the kernel
-certification gates, the Ring-3 session remains alive and blocks on the native
-input wait path instead of exiting. This is the production boot path.
+Every `iso` build finishes by running `verify-iso`, which re-reads the image
+and checks the ECMA-119 structures (PVD, terminator, root directory, required
+files) and the El Torito boot record/catalog. When `pycdlib` is installed it
+also cross-checks the directory tree with that third-party parser, which is
+how a one-byte PVD date offset and a pre-LBA path table were caught.
 
-Run the full finite certification suite with:
+    make verify-iso                     # validate an existing image
+    pip install pycdlib                 # enable the independent cross-check
+
+On a host with no GRUB, `ZEROOS_ISO_ALLOW_UNBOOTABLE=1` builds a data-only
+image for ISO-layout work. `verify-iso` then reports the layout as valid and
+states plainly that the image will not boot:
+
+    make ZEROOS_ISO_ALLOW_UNBOOTABLE=1 iso
+
+## The two images
+
+`build/zeroos.iso` is the production image. The embedded Ring-3 session starts
+and blocks on the native input wait path, so the desktop stays alive.
+
+`build-test/zeroos.iso` is the testing image: the same sources built with
+`ZEROOS_BOOT_CERTIFICATION`, so the session runs its finite
+display/compositor/input probes and exits instead of staying interactive. Boot
+this one for automated or repeatable testing; boot the production image for a
+persistent desktop.
+
+The two flavours must never share object files. `make check` builds the
+certification flavour into `build/`, and Make keys rebuilds on timestamps
+alone, so without the compile-flag fingerprint in `$(BUILD)/.compile-flags` a
+later `make iso` relinked the certification objects into an image labelled
+production. Verified before the fix: `build/session_launch.o` still contained
+the certification-only string `session did not finish` after a
+certification-free `make iso`. Switching flavour now rebuilds once; repeating
+the same flavour rebuilds nothing.
+
+## Run
+
+    make run          # production image in QEMU
+    make run-test     # testing image in QEMU
+
+## Real boot test
+
+    make boot-test    # needs qemu-system-x86_64
+
+`tools/boot_test.sh` boots the image in QEMU and asserts the guest serial log
+against `tools/boot_milestones.txt`: 91 required milestones plus two negative
+gates (`storage.*FAILED`, `ZEROOS PANIC:`). Three boots are required because
+the interrupt-frame ownership defect this gates against was nondeterministic.
+
+This is the only gate in the project that executes kernel code. Everything
+else - the host suites, the stage certifications, the link-time checks - can
+pass on a kernel that hangs during boot.
+
+The milestone list is shared with CI's Boot test step, which now calls the same
+script, so local runs and CI cannot drift. To check the assertion logic on a
+host without an emulator, point it at a captured log:
+
+    make ZEROOS_SERIAL_LOG=path/to/serial.log boot-test
+
+A failed run lists every missing milestone rather than just the first, so the
+output shows how far the kernel got before it stopped.
+
+## Kernel header gate
+
+Every kernel link runs two checks over the produced ELF:
+
+    kernel-simd-check      no x87/MMX/SSE/AVX instruction in the image
+    make verify-multiboot2 Multiboot2 header conforms to the specification
+
+`verify-multiboot2` validates magic, architecture, the checksum arithmetic,
+8-byte alignment, containment in a `PT_LOAD` segment inside the 32 KiB window a
+bootloader searches, tag-list termination, and agreement between the
+framebuffer tag and `grub.cfg`. A header defect passes every host test and then
+fails at boot, so it is checked on every link.
+
+## Full gate suite
 
     make check
 
-make check adds ZEROOS_BOOT_CERTIFICATION, so the embedded session exits
-after its display/compositor/input probes and the CI harness can reap it.
-This keeps certification deterministic without making the normal OS session
-ephemeral.
+`make check` adds `ZEROOS_BOOT_CERTIFICATION`, so the embedded session exits
+after its probes and the CI harness can reap it. This keeps certification
+deterministic without making the normal OS session ephemeral.
 
-Clean with:
+`make -j check` is safe: the stage certification gates declare the targets
+that produce the artifacts they execute, so parallel make cannot start a gate
+before its test binaries or the linked kernel exist.
 
-    make clean
+The gates honour `BUILD=`, so `make BUILD=build-fault check` certifies the
+tree you asked for rather than a stale `./build`.
+
+### What the gates actually execute
+
+Stages 1-5 used to be `grep` checks over source files: a marker string in a
+comment or an unused branch was enough to pass. They now also verify that the
+required symbols are present in the **linked kernel image** and run the real
+host suites:
+
+| Stage | Executable evidence |
+|---|---|
+| 1 scheduler | `scheduler_*`/`task_block` present in the linked ELF |
+| 2 userspace | `abi_consistency.py`, ABI compile check, `elf_load_image`/`ipc_*` linked |
+| 3 storage | `host_selftest.sh`: builds a GPT/ZJFS image, round-trips data, corrupts the superblock, confirms fsck recovery |
+| 4 hardware | `display-core-test`, `input-core-test`, `usb-core-test`, `driver-core-test`, `dma-test` |
+| 5 desktop | `desktop-tests` (the full compositor/UI/session suite) |
+
+Each gate fails with a stated reason. Verified: removing a test binary fails
+stage 4 with `test binary not built`, and pointing a gate at an ELF without
+the scheduler symbols fails stage 1 listing every missing symbol.
+
+### The release gate
+
+`stage10-certification-release` runs `tools/g560_benchmark.py`, which compares
+every declared figure against its numeric target and exits non-zero when one is
+out of range. It previously printed `(target 100-200 MB: PASS)` from an f-string
+without ever comparing anything, and stamped all ten subsystems `CERTIFIED`
+unconditionally.
+
+Supply real observations to get a certification rather than a consistency
+check:
+
+    ZEROOS_MEASUREMENTS=measurements.json make stage10-certification-release
+
+Without it the report records `measurement_provenance: declared`, the
+subsystems are stamped `GATE PASSED (host-side checks only, not measured on
+hardware)`, and `overall_readiness` reads `TARGETS CONSISTENT, NOT CERTIFIED`.
+
+## Installing alongside another OS (dual boot)
+
+ZeroOS is a self-contained Multiboot2 kernel: the storage probe and the Ring-3
+session are embedded in the ELF, so it needs no initrd, no root partition and
+no bootloader of its own. The supported dual-boot route is therefore a GRUB
+menu entry on the machine you already boot:
+
+    make iso iso-test
+    sudo tools/install/dualboot_install.sh --dry-run    # preview
+    sudo tools/install/dualboot_install.sh              # install
+
+The script writes `/boot/zeroos/zeroos.elf` (plus `zeroos-test.elf` for the
+testing entry), installs `/etc/grub.d/40_zeroos` with `multiboot2` entries, and
+runs `update-grub`. It requires GRUB >= 2.02, refuses to run without it, and
+never touches a partition table. Roll back with:
+
+    sudo tools/install/dualboot_install.sh --uninstall
 
 A feature is complete only when it has an appropriate build and verification path.
+
+## Release hygiene and reproducibility
+
+`make repro-check` closes six items from
+`docs/ZEROOS_MASTER/ZEROOS_REMAINING_GAP_CLOSURE.md` section A that can be
+settled without hardware. Each one is a command that actually ran against the
+built artifacts; the target fails if any of them does not hold:
+
+| Check | What it proves |
+| --- | --- |
+| no `NEEDED`/`SONAME` in `readelf -d` | the kernel image does not link a host library |
+| image type is `EXEC`, not `DYN` | the image is a freestanding executable |
+| no undefined `memcpy`/`printf`/`malloc`/... | no host-libc symbol is expected at link time |
+| `zeroos_build_revision` present in the ELF | the image names the git revision it was built from |
+| `KERNEL_OBJS` stable across two `make -p` reads | link order is explicit, not glob-derived |
+| two `build_iso.py` runs byte-identical | image creation is deterministic |
+
+Provenance is generated into `$(BUILD)/build_info.c` and linked into the kernel
+as `zeroos_build_revision`, `zeroos_build_toolchain` and `zeroos_build_cflags`.
+`tools/build_iso.py` reads `SOURCE_DATE_EPOCH` for every date field it writes
+(the eleven ISO 9660 recording and volume dates), so a pinned epoch yields
+byte-identical images from identical inputs; without it, images differ only in
+those date fields.
+
+`tools/release.sh` runs the whole chain end to end - toolchain check, all ten
+stage gates, `repro-check`, both images, structural verification of both, and
+the boot gate on both. It refuses to start if `grub-mkrescue`, `xorriso` or
+`qemu-system-x86_64` is missing, because an image built without `grub-mkrescue`
+has no El Torito boot record and will not boot. Use `--skip-boot-test` to build
+the images anyway, and `--install-toolchain` to install the missing tools first.
+
+## Local intent engine (`userspace/desktop/src/nlp.c`)
+
+`ai.h` brokers AI requests to an *injected* backend; nothing in the tree
+supplied one, so `ZD_AI_REQ_COMMAND` ("intent -> action") had no local
+implementation. `nlp.c` is that implementation - a deterministic,
+lexicon-driven parser, not a learned model.
+
+    utterance -> zd_nlp_parse -> intent -> zd_nlp_plan -> plan
+              -> zd_nlp_command (grants) -> zd_nlp_drive_update
+
+| Call | Does |
+| --- | --- |
+| `zd_nlp_normalize` | lowercase, punctuation to separators, collapse runs |
+| `zd_nlp_parse` | match a 60-phrase English/Hinglish table (longest wins, word-boundary checked), extract target noun and version, score confidence 0-1000 |
+| `zd_nlp_plan` | ordered, permission-annotated step list |
+| `zd_nlp_command` | gate on `ZD_AI_GRANT_*`, refuse negated utterances |
+| `zd_nlp_drive_update` | walk the `zd_update` lifecycle to `ZD_UPD_DONE` |
+
+Recognised intents: update, install, uninstall, launch, terminate, backup,
+restore, search, power-off, reboot. `"system band karo"` resolves to power-off
+and `"browser band karo"` to a process kill. An utterance that matches nothing
+returns `-ZD_ENOENT` with confidence 0 and `ZD_NLP_INTENT_UNKNOWN`; it is never
+mapped to a default action. A plan with no version is refused rather than
+given one.
+
+`stage9-ai-perf-cert` requires `zd_nlp_*` to be linked into the built
+`build/desktop-tests` binary and refuses a binary older than
+`userspace/desktop/src/*.c`, so the gate cannot certify a stale artifact.
+
+## Requiring a BIOS-bootable image
+
+`tools/verify_iso.py --require-bios-boot` fails unless the El Torito
+initial/default entry's platform id byte (offset 2 of the entry, i.e.
+`catalog_lba*2048 + 34`) is `0x00` (x86 BIOS). A pre-UEFI machine - a 2010-era
+laptop, for instance - cannot boot an image whose only boot path is EFI, and
+that failure is completely invisible to a validator that only checks the
+ISO 9660 layout. `tools/release.sh` passes the flag for both images, so a
+release cannot ship an EFI-only image by accident.
+
+Platform ids: `0x00` x86 BIOS, `0x01` PowerPC, `0x02` Mac, `0xEF` EFI.
+
+## Getting a bootable image without a Linux toolchain
+
+Building a bootable image needs `grub-mkrescue`, which is Linux-only. A host
+that does not have it (Windows, or a Linux box without the GRUB tools) can
+still obtain a bootable image, because CI builds and publishes one:
+
+1. Open the workflow run for the commit you want:
+   `https://github.com/<owner>/<repo>/actions/workflows/build.yml`
+2. Open the run, scroll to **Artifacts**, download `zeroos-release`.
+3. Unzip it. `zeroos.iso` is the `grub-mkrescue` image; CI booted that exact
+   file under QEMU's SeaBIOS (legacy BIOS) and asserted
+   `ZEROOS: interactive desktop session ready.` before publishing it.
+4. Write it to a DVD (Windows 7: right-click the ISO -> *Burn disc image*) or
+   to USB with a tool such as Rufus, and boot it from the firmware boot menu.
+
+Without `grub-mkrescue`, `make iso` falls back to `tools/build_iso.py`, which
+produces a layout-valid image with **no** El Torito boot record. That is a
+deliberate, visible degradation: `verify_iso.py` prints
+`THIS IMAGE WILL NOT BOOT` rather than letting the image pass as releaseable.
+
+What a booted image gives you is a live session. There is no installer that
+writes ZEROOS to a disk; the dual-boot route is `tools/install/dualboot_install.sh`,
+which adds an entry to an existing GRUB 2.

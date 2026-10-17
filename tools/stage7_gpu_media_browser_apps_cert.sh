@@ -3,6 +3,9 @@ set -euo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# Build tree to certify; passed by the Makefile so BUILD= overrides are honored.
+build_dir="${1:-build}"
+
 required_patterns=(
   "zd_compositor_present"
   "zd_compositor_damage"
@@ -27,8 +30,8 @@ for pattern in "${required_patterns[@]}"; do
 done
 
 # Run desktop display / audio / input core test binaries
-"$repo_root/build/display-core-test" >/dev/null
-"$repo_root/build/audio-core-test" >/dev/null
-"$repo_root/build/input-core-test" >/dev/null
+"$repo_root/$build_dir/display-core-test" >/dev/null
+"$repo_root/$build_dir/audio-core-test" >/dev/null
+"$repo_root/$build_dir/input-core-test" >/dev/null
 
 echo "stage7-gpu-media-browser-apps-cert: PASS"

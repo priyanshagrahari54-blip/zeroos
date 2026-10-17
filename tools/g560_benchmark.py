@@ -10,7 +10,48 @@ import os
 import sys
 import time
 
-def generate_report(output_path):
+# Thresholds the release gate is actually evaluated against. Each entry names
+# the report field, the human-readable target string stored next to it, and the
+# inclusive numeric range. Nothing here is asserted as True any more: the
+# *_achieved fields and overall_readiness are computed from these comparisons,
+# so a value outside its range fails the gate.
+RANGE_TARGETS = (
+    ("memory_measurements", "total_idle_ram_mb",
+     "target_idle_range_mb", 100.0, 200.0, "MB", "target_idle_achieved"),
+    ("memory_measurements", "normal_desktop_ram_mb",
+     "target_normal_desktop_range_mb", 150.0, 250.0, "MB", "target_normal_desktop_achieved"),
+    ("memory_measurements", "ui_private_working_set_mb",
+     "ui_private_working_set_target_mb", 0.0, 50.0, "MB", "ui_private_working_set_achieved"),
+    ("boot_pipeline_benchmarks_seconds", "total_kernel_to_interactive_desktop_s",
+     "target_kernel_to_desktop_s", 6.0, 12.0, "s", "target_boot_achieved"),
+)
+
+# Upper bounds with no range string in the report body.
+UPPER_BOUND_TARGETS = (
+    ("video_engine_certification", "dropped_frames_pct", 1.0, "%", "dropped_frames_within_target"),
+    ("video_engine_certification", "cpu_utilization_pct", 40.0, "%", "cpu_utilization_within_target"),
+    ("zero_render_idle_metrics", "static_desktop_fps", 0.0, "fps", "zero_render_idle_achieved"),
+    ("zero_render_idle_metrics", "unnecessary_ui_polling", 0, "events", "no_unnecessary_polling"),
+)
+
+
+def evaluate(report):
+    """Compare the report against its targets. Returns the check list."""
+    checks = []
+    for section, key, target_key, lo, hi, unit, flag in RANGE_TARGETS:
+        value = report[section][key]
+        ok = lo <= value <= hi
+        report[section][flag] = ok
+        checks.append((f"{key}", value, f"{lo:g}-{hi:g} {unit}", ok))
+    for section, key, hi, unit, flag in UPPER_BOUND_TARGETS:
+        value = report[section][key]
+        ok = value <= hi
+        report[section][flag] = ok
+        checks.append((f"{key}", value, f"<={hi:g} {unit}", ok))
+    return checks
+
+
+def generate_report(output_path, measurements=None):
     report = {
         "zeroos_version": "1.0.0-release",
         "timestamp_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -116,16 +157,76 @@ def generate_report(output_path):
         "overall_readiness": "100% SPEC-IMPLEMENTED, CERTIFIED & TESTED"
     }
 
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    # Overlay real measurements when the caller supplies them. Without a
+    # measurement source these numbers are the values the specification
+    # declares, not observations, and the report says so explicitly.
+    if measurements:
+        source = measurements.pop("__source__", "supplied")
+        for section, values in measurements.items():
+            if section not in report:
+                raise SystemExit(f"unknown measurement section: {section}")
+            if not isinstance(values, dict):
+                raise SystemExit(f"measurement section {section} must be an object")
+            report[section].update(values)
+        report["measurement_provenance"] = {"source": "measured", "file": str(source)}
+    else:
+        report["measurement_provenance"] = {
+            "source": "declared",
+            "note": ("Values below are the specification's declared targets, not "
+                     "observations from hardware or a boot. Pass --measurements "
+                     "FILE to certify against real numbers. No boot has been "
+                     "performed in this build environment."),
+        }
+
+    checks = evaluate(report)
+    failed = [c for c in checks if not c[3]]
+    all_ok = not failed
+
+    # Every stage used to be stamped CERTIFIED unconditionally. The host-side
+    # gates do run real binaries, but nothing here has been observed on
+    # hardware, so the wording has to match the evidence.
+    if report["measurement_provenance"]["source"] == "measured":
+        stamp = "CERTIFIED"
+    else:
+        stamp = "GATE PASSED (host-side checks only, not measured on hardware)"
+    for key in list(report["subsystem_certification_status"]):
+        report["subsystem_certification_status"][key] = stamp
+
+    # Readiness is computed from the checks and the measurement provenance. It
+    # used to be the literal string "100% SPEC-IMPLEMENTED, CERTIFIED & TESTED"
+    # regardless of any value in this file.
+    if not all_ok:
+        report["overall_readiness"] = "FAILED - %d target(s) out of range" % len(failed)
+    elif report["measurement_provenance"]["source"] != "measured":
+        report["overall_readiness"] = ("TARGETS CONSISTENT, NOT CERTIFIED - values are "
+                                       "declared, not measured")
+    else:
+        report["overall_readiness"] = "CERTIFIED against supplied measurements"
+
+    os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2)
 
-    print(f"ZEROOS G560 Certification Report generated at: {output_path}")
-    print(f"Idle RAM: {report['memory_measurements']['total_idle_ram_mb']} MB (target 100-200 MB: PASS)")
-    print(f"Kernel to Desktop: {report['boot_pipeline_benchmarks_seconds']['total_kernel_to_interactive_desktop_s']}s (target 6-12s: PASS)")
-    print(f"Static Desktop FPS: {report['zero_render_idle_metrics']['static_desktop_fps']} (zero-render idle: PASS)")
-    print(f"1080p H.264 Playback: DROPPED {report['video_engine_certification']['dropped_frames_pct']}% CPU {report['video_engine_certification']['cpu_utilization_pct']}% (PASS)")
+    print(f"ZEROOS G560 report written to: {output_path}")
+    print(f"measurement provenance: {report['measurement_provenance']['source']}")
+    for name, value, target, ok in checks:
+        print(f"  {'PASS' if ok else 'FAIL'}  {name} = {value} (target {target})")
+    print(f"overall: {report['overall_readiness']}")
+    return 0 if all_ok else 1
+
 
 if __name__ == "__main__":
-    out = sys.argv[1] if len(sys.argv) > 1 else "build/g560_certification_report.json"
-    generate_report(out)
+    args = sys.argv[1:]
+    out = "build/g560_certification_report.json"
+    meas = None
+    i = 0
+    while i < len(args):
+        if args[i] == "--measurements" and i + 1 < len(args):
+            with open(args[i + 1], encoding="utf-8") as fh:
+                meas = json.load(fh)
+            meas["__source__"] = args[i + 1]
+            i += 2
+        else:
+            out = args[i]
+            i += 1
+    sys.exit(generate_report(out, meas))

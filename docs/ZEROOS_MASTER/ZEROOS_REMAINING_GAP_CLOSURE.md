@@ -3,17 +3,17 @@ Status: Binding supplemental checklist
 Rule: This file covers cross-cutting details that are easy to omit from subsystem checklists. It is not evidence of implementation.
 
 ## A. TOOLCHAIN / REPRODUCIBILITY
-- [ ] Pin exact compiler, assembler, linker, objcopy, image-builder versions.
-- [ ] Record compiler target triple and ABI.
+- [x] Pin exact compiler, assembler, linker, objcopy, image-builder versions. Recorded per build in `$(BUILD)/build_info.c` (`zeroos_build_toolchain`, `zeroos_build_cflags`), checked by `make repro-check`.
+- [x] Record compiler target triple and ABI. `$(CC) -dumpmachine` is recorded in `zeroos_build_toolchain`.
 - [ ] Verify reproducible archives/images across clean machines.
-- [ ] Verify deterministic link ordering.
-- [ ] Verify deterministic filesystem/image creation.
-- [ ] Record source revision inside build artifacts.
+- [x] Verify deterministic link ordering. `KERNEL_OBJS` is an explicit, ordered list; `make repro-check` re-reads it and requires two invocations to agree.
+- [x] Verify deterministic filesystem/image creation. `tools/build_iso.py` honours `SOURCE_DATE_EPOCH` for all eleven date fields; `make repro-check` builds the image twice and requires byte equality.
+- [x] Record source revision inside build artifacts. `zeroos_build_revision` (git short SHA plus `-dirty`) is linked into the kernel image; `make repro-check` requires the string to be present in the ELF.
 - [ ] Generate SBOM for release artifacts.
 - [ ] Record licenses for source and third-party components.
 - [ ] Verify third-party license compatibility.
 - [ ] Verify dependency provenance and hashes.
-- [ ] Prevent accidental host-library linkage.
+- [x] Prevent accidental host-library linkage. `make repro-check` fails if the image has a dynamic section, is type `DYN`, or has undefined host-libc symbols.
 - [ ] Test build with network disabled after dependency acquisition.
 - [ ] Keep generated files auditable.
 - [ ] Verify release symbols correspond exactly to release binary.

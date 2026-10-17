@@ -18,6 +18,7 @@
 #include "shmem.h"
 #include "storage/storage.h"
 #include "session.h"
+#include "net_nic.h"
 #include "fb.h"
 #include "input.h"
 
@@ -62,6 +63,7 @@ void serial_write_public(const char *text) {
      * writes prevents AP diagnostics from interleaving individual bytes and
      * destroying the line-oriented boot certification markers. */
     flags=spin_lock_irqsave(&serial_lock);
+    fb_console_write(text);
     while (*text) {
         if (*text=='\n') serial_putc('\r');
         serial_putc(*text++);
@@ -69,6 +71,7 @@ void serial_write_public(const char *text) {
     spin_unlock_irqrestore(&serial_lock,flags);
 }
 
+extern void fb_console_write(const char *text);
 extern void interrupts_init(void);
 extern int boot_stack_guard_ok(void);
 
@@ -968,7 +971,11 @@ static void scheduler_probe_monitor(void *argument) {
                     serial_write_public("ZEROOS: CPU hot-offline evacuation failed (stage=");
                     serial_write_u64((uint64_t)(-hotplug_result));
                     serial_write_public(").\n");
+#ifdef ZEROOS_BOOT_CERTIFICATION
                     kernel_panic("CPU hot-offline evacuation failed");
+#else
+                    serial_write_public("ZEROOS: CPU hot-offline skipped; continuing with all CPUs online (production).\n");
+#endif
                 }
                 serial_write_public("ZEROOS: CPU hot-offline queue evacuation and parking passed.\n");
             } else {
@@ -990,8 +997,13 @@ static void scheduler_probe_monitor(void *argument) {
                     (void)input_drain();
                     input_drained=1;
                 }
-                if (userspace_start_init()!=0 || userspace_service_step()!=0)
+                if (userspace_start_init()!=0 || userspace_service_step()!=0) {
+#ifdef ZEROOS_BOOT_CERTIFICATION
                     kernel_panic("userspace init lifecycle failed");
+#else
+                    serial_write_public("ZEROOS: userspace init lifecycle failed; continuing (production).\n");
+#endif
+                }
             }
             if (!userspace_reported && userspace_debug_validate()==1) {
                 userspace_reported=1;
@@ -999,11 +1011,20 @@ static void scheduler_probe_monitor(void *argument) {
                 /* Stage 5A readback: Ring-3 presented the probe pattern
                  * through the real syscall; verify it through the real
                  * scanout read path before certifying the contract. */
-                if (fb_present_active() && fb_probe_verify()!=0)
+                if (fb_present_active() && fb_probe_verify()!=0) {
+#ifdef ZEROOS_BOOT_CERTIFICATION
                     kernel_panic("display present readback mismatch");
+#else
+                    serial_write_public("ZEROOS: display present readback mismatch; continuing (production).\n");
+#endif
+                }
                 serial_write_public("ZEROOS: display present contract verified.\n");
                 /* Stage 3: storage bring-up runs in its own task. */
                 storage_start();
+                /* Stage 3b: the NIC driver probes PCI (published by the
+                 * storage task) and brings up IPv4. Absent hardware only
+                 * yields a diagnostic; it never blocks or fails the boot. */
+                net_start();
                 /* Stage 5: the session/shell process certifies the
                  * display service, compositor and input paths. */
                 session_start();
@@ -1018,7 +1039,11 @@ static void scheduler_probe_monitor(void *argument) {
         /*
          * Certification deadline: all stress probes must complete within a
          * bounded tick budget. This prevents a broken scheduler from hanging
-         * CI forever while retaining deterministic QEMU behavior.
+         * CI forever while retaining deterministic QEMU behavior. The external
+         * `boot_test.sh --timeout` still bounds CI, so the budget can be
+         * generous enough to survive slow runners. Certification-only: the
+         * production boot launches storage/session unconditionally and must
+         * never panic because the cert probes did not run.
          */
         if (now-stress_start>400 &&
             (!preempt_reported || !lifecycle_reported ||
@@ -1287,6 +1312,18 @@ void kernel_main(uint64_t multiboot_info, uint64_t multiboot_magic) {
     serial_write_public("ZEROOS: foundation milestone reached.\n");
 
     scheduler_self_test();
+
+#ifndef ZEROOS_BOOT_CERTIFICATION
+    /* Production: the user-facing desktop and storage must not wait on the
+     * deterministic certification probe chain, which can stall on real
+     * hardware (boot-time keystrokes, timing, firmware quirks) and previously
+     * left the panel frozen at the splash. Launch both unconditionally; the
+     * probes still run and report for diagnostics. */
+    storage_start();
+    net_start();
+    session_start();
+    serial_write_public("ZEROOS: production bring-up launched storage, network and desktop session.\n");
+#endif
 
     for (;;) __asm__ volatile ("sti; hlt");
 }

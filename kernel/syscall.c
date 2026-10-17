@@ -13,6 +13,7 @@
 #include "fb.h"
 #include "display_core.h"
 #include "input.h"
+#include "pci.h"
 
 extern void serial_write_public(const char *text);
 
@@ -209,7 +210,8 @@ void syscall_dispatch(struct interrupt_frame *frame) {
                       ZEROOS_ABI_FEATURE_FILES |
                       ZEROOS_ABI_FEATURE_DISPLAY |
                       ZEROOS_ABI_FEATURE_PRESENT |
-                      ZEROOS_ABI_FEATURE_INPUT,
+                      ZEROOS_ABI_FEATURE_INPUT |
+                      ZEROOS_ABI_FEATURE_PCI,
             .max_transfer=ZEROOS_SYSCALL_MAX_TRANSFER
         };
         if (frame->rdi==0 || frame->rsi<sizeof(info) ||
@@ -685,6 +687,55 @@ void syscall_dispatch(struct interrupt_frame *frame) {
             frame->rax=syscall_result(result);
         break;
     }
+    case ZEROOS_SYS_PCI_LIST: {
+        /* Read-only snapshot of the devices pci_init() enumerated at boot.
+         * The destination range is validated once up front, then every entry
+         * is copied individually through the bounds-checked primitive. */
+        struct zeroos_pci_device_info info;
+        uint32_t total=pci_device_count();
+        uint64_t count=frame->rsi<total?frame->rsi:total;
+        uint64_t i=0;
+        int fault=0;
+
+        if (count!=0 &&
+            !process_address_space_is_user_range(process,frame->rdi,
+                                                 count*sizeof(info),1)) {
+            frame->rax=syscall_error(ZEROOS_EFAULT);
+            break;
+        }
+        for (i=0;i<count;++i) {
+            const struct pci_device *device=pci_device_at((uint32_t)i);
+            uint32_t bar;
+
+            if (device==0) {
+                fault=1;
+                break;
+            }
+            info=(struct zeroos_pci_device_info){0};
+            info.bus=device->bus;
+            info.slot=device->slot;
+            info.function=device->function;
+            info.revision=device->revision;
+            info.vendor=device->vendor;
+            info.device=device->device;
+            info.class_code=device->class_code;
+            info.subclass=device->subclass;
+            info.prog_if=device->prog_if;
+            info.header_type=device->header_type;
+            for (bar=0;bar<6;++bar) {
+                info.bar_base[bar]=device->bars[bar].present?
+                                   device->bars[bar].base:0U;
+                info.bar_size[bar]=device->bars[bar].present?
+                                   device->bars[bar].size:0U;
+            }
+            if (copy_to_user(frame->rdi+i*sizeof(info),&info,sizeof(info))!=0) {
+                fault=1;
+                break;
+            }
+        }
+        frame->rax=fault?syscall_error(ZEROOS_EFAULT):syscall_result((int)i);
+        break;
+    }
     default:
         if (frame->rax>=ZEROOS_SYS_OPEN && frame->rax<=ZEROOS_SYS_CHOWN) {
             fsyscall_dispatch(frame,process);
@@ -713,7 +764,8 @@ int syscall_debug_validate(void) {
         ZEROOS_SYS_DISPLAY_INFO+1U!=ZEROOS_SYS_DISPLAY_PRESENT ||
         ZEROOS_SYS_DISPLAY_PRESENT+1U!=ZEROOS_SYS_INPUT_POLL ||
         ZEROOS_SYS_INPUT_POLL+1U!=ZEROOS_SYS_INPUT_WAIT ||
-        ZEROOS_SYS_INPUT_WAIT+1U!=ZEROOS_SYS_MAX)
+        ZEROOS_SYS_INPUT_WAIT+1U!=ZEROOS_SYS_PCI_LIST ||
+        ZEROOS_SYS_PCI_LIST+1U!=ZEROOS_SYS_MAX)
         return -1;
     return 0;
 }

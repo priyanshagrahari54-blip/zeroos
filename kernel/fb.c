@@ -3,7 +3,10 @@
 #include "vmm.h"
 #include "sync.h"
 
+#include <zeroos/font8x8.h>
+
 extern void serial_write_public(const char *text);
+extern const char zeroos_build_revision[];
 
 /* Multiboot2 boot-info tag types (info stream, not the header). */
 #define MB2_INFO_TAG_END 0U
@@ -179,6 +182,142 @@ static int fb_map_and_verify(struct zeroos_display_info *info) {
     return 0;
 }
 
+/* Boot splash: the instant the framebuffer is acquired, before any userspace
+ * runs, the kernel paints the whole panel and stamps the build revision. This
+ * is the earliest possible on-screen proof of which image is booting and that
+ * every scanout byte is writable on this hardware; the Ring-3 session later
+ * overpaints it with the desktop. It also consumes the build_info revision
+ * string, which would otherwise sit unread inside the image. */
+static void fb_splash_pixel(uint32_t x, uint32_t y, uint32_t c) {
+    uint32_t bytes_pp = (display_state.bpp + 7U) / 8U;
+    volatile uint8_t *p = (volatile uint8_t *)(fb_kernel_virtual +
+                          (uint64_t)y * display_state.pitch +
+                          (uint64_t)x * bytes_pp);
+    if (display_state.bpp == 32U) {
+        p[0] = (uint8_t)(c & 0xFFU);
+        p[1] = (uint8_t)((c >> 8) & 0xFFU);
+        p[2] = (uint8_t)((c >> 16) & 0xFFU);
+        p[3] = 0xFFU;
+    } else if (display_state.bpp == 24U) {
+        p[0] = (uint8_t)(c & 0xFFU);
+        p[1] = (uint8_t)((c >> 8) & 0xFFU);
+        p[2] = (uint8_t)((c >> 16) & 0xFFU);
+    } else {
+        uint16_t v = (uint16_t)(((((c >> 16) & 0xFFU) >> 3) << 11) |
+                                ((((c >> 8) & 0xFFU) >> 2) << 5) |
+                                ((c & 0xFFU) >> 3));
+        p[0] = (uint8_t)(v & 0xFFU);
+        p[1] = (uint8_t)(v >> 8);
+    }
+}
+
+/* ---- On-screen kernel console ----
+ *
+ * The serial port is invisible on a laptop without a null-modem cable, so
+ * every line that reaches serial_write_public is mirrored here once the
+ * framebuffer is live. On real hardware this turns the panel into the boot
+ * log: a session that halts leaves its last "FAILED" line on screen instead
+ * of a frozen splash. */
+#define CONSOLE_LEFT 8U
+#define CONSOLE_TOP 32U
+#define CONSOLE_COLOUR 0xFFC7D0D9U
+
+static struct spinlock console_lock;
+static uint32_t console_x;
+static uint32_t console_y;
+static uint8_t console_ready;
+
+static void console_scroll(void) {
+    uint32_t bytes_pp = (display_state.bpp + 7U) / 8U;
+    uint64_t rowbytes = (uint64_t)display_state.width * bytes_pp;
+    uint8_t *base = (uint8_t *)(uint64_t)fb_kernel_virtual;
+    uint32_t y;
+    uint64_t i;
+
+    for (y = CONSOLE_TOP; y + 8U < display_state.height; ++y) {
+        uint8_t *dst = base + (uint64_t)y * display_state.pitch;
+        const uint8_t *src = base + (uint64_t)(y + 8U) * display_state.pitch;
+        for (i = 0; i < rowbytes; ++i)
+            dst[i] = src[i];
+    }
+    for (y = display_state.height - 8U; y < display_state.height; ++y) {
+        uint8_t *dst = base + (uint64_t)y * display_state.pitch;
+        for (i = 0; i < rowbytes; ++i)
+            dst[i] = 0;
+    }
+}
+
+static void console_newline(void) {
+    console_x = CONSOLE_LEFT;
+    console_y += 8U;
+    if (console_y + 8U > display_state.height) {
+        console_scroll();
+        console_y -= 8U;
+    }
+}
+
+static void console_char(char c) {
+    const unsigned char *glyph;
+    uint32_t row, col;
+
+    if (c == '\r')
+        return;
+    if (c == '\n') {
+        console_newline();
+        return;
+    }
+    if (console_x + 8U > display_state.width)
+        console_newline();
+    glyph = font8x8_glyph((unsigned char)c);
+    for (row = 0; row < FONT8X8_ROWS; ++row) {
+        uint32_t y = console_y + row;
+        if (y >= display_state.height)
+            continue;
+        for (col = 0; col < 8U; ++col)
+            if (glyph[row] & (0x80U >> col))
+                fb_splash_pixel(console_x + col, y, CONSOLE_COLOUR);
+    }
+    console_x += 8U;
+}
+
+void fb_console_write(const char *text) {
+    uint64_t flags;
+
+    if (!text || !console_ready)
+        return;
+    flags = spin_lock_irqsave(&console_lock);
+    for (; *text; ++text)
+        console_char(*text);
+    spin_unlock_irqrestore(&console_lock, flags);
+}
+
+static void fb_splash(void) {
+    char line[96];
+    uint64_t n = 0;
+    uint32_t x, y;
+    const char *s;
+
+    if (!fb_present_active())
+        return;
+    for (y = 0; y < display_state.height; ++y)
+        for (x = 0; x < display_state.width; ++x)
+            fb_splash_pixel(x, y, 0xFF141B24U);
+    for (y = 0; y < 27U && y < display_state.height; ++y)
+        for (x = 0; x < display_state.width; ++x)
+            fb_splash_pixel(x, y, 0xFF101418U);
+    spinlock_init(&console_lock);
+    console_x = CONSOLE_LEFT;
+    console_y = CONSOLE_TOP;
+    console_ready = (display_state.height > CONSOLE_TOP + 16U) ? 1U : 0U;
+    for (s = "ZEROOS  boot "; *s && n + 1 < sizeof(line); ++s)
+        line[n++] = *s;
+    for (s = zeroos_build_revision; *s && n + 1 < sizeof(line); ++s)
+        line[n++] = *s;
+    line[n] = 0;
+    fb_console_write(line);
+    fb_console_write("\n");
+}
+
 int fb_init(uint64_t multiboot_info) {
     const struct mb2_info_tag *tag;
     const struct mb2_info_tag *end;
@@ -216,6 +355,7 @@ int fb_init(uint64_t multiboot_info) {
                     return -1;
                 }
                 display_state=candidate;
+                fb_splash();
                 serial_write_public("ZEROOS: framebuffer acquired: ");
                 fb_write_u64(display_state.width);
                 serial_write_public("x");
@@ -230,6 +370,9 @@ int fb_init(uint64_t multiboot_info) {
                 fb_write_u64(display_state.byte_size);
                 serial_write_public(" bytes.\n");
                 serial_write_public("ZEROOS: display primitive ready.\n");
+                serial_write_public("ZEROOS: framebuffer splash painted (build ");
+                serial_write_public(zeroos_build_revision);
+                serial_write_public(").\n");
                 return 0;
             }
         }
