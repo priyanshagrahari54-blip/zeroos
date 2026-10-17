@@ -270,6 +270,14 @@ static void task_context_panic(const char *message,
         task_write_u64(task->kernel_stack_top);
         serial_write_public(" saved=");
         task_write_u64(task->saved_stack);
+        serial_write_public(" rq_cpu=");
+        task_write_u64(task->runqueue_cpu);
+        serial_write_public(" run_next=");
+        task_write_u64((uint64_t)task->run_next);
+        serial_write_public(" wait_queue=");
+        task_write_u64(task->wait_queue!=0);
+        serial_write_public(" sleep_armed=");
+        task_write_u64(task->sleep_armed);
         serial_write_public("\n");
     }
     for (;;) __asm__ volatile ("cli; hlt");
@@ -513,10 +521,23 @@ static void task_validate_table_at(const char *where,
         struct task *previous=0;
         for (struct task *task=queue->head; task; task=task->run_next) {
             int slot=task_slot_for_pointer(task);
-            if (slot<2 || slot>=ZEROOS_MAX_TASKS || queue_seen[slot] ||
-                task->state!=TASK_RUNNABLE || task->runqueue_cpu!=cpu ||
-                task->wait_queue || task->sleep_armed)
-                task_context_panic("ZEROOS PANIC: per-CPU runqueue invariant failed.\n",
+            if (slot<2 || slot>=ZEROOS_MAX_TASKS)
+                task_context_panic("ZEROOS PANIC: runqueue contains invalid task pointer.\n",
+                                   task);
+            if (queue_seen[slot])
+                task_context_panic("ZEROOS PANIC: task appears in multiple runqueue positions.\n",
+                                   task);
+            if (task->state!=TASK_RUNNABLE)
+                task_context_panic("ZEROOS PANIC: runqueue task is not runnable.\n",
+                                   task);
+            if (task->runqueue_cpu!=cpu)
+                task_context_panic("ZEROOS PANIC: runqueue owner CPU mismatch.\n",
+                                   task);
+            if (task->wait_queue)
+                task_context_panic("ZEROOS PANIC: runnable task remains on wait queue.\n",
+                                   task);
+            if (task->sleep_armed)
+                task_context_panic("ZEROOS PANIC: runnable task remains sleep-armed.\n",
                                    task);
             if (previous==task)
                 task_context_panic("ZEROOS PANIC: per-CPU runqueue self-cycle.\n",
