@@ -1,5 +1,6 @@
 # ZEROOS — MASTER DOCUMENT INDEX
-Version: 2.2
+Version: 2.3
+Updated: 2026-10-17
 
 This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md` remains the canonical consolidated product/architecture specification. Stage 6-10 execution is split into dedicated production master documents so an implementation agent can work one stage at a time without losing cross-cutting requirements.
 
@@ -48,9 +49,13 @@ Installed != loaded != running != active. Dormant features must not create unnec
 ## Cross-cutting requirements
 See `ZEROOS_MASTER_CONTRACT_AND_FEATURE_EXPANSION.md` for boot/firmware, hardware certification, networking, packages, SDK, observability, accounts, backup/recovery, privacy, supply-chain security, accessibility/i18n, virtualization, power-loss testing, performance/compatibility labs, ZERO AI safety and additional product features.
 
+## Boot/release truth (2026-10-17)
+
+ZEROOS has a native x86-64 kernel and QEMU boot certification infrastructure, but is not a 100%-complete consumer OS. PR #16 was merged as `d6b58292df7e00b4b2f15ba22f3a0405035ee549`; verify post-merge main CI. Use `tools/release.sh` for the full gate. Physical G560 support, standalone installer, full dynamic linker, production browser/media, Windows/Android runtimes, and the full ZERO AI execution stack remain open. Never equate a passing marker/host test with real subsystem support.
+
 ## Documentation synchronization
 When implementation changes a contract, update the closest subsystem document and the affected master/roadmap/stage plan in the same change. Never mark an item implemented without evidence.
 
 
 ## Current implementation status
-The live percentage/evidence snapshot is maintained in `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md`. Current overall implementation estimate is ~44%: Stage 1 92%, Stage 2 82%, Stage 3 45%, Stage 4 39%, Stage 5 41%, Stage 6 20%, Stage 7 12%, Stage 8 12%, Stage 9 12%, Stage 10 6%. These are engineering estimates, not source-line percentages; documentation maturity is not counted as implementation.
+The live percentage/evidence snapshot is maintained in `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md`. Current evidence-weighted estimate (2026-10-17) is ~43%: Stage 1 92%, Stage 2 84%, Stage 3 48%, Stage 4 43%, Stage 5 44%, Stage 6 22%, Stage 7 15%, Stage 8 13%, Stage 9 16%, Stage 10 10%. See `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md` for limitations and exact evidence policy. These are engineering estimates, not certification percentages. These are engineering estimates, not source-line percentages; documentation maturity is not counted as implementation.
