@@ -1337,3 +1337,52 @@ Do the engineering, not just the planning.
 
 When told CONTINUE:
 INSPECT → IMPLEMENT → TEST → VERIFY → COMMIT → CONTINUE.
+
+
+============================================================
+FULL REPOSITORY COMPLETION DIRECTIVE — ALL STAGES / ALL FEATURES
+============================================================
+
+MISSION
+Make the existing ZEROOS repository into the most complete, honest, bootable, testable native x86-64 OS achievable with the current codebase. Work on real source, not a hypothetical rewrite. Preserve all valid work, promised features, hardware profiles and requirements unless inspection proves a conflict or security defect. This section expands the earlier Stage 0–5 scope to ALL stages 0–10 and every feature promised anywhere in the repository.
+
+100% means every explicitly defined, applicable release requirement has passed its acceptance gates. It does not mean the checklist was filled in, code merely compiles, a stub returns success, or docs claim completion. Never fake hardware, OS APIs, compatibility, performance, offline AI or system status.
+
+MANDATORY INITIAL AUDIT
+1. Inspect current default branch, latest commits, open/closed PRs, CI, Makefile, linker scripts, bootloader, ISO scripts, QEMU scripts, tests and docs.
+2. Build a requirements-to-code-to-test matrix for every stage 0–10, subsystem, app, driver, security control, recovery path, AI capability, visual feature and hardware profile. Use VERIFIED, PARTIAL, SPEC-ONLY, BROKEN, BLOCKED, NOT-APPLICABLE or UNKNOWN and link file/function/test/CI/log/benchmark evidence.
+3. Recalculate progress from repository evidence, not historical estimates. A document or TODO is not implementation.
+4. Identify the smallest blockers to booting an ISO and fix them before broad feature expansion. Preserve bootability after every coherent change.
+
+REQUIRED EXECUTION ORDER
+A. REPRODUCIBLE BUILD + BOOT: pin/document toolchain and dependencies; clean build; validate kernel ELF and linker layout; create boot image/ISO; verify boot protocol, entry point, stack, GDT/TSS, IDT, exception handlers, timer, memory map and allocators; boot the actual ISO in headless QEMU in CI; capture serial output; fail on triple fault, panic, timeout or missing milestone; publish exact commands and artifact hashes. Test BIOS/UEFI only when configured.
+B. KERNEL: CPU feature detection, SMP startup/shutdown, scheduler/context ownership, interrupts/preemption, locks/atomics, timers/waits/cancellation, process/thread lifecycle, syscall ABI, user/kernel isolation, memory safety/reclamation. Add negative, race, stress, fault-injection and repeated-boot tests.
+C. USERSPACE + STORAGE: process execution, ELF loading and explicit static/dynamic policy, libc/runtime contract, IPC, pipes, events, shared memory, permissions, exit/wait/reap and failure cleanup; block I/O, partitions/GPT, VFS/filesystem integrity, caching, flush semantics, crash recovery, removable storage, installer and data-preserving upgrades.
+D. HARDWARE + NETWORK: capability-based PCI/ACPI/DMA/interrupt/driver lifecycle; display/input/touchpad/audio/storage/Ethernet/Wi-Fi/Bluetooth/USB/GPU/thermal/battery/fan/camera/controller only where real driver paths exist; IPv4/IPv6 policy, firewall/sandbox enforcement, DNS/DHCP/TCP/UDP/TLS certificate policy and network-failure tests.
+E. DESKTOP + ALL FIRST-PARTY APPS: native window manager/compositor, shell, workspaces, settings, file manager, search, terminal, notifications, clipboard, screenshots/recording, accessibility/localization, browser, media/music/video, study/PDF, gaming tools, device/control center, updates, backup/recovery, diagnostics and every other feature in PRD, design docs, roadmap, hardware profiles and master blueprint. Every app needs real data flow and meaningful behavior, not mock panels or fabricated values.
+F. ZEROOS RESOURCE CONTRACT: event-driven activation, no unnecessary idle polling/rendering, lifecycle-managed services/apps, bounded queues/caches, foreground-aware I/O, memory-pressure reclaim, compressed cold memory where beneficial, low-RAM/HDD profiles, adaptive effects and thermal-aware scheduling. Measure boot-to-interactive, RAM, idle CPU, redraws, I/O, launch/switch, dropped frames, thermals and recovery. Mark figures TARGET until benchmarked. Zero-resource means minimize unnecessary idle work, never literal zero CPU/RAM/GPU.
+G. ZERO AI: OS-native AI Broker/Agent/Tool/Memory integrated through stable OS APIs and IPC, never unrestricted kernel access. Implement authorized tools for files, terminal, apps, settings, diagnostics, coding/build/test and optional browser/network. Enforce scoped read/write/execute/network/admin permissions, audit, consent for destructive actions, sandboxing, secret isolation, timeout, cancellation, rollback, provenance, context minimization and emergency STOP. Test local/offline model capability on target hardware before claiming offline operation.
+H. SECURITY + RECOVERY + UPDATES: threat model, least privilege, capability checks, safe input validation, firewall, app permissions, encryption where supported, signed update verification, rollback protection, transactional/A-B update flow, backup integrity, boot repair, recovery/safe mode, factory reset and emergency recovery media. Destructive operations require explicit confirmation.
+I. COMPATIBILITY: Windows compatibility, Android/AOSP runtime, virtualization/containers, codecs, browser engines and external libraries need explicit legal/provenance review, ABI boundaries, resource budgets and test matrices. A menu or loader is not full compatibility. Reject unsupported formats safely.
+J. RELEASE ENGINEERING: clean-checkout ISO build in CI; unit/integration tests; QEMU smoke boot; subsystem certification; fuzz/static analysis/sanitizers where applicable; license/SBOM/provenance checks; artifact hashes; release notes; known-limitations matrix; recovery validation and repeatable release procedure.
+
+FEATURE COMPLETENESS RULE
+Enumerate every promised feature from docs/PRD.md, docs/MASTER_INDEX.md, docs/ARCHITECTURE.md, docs/TECHSPEC.md, docs/PHASES.md, docs/MEMORY.md, docs/DESIGN_UI_UX.md, docs/ZEROOS_MASTER and relevant source comments. Do not silently drop requirements. For every feature record user-visible behavior/non-goals, owning module/API/dependencies, state/lifecycle, ownership/concurrency/resource budget, permissions/security, failure behavior, supported hardware/software matrix, tests, evidence and limitations. If blocked, implement the stable contract where useful and mark PARTIAL/BLOCKED; never fake completion.
+
+DOCUMENTATION SYNCHRONIZATION
+After each code change, update relevant specs and canonical status: MASTER_INDEX/roadmap, architecture/technical specification/stage plan, PRD/feature matrix/acceptance tests, build/boot instructions, supported hardware and limitations, security/recovery/update docs when affected, measured-vs-target resource metrics, changelog/handoff ledger and CI/release docs. Resolve contradictions and link a canonical source. Include commit SHA, test command, exact results and remaining issues. Never report tests that were not run.
+
+DELIVERY RULES
+Work in small coherent commits and preserve unrelated user changes. Fix the highest-impact blocker first instead of making ten unrelated speculative patches. Run relevant tests after every patch and full make check plus clean ISO build when feasible. If local execution is impossible, say exactly why and add CI coverage. Inspect and reconcile stale/conflicted PRs; never blindly force-merge. Keep main bootable; repair or revert a boot-breaking change immediately. Every work session must report commits, files, tests actually run/results, ISO artifact/location if generated, verified boot status, evidence-based stage percentages, top blockers and next concrete task. Never claim complete/bootable/production/100%/G560-compatible without corresponding evidence.
+
+EVIDENCE-WEIGHTED STAGE STATUS
+Maintain a stage 0–10 matrix. Score runtime implementation/wiring, positive tests, negative/failure tests, stress/race/fault tests, QEMU/hardware validation, security/resource behavior, docs and CI. A stage is release-complete only when every required applicable gate passes. Report hardware-blocked features separately from code-complete features. Documentation volume must not inflate implementation percentage.
+
+FIRST TASKS
+1. Inspect current main and CI.
+2. Run the canonical clean build and ISO target; fix the first real failure.
+3. Boot that ISO in QEMU and capture serial/log evidence.
+4. Ensure CI builds the ISO and performs a QEMU smoke boot on every relevant change.
+5. Create the evidence-based stage/feature gap matrix.
+6. Close the highest-priority boot/runtime blockers one at a time until there is a reproducible bootable baseline.
+7. Continue through all remaining features in dependency order while maintaining bootability, tests, docs and honest progress reports.
