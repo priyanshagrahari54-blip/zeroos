@@ -9,14 +9,13 @@ Never create a basic version merely to replace it later.
 
 ## Current state
 
-### Live boot/session status — 2026-10-05
-- The normal `make` image now keeps the Ring-3 desktop/session process alive after its display, compositor and input bring-up.
-- Production session idle lifetime is event-driven through the native input wait syscall; it does not use a polling/render loop just to stay alive.
-- `make check` builds with `ZEROOS_BOOT_CERTIFICATION` so CI retains the finite session/reap contract for deterministic certification.
-- ISO generation remains the normal `make` output path; QEMU boot certification is part of the repository workflow.
-- This is a real bootable native x86-64 kernel + Ring-3 session path, but it is not yet a complete consumer OS: application suite, dynamic linking, full GPU/media/browser stacks, compatibility runtimes, recovery/update UX, and hardware-matrix validation remain staged work.
-
-Already substantially implemented:
+### Evidence snapshot — 2026-10-17
+- The normal `make` image targets a persistent native x86-64 kernel + Ring-3 desktop/session path; the release pipeline now has a shared 91-milestone QEMU boot gate.
+- PR #16 was merged as `d6b58292df7e00b4b2f15ba22f3a0405035ee549`. It adds/fixes parallel build dependencies, ISO structure validation/writing, reproducibility checks, shared boot-test logic, and a deterministic local intent parser. The PR's own workflow passed before merge; post-merge `main` CI must be verified independently.
+- `make check` is a broad gate, but stage scripts and source/ELF markers do not by themselves prove every product feature works. The hardening checklist is the authority for operational evidence.
+- A bootable ISO requires the GRUB/El Torito toolchain. `ZEROOS_ISO_ALLOW_UNBOOTABLE=1` is explicitly not release evidence; `tools/release.sh` is the full build/structure/QEMU path.
+- ZEROOS is **not 100% complete**. Full dynamic linking, standalone disk installation, production browser/GPU/media, Windows/Android runtimes, full ZERO AI tool/backend execution, physical G560 support, recovery UX and performance/soak certification remain open.
+- See `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md` for evidence-weighted estimates and the precise current blocker list.
 
 Already substantially implemented:
 - Multiboot2 bootstrap
@@ -57,6 +56,23 @@ Hardening already added:
 - saved-stack validation
 - current_task pointer/state validation
 - scheduler diagnostics
+
+## NEXT EXECUTION BATCH — CLOSE REAL BLOCKERS FIRST
+
+Do not start by adding more feature documents or UI mockups. For each batch: inspect current source and tests, implement one coherent change, add regression/fault tests, run the exact local gate, inspect CI/QEMU logs, update evidence, and only then move the estimate.
+
+1. Check post-merge CI for `d6b5829` and fix all regressions on `main`.
+2. Run `make -j check` and `tools/release.sh`; preserve the boot milestones and publish the serial/debug logs.
+3. Add tests for exec failure cleanup: process creation, ELF load failure, stack allocation/map failure, and user-thread creation failure must release address-space pages and process slots exactly once.
+4. Add Ring-3 guest tests for malformed user pointers, argv/envp boundary overflow, invalid ELF segment ranges, W^X, and unsupported PT_INTERP/PT_DYNAMIC rejection.
+5. Stress IPC timeout/wakeup/close/revocation races and validate exact partial-write semantics.
+6. Stress storage persistence across repeated QEMU boots and inject block I/O failures; verify journal replay/fsck and bounded writeback.
+7. Test driver/network receive/transmit in QEMU with explicit hardware models; no claim based on parser-only tests.
+8. Build the smallest usable native desktop slice: shell, launcher, Files, Terminal, Settings, input, fonts/text, error/restart paths.
+9. Integrate mature licensed browser/media/runtime components only after ABI, driver, sandbox, and memory-budget constraints are documented and tested.
+10. Implement ZERO AI tool adapters behind the permission broker: read-only first, then scoped write/execute with confirmation, cancellation, audit and rollback.
+11. Implement signed update/package trust, independent recovery boot, snapshot/restore fault tests, and a real disk installer.
+12. Run hardware certification on the G560 and publish actual RAM/CPU/I/O/boot/media/thermal measurements before release claims.
 
 ## NEXT 50-STEP BATCH
 
