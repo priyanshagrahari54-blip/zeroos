@@ -11,6 +11,8 @@
  *          inside the disk and after/before the header+entry arrays,
  *          entry size (>=128, power of two, <= 1024), entry count
  *          (<= GPT_MAX_ENTRIES), entry-array CRC32, no 64-bit overflow.
+ *  mirrors: when both copies validate, revision/header size, disk GUID, usable
+ *           range, entry geometry/CRC, and entry bytes must agree.
  *  entries: first <= last, within [first_usable, last_usable], pairwise
  *          non-overlapping.
  * Recovery policy: primary valid -> use it (backup damage is reported);
@@ -41,7 +43,8 @@ enum gpt_error {
     GPT_ERR_OVERLAP=11,
     GPT_ERR_TOO_MANY=12,
     GPT_ERR_NO_MEMORY=13,
-    GPT_ERR_ALTERNATE=14
+    GPT_ERR_ALTERNATE=14,
+    GPT_ERR_MISMATCH=15
 };
 
 struct gpt_partition {

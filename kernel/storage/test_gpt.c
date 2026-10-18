@@ -145,6 +145,32 @@ int storage_selftest_gpt(void) {
     TG_CHECK(gpt_scan(disk,&result)==0 && !result.used_backup &&
              result.backup_status==GPT_ERR_SIGNATURE,"backup damage reported");
 
+
+    /* 4b. Both copies have valid CRCs but disagree on disk identity. Keep
+     * the valid primary, but report the backup as inconsistent. */
+    tg_build(disk,good,2,entries,sector);
+    tg_edit_header(disk,last,56,0x1122334455667788ULL,8,1,sector);
+    TG_CHECK(gpt_scan(disk,&result)==0 && !result.used_backup &&
+             result.primary_status==GPT_OK &&
+             result.backup_status==GPT_ERR_MISMATCH &&
+             result.partition_count==2 && result.disk_guid[0]==0x40,
+             "valid but mismatched backup disk GUID reported");
+
+    /* 4c. A backup entry array with a freshly recomputed CRC is still not
+     * the same table as the primary. Compare the actual bytes, not CRC alone. */
+    tg_build(disk,good,2,entries,sector);
+    uint64_t backup_entries_lba=last-TG_ENTRIES*128U/512U;
+    ramdisk_peek(disk,backup_entries_lba,entries,TG_ENTRIES*128U/512U);
+    entries[56]^=0x01;
+    ramdisk_poke(disk,backup_entries_lba,entries,TG_ENTRIES*128U/512U);
+    uint32_t backup_entries_crc=crc32_ieee(entries,TG_ENTRIES*128U);
+    tg_edit_header(disk,last,88,backup_entries_crc,4,1,sector);
+    TG_CHECK(gpt_scan(disk,&result)==0 && !result.used_backup &&
+             result.primary_status==GPT_OK &&
+             result.backup_status==GPT_ERR_MISMATCH &&
+             result.partition_count==2,
+             "valid but divergent backup entry bytes reported");
+
     /* 5. both damaged -> rejected, nothing exposed */
     ramdisk_peek(disk,1,sector,1);
     sector[0]='X';

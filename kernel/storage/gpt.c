@@ -15,10 +15,10 @@ const uint8_t gpt_type_zeroos_scratch[16]={
 static const char *gpt_error_names[]={
     "ok","io","signature","revision","header-size","header-crc","my-lba",
     "usable-range","entry-geometry","entry-crc","entry-range","overlap",
-    "too-many-partitions","no-memory","alternate-lba"};
+    "too-many-partitions","no-memory","alternate-lba","mirror-mismatch"};
 
 const char *gpt_error_name(int error) {
-    if (error<0 || error>GPT_ERR_ALTERNATE)
+    if (error<0 || error>GPT_ERR_MISMATCH)
         return "unknown";
     return gpt_error_names[error];
 }
@@ -111,6 +111,32 @@ static int gpt_check_header(struct block_device *disk, uint64_t lba,
     return GPT_OK;
 }
 
+
+/*
+ * When both GPT copies validate independently, they must describe the same
+ * partition table. A valid CRC on each copy is not enough: accepting a
+ * divergent backup silently hides disk metadata corruption. The primary
+ * remains authoritative; a mismatched backup is reported as degraded.
+ */
+static int gpt_mirrors_match(const uint8_t *primary_header,
+                             const uint8_t *backup_header,
+                             const uint8_t *primary_entries,
+                             const uint8_t *backup_entries,
+                             uint64_t primary_bytes,
+                             uint64_t backup_bytes) {
+    if (rd32(primary_header+8)!=rd32(backup_header+8) ||
+        rd32(primary_header+12)!=rd32(backup_header+12) ||
+        memcmp(primary_header+56,backup_header+56,16)!=0 ||
+        rd64(primary_header+40)!=rd64(backup_header+40) ||
+        rd64(primary_header+48)!=rd64(backup_header+48) ||
+        rd32(primary_header+80)!=rd32(backup_header+80) ||
+        rd32(primary_header+84)!=rd32(backup_header+84) ||
+        rd32(primary_header+88)!=rd32(backup_header+88) ||
+        primary_bytes!=backup_bytes)
+        return 0;
+    return memcmp(primary_entries,backup_entries,(size_t)primary_bytes)==0;
+}
+
 static int gpt_parse_entries(const uint8_t *header, const uint8_t *entries,
                              struct gpt_result *result) {
     uint64_t first_usable=rd64(header+40);
@@ -162,6 +188,8 @@ int gpt_scan(struct block_device *disk, struct gpt_result *result) {
     uint8_t *backup_header;
     uint32_t ss;
     uint64_t bytes=0;
+    uint64_t primary_bytes=0;
+    uint64_t backup_bytes=0;
 
     if (!result)
         return -SE_INVAL;
@@ -197,6 +225,7 @@ int gpt_scan(struct block_device *disk, struct gpt_result *result) {
                                             primary_header);
     uint64_t backup_lba=disk->sectors-1ULL;
     if (result->primary_status==GPT_OK) {
+        primary_bytes=bytes;
         result->primary_status=gpt_parse_entries(primary_header,entries,result);
     }
     /* Always verify the backup so damage is reported, not discovered later. */
@@ -214,10 +243,15 @@ int gpt_scan(struct block_device *disk, struct gpt_result *result) {
         result->backup_status=gpt_check_header(disk,backup_lba,bh,backup_entries,
                                                &bytes,backup_header);
         if (result->backup_status==GPT_OK) {
+            backup_bytes=bytes;
             struct gpt_result *target=have_primary ? &backup_result : result;
             int parsed=gpt_parse_entries(backup_header,backup_entries,target);
             result->backup_status=parsed;
-            if (parsed==GPT_OK && !have_primary) {
+            if (parsed==GPT_OK && have_primary) {
+                if (!gpt_mirrors_match(primary_header,backup_header,entries,
+                                       backup_entries,primary_bytes,backup_bytes))
+                    result->backup_status=GPT_ERR_MISMATCH;
+            } else if (parsed==GPT_OK) {
                 result->used_backup=1;
             }
         }
