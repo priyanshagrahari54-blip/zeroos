@@ -172,6 +172,7 @@ int storage_selftest_gpt(void) {
              "valid but divergent backup entry bytes reported");
 
     /* 5. both damaged -> rejected, nothing exposed */
+    tg_build(disk,good,2,entries,sector);
     ramdisk_peek(disk,1,sector,1);
     sector[0]='X';
     ramdisk_poke(disk,1,sector,1);
