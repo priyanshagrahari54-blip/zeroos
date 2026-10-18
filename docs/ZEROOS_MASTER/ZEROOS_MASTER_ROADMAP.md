@@ -9,9 +9,10 @@ Never create a basic version merely to replace it later.
 
 ## Current state
 
-### Evidence snapshot — 2026-10-17
+### Evidence snapshot — 2026-10-18
 - The normal `make` image targets a persistent native x86-64 kernel + Ring-3 desktop/session path; the release pipeline now has a shared 91-milestone QEMU boot gate.
-- PR #16 was merged as `d6b58292df7e00b4b2f15ba22f3a0405035ee549`. It adds/fixes parallel build dependencies, ISO structure validation/writing, reproducibility checks, shared boot-test logic, and a deterministic local intent parser. The PR's own workflow passed before merge; post-merge `main` CI must be verified independently.
+- Main baseline `a72c171dc8efb60c7f083b93f34410dfbd6c33ad` passed CI/QEMU in run [#39043695663](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/39043695663). GPT-integrity source/test tree `47862ff6b295b92f4bace026aaac767d8b8635d7` passed the full workflow in [#39091213001](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/39091213001), including `make check`, repeated SMP/NX-disabled/failed-IPI boots, q35 AHCI+NVMe two-boot persistence, production boot smoke test and release artifact publication.
+- GPT mirror validation now reports `mirror-mismatch` when independently valid copies differ; ramdisk regressions cover disk-GUID and entry-array divergence. Stage 3 remains open for broader crash/power-cut/fsck/recovery evidence.
 - `make check` is a broad gate, but stage scripts and source/ELF markers do not by themselves prove every product feature works. The hardening checklist is the authority for operational evidence.
 - A bootable ISO requires the GRUB/El Torito toolchain. `ZEROOS_ISO_ALLOW_UNBOOTABLE=1` is explicitly not release evidence; `tools/release.sh` is the full build/structure/QEMU path.
 - ZEROOS is **not 100% complete**. Full dynamic linking, standalone disk installation, production browser/GPU/media, Windows/Android runtimes, full ZERO AI tool/backend execution, physical G560 support, recovery UX and performance/soak certification remain open.
@@ -61,8 +62,8 @@ Hardening already added:
 
 Do not start by adding more feature documents or UI mockups. For each batch: inspect current source and tests, implement one coherent change, add regression/fault tests, run the exact local gate, inspect CI/QEMU logs, update evidence, and only then move the estimate.
 
-1. Check post-merge CI for `d6b5829` and fix all regressions on `main`.
-2. Run `make -j check` and `tools/release.sh`; preserve the boot milestones and publish the serial/debug logs.
+1. Promote only the exact tested source/test tree; rerun the full workflow after code changes.
+2. Continue SMP scheduler soak/fault testing despite passing boot gates; one CI run is not long-duration proof.
 3. Add tests for exec failure cleanup: process creation, ELF load failure, stack allocation/map failure, and user-thread creation failure must release address-space pages and process slots exactly once.
 4. Add Ring-3 guest tests for malformed user pointers, argv/envp boundary overflow, invalid ELF segment ranges, W^X, and unsupported PT_INTERP/PT_DYNAMIC rejection.
 5. Stress IPC timeout/wakeup/close/revocation races and validate exact partial-write semantics.

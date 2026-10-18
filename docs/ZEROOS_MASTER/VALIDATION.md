@@ -1,6 +1,6 @@
 # ZEROOS — Validation and Support Matrix
 
-Updated: 2026-10-17. This is the evidence policy for Stages 1-10; it must not overstate support.
+Updated: 2026-10-18. This is the evidence policy for Stages 1-10; it must not overstate support.
 
 The binding acceptance checklist is [ZEROOS_10_STAGE_HARDENING.md](./ZEROOS_10_STAGE_HARDENING.md). Current estimates and known limitations are in [ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md](./ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md).
 
@@ -20,7 +20,9 @@ The binding acceptance checklist is [ZEROOS_10_STAGE_HARDENING.md](./ZEROOS_10_S
 ## Current release status
 
 - ZEROOS has a native x86-64 kernel, Ring-3 session path, build targets, host tests and QEMU boot-test infrastructure.
-- PR #16 was merged as `d6b58292df7e00b4b2f15ba22f3a0405035ee549`; its PR workflow passed before merge. Post-merge `main` CI must be checked separately.
+- Main baseline `a72c171dc8efb60c7f083b93f34410dfbd6c33ad` passed full CI/QEMU in [run #39043695663](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/39043695663). The GPT-integrity candidate source/test tree `47862ff6b295b92f4bace026aaac767d8b8635d7` passed the full workflow in [run #39091213001](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/39091213001).
+- That candidate run passed `make`, `make check`, ISO verification, three sequential 2-vCPU QEMU boots, 4-vCPU boot, NX-disabled boot, failed-IPI recovery, scheduler panic-diagnostics certification, q35 AHCI+NVMe persistence over two boots, production boot smoke test and release-artifact publication.
+- GPT regression coverage now rejects silently divergent-but-individually-valid primary/backup mirrors by reporting `GPT_ERR_MISMATCH`; the valid primary remains authoritative. This is not a substitute for power-cut/fsck/recovery fault coverage.
 - The release gate is `tools/release.sh`; it requires GCC/binutils, GRUB/xorriso and QEMU, runs `make check`, reproducibility checks, ISO structure checks and boot milestones.
 - An ISO built with `ZEROOS_ISO_ALLOW_UNBOOTABLE=1`, or a run with `--skip-boot-test`, is not a boot-certified release.
 - Physical Lenovo G560 certification is pending. Hardware-dependent claims (Wi-Fi, GPU acceleration, fan control, Bluetooth and sustained 1080p) must remain conditional until measured.
@@ -32,8 +34,8 @@ No stage is 100% complete until its hardening checklist has executable evidence 
 
 ## Release blockers
 
-1. Post-merge CI is green on the exact main SHA.
-2. `make -j check` is green and deterministic.
+1. Full CI/QEMU is green on the exact promoted source/test SHA; rerun after any code change.
+2. `make check` is green and deterministic under the release workflow.
 3. `tools/release.sh` completes with no boot-test skip.
 4. All required boot milestones pass over repeated SMP QEMU boots.
 5. Storage persistence and recovery survive repeated guest boots and injected failures.

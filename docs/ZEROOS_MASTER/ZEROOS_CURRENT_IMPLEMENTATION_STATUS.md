@@ -1,7 +1,7 @@
 # ZEROOS — CURRENT IMPLEMENTATION STATUS
 
-Updated: 2026-10-17
-Branch baseline at review: `main` (before PR #16 merge: `e8fb0a72d45733a682b9614e80c019941f747ab1`); PR #16 merged as `d6b58292df7e00b4b2f15ba22f3a0405035ee549`.
+Updated: 2026-10-18
+Main baseline at the start of this batch: `a72c171dc8efb60c7f083b93f34410dfbd6c33ad`. The storage-integrity source/test tree `47862ff6b295b92f4bace026aaac767d8b8635d7` passed the complete GitHub Actions workflow on 2026-10-18 (run [#39091213001](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/39091213001)); the source changes in this batch are the GPT mirror-consistency fix and its ramdisk regressions.
 Status policy: **evidence-weighted estimate; never equate a source file, marker check, architecture document, or host test with a working end-user feature.**
 
 ## Executive status
@@ -10,8 +10,9 @@ ZEROOS is a real native x86-64 kernel/desktop-session project with an ISO build 
 
 - **Working build path:** `make` / `make iso`, with the bootable ISO requiring a valid GRUB/El Torito toolchain.
 - **Full verification path:** `make check`; release/boot evidence: `tools/release.sh`.
-- **Latest known main-branch CI evidence before PR #16:** build workflow succeeded on 2026-10-05 for `e8fb0a72`.
-- **PR #16:** merged on 2026-10-17. Its branch CI reported success and included parallel-build dependency fixes, ISO validation/writer fixes, shared 91-milestone boot test, reproducibility checks, and local intent-parser foundations. A post-merge main-branch run still must be checked before treating the merge as certified.
+- **Main-branch baseline evidence:** workflow run [#39043695663](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/39043695663) passed on `a72c171dc8efb60c7f083b93f34410dfbd6c33ad` on 2026-10-17.
+- **Latest full candidate evidence:** run [#39091213001](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/39091213001) passed on source/test commit `47862ff6b295b92f4bace026aaac767d8b8635d7` on 2026-10-18. It passed `make`, `make check`, ISO verification, three sequential 2-vCPU boots, 4-vCPU boot, NX-disabled boot, failed-IPI recovery, scheduler panic-diagnostics certification, q35 AHCI+NVMe two-boot persistence, production boot smoke test, and release-artifact publication.
+- **Storage integrity fix:** when both GPT copies validate individually but differ in disk GUID, usable range, entry geometry/CRC, or entry bytes, ZEROOS now keeps the valid primary authoritative and reports `mirror-mismatch` for the backup. Two regression cases run inside the existing storage certification path. This improves a storage invariant; it does not complete Stage 3.
 - **Physical hardware:** not certified by this status entry. QEMU is not proof of G560 Wi-Fi, GPU acceleration, fan control, Bluetooth, or sustained 1080p playback.
 - **Installer:** a standalone ZEROOS disk installer is not complete; the documented dual-boot path relies on host GRUB.
 - **Dynamic linking:** unsupported ELF dynamic/interpreter segments are rejected. A production dynamic linker is not implemented.
@@ -49,8 +50,8 @@ Do not use `ZEROOS_ISO_ALLOW_UNBOOTABLE=1` as release evidence. It explicitly pe
 
 ## Immediate priority order
 
-1. **Release truth / build integrity:** verify post-merge CI for `d6b5829`; fix every failure; ensure `make -j check` and `tools/release.sh` agree.
-2. **Boot stability:** preserve all required boot milestones; run repeated SMP QEMU boots; capture serial/debug/QEMU logs on failure.
+1. **Release truth / build integrity:** keep the exact source/test tree reproducible; run the full workflow on each promoted revision and retain serial/QEMU evidence.
+2. **Boot stability:** the current candidate passed three 2-vCPU boots plus 4-vCPU, NX-disabled and failed-IPI recovery gates; continue longer SMP/soak/fault runs before declaring scheduler stability.
 3. **Stage 2 lifecycle:** process/thread creation rollback, exit/wait/reap, ELF load failures, user-copy boundaries, timeout/wakeup races and resource-leak regression tests.
 4. **Storage integrity:** repeated boot/persistence, crash-consistency, block fault injection, fsck/rollback, ownership and cleanup.
 5. **Real hardware/driver coverage:** PCI/ACPI/DMA/IRQ correctness, input/display/audio/network and safe unsupported-device fallback.
@@ -78,6 +79,6 @@ Do not use `ZEROOS_ISO_ALLOW_UNBOOTABLE=1` as release evidence. It explicitly pe
 - `cde3f716`: timed sleep deadline range and overflow semantics.
 - `d958b547`: exec argument/environment vector and string-pointer overflow checks.
 - `080b4568`: reject unsupported ELF dynamic segments.
-- PR #16, merged as `d6b58292`: parallel build dependencies, ISO writer/validator, reproducible build checks, shared boot milestones and local intent parser. Verify the post-merge main workflow before treating its changes as release-certified.
+- `47862ff6`: GPT primary/backup mirror consistency enforcement and two ramdisk regressions; complete workflow and QEMU/storage gates passed in run `39091213001`.
 
 Last verified limitation snapshot: physical hardware validation, standalone installer, full dynamic linker, complete browser/GPU/media stack, full Windows/Android runtimes, and a complete AI execution backend remain open.

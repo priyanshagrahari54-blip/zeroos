@@ -1,6 +1,6 @@
 # ZEROOS — MASTER DOCUMENT INDEX
-Version: 2.3
-Updated: 2026-10-17
+Version: 2.4
+Updated: 2026-10-18
 
 This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md` remains the canonical consolidated product/architecture specification. Stage 6-10 execution is split into dedicated production master documents so an implementation agent can work one stage at a time without losing cross-cutting requirements.
 
@@ -19,6 +19,9 @@ This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_
 12. `ZEROOS_LENOVO_G560_REFERENCE_PROFILE.md` — Lenovo G560 hardware capability profile, resource targets, HDD optimization, thermal/audio/Bluetooth and complete UI token/behavior profile.
 13. `DESIGN_UI_UX.md` — UI/UX design-system summary.
 14. `ZEROOS_MASTER_BLUEPRINT.md`, `PRD.md`, `ARCHITECTURE.md`, `TECHSPEC.md`, `RULES.md`, `AGENTS.md`, `PHASES.md`, `MEMORY.md`, `VALIDATION.md` and subsystem specifications — supporting source documents.
+
+## Current implementation evidence — 2026-10-18
+The current status and validation records include a full passing candidate workflow (`39091213001`) for GPT primary/backup mirror-consistency hardening, including QEMU boot and storage persistence gates. This raises no stage percentage by itself; see `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md` and `VALIDATION.md` for exact evidence and remaining release blockers.
 
 ## Stage 6-10 rule
 Stages are dependency gates, not feature-quality levels. Every stage starts with the intended production architecture. No placeholder implementation may be introduced solely to move the stage number.
