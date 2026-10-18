@@ -9,9 +9,10 @@ Never create a basic version merely to replace it later.
 
 ## Current state
 
-### Evidence snapshot — 2026-10-17
+### Evidence snapshot — 2026-10-18
 - The normal `make` image targets a persistent native x86-64 kernel + Ring-3 desktop/session path; the release pipeline now has a shared 91-milestone QEMU boot gate.
 - PR #16 was merged as `d6b58292df7e00b4b2f15ba22f3a0405035ee549`. It adds/fixes parallel build dependencies, ISO structure validation/writing, reproducibility checks, shared boot-test logic, and a deterministic local intent parser. The PR's own workflow passed before merge; post-merge `main` CI must be verified independently.
+- Commit `a72c171d` expands the master implementation prompt to require all documented ZEROOS features and stages 0–10. This is a documentation-only change and does **not** increase implementation percentages. The latest status refresh is `338cfd42`; GitHub status lookup for `a72c171d` returned no status entries, so a clean local release run remains required.
 - `make check` is a broad gate, but stage scripts and source/ELF markers do not by themselves prove every product feature works. The hardening checklist is the authority for operational evidence.
 - A bootable ISO requires the GRUB/El Torito toolchain. `ZEROOS_ISO_ALLOW_UNBOOTABLE=1` is explicitly not release evidence; `tools/release.sh` is the full build/structure/QEMU path.
 - ZEROOS is **not 100% complete**. Full dynamic linking, standalone disk installation, production browser/GPU/media, Windows/Android runtimes, full ZERO AI tool/backend execution, physical G560 support, recovery UX and performance/soak certification remain open.
@@ -61,7 +62,7 @@ Hardening already added:
 
 Do not start by adding more feature documents or UI mockups. For each batch: inspect current source and tests, implement one coherent change, add regression/fault tests, run the exact local gate, inspect CI/QEMU logs, update evidence, and only then move the estimate.
 
-1. Check post-merge CI for `d6b5829` and fix all regressions on `main`.
+1. Check main-branch CI after `d6b5829` and the documentation-only `a72c171d`; no status entries were returned for `a72c171d`, so do not assume it passed. Run the clean release gate and fix the first real failure.
 2. Run `make -j check` and `tools/release.sh`; preserve the boot milestones and publish the serial/debug logs.
 3. Add tests for exec failure cleanup: process creation, ELF load failure, stack allocation/map failure, and user-thread creation failure must release address-space pages and process slots exactly once.
 4. Add Ring-3 guest tests for malformed user pointers, argv/envp boundary overflow, invalid ELF segment ranges, W^X, and unsupported PT_INTERP/PT_DYNAMIC rejection.
