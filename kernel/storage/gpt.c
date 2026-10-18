@@ -134,7 +134,7 @@ static int gpt_mirrors_match(const uint8_t *primary_header,
         rd32(primary_header+88)!=rd32(backup_header+88) ||
         primary_bytes!=backup_bytes)
         return 0;
-    return memcmp(primary_entries,backup_entries,(size_t)primary_bytes)==0;
+    return memcmp(primary_entries,backup_entries,primary_bytes)==0;
 }
 
 static int gpt_parse_entries(const uint8_t *header, const uint8_t *entries,
