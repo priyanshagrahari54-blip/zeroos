@@ -176,6 +176,9 @@ int storage_selftest_gpt(void) {
     ramdisk_peek(disk,1,sector,1);
     sector[0]='X';
     ramdisk_poke(disk,1,sector,1);
+    ramdisk_peek(disk,last,sector,1);
+    sector[0]='X';
+    ramdisk_poke(disk,last,sector,1);
     TG_CHECK(gpt_scan(disk,&result)==-SE_UCLEAN && result.partition_count==0,
              "both tables damaged rejected");
 
