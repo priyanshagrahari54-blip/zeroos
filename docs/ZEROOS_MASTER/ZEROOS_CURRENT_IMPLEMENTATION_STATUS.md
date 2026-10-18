@@ -1,6 +1,6 @@
 # ZEROOS — CURRENT IMPLEMENTATION STATUS
 
-Updated: 2026-10-17
+Updated: 2026-10-18
 Branch baseline at review: `main` (before PR #16 merge: `e8fb0a72d45733a682b9614e80c019941f747ab1`); PR #16 merged as `d6b58292df7e00b4b2f15ba22f3a0405035ee549`.
 Status policy: **evidence-weighted estimate; never equate a source file, marker check, architecture document, or host test with a working end-user feature.**
 
@@ -10,8 +10,9 @@ ZEROOS is a real native x86-64 kernel/desktop-session project with an ISO build 
 
 - **Working build path:** `make` / `make iso`, with the bootable ISO requiring a valid GRUB/El Torito toolchain.
 - **Full verification path:** `make check`; release/boot evidence: `tools/release.sh`.
-- **Latest known main-branch CI evidence before PR #16:** build workflow succeeded on 2026-10-05 for `e8fb0a72`.
-- **PR #16:** merged on 2026-10-17. Its branch CI reported success and included parallel-build dependency fixes, ISO validation/writer fixes, shared 91-milestone boot test, reproducibility checks, and local intent-parser foundations. A post-merge main-branch run still must be checked before treating the merge as certified.
+- **Latest baseline commit reviewed in this session:** `a72c171d` (`docs: expand master prompt to full ZEROOS completion and bootable release`); it expands the completion directive but is documentation-only, so it does not increase implementation progress.
+- **PR #16:** merged on 2026-10-17 as `d6b58292`. Its branch CI reported success and included parallel-build dependency fixes, ISO validation/writer fixes, shared 91-milestone boot test, reproducibility checks, and local intent-parser foundations.
+- **Post-merge CI:** this session's GitHub status lookup returned no status entries for `a72c171d`; this is not proof of a passing or failing workflow. Run `tools/release.sh` from a clean checkout and inspect the main-branch Actions run before declaring release certification.
 - **Physical hardware:** not certified by this status entry. QEMU is not proof of G560 Wi-Fi, GPU acceleration, fan control, Bluetooth, or sustained 1080p playback.
 - **Installer:** a standalone ZEROOS disk installer is not complete; the documented dual-boot path relies on host GRUB.
 - **Dynamic linking:** unsupported ELF dynamic/interpreter segments are rejected. A production dynamic linker is not implemented.
@@ -48,6 +49,8 @@ tools/release.sh --iterations 3
 Do not use `ZEROOS_ISO_ALLOW_UNBOOTABLE=1` as release evidence. It explicitly permits an image that may not be bootable. A skipped QEMU boot test is not a passing boot test. The release script must complete without `--skip-boot-test` before calling an artifact QEMU-boot-certified.
 
 ## Immediate priority order
+
+**Execution directive:** `MASTER_IMPLEMENTATION_PROMPT` now explicitly requires implementation across stages 0–10 and every documented feature, with build/boot proof first. The directive itself is not implementation evidence. This session did not run a local build because the connected GitHub interface exposes repository read/write and CI status queries, not a checked-out shell/runner; no test is claimed as run here.
 
 1. **Release truth / build integrity:** verify post-merge CI for `d6b5829`; fix every failure; ensure `make -j check` and `tools/release.sh` agree.
 2. **Boot stability:** preserve all required boot milestones; run repeated SMP QEMU boots; capture serial/debug/QEMU logs on failure.
