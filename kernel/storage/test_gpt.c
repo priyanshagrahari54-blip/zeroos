@@ -176,10 +176,15 @@ int storage_selftest_gpt(void) {
              result.partition_count==0,
              "valid copies with divergent entry arrays rejected");
 
-    /* 7. both damaged -> rejected, nothing exposed */
+    /* 7. both damaged -> rejected, nothing exposed. Rebuild first so this
+     * case does not depend on mutations made by the preceding test cases. */
+    tg_build(disk,good,2,entries,sector);
     ramdisk_peek(disk,1,sector,1);
     sector[0]='X';
     ramdisk_poke(disk,1,sector,1);
+    ramdisk_peek(disk,last,sector,1);
+    sector[0]='X';
+    ramdisk_poke(disk,last,sector,1);
     TG_CHECK(gpt_scan(disk,&result)==-SE_UCLEAN && result.partition_count==0,
              "both tables damaged rejected");
 
