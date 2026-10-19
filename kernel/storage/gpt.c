@@ -15,10 +15,10 @@ const uint8_t gpt_type_zeroos_scratch[16]={
 static const char *gpt_error_names[]={
     "ok","io","signature","revision","header-size","header-crc","my-lba",
     "usable-range","entry-geometry","entry-crc","entry-range","overlap",
-    "too-many-partitions","no-memory","alternate-lba"};
+    "too-many-partitions","no-memory","alternate-lba","copies-mismatch"};
 
 const char *gpt_error_name(int error) {
-    if (error<0 || error>GPT_ERR_ALTERNATE)
+    if (error<0 || error>GPT_ERR_MISMATCH)
         return "unknown";
     return gpt_error_names[error];
 }
@@ -154,6 +154,27 @@ static int gpt_parse_entries(const uint8_t *header, const uint8_t *entries,
     return GPT_OK;
 }
 
+
+/* A valid primary is not enough when a valid backup describes a different
+ * disk. Compare the shared GPT metadata and the complete entry arrays; the
+ * header LBAs and entry-array LBAs are expected to differ between copies. */
+static int gpt_copies_match(const uint8_t *primary_header,
+                            const uint8_t *backup_header,
+                            const uint8_t *primary_entries,
+                            const uint8_t *backup_entries,
+                            uint64_t primary_bytes,
+                            uint64_t backup_bytes) {
+    if (primary_bytes!=backup_bytes ||
+        rd64(primary_header+40)!=rd64(backup_header+40) ||
+        rd64(primary_header+48)!=rd64(backup_header+48) ||
+        memcmp(primary_header+56,backup_header+56,16)!=0 ||
+        rd32(primary_header+80)!=rd32(backup_header+80) ||
+        rd32(primary_header+84)!=rd32(backup_header+84) ||
+        rd32(primary_header+88)!=rd32(backup_header+88))
+        return 0;
+    return memcmp(primary_entries,backup_entries,primary_bytes)==0;
+}
+
 int gpt_scan(struct block_device *disk, struct gpt_result *result) {
     uint64_t entry_pages=(GPT_MAX_ENTRIES*1024ULL+ZEROOS_PAGE_SIZE-1ULL)/ZEROOS_PAGE_SIZE;
     uint8_t *sector;
@@ -161,7 +182,8 @@ int gpt_scan(struct block_device *disk, struct gpt_result *result) {
     uint8_t *primary_header;
     uint8_t *backup_header;
     uint32_t ss;
-    uint64_t bytes=0;
+    uint64_t bytes=0, primary_bytes=0, backup_bytes=0;
+    int copies_mismatch=0;
 
     if (!result)
         return -SE_INVAL;
@@ -197,6 +219,7 @@ int gpt_scan(struct block_device *disk, struct gpt_result *result) {
                                             primary_header);
     uint64_t backup_lba=disk->sectors-1ULL;
     if (result->primary_status==GPT_OK) {
+        primary_bytes=bytes;
         result->primary_status=gpt_parse_entries(primary_header,entries,result);
     }
     /* Always verify the backup so damage is reported, not discovered later. */
@@ -212,19 +235,25 @@ int gpt_scan(struct block_device *disk, struct gpt_result *result) {
     } else {
         uint8_t *bh=sector;             /* reuse scratch sector */
         result->backup_status=gpt_check_header(disk,backup_lba,bh,backup_entries,
-                                               &bytes,backup_header);
+                                               &backup_bytes,backup_header);
         if (result->backup_status==GPT_OK) {
             struct gpt_result *target=have_primary ? &backup_result : result;
             int parsed=gpt_parse_entries(backup_header,backup_entries,target);
             result->backup_status=parsed;
-            if (parsed==GPT_OK && !have_primary) {
+            if (parsed==GPT_OK && have_primary) {
+                if (!gpt_copies_match(primary_header,backup_header,entries,
+                                      backup_entries,primary_bytes,backup_bytes)) {
+                    result->backup_status=GPT_ERR_MISMATCH;
+                    copies_mismatch=1;
+                }
+            } else if (parsed==GPT_OK) {
                 result->used_backup=1;
             }
         }
         if (have_primary)
             page_free_contiguous(backup_entries,entry_pages);
     }
-    int valid=have_primary || result->used_backup;
+    int valid=(have_primary || result->used_backup) && !copies_mismatch;
     klog("ZEROOS: gpt %s: primary=%s backup=%s pmbr=%d source=%s partitions=%u.",
          disk->name,gpt_error_name(result->primary_status),
          gpt_error_name(result->backup_status),result->pmbr_present,

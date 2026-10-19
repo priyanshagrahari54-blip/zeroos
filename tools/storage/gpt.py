@@ -7,7 +7,7 @@
   gpt.py repair IMAGE            # rebuild a damaged primary/backup from the valid copy
 
 Exit codes: 0 success (repair: nothing to do or repaired), 1 usage/I/O
-error, 2 (repair) both copies invalid - nothing is written.
+error, 2 (repair) refuses unsafe repair - nothing is written.
 
 TYPE is one of zjfs, scratch, or a GUID string. SIZE is in MiB, or "rest"
 for the remaining usable space (last partition only). Partitions are
@@ -124,18 +124,36 @@ def _load(f, ss, sectors, primary):
     return (first, last, uuid.UUID(bytes_le=guid), elba, count, esize, ecrc), table
 
 
+def _copies_match(primary, backup):
+    """Compare GPT fields shared by both copies plus the full entry arrays."""
+    pfields, ptable = primary
+    bfields, btable = backup
+    # Entry-array LBAs (field 3) differ by design; the rest must agree.
+    return pfields[:3] == bfields[:3] and pfields[4:] == bfields[4:] and ptable == btable
+
+
 def read(path, ss=512):
     """Returns [(number, type_uuid, first_lba, last_lba, name, attributes)].
-    Uses the primary GPT, or the backup (with a warning) if the primary is
-    damaged - the same recovery policy as the kernel."""
+    Uses a sole valid copy for degraded recovery. If both copies validate but
+    disagree, refuses to choose a potentially stale or hostile partition map."""
     sectors = os.path.getsize(path) // ss
     with open(path, "rb") as f:
         try:
-            fields, table = _load(f, ss, sectors, True)
+            primary = _load(f, ss, sectors, True)
         except GptError as e:
             fields, table = _load(f, ss, sectors, False)
             print("gpt.py: warning: %s; using backup (run gpt.py repair)" % e,
                   file=sys.stderr)
+        else:
+            try:
+                backup = _load(f, ss, sectors, False)
+            except GptError as e:
+                print("gpt.py: warning: %s; using valid primary GPT" % e,
+                      file=sys.stderr)
+            else:
+                if not _copies_match(primary, backup):
+                    raise GptError("primary and backup GPT copies disagree; refusing to choose")
+            fields, table = primary
     first, last, _, _, count, esize, _ = fields
     result = []
     for i in range(count):
@@ -163,7 +181,9 @@ def repair(path, ss=512):
             except GptError as e:
                 errors[primary] = str(e)
         if len(good) == 2:
-            return "both GPT copies valid; nothing to repair"
+            if not _copies_match(good[True], good[False]):
+                raise GptError("primary and backup GPT copies disagree; refusing to choose a repair source")
+            return "both GPT copies valid and consistent; nothing to repair"
         if not good:
             raise GptError("both GPT copies invalid (%s; %s); refusing to write" %
                            (errors[True], errors[False]))

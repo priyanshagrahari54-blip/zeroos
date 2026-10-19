@@ -145,14 +145,45 @@ int storage_selftest_gpt(void) {
     TG_CHECK(gpt_scan(disk,&result)==0 && !result.used_backup &&
              result.backup_status==GPT_ERR_SIGNATURE,"backup damage reported");
 
-    /* 5. both damaged -> rejected, nothing exposed */
+    /* 5. individually valid copies with different disk GUIDs fail closed. */
+    tg_build(disk,good,2,entries,sector);
+    ramdisk_peek(disk,last,sector,1);
+    sector[56]^=1U;
+    wr32(sector+16,0);
+    wr32(sector+16,crc32_ieee(sector,92));
+    ramdisk_poke(disk,last,sector,1);
+    TG_CHECK(gpt_scan(disk,&result)==-SE_UCLEAN &&
+             result.primary_status==GPT_OK &&
+             result.backup_status==GPT_ERR_MISMATCH &&
+             result.partition_count==0,
+             "valid copies with divergent disk GUID rejected");
+
+    /* 6. independently valid but divergent entry arrays also fail closed. */
+    tg_build(disk,good,2,entries,sector);
+    uint32_t entry_sectors=(TG_ENTRIES*128U)/512U;
+    ramdisk_peek(disk,last-entry_sectors,entries,entry_sectors);
+    wr64(entries+32,2049ULL); /* still in range and non-overlapping */
+    uint32_t backup_entries_crc=crc32_ieee(entries,TG_ENTRIES*128U);
+    ramdisk_poke(disk,last-entry_sectors,entries,entry_sectors);
+    ramdisk_peek(disk,last,sector,1);
+    wr32(sector+88,backup_entries_crc);
+    wr32(sector+16,0);
+    wr32(sector+16,crc32_ieee(sector,92));
+    ramdisk_poke(disk,last,sector,1);
+    TG_CHECK(gpt_scan(disk,&result)==-SE_UCLEAN &&
+             result.primary_status==GPT_OK &&
+             result.backup_status==GPT_ERR_MISMATCH &&
+             result.partition_count==0,
+             "valid copies with divergent entry arrays rejected");
+
+    /* 7. both damaged -> rejected, nothing exposed */
     ramdisk_peek(disk,1,sector,1);
     sector[0]='X';
     ramdisk_poke(disk,1,sector,1);
     TG_CHECK(gpt_scan(disk,&result)==-SE_UCLEAN && result.partition_count==0,
              "both tables damaged rejected");
 
-    /* 6. overlapping partitions (valid CRCs) -> rejected */
+    /* 8. overlapping partitions (valid CRCs) -> rejected */
     struct tg_part overlap[2]={
         {2048,5000,gpt_type_zeroos_zjfs},
         {4096,8191,gpt_type_zeroos_scratch}};
@@ -160,18 +191,18 @@ int storage_selftest_gpt(void) {
     TG_CHECK(gpt_scan(disk,&result)==-SE_UCLEAN &&
              result.primary_status==GPT_ERR_OVERLAP,"overlap rejected");
 
-    /* 7. partition beyond last usable LBA -> rejected */
+    /* 9. partition beyond last usable LBA -> rejected */
     struct tg_part beyond[1]={{2048,last,gpt_type_zeroos_zjfs}};
     tg_build(disk,beyond,1,entries,sector);
     TG_CHECK(gpt_scan(disk,&result)==-SE_UCLEAN &&
              result.primary_status==GPT_ERR_ENTRY_RANGE,"out-of-range entry rejected");
 
-    /* 8. first > last within an entry */
+    /* 10. first > last within an entry */
     struct tg_part inverted[1]={{4000,3000,gpt_type_zeroos_zjfs}};
     tg_build(disk,inverted,1,entries,sector);
     TG_CHECK(gpt_scan(disk,&result)==-SE_UCLEAN,"inverted entry rejected");
 
-    /* 9. resealed header with hostile geometry: huge entry count (would
+    /* 11. resealed header with hostile geometry: huge entry count (would
      * overflow a naive size computation), bad entry size, wrong MyLBA,
      * usable range overlapping the entry array, oversized header. */
     tg_build(disk,good,2,entries,sector);
@@ -204,7 +235,7 @@ int storage_selftest_gpt(void) {
              result.primary_status==GPT_ERR_ALTERNATE,
              "primary alternate must identify final disk LBA");
 
-    /* 10. registration exposes bounded, correctly offset partitions */
+    /* 12. registration exposes bounded, correctly offset partitions */
     tg_build(disk,good,2,entries,sector);
     TG_CHECK(gpt_scan(disk,&result)==0,"rescan");
     TG_CHECK(gpt_register(disk,&result)==2,"partitions registered");

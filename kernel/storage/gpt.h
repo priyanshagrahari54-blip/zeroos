@@ -13,10 +13,12 @@
  *          (<= GPT_MAX_ENTRIES), entry-array CRC32, no 64-bit overflow.
  *  entries: first <= last, within [first_usable, last_usable], pairwise
  *          non-overlapping.
- * Recovery policy: primary valid -> use it (backup damage is reported);
- * primary invalid, backup valid -> use backup and report "degraded" (the
- * host tool `tools/storage/gpt.py repair` rewrites the primary); both
- * invalid -> no partitions are exposed. The kernel never rewrites a GPT.
+ * Recovery policy: primary invalid, backup valid -> use backup and report
+ * "degraded"; one valid copy with the other damaged remains usable. If both
+ * copies validate, shared geometry, disk GUID, and complete entry arrays must
+ * agree. Divergent valid copies fail closed (no partitions exposed), because
+ * choosing either could mount a stale or hostile partition map. The kernel
+ * never rewrites a GPT.
  *
  * Mount policy: only partitions with the ZEROOS ZJFS type GUID are
  * candidates for the root filesystem; the ZEROOS scratch type marks space
@@ -41,7 +43,8 @@ enum gpt_error {
     GPT_ERR_OVERLAP=11,
     GPT_ERR_TOO_MANY=12,
     GPT_ERR_NO_MEMORY=13,
-    GPT_ERR_ALTERNATE=14
+    GPT_ERR_ALTERNATE=14,
+    GPT_ERR_MISMATCH=15
 };
 
 struct gpt_partition {
