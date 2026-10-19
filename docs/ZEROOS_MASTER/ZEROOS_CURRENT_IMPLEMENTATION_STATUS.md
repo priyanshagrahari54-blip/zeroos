@@ -84,3 +84,10 @@ Do not use `ZEROOS_ISO_ALLOW_UNBOOTABLE=1` as release evidence. It explicitly pe
 - PR #16, merged as `d6b58292`: parallel build dependencies, ISO writer/validator, reproducible build checks, shared boot milestones and local intent parser. Verify the post-merge main workflow before treating its changes as release-certified.
 
 Last verified limitation snapshot: physical hardware validation, standalone installer, full dynamic linker, complete browser/GPU/media stack, full Windows/Android runtimes, and a complete AI execution backend remain open.
+
+## Release-publishing guard follow-up — 2026-10-19
+- **Implemented on branch only:** `.github/workflows/build.yml` now permits the stable GitHub release asset upload only for `push` events whose ref is `refs/heads/main`. Pull requests and feature-branch pushes cannot replace the stable bootable release.
+- Added a CI regression assertion that checks the main-only condition remains present.
+- **Validation state:** not yet CI-verified on this commit. The workflow must run on the PR and then on `main`; no new QEMU boot or release-asset verification is claimed here.
+- **Release blocker:** the existing mutable `zeroos-bootable` release asset may reflect a previous non-main push. After the guard merges, run the main workflow and verify the release asset's source commit/asset listing before calling it restored.
+- This workflow-only change does not increase OS implementation completion or close any kernel/storage/desktop stage.
