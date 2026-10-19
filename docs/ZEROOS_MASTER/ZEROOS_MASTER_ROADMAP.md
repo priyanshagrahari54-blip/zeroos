@@ -707,3 +707,11 @@ Recent hardening includes Stage 2 stack/ELF/timeout certification and ZERO AI ac
 Work proceeds from the lowest implementation stages first, but a stage percentage only increases when the real exit gate gains implementation + tests + integration evidence. Host-only modules, contracts, parsers or detection are not counted as a working OS feature until they are bound to the booted userspace/kernel path.
 
 Immediate order: **S9 brokered actions/lifecycle → S8 isolated compatibility execution → S7 accelerated/media/browser integration → S6 kernel-enforced security/update/recovery → S10 real hardware certification**, while maintaining S1–S5 regression gates.
+
+### Release pipeline safety — 2026-10-19
+- [x] Add a workflow guard so only pushes to `main` can update the mutable bootable release asset.
+- [x] Add a CI regression assertion for the guard's presence.
+- [ ] Obtain a green PR workflow for the exact candidate commit.
+- [ ] Merge through reviewed PR and run the resulting `main` workflow.
+- [ ] Verify the published ISO asset and recorded source commit match the resulting `main` commit.
+- [ ] Reassess any release artifact published by earlier feature-branch pushes; do not describe it as restored until verified.
