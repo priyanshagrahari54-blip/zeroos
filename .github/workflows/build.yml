@@ -292,6 +292,11 @@ jobs:
             build-production/debug.log
           if-no-files-found: error
 
+      - name: Regression check for main-only release publishing
+        run: |
+          set -eu
+          grep -Fq "if: github.event_name == 'push' && github.ref == 'refs/heads/main'" .github/workflows/build.yml
+
       - name: Publish bootable image as a GitHub release
         # The development sandbox has no grub-mkrescue and no emulator, so it can
         # neither build nor test a bootable image. This runner has both, and it
