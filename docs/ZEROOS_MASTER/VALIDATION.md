@@ -40,3 +40,8 @@ No stage is 100% complete until its hardening checklist has executable evidence 
 6. Security, package trust, update rollback and independent recovery have negative/fault evidence.
 7. The physical hardware support matrix and performance/soak results are published.
 8. Unsupported features and installation limits are explicit in release notes.
+
+## 2026-10-19 — Release publication isolation
+- Change under review: `.github/workflows/build.yml` gates the mutable bootable-release upload on both `github.event_name == 'push'` and `github.ref == 'refs/heads/main'`.
+- Regression gate added to CI: exact guard-presence assertion. This detects accidental removal/change of the policy but is not a substitute for validating the GitHub event/ref semantics in a successful workflow run.
+- **Pending:** PR workflow result, post-merge `main` workflow, and release asset/source-commit verification. No new build, ISO, QEMU, hardware or release verification is claimed for this change yet.
