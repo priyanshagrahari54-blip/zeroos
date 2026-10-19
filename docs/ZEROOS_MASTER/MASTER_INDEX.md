@@ -63,3 +63,7 @@ When implementation changes a contract, update the closest subsystem document an
 
 ## Current implementation status
 The live percentage/evidence snapshot is maintained in `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md`. Current evidence-weighted estimate (2026-10-17) is ~43%: Stage 1 92%, Stage 2 84%, Stage 3 48%, Stage 4 43%, Stage 5 44%, Stage 6 22%, Stage 7 15%, Stage 8 13%, Stage 9 16%, Stage 10 10%. See `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md` for limitations and exact evidence policy. These are engineering estimates, not certification percentages. These are engineering estimates, not source-line percentages; documentation maturity is not counted as implementation.
+
+## Current integration note — 2026-10-19
+- Release publication guard and its regression assertion are being reviewed on `fix/release-publish-main-only-20261019`.
+- Validation evidence and limitations are recorded in `VALIDATION.md`; this change is workflow-only and does not certify additional OS functionality.
