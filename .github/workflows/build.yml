@@ -297,7 +297,8 @@ jobs:
         # neither build nor test a bootable image. This runner has both, and it
         # has already booted this exact file under SeaBIOS by the time this step
         # runs - so publish it somewhere a browser can download it from.
-        if: github.event_name == 'push'
+        # Never let feature-branch pushes replace the stable bootable release.
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
