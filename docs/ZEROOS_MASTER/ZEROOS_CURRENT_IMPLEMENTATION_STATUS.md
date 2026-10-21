@@ -91,3 +91,12 @@ Last verified limitation snapshot: physical hardware validation, standalone inst
 - **Validation state:** not yet CI-verified on this commit. The workflow must run on the PR and then on `main`; no new QEMU boot or release-asset verification is claimed here.
 - **Release blocker:** the existing mutable `zeroos-bootable` release asset may reflect a previous non-main push. After the guard merges, run the main workflow and verify the release asset's source commit/asset listing before calling it restored.
 - This workflow-only change does not increase OS implementation completion or close any kernel/storage/desktop stage.
+
+## Production boot smoke regression — 2026-10-19 (PR #18 candidate evidence)
+- Main remains at 4eb68e4; no kernel fix has been merged.
+- Candidate 08585471 workflow #1418: build, reproducible release gate, certification QEMU boots, scheduler panic-diagnostics fault test, storage persistence test, and production ISO build passed. **Production boot smoke failed**.
+- The smoke test ran QEMU for 20 seconds (exit 124 was accepted as the expected stop condition), then failed the first required marker check: ZEROOS: interactive desktop session ready. The network-marker check was not reached.
+- The failing production build-production/serial.log, debug.log, and qemu.log were not included in the failure artifact, so the guest's exact last production milestone is not available from this run.
+- Source review found a likely startup-order defect in kernel/kernel.c: scheduler_self_test() calls scheduler_start() / task_start_first() and does not normally return, while the production-only launch block after it is therefore unreachable. The reachable monitor path currently gates userspace startup on hotplug_reported, which follows scheduler certification. This is a **source-level diagnosis, not yet runtime-confirmed**.
+- An attempted kernel fix was blocked by the GitHub write safety check; no kernel source change or passing regression run is claimed. Next: authorize/review the kernel change, start production userspace from the reachable BSP monitor after the input wait/wake prerequisite while preserving the strict certification gate, add a production bring-up marker assertion, retain production logs on failure, and rerun the exact workflow.
+- No completion percentage increase. This failed candidate run is not evidence that main is release-ready.
