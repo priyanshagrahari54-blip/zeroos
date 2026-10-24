@@ -79,4 +79,4 @@ The release-policy regression script now also asserts that CI invokes it exactly
 
 ## Release artifact integrity — 2026-10-24
 - The release workflow's main-only publication guard and production diagnostic retention are already present on `main`.
-- Candidate follow-up adds byte-for-byte verification that the mutable `zeroos.iso` release asset matches the production ISO boot-tested in that workflow. See `VALIDATION.md` and `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md` for validation state and limitations.
+- Candidate follow-up adds ordered download and byte-for-byte verification that the mutable `zeroos.iso` release asset matches the production ISO boot-tested in that workflow. See `VALIDATION.md` and `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md` for validation state and limitations.
