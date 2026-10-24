@@ -88,7 +88,7 @@ Last verified limitation snapshot: physical hardware validation, standalone inst
 ## Release-publishing guard review — 2026-10-24
 - Reviewed `main` at `4eb68e4fbfeb02d51fc114f82a05ac641e1acd56`. The workflow's stable-release step still used only `github.event_name == 'push'`, allowing a feature-branch push to replace the mutable `zeroos-bootable` release.
 - **Candidate change (not merged):** the release step now requires both a push event and `github.ref == 'refs/heads/main'`. Added `tools/test_release_publish_guard.py` and wired it into CI to fail if the publishing step's condition changes or becomes ambiguous.
-- Prior candidate workflow #1420 passed its then-current production smoke test and existing release-guard grep. That is evidence for the earlier candidate, **not** a passing result for this new branch or for post-merge `main`.
+- The exact candidate code passed workflow #1429; after documentation synchronization, workflow #1435 passed on head `1dbee68abde71e2570d8008f35b0034199d55df0`. Both are candidate-branch runs, not post-merge `main` or stable-release-asset verification.
 - Exact current-branch CI, post-merge `main` CI, and stable release asset/source-commit verification remain pending. No new QEMU boot or release publication is claimed.
 - This is release-pipeline safety work; it does not add kernel functionality or increase the overall implementation estimate.
 
