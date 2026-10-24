@@ -63,3 +63,8 @@ No stage is 100% complete until its hardening checklist has executable evidence 
 
 ### Workflow test invocation uniqueness — 2026-10-24
 The release-policy regression script now also asserts that CI invokes it exactly once, preventing duplicate or missing guard checks. The production-diagnostic retention check remains separate; CI for the exact corrected commit is pending.
+
+## 2026-10-24 — Stable release asset byte verification
+- Candidate workflow now downloads the mutable `zeroos.iso` asset after upload and compares it byte-for-byte with `build-production/zeroos.iso`, the ISO produced and boot-tested in the same CI run.
+- The release-policy regression script also requires both the download and `cmp --silent` checks, preventing a future workflow edit from silently dropping stable-alias verification.
+- **Pending:** run the exact candidate workflow and observe all QEMU/storage/production smoke gates; after merge, verify the resulting `main` workflow and release asset. This edit alone is not evidence that the remote asset is currently correct.
