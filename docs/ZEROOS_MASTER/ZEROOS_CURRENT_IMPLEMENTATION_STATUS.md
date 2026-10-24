@@ -84,3 +84,27 @@ Do not use `ZEROOS_ISO_ALLOW_UNBOOTABLE=1` as release evidence. It explicitly pe
 - PR #16, merged as `d6b58292`: parallel build dependencies, ISO writer/validator, reproducible build checks, shared boot milestones and local intent parser. Verify the post-merge main workflow before treating its changes as release-certified.
 
 Last verified limitation snapshot: physical hardware validation, standalone installer, full dynamic linker, complete browser/GPU/media stack, full Windows/Android runtimes, and a complete AI execution backend remain open.
+
+## Release-publishing guard review — 2026-10-24
+- Reviewed `main` at `4eb68e4fbfeb02d51fc114f82a05ac641e1acd56`. The workflow's stable-release step still used only `github.event_name == 'push'`, allowing a feature-branch push to replace the mutable `zeroos-bootable` release.
+- **Candidate change (not merged):** the release step now requires both a push event and `github.ref == 'refs/heads/main'`. Added `tools/test_release_publish_guard.py` and wired it into CI to fail if the publishing step's condition changes or becomes ambiguous.
+- The exact candidate code passed workflow #1429; after documentation synchronization, workflow #1435 passed on head `1dbee68abde71e2570d8008f35b0034199d55df0`. Both are candidate-branch runs, not post-merge `main` or stable-release-asset verification.
+- Exact current-branch CI, post-merge `main` CI, and stable release asset/source-commit verification remain pending. No new QEMU boot or release publication is claimed.
+- This is release-pipeline safety work; it does not add kernel functionality or increase the overall implementation estimate.
+
+### Evidence update — candidate workflow #1429 (2026-10-24)
+- Exact candidate head `0f17ee1d8da6ea606bb43070faa6514000ed3a84` completed GitHub Actions workflow #1429 successfully.
+- The new release-policy regression step passed. `make`, clean `make check`, ISO verification, repeated QEMU boot certification, scheduler panic-diagnostics fault test, two-boot AHCI/NVMe persistence test, production ISO build, and production desktop/network smoke test all passed in this run.
+- Release publication was skipped because this was a pull-request event; that is expected and is not evidence that the stable release asset was restored.
+- The candidate is still unmerged. No post-merge `main` workflow, physical-hardware result, or stable release asset/source-commit verification is claimed. Overall implementation estimate remains ~43%.
+
+
+## Production boot diagnostic retention — 2026-10-24
+- The latest reviewed `main` remains `4eb68e4fbfeb02d51fc114f82a05ac641e1acd56`; the latest main-branch workflow (#1407) passed on 2026-10-18. It is not a post-merge verification of the current candidate.
+- Candidate PR #19 already restricts stable ISO publishing to `push` on `refs/heads/main`. This follow-up adds an `if: always()` artifact step for production serial, QEMU, and debug-port logs, so a failed desktop/network smoke assertion should retain the evidence needed to diagnose it.
+- Added `tools/test_production_boot_diagnostics.py`, wired into CI to check step order, unconditional artifact capture, missing-file tolerance, and that the smoke test writes all three diagnostic outputs.
+- **Pending at this commit:** CI/QEMU result for this exact diagnostic change. Do not claim it is validated until the new candidate workflow finishes.
+- This is a CI observability improvement; it does not alter kernel behavior, add OS features, or change the evidence-weighted completion estimate.
+
+### Workflow test invocation uniqueness — 2026-10-24
+The release-policy regression script now also asserts that CI invokes it exactly once, preventing duplicate or missing guard checks. The production-diagnostic retention check remains separate; CI for the exact corrected commit is pending.

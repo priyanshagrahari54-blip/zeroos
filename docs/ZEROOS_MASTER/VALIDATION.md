@@ -40,3 +40,26 @@ No stage is 100% complete until its hardening checklist has executable evidence 
 6. Security, package trust, update rollback and independent recovery have negative/fault evidence.
 7. The physical hardware support matrix and performance/soak results are published.
 8. Unsupported features and installation limits are explicit in release notes.
+
+## 2026-10-24 — Stable bootable-release publishing guard
+- Baseline reviewed: `main` commit `4eb68e4fbfeb02d51fc114f82a05ac641e1acd56`; the workflow allowed release publication on any push.
+- Candidate change: require `github.event_name == 'push' && github.ref == 'refs/heads/main'` for the mutable bootable release and run `python3 tools/test_release_publish_guard.py` in CI.
+- Regression script checks there is exactly one bootable-release publishing step and that its only `if:` condition exactly matches the main-only policy.
+- Prior PR candidate workflow #1420 passed its build, `make check`, QEMU certification, storage persistence, production ISO/desktop smoke test, and the earlier release-policy check. The exact candidate passed workflow #1429, and the documentation-synchronized head `1dbee68abde71e2570d8008f35b0034199d55df0` passed workflow #1435. Neither is a post-merge `main` run.
+- Pending release gates: green CI for this exact branch, reviewed merge, successful post-merge `main` workflow, and verification that the stable release asset corresponds to that exact `main` commit.
+
+### Result update — workflow #1429
+- Candidate head: `0f17ee1d8da6ea606bb43070faa6514000ed3a84`.
+- **PASS:** release guard regression; `make`; clean `make check`; ISO checks; repeated QEMU boot gate; scheduler panic diagnostics; AHCI/NVMe two-boot persistence; production ISO build; production desktop/network smoke test.
+- Workflow URL: https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/40054853969
+- The release upload step was skipped on the PR event as intended. Merge, post-merge `main` workflow and stable asset/source-commit verification remain pending. The exact `tools/release.sh` wrapper and physical G560 were not separately run in this review.
+
+
+## 2026-10-24 — Preserve production boot diagnostics on failure
+- The production smoke test writes `build-production/serial.log`, `qemu.log`, and `debug.log`, but the normal artifact step is skipped when an earlier smoke assertion fails. The historical failed candidate run #1418 did not retain those production logs.
+- Candidate correction: an `if: always()` upload-artifact step captures those three logs with `if-no-files-found: ignore` and 14-day retention, before the success-only release artifact step.
+- Regression test: `tools/test_production_boot_diagnostics.py` asserts the artifact step is unique and ordered after the smoke test, runs unconditionally, tolerates absent logs, and matches all three QEMU output paths.
+- The script is wired into CI. **The exact commit's workflow and QEMU results remain pending**; prior candidate passes (#1429/#1435) do not validate this new change.
+
+### Workflow test invocation uniqueness — 2026-10-24
+The release-policy regression script now also asserts that CI invokes it exactly once, preventing duplicate or missing guard checks. The production-diagnostic retention check remains separate; CI for the exact corrected commit is pending.

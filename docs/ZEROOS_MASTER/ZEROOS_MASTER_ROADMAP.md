@@ -707,3 +707,30 @@ Recent hardening includes Stage 2 stack/ELF/timeout certification and ZERO AI ac
 Work proceeds from the lowest implementation stages first, but a stage percentage only increases when the real exit gate gains implementation + tests + integration evidence. Host-only modules, contracts, parsers or detection are not counted as a working OS feature until they are bound to the booted userspace/kernel path.
 
 Immediate order: **S9 brokered actions/lifecycle → S8 isolated compatibility execution → S7 accelerated/media/browser integration → S6 kernel-enforced security/update/recovery → S10 real hardware certification**, while maintaining S1–S5 regression gates.
+
+### Release pipeline integrity — 2026-10-24
+- [x] Identify that a push-only event condition allowed feature-branch pushes to replace the mutable stable ISO release.
+- [x] Candidate: gate stable release publishing on both push event and `refs/heads/main`.
+- [x] Add `tools/test_release_publish_guard.py` and invoke it from CI.
+- [x] Candidate workflow #1429 and documentation-synchronized head workflow #1435 passed, including the release guard, QEMU boot and storage gates.
+- [ ] Merge through reviewed PR and run CI on the resulting `main` commit.
+- [ ] Verify the release asset and recorded source commit match that successful `main` commit.
+- [ ] Keep implementation estimates unchanged; this release-pipeline fix does not close a kernel or OS product stage.
+
+### Release pipeline evidence update — 2026-10-24
+- [x] Candidate workflow #1429 passed on `0f17ee1d8da6ea606bb43070faa6514000ed3a84`, including the policy regression test, clean `make check`, repeated QEMU boots, storage persistence, and production desktop/network smoke test.
+- [x] Confirmed the release-upload step is skipped for pull-request events.
+- [ ] Merge reviewed PR and verify CI on the resulting `main` commit.
+- [ ] Verify stable release asset and source commit after the main workflow publishes.
+- [ ] Run physical G560 certification separately; QEMU evidence does not establish hardware compatibility.
+
+
+### Production boot diagnostics — 2026-10-24
+- [x] Add unconditional, bounded-retention upload for production serial/QEMU/debug logs so failed smoke tests preserve evidence.
+- [x] Add a regression test for artifact-step order, unconditional execution, missing-file tolerance, and QEMU log destinations.
+- [ ] Obtain a green CI/QEMU workflow for the exact commit containing this change.
+- [ ] If the smoke test fails, use the retained logs to identify and fix the actual boot milestone failure rather than guessing at a kernel root cause.
+- [ ] Keep implementation estimates unchanged; diagnostics do not add kernel functionality.
+
+### Workflow test invocation uniqueness — 2026-10-24
+The release-policy regression script now also asserts that CI invokes it exactly once, preventing duplicate or missing guard checks. The production-diagnostic retention check remains separate; CI for the exact corrected commit is pending.

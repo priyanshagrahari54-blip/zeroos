@@ -63,3 +63,16 @@ When implementation changes a contract, update the closest subsystem document an
 
 ## Current implementation status
 The live percentage/evidence snapshot is maintained in `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md`. Current evidence-weighted estimate (2026-10-17) is ~43%: Stage 1 92%, Stage 2 84%, Stage 3 48%, Stage 4 43%, Stage 5 44%, Stage 6 22%, Stage 7 15%, Stage 8 13%, Stage 9 16%, Stage 10 10%. See `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md` for limitations and exact evidence policy. These are engineering estimates, not certification percentages. These are engineering estimates, not source-line percentages; documentation maturity is not counted as implementation.
+
+## Release pipeline status — 2026-10-24
+The main-only stable ISO publishing guard is under review on `fix/stable-iso-main-only-20261024`. The workflow regression test is `tools/test_release_publish_guard.py`. Candidate workflow #1429 and documentation-synchronized head workflow #1435 passed; post-merge `main` and stable release-asset verification remain pending. See `VALIDATION.md` and `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md`. This change does not certify additional OS functionality.
+
+### Candidate CI update — 2026-10-24
+Workflow #1429 passed on candidate head `0f17ee1d8da6ea606bb43070faa6514000ed3a84`, including the new release-policy regression and production QEMU smoke test. The stable release upload was correctly skipped for a PR event. This does not establish merged-main or published-release verification; see `VALIDATION.md`.
+
+
+## Production boot diagnostics — 2026-10-24
+The release candidate adds unconditional upload of production serial/QEMU/debug logs when boot smoke tests fail. Regression coverage lives in `tools/test_production_boot_diagnostics.py`; see `VALIDATION.md` for the pending exact-commit CI gate. This improves diagnosis only and is not additional OS feature evidence.
+
+### Workflow test invocation uniqueness — 2026-10-24
+The release-policy regression script now also asserts that CI invokes it exactly once, preventing duplicate or missing guard checks. The production-diagnostic retention check remains separate; CI for the exact corrected commit is pending.
