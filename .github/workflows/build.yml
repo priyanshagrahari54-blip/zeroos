@@ -19,8 +19,6 @@ jobs:
       - name: Verify production boot diagnostic retention
         run: python3 tools/test_production_boot_diagnostics.py
 
-      - name: Verify stable release publication policy
-        run: python3 tools/test_release_publish_guard.py
 
       - name: Install build and QEMU tools
         run: |

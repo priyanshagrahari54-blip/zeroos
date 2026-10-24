@@ -73,3 +73,6 @@ Workflow #1429 passed on candidate head `0f17ee1d8da6ea606bb43070faa6514000ed3a8
 
 ## Production boot diagnostics — 2026-10-24
 The release candidate adds unconditional upload of production serial/QEMU/debug logs when boot smoke tests fail. Regression coverage lives in `tools/test_production_boot_diagnostics.py`; see `VALIDATION.md` for the pending exact-commit CI gate. This improves diagnosis only and is not additional OS feature evidence.
+
+### Workflow test invocation uniqueness — 2026-10-24
+The release-policy regression script now also asserts that CI invokes it exactly once, preventing duplicate or missing guard checks. The production-diagnostic retention check remains separate; CI for the exact corrected commit is pending.

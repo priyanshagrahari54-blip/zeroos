@@ -60,3 +60,6 @@ No stage is 100% complete until its hardening checklist has executable evidence 
 - Candidate correction: an `if: always()` upload-artifact step captures those three logs with `if-no-files-found: ignore` and 14-day retention, before the success-only release artifact step.
 - Regression test: `tools/test_production_boot_diagnostics.py` asserts the artifact step is unique and ordered after the smoke test, runs unconditionally, tolerates absent logs, and matches all three QEMU output paths.
 - The script is wired into CI. **The exact commit's workflow and QEMU results remain pending**; prior candidate passes (#1429/#1435) do not validate this new change.
+
+### Workflow test invocation uniqueness — 2026-10-24
+The release-policy regression script now also asserts that CI invokes it exactly once, preventing duplicate or missing guard checks. The production-diagnostic retention check remains separate; CI for the exact corrected commit is pending.

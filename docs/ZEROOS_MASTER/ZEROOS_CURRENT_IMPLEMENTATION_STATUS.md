@@ -105,3 +105,6 @@ Last verified limitation snapshot: physical hardware validation, standalone inst
 - Added `tools/test_production_boot_diagnostics.py`, wired into CI to check step order, unconditional artifact capture, missing-file tolerance, and that the smoke test writes all three diagnostic outputs.
 - **Pending at this commit:** CI/QEMU result for this exact diagnostic change. Do not claim it is validated until the new candidate workflow finishes.
 - This is a CI observability improvement; it does not alter kernel behavior, add OS features, or change the evidence-weighted completion estimate.
+
+### Workflow test invocation uniqueness — 2026-10-24
+The release-policy regression script now also asserts that CI invokes it exactly once, preventing duplicate or missing guard checks. The production-diagnostic retention check remains separate; CI for the exact corrected commit is pending.

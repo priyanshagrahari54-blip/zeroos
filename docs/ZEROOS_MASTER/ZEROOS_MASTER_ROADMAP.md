@@ -731,3 +731,6 @@ Immediate order: **S9 brokered actions/lifecycle → S8 isolated compatibility e
 - [ ] Obtain a green CI/QEMU workflow for the exact commit containing this change.
 - [ ] If the smoke test fails, use the retained logs to identify and fix the actual boot milestone failure rather than guessing at a kernel root cause.
 - [ ] Keep implementation estimates unchanged; diagnostics do not add kernel functionality.
+
+### Workflow test invocation uniqueness — 2026-10-24
+The release-policy regression script now also asserts that CI invokes it exactly once, preventing duplicate or missing guard checks. The production-diagnostic retention check remains separate; CI for the exact corrected commit is pending.
