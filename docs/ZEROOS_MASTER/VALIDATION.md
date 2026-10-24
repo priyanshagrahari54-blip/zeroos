@@ -47,3 +47,9 @@ No stage is 100% complete until its hardening checklist has executable evidence 
 - Regression script checks there is exactly one bootable-release publishing step and that its only `if:` condition exactly matches the main-only policy.
 - Prior PR candidate workflow #1420 passed its build, `make check`, QEMU certification, storage persistence, production ISO/desktop smoke test, and the earlier release-policy check. The new branch's exact workflow result is pending; no new pass is inferred.
 - Pending release gates: green CI for this exact branch, reviewed merge, successful post-merge `main` workflow, and verification that the stable release asset corresponds to that exact `main` commit.
+
+### Result update — workflow #1429
+- Candidate head: `0f17ee1d8da6ea606bb43070faa6514000ed3a84`.
+- **PASS:** release guard regression; `make`; clean `make check`; ISO checks; repeated QEMU boot gate; scheduler panic diagnostics; AHCI/NVMe two-boot persistence; production ISO build; production desktop/network smoke test.
+- Workflow URL: https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/40054853969
+- The release upload step was skipped on the PR event as intended. Merge, post-merge `main` workflow and stable asset/source-commit verification remain pending. The exact `tools/release.sh` wrapper and physical G560 were not separately run in this review.
