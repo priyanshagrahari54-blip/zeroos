@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regression test: the mutable bootable release may only be published from main."""
+"""Regression tests for main-only publishing and stable ISO content verification."""
 from pathlib import Path
 import sys
 
@@ -29,6 +29,19 @@ if conditions != [expected]:
     print(
         "unsafe bootable-release condition; expected exactly "
         f"{expected!r}, got {conditions!r}",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+
+required_integrity_checks = (
+    'gh release download "$tag" --pattern "zeroos.iso" --dir build/release-verify --clobber',
+    "cmp --silent build-production/zeroos.iso build/release-verify/zeroos.iso",
+)
+missing = [check for check in required_integrity_checks if check not in step]
+if missing:
+    print(
+        "release publisher must download and byte-compare the stable ISO "
+        f"against the boot-tested image; missing {missing!r}",
         file=sys.stderr,
     )
     raise SystemExit(1)
