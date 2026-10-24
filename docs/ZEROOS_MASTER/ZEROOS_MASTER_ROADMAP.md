@@ -734,3 +734,10 @@ Immediate order: **S9 brokered actions/lifecycle → S8 isolated compatibility e
 
 ### Workflow test invocation uniqueness — 2026-10-24
 The release-policy regression script now also asserts that CI invokes it exactly once, preventing duplicate or missing guard checks. The production-diagnostic retention check remains separate; CI for the exact corrected commit is pending.
+
+### Stable release artifact integrity — 2026-10-24
+- [x] Main-only publishing guard and regression coverage are present on `main` (PR #19 merged; candidate CI reported passing).
+- [x] Preserve production serial/QEMU/debug logs on smoke-test failure.
+- [x] Add candidate post-upload download and byte comparison of mutable `zeroos.iso` against the boot-tested production ISO; extend the regression test.
+- [ ] Obtain green CI for this exact candidate, including QEMU, storage persistence, and production desktop/network gates.
+- [ ] Merge the reviewed change, run the resulting `main` workflow, and verify the stable asset against the exact main-run ISO.
