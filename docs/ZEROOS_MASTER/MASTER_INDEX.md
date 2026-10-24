@@ -69,3 +69,7 @@ The main-only stable ISO publishing guard is under review on `fix/stable-iso-mai
 
 ### Candidate CI update — 2026-10-24
 Workflow #1429 passed on candidate head `0f17ee1d8da6ea606bb43070faa6514000ed3a84`, including the new release-policy regression and production QEMU smoke test. The stable release upload was correctly skipped for a PR event. This does not establish merged-main or published-release verification; see `VALIDATION.md`.
+
+
+## Production boot diagnostics — 2026-10-24
+The release candidate adds unconditional upload of production serial/QEMU/debug logs when boot smoke tests fail. Regression coverage lives in `tools/test_production_boot_diagnostics.py`; see `VALIDATION.md` for the pending exact-commit CI gate. This improves diagnosis only and is not additional OS feature evidence.

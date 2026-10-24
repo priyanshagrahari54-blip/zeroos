@@ -97,3 +97,11 @@ Last verified limitation snapshot: physical hardware validation, standalone inst
 - The new release-policy regression step passed. `make`, clean `make check`, ISO verification, repeated QEMU boot certification, scheduler panic-diagnostics fault test, two-boot AHCI/NVMe persistence test, production ISO build, and production desktop/network smoke test all passed in this run.
 - Release publication was skipped because this was a pull-request event; that is expected and is not evidence that the stable release asset was restored.
 - The candidate is still unmerged. No post-merge `main` workflow, physical-hardware result, or stable release asset/source-commit verification is claimed. Overall implementation estimate remains ~43%.
+
+
+## Production boot diagnostic retention — 2026-10-24
+- The latest reviewed `main` remains `4eb68e4fbfeb02d51fc114f82a05ac641e1acd56`; the latest main-branch workflow (#1407) passed on 2026-10-18. It is not a post-merge verification of the current candidate.
+- Candidate PR #19 already restricts stable ISO publishing to `push` on `refs/heads/main`. This follow-up adds an `if: always()` artifact step for production serial, QEMU, and debug-port logs, so a failed desktop/network smoke assertion should retain the evidence needed to diagnose it.
+- Added `tools/test_production_boot_diagnostics.py`, wired into CI to check step order, unconditional artifact capture, missing-file tolerance, and that the smoke test writes all three diagnostic outputs.
+- **Pending at this commit:** CI/QEMU result for this exact diagnostic change. Do not claim it is validated until the new candidate workflow finishes.
+- This is a CI observability improvement; it does not alter kernel behavior, add OS features, or change the evidence-weighted completion estimate.

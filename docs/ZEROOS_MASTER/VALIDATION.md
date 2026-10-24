@@ -53,3 +53,10 @@ No stage is 100% complete until its hardening checklist has executable evidence 
 - **PASS:** release guard regression; `make`; clean `make check`; ISO checks; repeated QEMU boot gate; scheduler panic diagnostics; AHCI/NVMe two-boot persistence; production ISO build; production desktop/network smoke test.
 - Workflow URL: https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/40054853969
 - The release upload step was skipped on the PR event as intended. Merge, post-merge `main` workflow and stable asset/source-commit verification remain pending. The exact `tools/release.sh` wrapper and physical G560 were not separately run in this review.
+
+
+## 2026-10-24 — Preserve production boot diagnostics on failure
+- The production smoke test writes `build-production/serial.log`, `qemu.log`, and `debug.log`, but the normal artifact step is skipped when an earlier smoke assertion fails. The historical failed candidate run #1418 did not retain those production logs.
+- Candidate correction: an `if: always()` upload-artifact step captures those three logs with `if-no-files-found: ignore` and 14-day retention, before the success-only release artifact step.
+- Regression test: `tools/test_production_boot_diagnostics.py` asserts the artifact step is unique and ordered after the smoke test, runs unconditionally, tolerates absent logs, and matches all three QEMU output paths.
+- The script is wired into CI. **The exact commit's workflow and QEMU results remain pending**; prior candidate passes (#1429/#1435) do not validate this new change.

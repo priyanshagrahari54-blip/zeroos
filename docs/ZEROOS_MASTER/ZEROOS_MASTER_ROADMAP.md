@@ -723,3 +723,11 @@ Immediate order: **S9 brokered actions/lifecycle → S8 isolated compatibility e
 - [ ] Merge reviewed PR and verify CI on the resulting `main` commit.
 - [ ] Verify stable release asset and source commit after the main workflow publishes.
 - [ ] Run physical G560 certification separately; QEMU evidence does not establish hardware compatibility.
+
+
+### Production boot diagnostics — 2026-10-24
+- [x] Add unconditional, bounded-retention upload for production serial/QEMU/debug logs so failed smoke tests preserve evidence.
+- [x] Add a regression test for artifact-step order, unconditional execution, missing-file tolerance, and QEMU log destinations.
+- [ ] Obtain a green CI/QEMU workflow for the exact commit containing this change.
+- [ ] If the smoke test fails, use the retained logs to identify and fix the actual boot milestone failure rather than guessing at a kernel root cause.
+- [ ] Keep implementation estimates unchanged; diagnostics do not add kernel functionality.
