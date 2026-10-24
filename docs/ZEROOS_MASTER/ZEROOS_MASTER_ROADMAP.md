@@ -712,7 +712,7 @@ Immediate order: **S9 brokered actions/lifecycle → S8 isolated compatibility e
 - [x] Identify that a push-only event condition allowed feature-branch pushes to replace the mutable stable ISO release.
 - [x] Candidate: gate stable release publishing on both push event and `refs/heads/main`.
 - [x] Add `tools/test_release_publish_guard.py` and invoke it from CI.
-- [ ] Obtain a green workflow for the exact candidate branch.
+- [x] Candidate workflow #1429 and documentation-synchronized head workflow #1435 passed, including the release guard, QEMU boot and storage gates.
 - [ ] Merge through reviewed PR and run CI on the resulting `main` commit.
 - [ ] Verify the release asset and recorded source commit match that successful `main` commit.
 - [ ] Keep implementation estimates unchanged; this release-pipeline fix does not close a kernel or OS product stage.
