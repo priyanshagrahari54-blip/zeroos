@@ -707,3 +707,12 @@ Recent hardening includes Stage 2 stack/ELF/timeout certification and ZERO AI ac
 Work proceeds from the lowest implementation stages first, but a stage percentage only increases when the real exit gate gains implementation + tests + integration evidence. Host-only modules, contracts, parsers or detection are not counted as a working OS feature until they are bound to the booted userspace/kernel path.
 
 Immediate order: **S9 brokered actions/lifecycle → S8 isolated compatibility execution → S7 accelerated/media/browser integration → S6 kernel-enforced security/update/recovery → S10 real hardware certification**, while maintaining S1–S5 regression gates.
+
+### Release pipeline integrity — 2026-10-24
+- [x] Identify that a push-only event condition allowed feature-branch pushes to replace the mutable stable ISO release.
+- [x] Candidate: gate stable release publishing on both push event and `refs/heads/main`.
+- [x] Add `tools/test_release_publish_guard.py` and invoke it from CI.
+- [ ] Obtain a green workflow for the exact candidate branch.
+- [ ] Merge through reviewed PR and run CI on the resulting `main` commit.
+- [ ] Verify the release asset and recorded source commit match that successful `main` commit.
+- [ ] Keep implementation estimates unchanged; this release-pipeline fix does not close a kernel or OS product stage.
