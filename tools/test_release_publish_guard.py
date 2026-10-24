@@ -46,4 +46,14 @@ if missing:
     )
     raise SystemExit(1)
 
+download_at = step.find(required_integrity_checks[0])
+compare_at = step.find(required_integrity_checks[1])
+if download_at < 0 or compare_at <= download_at:
+    print(
+        "stable ISO must be downloaded before it is compared with the "
+        "boot-tested production ISO",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+
 print("release publication guard regression check passed")
