@@ -344,6 +344,12 @@ jobs:
           gh release view "$tag" --json assets \
             --jq '.assets[].name' | grep -qx "zeroos-${sha}.iso" \
             || { echo "release asset zeroos-${sha}.iso is missing" >&2; exit 1; }
+          # Verify the mutable stable alias is the exact ISO boot-tested in this run.
+          mkdir -p build/release-verify
+          gh release download "$tag" --pattern "zeroos.iso" --dir build/release-verify --clobber
+          cmp --silent build-production/zeroos.iso build/release-verify/zeroos.iso \
+            || { echo "stable zeroos.iso differs from the boot-tested production ISO" >&2; exit 1; }
+          echo "ZEROOS: stable release ISO matches the boot-tested production ISO (sha256=$(sha256sum build/release-verify/zeroos.iso | cut -d' ' -f1))."
 
       - name: Serial summary
         if: always()
