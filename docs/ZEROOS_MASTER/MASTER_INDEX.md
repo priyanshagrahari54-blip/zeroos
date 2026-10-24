@@ -66,3 +66,6 @@ The live percentage/evidence snapshot is maintained in `ZEROOS_CURRENT_IMPLEMENT
 
 ## Release pipeline status — 2026-10-24
 The main-only stable ISO publishing guard is under review on `fix/stable-iso-main-only-20261024`. The workflow regression test is `tools/test_release_publish_guard.py`. Its current-branch CI and post-merge release verification are pending; see `VALIDATION.md` and `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md`. This change does not certify additional OS functionality.
+
+### Candidate CI update — 2026-10-24
+Workflow #1429 passed on candidate head `0f17ee1d8da6ea606bb43070faa6514000ed3a84`, including the new release-policy regression and production QEMU smoke test. The stable release upload was correctly skipped for a PR event. This does not establish merged-main or published-release verification; see `VALIDATION.md`.
