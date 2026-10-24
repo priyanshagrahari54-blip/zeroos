@@ -91,3 +91,9 @@ Last verified limitation snapshot: physical hardware validation, standalone inst
 - Prior candidate workflow #1420 passed its then-current production smoke test and existing release-guard grep. That is evidence for the earlier candidate, **not** a passing result for this new branch or for post-merge `main`.
 - Exact current-branch CI, post-merge `main` CI, and stable release asset/source-commit verification remain pending. No new QEMU boot or release publication is claimed.
 - This is release-pipeline safety work; it does not add kernel functionality or increase the overall implementation estimate.
+
+### Evidence update — candidate workflow #1429 (2026-10-24)
+- Exact candidate head `0f17ee1d8da6ea606bb43070faa6514000ed3a84` completed GitHub Actions workflow #1429 successfully.
+- The new release-policy regression step passed. `make`, clean `make check`, ISO verification, repeated QEMU boot certification, scheduler panic-diagnostics fault test, two-boot AHCI/NVMe persistence test, production ISO build, and production desktop/network smoke test all passed in this run.
+- Release publication was skipped because this was a pull-request event; that is expected and is not evidence that the stable release asset was restored.
+- The candidate is still unmerged. No post-merge `main` workflow, physical-hardware result, or stable release asset/source-commit verification is claimed. Overall implementation estimate remains ~43%.
