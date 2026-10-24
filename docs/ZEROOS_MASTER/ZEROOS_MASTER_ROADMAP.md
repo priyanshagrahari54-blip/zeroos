@@ -716,3 +716,10 @@ Immediate order: **S9 brokered actions/lifecycle → S8 isolated compatibility e
 - [ ] Merge through reviewed PR and run CI on the resulting `main` commit.
 - [ ] Verify the release asset and recorded source commit match that successful `main` commit.
 - [ ] Keep implementation estimates unchanged; this release-pipeline fix does not close a kernel or OS product stage.
+
+### Release pipeline evidence update — 2026-10-24
+- [x] Candidate workflow #1429 passed on `0f17ee1d8da6ea606bb43070faa6514000ed3a84`, including the policy regression test, clean `make check`, repeated QEMU boots, storage persistence, and production desktop/network smoke test.
+- [x] Confirmed the release-upload step is skipped for pull-request events.
+- [ ] Merge reviewed PR and verify CI on the resulting `main` commit.
+- [ ] Verify stable release asset and source commit after the main workflow publishes.
+- [ ] Run physical G560 certification separately; QEMU evidence does not establish hardware compatibility.
