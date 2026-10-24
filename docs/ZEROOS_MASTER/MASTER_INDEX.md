@@ -76,3 +76,7 @@ The release candidate adds unconditional upload of production serial/QEMU/debug 
 
 ### Workflow test invocation uniqueness — 2026-10-24
 The release-policy regression script now also asserts that CI invokes it exactly once, preventing duplicate or missing guard checks. The production-diagnostic retention check remains separate; CI for the exact corrected commit is pending.
+
+## Release artifact integrity — 2026-10-24
+- The release workflow's main-only publication guard and production diagnostic retention are already present on `main`.
+- Candidate follow-up adds byte-for-byte verification that the mutable `zeroos.iso` release asset matches the production ISO boot-tested in that workflow. See `VALIDATION.md` and `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md` for validation state and limitations.
