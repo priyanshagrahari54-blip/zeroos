@@ -1,6 +1,6 @@
 # ZEROOS — CURRENT IMPLEMENTATION STATUS
 
-Updated: 2026-10-18
+Updated: 2026-10-25
 Branch baseline at review: `main` (before PR #16 merge: `e8fb0a72d45733a682b9614e80c019941f747ab1`); PR #16 merged as `d6b58292df7e00b4b2f15ba22f3a0405035ee549`.
 Status policy: **evidence-weighted estimate; never equate a source file, marker check, architecture document, or host test with a working end-user feature.**
 
@@ -115,3 +115,9 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - Extended `tools/test_release_publish_guard.py` to require the main-only publication condition and to assert the stable asset is downloaded before the byte comparison.
 - **Evidence status:** this exact candidate still requires the CI regression scripts, clean `make check`, QEMU certification, storage persistence, production desktop/network smoke test, and post-merge release verification. No new pass, release restoration, or physical-hardware result is claimed here.
 - This is release-artifact integrity work; the OS implementation estimate remains unchanged.
+
+## Evidence update — 2026-10-25 (supersedes the candidate-pending note above)
+- **Merged to main:** PR #20, merge commit `34010187ef16b4a71b476a22c782cabf4558dc06`. The release workflow now downloads the published mutable `zeroos.iso` and byte-compares it with `build-production/zeroos.iso` from the same run; mismatch fails the job. The regression script checks both the main-only guard and download-before-compare ordering.
+- **Exact candidate CI:** workflow #1464 (`40058802277`) completed successfully on the PR candidate. Its policy/diagnostic regression checks, clean `make check`, repeated QEMU boot gate, 4-vCPU gate, NX-disabled boot, fault-recovery boot, AHCI/NVMe persistence certification, production ISO build and production desktop/network smoke test all passed. The release-publishing step was correctly skipped for the PR event.
+- **Main-run/release status:** the GitHub connector used in this review did not return push-triggered workflow runs for merge commit `34010187...`; therefore post-merge `main` CI and the live release-asset byte comparison remain **unverified here**. Do not treat candidate CI as proof that the remote `zeroos.iso` was refreshed.
+- No new kernel functionality or physical-hardware certification is claimed. Overall OS implementation estimate remains unchanged.
