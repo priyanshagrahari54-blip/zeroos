@@ -108,3 +108,10 @@ Last verified limitation snapshot: physical hardware validation, standalone inst
 
 ### Workflow test invocation uniqueness — 2026-10-24
 The release-policy regression script now also asserts that CI invokes it exactly once, preventing duplicate or missing guard checks. The production-diagnostic retention check remains separate; CI for the exact corrected commit is pending.
+
+## Stable ISO content verification — 2026-10-24
+- **Main already contains:** the main-only release publication condition and production boot diagnostic artifact retention, with regression scripts wired into CI. PR #19's candidate push/PR workflows were reported passing; a successful post-merge main run and stable asset verification were the remaining release checks.
+- **New candidate change (not yet validated):** after publishing the versioned ISO and mutable `zeroos.iso`, the workflow downloads the stable alias and byte-compares it with `build-production/zeroos.iso`, the image boot-tested earlier in that run. Publication fails if the alias is missing or differs.
+- Extended `tools/test_release_publish_guard.py` to require the main-only publication condition and to assert the stable asset is downloaded before the byte comparison.
+- **Evidence status:** this exact candidate still requires the CI regression scripts, clean `make check`, QEMU certification, storage persistence, production desktop/network smoke test, and post-merge release verification. No new pass, release restoration, or physical-hardware result is claimed here.
+- This is release-artifact integrity work; the OS implementation estimate remains unchanged.
