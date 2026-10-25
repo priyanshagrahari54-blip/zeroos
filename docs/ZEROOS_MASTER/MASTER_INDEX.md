@@ -1,6 +1,6 @@
 # ZEROOS — MASTER DOCUMENT INDEX
 Version: 2.4
-Updated: 2026-10-18
+Updated: 2026-10-25
 
 This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md` remains the canonical consolidated product/architecture specification. Stage 6-10 execution is split into dedicated production master documents so an implementation agent can work one stage at a time without losing cross-cutting requirements.
 
@@ -80,3 +80,8 @@ The release-policy regression script now also asserts that CI invokes it exactly
 ## Release artifact integrity — 2026-10-24
 - The release workflow's main-only publication guard and production diagnostic retention are already present on `main`.
 - Candidate follow-up adds ordered download and byte-for-byte verification that the mutable `zeroos.iso` release asset matches the production ISO boot-tested in that workflow. See `VALIDATION.md` and `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md` for validation state and limitations.
+
+## Evidence navigation update — 2026-10-25
+- PR #20 merged as `34010187ef16b4a71b476a22c782cabf4558dc06`, adding stable bootable ISO byte-integrity verification to the main-only release workflow.
+- Candidate CI #1464 passed the full available QEMU/storage/production smoke gates; release publication was skipped on the PR event as intended.
+- Post-merge `main` workflow and live stable-asset verification are still pending confirmation. See the 2026-10-25 entry in `VALIDATION.md` and `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md`.
