@@ -94,3 +94,10 @@ The release-policy regression script now also asserts that CI invokes it exactly
 ## Complete implementation and bootable release contract
 
 - [ZEROOS_ALL_FEATURES_IMPLEMENTATION_AND_BOOTABLE_RELEASE_CONTRACT.md](./ZEROOS_ALL_FEATURES_IMPLEMENTATION_AND_BOOTABLE_RELEASE_CONTRACT.md) — mandatory execution plan for all 10 stages, native bootable ISO acceptance gates, all ZEROOS product requirements, traceability for both uploaded optimization catalogs (220 entries total), safe/adaptive optimization policy, AI permission boundaries, performance measurements, recovery, and evidence-based completion status.
+
+
+## Low-level optimization catalogs (separate source-derived references)
+- [`LOW_LEVEL_SYSTEM_OPTIMIZATIONS_CATALOG_100.md`](./LOW_LEVEL_SYSTEM_OPTIMIZATIONS_CATALOG_100.md) — separate 100-feature catalog covering storage, memory, CPU/scheduling, networking/IPC and hardware management.
+- [`LOW_LEVEL_SYSTEM_NETWORK_BROWSER_CATALOG_120.md`](./LOW_LEVEL_SYSTEM_NETWORK_BROWSER_CATALOG_120.md) — separate 120-feature catalog with storage, memory, CPU, network/IPC and low-RAM browser optimization guidance.
+
+These documents transcribe and technically qualify the two supplied PDF catalogs. They are design/evaluation inventories, not proof that every item is implemented. Linux-specific APIs/settings and hardware-dependent optimizations must be adapted, capability-gated, security-reviewed and benchmarked for native ZEROOS.
