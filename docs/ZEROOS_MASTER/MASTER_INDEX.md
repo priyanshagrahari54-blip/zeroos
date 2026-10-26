@@ -105,3 +105,7 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - [`LOW_LEVEL_SYSTEM_NETWORK_BROWSER_CATALOG_120.md`](./LOW_LEVEL_SYSTEM_NETWORK_BROWSER_CATALOG_120.md) — separate 120-feature catalog with storage, memory, CPU, network/IPC and low-RAM browser optimization guidance.
 
 These documents transcribe and technically qualify the two supplied PDF catalogs. They are design/evaluation inventories, not proof that every item is implemented. Linux-specific APIs/settings and hardware-dependent optimizations must be adapted, capability-gated, security-reviewed and benchmarked for native ZEROOS.
+
+
+## External reference audit — 2026-10-26
+- [EXTERNAL_REFERENCE_AUDIT_2026-10-26.md](./EXTERNAL_REFERENCE_AUDIT_2026-10-26.md) — audit of six uploaded PDFs (four distinct reference families), with adopt/adapt/reject decisions, safety caveats, G560/2 GB policy, import/licensing workflow, and implementation order. This is an audit document, not an implementation claim.
