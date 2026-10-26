@@ -369,10 +369,13 @@ jobs:
               }
               echo "ZEROOS: previous stable ISO restored after failed update."
             else
-              gh release delete-asset "$tag" zeroos.iso --yes || {
-                echo "ERROR: failed to remove unverified stable zeroos.iso; manual release repair required" >&2
-                return 1
-              }
+              assets_now="$(gh release view "$tag" --json assets --jq '.assets[].name')"
+              if printf '%s\n' "$assets_now" | grep -qx "zeroos.iso"; then
+                gh release delete-asset "$tag" zeroos.iso --yes || {
+                  echo "ERROR: failed to remove unverified stable zeroos.iso; manual release repair required" >&2
+                  return 1
+                }
+              fi
               assets_after="$(gh release view "$tag" --json assets --jq '.assets[].name')"
               if printf '%s\n' "$assets_after" | grep -qx "zeroos.iso"; then
                 echo "ERROR: unverified stable zeroos.iso still exists after cleanup" >&2
