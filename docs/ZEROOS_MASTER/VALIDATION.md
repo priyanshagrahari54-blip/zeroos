@@ -75,3 +75,9 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - In that PR run, `Publish bootable image as a GitHub release` was **SKIPPED by design**, because publishing is restricted to pushes on `refs/heads/main`.
 - The regression script verifies the release step has the exact main-only condition and downloads the mutable `zeroos.iso` before running `cmp --silent` against the boot-tested production ISO.
 - **Still pending/unverified in this review:** post-merge push workflow result and live release asset comparison for the resulting `main` commit. No claim is made that the mutable release asset has already been refreshed or verified.
+
+## 2026-10-26 — Stable ISO update rollback (candidate)
+- The candidate workflow verifies the versioned ISO against `build-production/zeroos.iso` before mutating the stable alias.
+- It preserves the prior `zeroos.iso` and attempts restoration if stable upload, download, or byte comparison fails. If no prior stable alias existed, cleanup removes the unverified alias and verifies absence.
+- The release regression script checks publication gating, operation ordering, rollback branches, and `bash -n` syntax for the inline shell.
+- **Pending:** run this exact candidate through the full workflow; confirm build/check, QEMU, storage persistence, and production desktop/network gates. The PR event intentionally skips live release publication, so actual rollback behavior and post-merge stable asset integrity still require a main push workflow.
