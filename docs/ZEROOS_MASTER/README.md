@@ -33,3 +33,10 @@ Current execution is intentionally focused on the lowest later-stage gaps. Lates
 ## Complete implementation directive — 2026-10-26
 
 See [ZEROOS_ALL_FEATURES_IMPLEMENTATION_AND_BOOTABLE_RELEASE_CONTRACT.md](./ZEROOS_ALL_FEATURES_IMPLEMENTATION_AND_BOOTABLE_RELEASE_CONTRACT.md) for the full ten-stage execution plan, bootable release gates, product feature ledger, and the 220-entry optimization-catalog disposition matrix. It is a specification and work plan, not a claim that the OS is complete.
+
+
+## Low-level optimization catalogs (separate source-derived references)
+- [`LOW_LEVEL_SYSTEM_OPTIMIZATIONS_CATALOG_100.md`](./LOW_LEVEL_SYSTEM_OPTIMIZATIONS_CATALOG_100.md) — separate 100-feature catalog covering storage, memory, CPU/scheduling, networking/IPC and hardware management.
+- [`LOW_LEVEL_SYSTEM_NETWORK_BROWSER_CATALOG_120.md`](./LOW_LEVEL_SYSTEM_NETWORK_BROWSER_CATALOG_120.md) — separate 120-feature catalog with storage, memory, CPU, network/IPC and low-RAM browser optimization guidance.
+
+These documents transcribe and technically qualify the two supplied PDF catalogs. They are design/evaluation inventories, not proof that every item is implemented. Linux-specific APIs/settings and hardware-dependent optimizations must be adapted, capability-gated, security-reviewed and benchmarked for native ZEROOS.
