@@ -141,3 +141,10 @@ Added [ZEROOS_ALL_FEATURES_IMPLEMENTATION_AND_BOOTABLE_RELEASE_CONTRACT.md](./ZE
 **Progress estimate unchanged by this documentation-only commit:** overall ~43%; Stage 1 92%, Stage 2 84%, Stage 3 48%, Stage 4 43%, Stage 5 44%, Stage 6 22%, Stage 7 15%, Stage 8 13%, Stage 9 16%, Stage 10 10% (engineering estimates from the previous evidence snapshot, not CI metrics). This document does not make missing features implemented and does not certify a release.
 
 **Next gate:** run `tools/release.sh` and inspect the current main-branch CI with the exact current commit; record command output, ISO checksum, QEMU configuration and test results before revising status. Continue in dependency order: boot/build/release blockers → Stage 1–3 correctness and recovery → drivers/network → interactive desktop → security/update/recovery → real browser/media → Windows/Android runtimes → ZERO AI tool execution → physical hardware/performance certification.
+
+
+## Library research / reuse update — 2026-10-26
+
+Added `LIBRARY_REUSE_AND_INTEGRATION_PLAN.md` and indexed it from `MASTER_INDEX.md` and `ZEROOS_MASTER_ROADMAP.md`. It maps candidates (libc, LZ4, zlib-class compression, FreeType, HarfBuzz, lwIP, TLS libraries, SQLite, FFmpeg-class media, LLVM, AOSP/ART, Wine) to specific ZEROOS layers and defines licensing, provenance, ABI, isolation, test, measurement, and rollback gates. It also records that the 100/120 optimization catalogs are ideas, not ready-made source code, and that RECOVER-X/G560 archives require file-level inventory before reuse.
+
+**Implementation impact: none claimed.** These are documentation and research triage changes. No third-party source was imported by these commits, no boot/CI test was run by the documentation edits, and the existing overall completion estimate is unchanged until a fresh current-main release gate and real integration evidence are available. Two hardware/kernel reference PDFs still need full-text/page-level audit. Next engineering priority remains clean build + ISO verification + repeated QEMU boot, then highest-severity correctness failures.
