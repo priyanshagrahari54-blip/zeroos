@@ -95,3 +95,6 @@ The release-policy regression script now also asserts that CI invokes it exactly
 
 ### Candidate validation update — 2026-10-26
 - Workflow #1500 exposed a regression-test ordering-marker defect before build/QEMU. The assertion was corrected; see `VALIDATION.md` for exact evidence. Corrected run #1503 is pending.
+
+### Candidate CI evidence — 2026-10-26
+- PR #23 candidate workflows #1503 and #1510 passed build/check, QEMU, storage-persistence, and production desktop/network smoke gates. Main-push publication and live stable-asset verification remain outstanding; details are in `VALIDATION.md`.
