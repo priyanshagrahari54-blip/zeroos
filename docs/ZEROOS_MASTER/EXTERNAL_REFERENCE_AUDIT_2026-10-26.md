@@ -2,7 +2,7 @@
 
 ## Scope and evidence
 
-This audit covers the six PDF uploads present in the ZEROOS Library on 2026-10-26. They are six files but not six independent works: duplicate copies exist for the **100 Low-Level System Optimizations Catalog** and the **120 Low-Level System, Network & Browser Optimization Catalog**. The distinct reference families audited are:
+This audit covers the PDF references surfaced in the 2026-10-26 review. The Library contains duplicate copies of the **100 Low-Level System Optimizations Catalog**, the **120 Low-Level System, Network & Browser Optimization Catalog**, the **Operating Systems Ultimate Encyclopedia**, and the **Operating Systems Absolute Omega Vault**. The same-day repository upload commit also added **Extreme Hardware Optimization & Low-Level OS Engineering Manual.pdf** and **Master 100+ Hardware, Kernel & Virtual VRAM Handbook.pdf**. The latter two are identified from the repository upload commit by filename, but their PDF body text was not available through the text extraction used in this pass, so their contents are not represented as fully audited. The distinct text-audited reference families are:
 
 1. *Operating Systems Ultimate Encyclopedia* — a broad directory of systems projects, references, and engineering topics.
 2. *Operating Systems Absolute Omega Vault* — a broad OS engineering/reference catalog.
@@ -124,7 +124,7 @@ For each adopted optimization, store: upstream reference + version/license, file
 
 ## Audit status
 
-- PDF families deduplicated: 4 distinct works represented by 6 files.
+- Text-audited PDF families: 4 distinct works; duplicate Library copies were not counted as new ideas. Two additional same-day repository-uploaded PDFs were identified by filename but still require full-text extraction and a second-pass content audit.
 - Reference concepts classified: adopt/prototype, hardware/security-gated, reject-as-default.
 - External code imported by this audit: none.
 - Runtime implementation changes made by this audit: none.
