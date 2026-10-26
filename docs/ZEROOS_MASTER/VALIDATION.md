@@ -88,3 +88,8 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - Candidate change defers final notes for an existing release until the stable alias has passed `cmp`. A newly created release carries a temporary note stating that stable ISO verification is pending.
 - `tools/test_release_publish_guard.py` checks the pending note and requires the final `gh release edit` to follow the successful stable-ISO marker; the existing inline-shell `bash -n` check remains in place.
 - **Pending:** run the exact candidate regression script and full CI/QEMU/storage/production smoke workflow. The prior candidate workflow #1484 passed before this change; it does not validate this candidate. Post-merge main-push publication and live release-asset verification remain separate gates.
+
+### Candidate workflow #1500 — regression assertion correction (2026-10-26)
+- Result: **FAIL before build/QEMU**, at `Verify stable release publication policy`.
+- Cause: the new ordering assertion used the human-readable success echo as its boundary, but the workflow emits that echo after updating final notes. The actual notes edit was already after the successful `cmp`; the assertion marker was too late.
+- Correction: use the explicit workflow comment immediately after the stable byte-comparison branch as the ordering boundary. Exact corrected candidate workflow #1503 was queued at the time of this update; its result is pending.
