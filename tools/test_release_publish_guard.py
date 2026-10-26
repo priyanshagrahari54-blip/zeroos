@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Regression tests for main-only publishing and fail-safe stable ISO updates."""
 from pathlib import Path
+import subprocess
 import sys
+import textwrap
 
 workflow = Path(".github/workflows/build.yml").read_text(encoding="utf-8")
 
@@ -76,6 +78,7 @@ rollback_checks = (
     'if [ "$had_stable" -eq 1 ]; then',
     'gh release upload "$tag" zeroos.iso --clobber || {',
     "cmp --silent build/release-backup/zeroos.previous.iso build/release-rollback-verify/zeroos.iso",
+    'if printf \'%s\\n\' "$assets_now" | grep -qx "zeroos.iso"; then',
     'gh release delete-asset "$tag" zeroos.iso --yes',
 )
 missing_rollback = [check for check in rollback_checks if check not in rollback]
@@ -87,4 +90,15 @@ if step.count("rollback_stable || exit 1") != 3:
     print("upload, download, and comparison failures must all invoke stable ISO rollback", file=sys.stderr)
     raise SystemExit(1)
 
-print("release publication guard and stable ISO rollback regression checks passed")
+# The release step is skipped on PR events, so parse its shell explicitly here.
+run_marker = "        run: |\\n"
+if run_marker not in step:
+    print("release step has no inline shell script to syntax-check", file=sys.stderr)
+    raise SystemExit(1)
+shell_script = textwrap.dedent(step.split(run_marker, 1)[1])
+syntax = subprocess.run(["bash", "-n"], input=shell_script, text=True, capture_output=True)
+if syntax.returncode != 0:
+    print(f"release publishing shell syntax is invalid: {syntax.stderr}", file=sys.stderr)
+    raise SystemExit(syntax.returncode)
+
+print("release publication guard, rollback, and shell-syntax regression checks passed")
