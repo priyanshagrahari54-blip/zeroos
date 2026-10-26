@@ -89,3 +89,6 @@ The release-policy regression script now also asserts that CI invokes it exactly
 ## Release alias rollback hardening — 2026-10-26
 - Candidate branch `fix/stable-iso-rollback-20261026` adds fail-safe restoration/removal for a failed stable ISO update.
 - See `VALIDATION.md` for regression assertions and evidence. Candidate workflow #1484 passed the build/QEMU/storage/production smoke gates; main-push publication and live stable-asset verification remain pending. This is release-pipeline hardening, not additional kernel or desktop functionality.
+
+## Release metadata consistency — 2026-10-26
+- Candidate release-workflow fix delays final release notes until the mutable bootable ISO has passed byte-for-byte verification. Validation state and limitations are recorded in `VALIDATION.md` and `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md`.
