@@ -756,3 +756,12 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - [x] Obtain green CI for the exact candidate in workflow #1484 (run ID `40263294383`): build/check, QEMU boot certification, storage persistence, and production desktop/network gates passed; release publication was skipped on the PR event.
 - [ ] Merge only after review; then verify the main-push publication and live stable asset against that run's boot-tested ISO.
 - Do not close release-integrity acceptance until post-merge asset verification is evidenced.
+
+
+## Full-feature completion contract — 2026-10-26
+
+Canonical execution directive: [ZEROOS_ALL_FEATURES_IMPLEMENTATION_AND_BOOTABLE_RELEASE_CONTRACT.md](./ZEROOS_ALL_FEATURES_IMPLEMENTATION_AND_BOOTABLE_RELEASE_CONTRACT.md).
+
+This directive preserves the full ZEROOS product inventory and requires all 220 entries from the two supplied optimization catalogs to remain individually traceable and dispositioned. It sets the required order: validate clean build/ISO/release first; stabilize boot, scheduler, process/IPC and storage correctness; complete driver/network and interactive desktop paths; implement independent security/update/recovery; integrate actual browser/media engines; then compatibility runtimes, ZERO AI tools and physical-hardware certification.
+
+Do not increase stage percentages for this documentation change. Keep the existing evidence-weighted estimate until implementation, integration, behavior tests and release evidence justify a change. Linux-specific tuning knobs in the catalogs are candidate ideas, not commands to copy blindly into ZEROOS. Preserve data integrity, security mitigations, bounded memory, hardware detection and safe fallback behavior.
