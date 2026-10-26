@@ -81,3 +81,10 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - It preserves the prior `zeroos.iso` and attempts restoration if stable upload, download, or byte comparison fails. If no prior stable alias existed, cleanup removes the unverified alias and verifies absence.
 - The release regression script checks publication gating, operation ordering, rollback branches, and `bash -n` syntax for the inline shell.
 - **Exact candidate CI:** workflow #1484 (run ID `40263294383`) passed the regression checks, `make`, clean `make check`, kernel/ISO verification, repeated QEMU boots, scheduler fault certification, two-boot AHCI/NVMe persistence, production ISO build, and production desktop/network smoke test. Release publication was skipped on the PR event by design. **Still pending:** exercise rollback on an authorized main push if a failure occurs, and verify the live stable asset against the exact post-merge production ISO.
+
+## 2026-10-26 — Release metadata ordering (candidate)
+- Latest reviewed main commit: `251f7bb05c58b20b4c7b7e5fd0ae9249276caf92`.
+- Release publisher previously updated release notes before the stable alias upload/download/byte comparison finished. A rollback could restore the old stable ISO while leaving notes that described the new build.
+- Candidate change defers final notes for an existing release until the stable alias has passed `cmp`. A newly created release carries a temporary note stating that stable ISO verification is pending.
+- `tools/test_release_publish_guard.py` checks the pending note and requires the final `gh release edit` to follow the successful stable-ISO marker; the existing inline-shell `bash -n` check remains in place.
+- **Pending:** run the exact candidate regression script and full CI/QEMU/storage/production smoke workflow. The prior candidate workflow #1484 passed before this change; it does not validate this candidate. Post-merge main-push publication and live release-asset verification remain separate gates.
