@@ -141,3 +141,10 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - First run for this change, workflow #1500, **failed at the release-policy regression step before build/QEMU**. The assertion used the success echo as the ordering boundary, while the workflow deliberately prints that echo after the notes edit.
 - Corrected the regression assertion to use an explicit comment immediately after the successful byte-comparison branch and before `gh release edit`. This was a test-boundary defect, not evidence of an OS boot failure.
 - Updated candidate commit: `96a99b34e327d790def4c612f6cde26b4b5adcdc`; workflow #1503 is queued. Do not treat the corrected candidate as passing until its exact run completes.
+
+### Exact candidate verification completed — 2026-10-26
+- Workflow #1503 (`40265507446`) completed **SUCCESS** for code/test commit `96a99b34e327d790def4c612f6cde26b4b5adcdc`.
+- Workflow #1510 (`40265562846`) completed **SUCCESS** for candidate tip `d99e24a82d1082806f4eb71a7c46af18e3aca3e1` (the same workflow/code changes plus documentation updates).
+- Verified in these candidate runs: release-policy regression test, production diagnostic-retention regression test, `make`, clean `make check`, kernel/ISO artifact check, repeated QEMU boot gate, scheduler panic-diagnostics fault certification, two-boot AHCI/NVMe storage persistence, production ISO build, and production desktop/network smoke test.
+- The GitHub-release publication step was **skipped by design** on PR events. These runs do not verify the main-push release publication or live stable release asset.
+- PR #23 remains open/unmerged. No kernel feature or physical-hardware certification is added by this release metadata fix; completion estimate remains unchanged.
