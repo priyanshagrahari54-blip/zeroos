@@ -128,3 +128,11 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - `tools/test_release_publish_guard.py` now asserts main-only publication, versioned-before-stable ordering, rollback paths, and parses the inline publishing shell with `bash -n`.
 - **Exact candidate CI:** workflow #1484 (run ID `40263294383`) succeeded for this exact candidate on 2026-10-26. The regression checks, `make`, clean `make check`, kernel/ISO checks, repeated QEMU boot gate, scheduler panic-diagnostics certification, two-boot AHCI/NVMe persistence, production ISO build, and production desktop/network smoke test passed. The release-publishing step was skipped on the PR event by design. **Still unverified:** actual rollback against GitHub Releases and post-merge live stable-asset verification.
 - No kernel functionality or overall OS completion estimate is changed by this release-pipeline hardening.
+
+## Release-note consistency guard — 2026-10-26 (candidate)
+- **Latest main reviewed:** `251f7bb05c58b20b4c7b7e5fd0ae9249276caf92`. It contains the main-only publisher, versioned-ISO verification, stable-alias backup/rollback, and stable-alias byte comparison.
+- **Issue found:** the publisher edited the release notes before the mutable `zeroos.iso` alias had passed its byte comparison. If the alias update failed and rolled back, the notes could describe the new commit while the stable alias still referred to the previous image.
+- **Candidate fix:** existing release notes are left unchanged until the stable alias passes verification. A newly created release starts with an explicit pending-verification note; final boot-tested notes are written only after the stable byte comparison succeeds.
+- **Regression coverage:** `tools/test_release_publish_guard.py` asserts pending notes on release creation and requires the final notes update to occur after the successful stable-ISO verification marker.
+- **Evidence status:** candidate branch `fix/release-notes-after-iso-verify-20261026`; CI for this exact change is pending. The prior rollback candidate workflow #1484 passed build/check, QEMU, storage-persistence and production desktop/network gates, but that is not evidence for this new edit.
+- No kernel functionality, physical-hardware support, or overall OS completion estimate changes with this release-workflow fix.
