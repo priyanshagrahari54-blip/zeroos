@@ -756,3 +756,25 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - [x] Obtain green CI for the exact candidate in workflow #1484 (run ID `40263294383`): build/check, QEMU boot certification, storage persistence, and production desktop/network gates passed; release publication was skipped on the PR event.
 - [ ] Merge only after review; then verify the main-push publication and live stable asset against that run's boot-tested ISO.
 - Do not close release-integrity acceptance until post-merge asset verification is evidenced.
+
+### Release metadata consistency — 2026-10-26 (candidate)
+- [x] Prevent final boot-tested release notes from being updated before the stable ISO alias passes byte-for-byte verification.
+- [x] Use explicit pending-verification notes when creating a new release, so a failed stable-alias update does not advertise an unverified stable image.
+- [x] Add regression assertions for pending notes and final-note ordering.
+- [ ] Run the exact candidate regression script and full CI/QEMU/storage/production desktop/network gates.
+- [ ] Merge only after successful checks; then verify the main-push workflow and the live stable asset against that run's production ISO.
+- This is release-metadata consistency work; it does not close a kernel, storage, desktop, hardware, or overall OS stage.
+
+#### Release-note ordering candidate validation — 2026-10-26
+- [x] Record the initial regression-test failure (workflow #1500, before build/QEMU).
+- [x] Correct the assertion boundary to the explicit post-comparison workflow comment.
+- [ ] Obtain a green result for corrected workflow #1503, including full build, QEMU, storage, and production smoke gates.
+- [ ] Only then merge and verify the main-push release publication path.
+
+#### Release-note consistency validation — 2026-10-26
+- [x] Candidate workflow #1503 passed all available build/check/QEMU/storage/production desktop/network gates.
+- [x] Candidate workflow #1510 passed the same gates on the updated PR tip.
+- [ ] Review and merge PR #23.
+- [ ] Verify the push-triggered `main` workflow completes and the final release notes are updated only after the stable ISO passes byte comparison.
+- [ ] Verify the live stable asset against the production ISO from that exact successful `main` run.
+- [ ] Keep physical-hardware and broader product-stage acceptance separate from release-pipeline validation.
