@@ -18,7 +18,7 @@ if start < 0 or workflow.find(step_name, start + len(step_name)) >= 0:
     print("expected exactly one bootable-release publishing step", file=sys.stderr)
     raise SystemExit(1)
 
-end = workflow.find("\\n      - name:", start + len(step_name))
+end = workflow.find("\n      - name:", start + len(step_name))
 if end < 0:
     end = len(workflow)
 step = workflow[start:end]
@@ -69,7 +69,7 @@ if positions != sorted(positions) or len(set(positions)) != len(positions):
     raise SystemExit(1)
 
 rollback_start = step.find("rollback_stable() {")
-rollback_end = step.find("\\n          }\\n", rollback_start)
+rollback_end = step.find("\n          }\n", rollback_start)
 if rollback_start < 0 or rollback_end < 0:
     print("stable ISO rollback function is missing or malformed", file=sys.stderr)
     raise SystemExit(1)
