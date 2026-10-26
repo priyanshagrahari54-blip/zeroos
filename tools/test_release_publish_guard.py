@@ -90,6 +90,21 @@ if step.count("rollback_stable || exit 1") != 3:
     print("upload, download, and comparison failures must all invoke stable ISO rollback", file=sys.stderr)
     raise SystemExit(1)
 
+# Release metadata must not claim success before the mutable ISO alias is verified.
+pending_notes = 'pending_notes="Release publication is in progress; stable ISO verification has not completed."'
+create_pending = 'gh release create "$tag" "zeroos-${sha}.iso" --title "$title" --notes "$pending_notes"'
+release_edit = 'gh release edit "$tag" --notes "$notes"'
+stable_verified = 'echo "ZEROOS: stable release ISO matches the boot-tested production ISO'
+if pending_notes not in step or create_pending not in step:
+    print("new releases must start with honest pending-verification notes", file=sys.stderr)
+    raise SystemExit(1)
+if step.count(release_edit) != 1:
+    print("final release notes must be updated exactly once", file=sys.stderr)
+    raise SystemExit(1)
+if stable_verified not in step or step.find(release_edit) < step.find(stable_verified):
+    print("final release notes must be updated only after stable ISO verification succeeds", file=sys.stderr)
+    raise SystemExit(1)
+
 # The release step is skipped on PR events, so parse its shell explicitly here.
 run_marker = "        run: |\n"
 if run_marker not in step:
