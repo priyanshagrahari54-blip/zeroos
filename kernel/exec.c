@@ -230,6 +230,10 @@ int exec_spawn(struct process *parent, uint64_t user_image,
         argc>ZEROOS_EXEC_MAX_ARGUMENTS || envc>ZEROOS_EXEC_MAX_ARGUMENTS ||
         (argc && !user_argv) || (envc && !user_envp))
         return -ZEROOS_EINVAL;
+
+    /* A failed spawn must never leave a caller-visible stale PID/TID. */
+    result->pid=0;
+    result->tid=0;
     if ((argc && argc>0 && user_argv>~0ULL-(argc-1ULL)*sizeof(uint64_t)) ||
         (envc && envc>0 && user_envp>~0ULL-(envc-1ULL)*sizeof(uint64_t)))
         return -ZEROOS_EFAULT;
