@@ -121,3 +121,10 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - **Exact candidate CI:** workflow #1464 (`40058802277`) completed successfully on the PR candidate. Its policy/diagnostic regression checks, clean `make check`, repeated QEMU boot gate, 4-vCPU gate, NX-disabled boot, fault-recovery boot, AHCI/NVMe persistence certification, production ISO build and production desktop/network smoke test all passed. The release-publishing step was correctly skipped for the PR event.
 - **Main-run/release status:** the GitHub connector used in this review did not return push-triggered workflow runs for merge commit `34010187...`; therefore post-merge `main` CI and the live release-asset byte comparison remain **unverified here**. Do not treat candidate CI as proof that the remote `zeroos.iso` was refreshed.
 - No new kernel functionality or physical-hardware certification is claimed. Overall OS implementation estimate remains unchanged.
+
+## Stable release alias rollback hardening — 2026-10-26 (candidate)
+- Candidate branch `fix/stable-iso-rollback-20261026` changes release publication so the commit-specific ISO is uploaded and byte-verified before the mutable `zeroos.iso` alias is changed.
+- Before changing the alias, the workflow saves any existing stable asset. If stable upload, download, or byte comparison fails, it attempts to restore and verify the previous bytes; if no prior alias existed, it removes any unverified alias and checks that it is absent.
+- `tools/test_release_publish_guard.py` now asserts main-only publication, versioned-before-stable ordering, rollback paths, and parses the inline publishing shell with `bash -n`.
+- **Evidence pending:** the exact candidate workflow has not yet completed. This does not claim the rollback path has been exercised against GitHub Releases or that the current live asset is verified.
+- No kernel functionality or overall OS completion estimate is changed by this release-pipeline hardening.
