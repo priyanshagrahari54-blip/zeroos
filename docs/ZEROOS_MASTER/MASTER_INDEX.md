@@ -92,3 +92,6 @@ The release-policy regression script now also asserts that CI invokes it exactly
 
 ## Release metadata consistency — 2026-10-26
 - Candidate release-workflow fix delays final release notes until the mutable bootable ISO has passed byte-for-byte verification. Validation state and limitations are recorded in `VALIDATION.md` and `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md`.
+
+### Candidate validation update — 2026-10-26
+- Workflow #1500 exposed a regression-test ordering-marker defect before build/QEMU. The assertion was corrected; see `VALIDATION.md` for exact evidence. Corrected run #1503 is pending.
