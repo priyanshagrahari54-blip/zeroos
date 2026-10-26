@@ -109,3 +109,11 @@ These documents transcribe and technically qualify the two supplied PDF catalogs
 
 ## External reference audit — 2026-10-26
 - [EXTERNAL_REFERENCE_AUDIT_2026-10-26.md](./EXTERNAL_REFERENCE_AUDIT_2026-10-26.md) — audit of six uploaded PDFs (four distinct reference families), with adopt/adapt/reject decisions, safety caveats, G560/2 GB policy, import/licensing workflow, and implementation order. This is an audit document, not an implementation claim.
+
+## Library research and selective reuse — 2026-10-26
+
+- `EXTERNAL_REFERENCE_AUDIT_2026-10-26.md`: findings from the PDF/reference audit; two uploaded hardware/kernel PDFs still require full content extraction.
+- `LIBRARY_REUSE_AND_INTEGRATION_PLAN.md`: maps reusable libraries and ideas to ZEROOS subsystems, labels candidates vs actual imports, defines license/provenance/testing gates, and inventories the user's Library research bundles. **No third-party component is marked imported merely because it appears here.**
+- `LOW_LEVEL_SYSTEM_OPTIMIZATIONS_CATALOG_100.md` and `LOW_LEVEL_SYSTEM_NETWORK_BROWSER_CATALOG_120.md`: catalogues supporting the adoption ledger.
+
+Priority is still boot/release gate → kernel/userspace lifecycle correctness → storage integrity → native interactive session → carefully isolated third-party ports → browser/media/compatibility/AI expansion. Research documentation does not raise implementation completion.
