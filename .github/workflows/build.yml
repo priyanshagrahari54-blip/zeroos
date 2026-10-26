@@ -405,7 +405,7 @@ jobs:
             rollback_stable || exit 1
             exit 1
           fi
-          # Update release notes only after the stable alias is confirmed byte-identical.
+          # The byte comparison above succeeded; only now may release notes describe this build.
           gh release edit "$tag" --notes "$notes"
           echo "ZEROOS: stable release ISO matches the boot-tested production ISO (sha256=$(sha256sum build/release-verify/zeroos.iso | cut -d' ' -f1))."
 
