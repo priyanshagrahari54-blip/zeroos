@@ -18,7 +18,7 @@ Use the user's ChatGPT Library research and suitable upstream implementations to
 | `Operating Systems Absolute Omega Vault` | Broad OS engineering reference | Use as research leads, not source-code provenance |
 | `Extreme Hardware Optimization & Low-Level OS Engineering Manual.pdf` | Identified by repository upload metadata; content not yet fully extracted in this pass | **Pending full-text/page audit**; do not claim reviewed or adopt its prescriptions yet |
 | `Master 100+ Hardware, Kernel & Virtual VRAM Handbook.pdf` | Identified by repository upload metadata; content not yet fully extracted in this pass | **Pending full-text/page audit**; do not claim reviewed or adopt its prescriptions yet |
-| `RECOVER-X-*` ZIPs / stage packages | Separate recovery project artifacts, not automatically ZEROOS-compatible code | Inventory archive contents and licenses; import only a clearly isolated reusable module after code-level review; never merge entire project blindly |
+| `RECOVER-X-10K-master-stage-package.zip` | Inspected archive: `STATUS.md`, `MASTER_10K_ROADMAP.md`, SHA-256 manifest, and a large JSON stage manifest; **no kernel/source tree in this ZIP** | Treat as planning/manifest data, not importable implementation. Use only as an external requirements reference after validating each item against ZEROOS |
 | Lenovo G560 optimization ZIPs | Hardware/profile notes or configuration artifacts | Extract as profile/test inputs only after inspecting every file; do not treat as drivers or kernel implementation |
 | `ZEROOS_MASTER_CONTEXT.md` | Project handoff/context | Preserve as context; repository code and current CI remain authoritative |
 
