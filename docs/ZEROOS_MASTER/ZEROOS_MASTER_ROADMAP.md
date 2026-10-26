@@ -770,3 +770,8 @@ Do not increase stage percentages for this documentation change. Keep the existi
 ## Reference PDF audit — 2026-10-26
 
 Audit report: [`ZEROOS_REFERENCE_PDF_AUDIT_AND_ADOPTION_MATRIX.md`](./ZEROOS_REFERENCE_PDF_AUDIT_AND_ADOPTION_MATRIX.md). The two optimization catalogues are reference ideas, not direct kernel patches. Keep Linux-only sysctls/distro tooling out of the native ZEROOS design unless an explicit compatible userspace component requires them. Prioritize clean build/ISO/QEMU evidence, scheduler/process/IPC correctness and storage integrity before broad upstream imports. Do not weaken durability, watchdog/recovery, privilege isolation, TLS/privacy or thermal safeguards for speed. Two newly uploaded hardware manuals are present in commit `5f0d1a3a012d1f397e9d5561f5081109ced1e521`, but their content-level review is pending. Build a 220-row item ledger; preserve source numbering and record each adopt/adapt/defer/reject/hardware-dependent decision with tests and evidence. Documentation changes do not increase implementation percentages.
+
+
+## External reference audit — 2026-10-26
+
+The six uploaded PDF files were reviewed as four distinct reference families because the 100-feature and 120-feature catalogs have duplicate copies. See [EXTERNAL_REFERENCE_AUDIT_2026-10-26.md](./EXTERNAL_REFERENCE_AUDIT_2026-10-26.md) for adopt/adapt/reject decisions and the hardware/security gates. No stage percentage changes from this audit alone; it adds a review and implementation order, not runtime code.
