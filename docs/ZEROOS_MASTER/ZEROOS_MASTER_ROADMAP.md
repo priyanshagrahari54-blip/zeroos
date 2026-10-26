@@ -775,3 +775,12 @@ Audit report: [`ZEROOS_REFERENCE_PDF_AUDIT_AND_ADOPTION_MATRIX.md`](./ZEROOS_REF
 ## External reference audit — 2026-10-26
 
 The six uploaded PDF files were reviewed as four distinct reference families because the 100-feature and 120-feature catalogs have duplicate copies. See [EXTERNAL_REFERENCE_AUDIT_2026-10-26.md](./EXTERNAL_REFERENCE_AUDIT_2026-10-26.md) for adopt/adapt/reject decisions and the hardware/security gates. No stage percentage changes from this audit alone; it adds a review and implementation order, not runtime code.
+
+
+## Library research and reuse gate — 2026-10-26
+
+The Library reference PDFs have been catalogued in `EXTERNAL_REFERENCE_AUDIT_2026-10-26.md`; reuse candidates and integration boundaries are in `LIBRARY_REUSE_AND_INTEGRATION_PLAN.md`. Do not copy a PDF recommendation or external archive directly into the kernel. For each candidate, inspect the exact source and current ZEROOS call path, pin upstream revision, record file-level license/provenance, implement a bounded adapter, add negative/fault/fuzz tests, run the relevant QEMU/boot gate, and measure before/after RAM/CPU/idle wakeups/I/O/latency.
+
+**Reuse order:** (1) current-main build/ISO/QEMU release gate; (2) process/exec/timer/IPC/memory lifecycle correctness; (3) storage durability/recovery; (4) native session path; (5) small user-space libraries (compression, fonts/shaping, libc/runtime) behind stable APIs; (6) network/TLS/browser/media; (7) isolated compatibility runtimes and ZERO AI. Candidate shortlist is not an import log. SQLite is for user-space metadata/indexes only, never a kernel dependency. LZ4's library and command-line portions have different licensing. FreeType/HarfBuzz are userspace text components. lwIP is evaluated against existing ZEROOS networking before deciding whether any portion is useful.
+
+**Unreviewed artifacts:** the two hardware/kernel PDFs whose full text is not yet extracted and the contents of RECOVER-X/G560 ZIPs must be inventoried before their code or prescriptions can be adopted. Their presence in the Library is not evidence of compatibility, quality, or license clearance.
