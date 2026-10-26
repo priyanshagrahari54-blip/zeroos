@@ -128,3 +128,12 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - `tools/test_release_publish_guard.py` now asserts main-only publication, versioned-before-stable ordering, rollback paths, and parses the inline publishing shell with `bash -n`.
 - **Exact candidate CI:** workflow #1484 (run ID `40263294383`) succeeded for this exact candidate on 2026-10-26. The regression checks, `make`, clean `make check`, kernel/ISO checks, repeated QEMU boot gate, scheduler panic-diagnostics certification, two-boot AHCI/NVMe persistence, production ISO build, and production desktop/network smoke test passed. The release-publishing step was skipped on the PR event by design. **Still unverified:** actual rollback against GitHub Releases and post-merge live stable-asset verification.
 - No kernel functionality or overall OS completion estimate is changed by this release-pipeline hardening.
+
+
+## Completion contract refresh — 2026-10-26
+
+Added [ZEROOS_ALL_FEATURES_IMPLEMENTATION_AND_BOOTABLE_RELEASE_CONTRACT.md](./ZEROOS_ALL_FEATURES_IMPLEMENTATION_AND_BOOTABLE_RELEASE_CONTRACT.md). It consolidates the execution protocol for all ten stages, native bootable release gates, full ZEROOS product feature ledger, and traceability/disposition requirements for all 100 + 120 optimization-catalog entries supplied for this project.
+
+**Progress estimate unchanged by this documentation-only commit:** overall ~43%; Stage 1 92%, Stage 2 84%, Stage 3 48%, Stage 4 43%, Stage 5 44%, Stage 6 22%, Stage 7 15%, Stage 8 13%, Stage 9 16%, Stage 10 10% (engineering estimates from the previous evidence snapshot, not CI metrics). This document does not make missing features implemented and does not certify a release.
+
+**Next gate:** run `tools/release.sh` and inspect the current main-branch CI with the exact current commit; record command output, ISO checksum, QEMU configuration and test results before revising status. Continue in dependency order: boot/build/release blockers → Stage 1–3 correctness and recovery → drivers/network → interactive desktop → security/update/recovery → real browser/media → Windows/Android runtimes → ZERO AI tool execution → physical hardware/performance certification.
