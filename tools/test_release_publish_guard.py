@@ -78,7 +78,7 @@ rollback_checks = (
     'if [ "$had_stable" -eq 1 ]; then',
     'gh release upload "$tag" zeroos.iso --clobber || {',
     "cmp --silent build/release-backup/zeroos.previous.iso build/release-rollback-verify/zeroos.iso",
-    'if printf \'%s\\n\' "$assets_now" | grep -qx "zeroos.iso"; then',
+    "assets_now=",
     'gh release delete-asset "$tag" zeroos.iso --yes',
 )
 missing_rollback = [check for check in rollback_checks if check not in rollback]
@@ -91,7 +91,7 @@ if step.count("rollback_stable || exit 1") != 3:
     raise SystemExit(1)
 
 # The release step is skipped on PR events, so parse its shell explicitly here.
-run_marker = "        run: |\\n"
+run_marker = "        run: |\n"
 if run_marker not in step:
     print("release step has no inline shell script to syntax-check", file=sys.stderr)
     raise SystemExit(1)
