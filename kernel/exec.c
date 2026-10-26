@@ -225,15 +225,15 @@ int exec_spawn(struct process *parent, uint64_t user_image,
     int copy_result;
     int failure_result=-ZEROOS_ENOMEM;
 
+    if (result) {
+        result->pid=0;
+        result->tid=0;
+    }
     if (!exec_workspace.initialized || !parent || !result ||
         image_size==0 || image_size>ZEROOS_EXEC_MAX_IMAGE ||
         argc>ZEROOS_EXEC_MAX_ARGUMENTS || envc>ZEROOS_EXEC_MAX_ARGUMENTS ||
         (argc && !user_argv) || (envc && !user_envp))
         return -ZEROOS_EINVAL;
-
-    /* A failed spawn must never leave a caller-visible stale PID/TID. */
-    result->pid=0;
-    result->tid=0;
     if ((argc && argc>0 && user_argv>~0ULL-(argc-1ULL)*sizeof(uint64_t)) ||
         (envc && envc>0 && user_envp>~0ULL-(envc-1ULL)*sizeof(uint64_t)))
         return -ZEROOS_EFAULT;
