@@ -85,3 +85,7 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - PR #20 merged as `34010187ef16b4a71b476a22c782cabf4558dc06`, adding stable bootable ISO byte-integrity verification to the main-only release workflow.
 - Candidate CI #1464 passed the full available QEMU/storage/production smoke gates; release publication was skipped on the PR event as intended.
 - Post-merge `main` workflow and live stable-asset verification are still pending confirmation. See the 2026-10-25 entry in `VALIDATION.md` and `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md`.
+
+## Release alias rollback hardening — 2026-10-26
+- Candidate branch `fix/stable-iso-rollback-20261026` adds fail-safe restoration/removal for a failed stable ISO update.
+- See `VALIDATION.md` for regression assertions and evidence. Candidate workflow #1484 passed the build/QEMU/storage/production smoke gates; main-push publication and live stable-asset verification remain pending. This is release-pipeline hardening, not additional kernel or desktop functionality.

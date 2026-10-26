@@ -312,43 +312,97 @@ jobs:
           if-no-files-found: error
 
       - name: Publish bootable image as a GitHub release
-        # The development sandbox has no grub-mkrescue and no emulator, so it can
-        # neither build nor test a bootable image. This runner has both, and it
-        # has already booted this exact file under SeaBIOS by the time this step
-        # runs - so publish it somewhere a browser can download it from.
+        # Publish only after this runner has built and boot-tested the exact production ISO.
         # Only main may replace the stable bootable release asset.
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -e
+          set -euo pipefail
           tag="zeroos-bootable"
           sha="$(git rev-parse --short HEAD)"
           title="ZEROOS bootable image (built and boot-tested by CI)"
           notes="Built with grub-mkrescue from commit ${sha} and booted under QEMU SeaBIOS in the same run - legacy BIOS, El Torito platform id 0x00. Download zeroos.iso, burn it to a DVD (Windows 7: right-click the file, choose Burn disc image) or write it to USB, then boot it from the firmware boot menu. This gives a live session; there is no disk installer."
           cp build-production/zeroos.iso zeroos.iso
           cp build-production/zeroos.iso "zeroos-${sha}.iso"
-          # `gh release upload` has no --notes flag (that belongs to
-          # create/edit); passing it fails with "unknown flag", and this step
-          # used to hide that behind continue-on-error while still reporting
-          # success. Notes are set with `gh release edit` instead.
+          mkdir -p build/release-versioned-verify build/release-backup build/release-verify build/release-rollback-verify
+
+          # Upload and verify the immutable, commit-specific asset first. Do not
+          # mutate the stable alias until this copy is confirmed byte-identical.
           if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" zeroos.iso "zeroos-${sha}.iso" --clobber
+            gh release upload "$tag" "zeroos-${sha}.iso" --clobber
             gh release edit "$tag" --notes "$notes"
           else
-            gh release create "$tag" zeroos.iso "zeroos-${sha}.iso" \
-              --title "$title" --notes "$notes"
+            gh release create "$tag" "zeroos-${sha}.iso" --title "$title" --notes "$notes"
           fi
-          # Prove the asset really moved: a publish that silently no-ops is
-          # worse than one that fails loudly.
-          gh release view "$tag" --json assets \
-            --jq '.assets[].name' | grep -qx "zeroos-${sha}.iso" \
+          gh release view "$tag" --json assets --jq '.assets[].name' | grep -qx "zeroos-${sha}.iso" \
             || { echo "release asset zeroos-${sha}.iso is missing" >&2; exit 1; }
-          # Verify the mutable stable alias is the exact ISO boot-tested in this run.
-          mkdir -p build/release-verify
-          gh release download "$tag" --pattern "zeroos.iso" --dir build/release-verify --clobber
-          cmp --silent build-production/zeroos.iso build/release-verify/zeroos.iso \
-            || { echo "stable zeroos.iso differs from the boot-tested production ISO" >&2; exit 1; }
+          gh release download "$tag" --pattern "zeroos-${sha}.iso" --dir build/release-versioned-verify --clobber
+          cmp --silent build-production/zeroos.iso "build/release-versioned-verify/zeroos-${sha}.iso" \
+            || { echo "versioned release ISO differs from the boot-tested production ISO" >&2; exit 1; }
+
+          # Preserve the previous stable alias so a failed update can be rolled
+          # back. A metadata-query failure is fatal; it must not be mistaken for
+          # a release that simply has no stable alias yet.
+          assets="$(gh release view "$tag" --json assets --jq '.assets[].name')"
+          had_stable=0
+          if printf '%s\n' "$assets" | grep -qx "zeroos.iso"; then
+            gh release download "$tag" --pattern "zeroos.iso" --dir build/release-backup --clobber
+            cp build/release-backup/zeroos.iso build/release-backup/zeroos.previous.iso
+            had_stable=1
+          fi
+
+          rollback_stable() {
+            if [ "$had_stable" -eq 1 ]; then
+              cp build/release-backup/zeroos.previous.iso zeroos.iso
+              gh release upload "$tag" zeroos.iso --clobber || {
+                echo "ERROR: failed to restore the previous stable zeroos.iso" >&2
+                return 1
+              }
+              gh release download "$tag" --pattern "zeroos.iso" --dir build/release-rollback-verify --clobber || {
+                echo "ERROR: could not download the restored stable zeroos.iso" >&2
+                return 1
+              }
+              cmp --silent build/release-backup/zeroos.previous.iso build/release-rollback-verify/zeroos.iso || {
+                echo "ERROR: restored stable zeroos.iso does not match the saved prior asset" >&2
+                return 1
+              }
+              echo "ZEROOS: previous stable ISO restored after failed update."
+            else
+              assets_now="$(gh release view "$tag" --json assets --jq '.assets[].name')"
+              if printf '%s\n' "$assets_now" | grep -qx "zeroos.iso"; then
+                gh release delete-asset "$tag" zeroos.iso --yes || {
+                  echo "ERROR: failed to remove unverified stable zeroos.iso; manual release repair required" >&2
+                  return 1
+                }
+              fi
+              assets_after="$(gh release view "$tag" --json assets --jq '.assets[].name')"
+              if printf '%s\n' "$assets_after" | grep -qx "zeroos.iso"; then
+                echo "ERROR: unverified stable zeroos.iso still exists after cleanup" >&2
+                return 1
+              fi
+              echo "ZEROOS: removed unverified stable alias; no prior alias existed."
+            fi
+          }
+
+          # The stable alias is the mutable release pointer. If upload, download,
+          # or byte verification fails, restore the previous bytes (or remove a
+          # newly-created alias) before failing the release job.
+          if ! gh release upload "$tag" zeroos.iso --clobber; then
+            echo "stable ISO upload failed; attempting rollback" >&2
+            rollback_stable || exit 1
+            exit 1
+          fi
+          if ! gh release download "$tag" --pattern "zeroos.iso" --dir build/release-verify --clobber; then
+            echo "stable ISO download failed; attempting rollback" >&2
+            rollback_stable || exit 1
+            exit 1
+          fi
+          if ! cmp --silent build-production/zeroos.iso build/release-verify/zeroos.iso; then
+            echo "stable zeroos.iso differs from the boot-tested production ISO; attempting rollback" >&2
+            rollback_stable || exit 1
+            exit 1
+          fi
           echo "ZEROOS: stable release ISO matches the boot-tested production ISO (sha256=$(sha256sum build/release-verify/zeroos.iso | cut -d' ' -f1))."
 
       - name: Serial summary
