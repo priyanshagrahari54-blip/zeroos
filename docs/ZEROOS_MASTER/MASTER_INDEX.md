@@ -1,6 +1,6 @@
 # ZEROOS — MASTER DOCUMENT INDEX
 Version: 2.4
-Updated: 2026-10-25
+Updated: 2026-10-26
 
 This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md` remains the canonical consolidated product/architecture specification. Stage 6-10 execution is split into dedicated production master documents so an implementation agent can work one stage at a time without losing cross-cutting requirements.
 
@@ -22,6 +22,10 @@ This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_
 
 ## Stage 6-10 rule
 Stages are dependency gates, not feature-quality levels. Every stage starts with the intended production architecture. No placeholder implementation may be introduced solely to move the stage number.
+
+## Reference PDF audit — 2026-10-26
+
+`ZEROOS_REFERENCE_PDF_AUDIT_AND_ADOPTION_MATRIX.md` records the initial disposition of the 100-item and 120-item optimization catalogues plus the operating-system reference PDFs. It separates safe-to-adapt concepts from unsafe defaults, hardware-dependent techniques, and upstream components requiring license/ABI/security review. Two PDFs uploaded in commit `5f0d1a3a012d1f397e9d5561f5081109ced1e521` still need content-level extraction; the audit does not claim their text was reviewed. The 220 optimization entries still need an individually numbered disposition ledger. No implementation percentage increases from this documentation work.
 
 ## Full completion directive
 
