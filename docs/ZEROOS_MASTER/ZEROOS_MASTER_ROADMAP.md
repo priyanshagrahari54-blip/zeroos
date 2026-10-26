@@ -764,3 +764,9 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - [ ] Run the exact candidate regression script and full CI/QEMU/storage/production desktop/network gates.
 - [ ] Merge only after successful checks; then verify the main-push workflow and the live stable asset against that run's production ISO.
 - This is release-metadata consistency work; it does not close a kernel, storage, desktop, hardware, or overall OS stage.
+
+#### Release-note ordering candidate validation — 2026-10-26
+- [x] Record the initial regression-test failure (workflow #1500, before build/QEMU).
+- [x] Correct the assertion boundary to the explicit post-comparison workflow comment.
+- [ ] Obtain a green result for corrected workflow #1503, including full build, QEMU, storage, and production smoke gates.
+- [ ] Only then merge and verify the main-push release publication path.
