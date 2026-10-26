@@ -94,7 +94,7 @@ if step.count("rollback_stable || exit 1") != 3:
 pending_notes = 'pending_notes="Release publication is in progress; stable ISO verification has not completed."'
 create_pending = 'gh release create "$tag" "zeroos-${sha}.iso" --title "$title" --notes "$pending_notes"'
 release_edit = 'gh release edit "$tag" --notes "$notes"'
-stable_verified = 'echo "ZEROOS: stable release ISO matches the boot-tested production ISO'
+stable_verified = '# The byte comparison above succeeded; only now may release notes describe this build.'
 if pending_notes not in step or create_pending not in step:
     print("new releases must start with honest pending-verification notes", file=sys.stderr)
     raise SystemExit(1)
