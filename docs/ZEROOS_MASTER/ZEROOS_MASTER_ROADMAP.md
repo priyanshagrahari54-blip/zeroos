@@ -741,3 +741,10 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - [x] Add candidate post-upload download, ordered byte comparison of mutable `zeroos.iso` against the boot-tested production ISO, and regression assertions.
 - [ ] Obtain green CI for this exact candidate, including QEMU, storage persistence, and production desktop/network gates.
 - [ ] Merge the reviewed change, run the resulting `main` workflow, and verify the stable asset against the exact main-run ISO.
+
+### Release integrity evidence update — 2026-10-25
+- [x] Merge PR #20: verify stable `zeroos.iso` by downloading it after publication and byte-comparing it with the production ISO built and boot-tested in the same workflow. Merge commit: `34010187ef16b4a71b476a22c782cabf4558dc06`.
+- [x] Candidate CI #1464 passed the regression, build/check, QEMU/SMP/NX/fault, AHCI/NVMe persistence, and production desktop/network smoke gates.
+- [ ] Confirm the push-triggered workflow for the resulting `main` commit completes successfully.
+- [ ] Verify the live release asset comparison ran successfully and the stable `zeroos.iso` matches the exact production ISO from that successful main workflow.
+- Do not mark the release-integrity gate complete until both pending main-run checks have evidence.

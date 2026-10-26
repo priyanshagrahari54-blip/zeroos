@@ -1,6 +1,6 @@
 # ZEROOS — Validation and Support Matrix
 
-Updated: 2026-10-17. This is the evidence policy for Stages 1-10; it must not overstate support.
+Updated: 2026-10-25. This is the evidence policy for Stages 1-10; it must not overstate support.
 
 The binding acceptance checklist is [ZEROOS_10_STAGE_HARDENING.md](./ZEROOS_10_STAGE_HARDENING.md). Current estimates and known limitations are in [ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md](./ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md).
 
@@ -68,3 +68,10 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - Candidate workflow now downloads the mutable `zeroos.iso` asset after upload and compares it byte-for-byte with `build-production/zeroos.iso`, the ISO produced and boot-tested in the same CI run.
 - The release-policy regression script requires both the download and `cmp --silent` checks and asserts download-before-compare ordering, preventing a future workflow edit from silently dropping or reordering stable-alias verification.
 - **Pending:** run the exact candidate workflow and observe all QEMU/storage/production smoke gates; after merge, verify the resulting `main` workflow and release asset. This edit alone is not evidence that the remote asset is currently correct.
+
+## 2026-10-25 — Stable release ISO integrity fix merged
+- PR #20 was merged as `34010187ef16b4a71b476a22c782cabf4558dc06`.
+- Candidate workflow #1464 / run `40058802277`: **SUCCESS**. Steps confirmed successful include the release-policy regression test, production-diagnostic retention test, `make`, clean `make check`, repeated QEMU boot certification, 4-vCPU SMP, NX-disabled boot, failed-IPI recovery, scheduler panic-diagnostic exercise, two-boot AHCI/NVMe persistence, production ISO build, and production desktop/network smoke test.
+- In that PR run, `Publish bootable image as a GitHub release` was **SKIPPED by design**, because publishing is restricted to pushes on `refs/heads/main`.
+- The regression script verifies the release step has the exact main-only condition and downloads the mutable `zeroos.iso` before running `cmp --silent` against the boot-tested production ISO.
+- **Still pending/unverified in this review:** post-merge push workflow result and live release asset comparison for the resulting `main` commit. No claim is made that the mutable release asset has already been refreshed or verified.
