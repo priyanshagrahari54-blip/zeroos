@@ -93,3 +93,9 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - Result: **FAIL before build/QEMU**, at `Verify stable release publication policy`.
 - Cause: the new ordering assertion used the human-readable success echo as its boundary, but the workflow emits that echo after updating final notes. The actual notes edit was already after the successful `cmp`; the assertion marker was too late.
 - Correction: use the explicit workflow comment immediately after the stable byte-comparison branch as the ordering boundary. Exact corrected candidate workflow #1503 was queued at the time of this update; its result is pending.
+
+### Exact candidate results — 2026-10-26
+- Workflow #1503 (`40265507446`): **SUCCESS**. Release-policy and production-diagnostics regression checks, `make`, clean `make check`, kernel/ISO artifact validation, repeated QEMU boot gate, scheduler panic-diagnostics fault test, two-boot AHCI/NVMe persistence, production ISO build, and production desktop/network smoke test passed.
+- Workflow #1510 (`40265562846`): **SUCCESS** for the then-current PR tip after documentation updates; the same full checks passed.
+- Release publication was skipped on both PR runs as required by the main-only guard. Neither run proves the live stable release asset was updated or verified on a push to `main`.
+- PR #23 is still unmerged. Post-merge main workflow and live release asset verification remain release blockers.
