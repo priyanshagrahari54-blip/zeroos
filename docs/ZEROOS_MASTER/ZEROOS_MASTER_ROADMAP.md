@@ -9,13 +9,14 @@ Never create a basic version merely to replace it later.
 
 ## Current state
 
-### Evidence snapshot — 2026-10-18
-- The normal `make` image targets a persistent native x86-64 kernel + Ring-3 desktop/session path; the release pipeline now has a shared 91-milestone QEMU boot gate.
-- PR #16 was merged as `d6b58292df7e00b4b2f15ba22f3a0405035ee549`. It adds/fixes parallel build dependencies, ISO structure validation/writing, reproducibility checks, shared boot-test logic, and a deterministic local intent parser. The PR's own workflow passed before merge; post-merge `main` CI must be verified independently.
-- Commit `a72c171d` expands the master implementation prompt to require all documented ZEROOS features and stages 0–10. This is a documentation-only change and does **not** increase implementation percentages. The latest status refresh is `338cfd42`; GitHub status lookup for `a72c171d` returned no status entries, so a clean local release run remains required.
-- `make check` is a broad gate, but stage scripts and source/ELF markers do not by themselves prove every product feature works. The hardening checklist is the authority for operational evidence.
-- A bootable ISO requires the GRUB/El Torito toolchain. `ZEROOS_ISO_ALLOW_UNBOOTABLE=1` is explicitly not release evidence; `tools/release.sh` is the full build/structure/QEMU path.
-- ZEROOS is **not 100% complete**. Full dynamic linking, standalone disk installation, production browser/GPU/media, Windows/Android runtimes, full ZERO AI tool/backend execution, physical G560 support, recovery UX and performance/soak certification remain open.
+### Evidence snapshot — 2026-10-26
+- The normal `make` image targets a persistent native x86-64 kernel + Ring-3 desktop/session path; the release pipeline has a shared 91-milestone QEMU boot gate.
+- PR #16 was merged as `d6b58292df7e00b4b2f15ba22f3a0405035ee549`, adding parallel-build dependency fixes, ISO structure validation/writing, reproducibility checks, shared boot-test logic, and local intent-parser foundations.
+- **Fresh main CI evidence:** GitHub Actions run 1543 for `main` HEAD `5d89992d6c78a2a19108385c3fc4979fa3cfe19e` completed successfully on 2026-10-26: https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/40322921742. This is evidence that the configured CI build passed, not proof that every product feature is complete or that physical G560 hardware is certified.
+- The PDF audit and adoption matrix is `ZEROOS_REFERENCE_PDF_AUDIT_AND_ADOPTION_MATRIX.md`. Two newly uploaded hardware PDFs still need content-level extraction/review, and all 220 optimization-catalogue entries need an explicit decision ledger. Audit documentation does **not** increase implementation percentages.
+- `make check` is a broad gate, but stage scripts and source/ELF markers do not by themselves prove every end-user feature works. Run `tools/release.sh` from a clean checkout and retain its ISO/QEMU logs for reproducible release evidence.
+- A bootable ISO requires the GRUB/El Torito toolchain. `ZEROOS_ISO_ALLOW_UNBOOTABLE=1` is explicitly not release evidence.
+- ZEROOS is **not 100% complete**. Full dynamic linking, standalone disk installation, production browser/GPU/media, usable Windows/Android runtimes, full ZERO AI tool/backend execution, physical G560 support, recovery UX and performance/soak certification remain open.
 - See `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md` for evidence-weighted estimates and the precise current blocker list.
 
 Already substantially implemented:
