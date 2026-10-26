@@ -770,3 +770,11 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - [x] Correct the assertion boundary to the explicit post-comparison workflow comment.
 - [ ] Obtain a green result for corrected workflow #1503, including full build, QEMU, storage, and production smoke gates.
 - [ ] Only then merge and verify the main-push release publication path.
+
+#### Release-note consistency validation — 2026-10-26
+- [x] Candidate workflow #1503 passed all available build/check/QEMU/storage/production desktop/network gates.
+- [x] Candidate workflow #1510 passed the same gates on the updated PR tip.
+- [ ] Review and merge PR #23.
+- [ ] Verify the push-triggered `main` workflow completes and the final release notes are updated only after the stable ISO passes byte comparison.
+- [ ] Verify the live stable asset against the production ISO from that exact successful `main` run.
+- [ ] Keep physical-hardware and broader product-stage acceptance separate from release-pipeline validation.
