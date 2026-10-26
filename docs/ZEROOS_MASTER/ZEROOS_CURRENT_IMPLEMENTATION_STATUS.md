@@ -136,3 +136,8 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - **Regression coverage:** `tools/test_release_publish_guard.py` asserts pending notes on release creation and requires the final notes update to occur after the successful stable-ISO verification marker.
 - **Evidence status:** candidate branch `fix/release-notes-after-iso-verify-20261026`; CI for this exact change is pending. The prior rollback candidate workflow #1484 passed build/check, QEMU, storage-persistence and production desktop/network gates, but that is not evidence for this new edit.
 - No kernel functionality, physical-hardware support, or overall OS completion estimate changes with this release-workflow fix.
+
+### Candidate CI correction — 2026-10-26
+- First run for this change, workflow #1500, **failed at the release-policy regression step before build/QEMU**. The assertion used the success echo as the ordering boundary, while the workflow deliberately prints that echo after the notes edit.
+- Corrected the regression assertion to use an explicit comment immediately after the successful byte-comparison branch and before `gh release edit`. This was a test-boundary defect, not evidence of an OS boot failure.
+- Updated candidate commit: `96a99b34e327d790def4c612f6cde26b4b5adcdc`; workflow #1503 is queued. Do not treat the corrected candidate as passing until its exact run completes.
