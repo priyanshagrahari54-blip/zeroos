@@ -753,6 +753,6 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - [x] Verify the commit-specific ISO before updating the mutable stable alias.
 - [x] Save the prior stable ISO and add rollback/cleanup paths for failed upload, download, or byte comparison.
 - [x] Extend regression checks for publication guard, ordering, rollback branches, and shell syntax.
-- [ ] Obtain green CI for the exact candidate, including QEMU, storage persistence, and production desktop/network gates.
+- [x] Obtain green CI for the exact candidate in workflow #1484 (run ID `40263294383`): build/check, QEMU boot certification, storage persistence, and production desktop/network gates passed; release publication was skipped on the PR event.
 - [ ] Merge only after review; then verify the main-push publication and live stable asset against that run's boot-tested ISO.
 - Do not close release-integrity acceptance until post-merge asset verification is evidenced.
