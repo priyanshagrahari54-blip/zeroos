@@ -4,9 +4,13 @@ Updated: 2026-10-26
 Branch baseline at review: `main` (before PR #16 merge: `e8fb0a72d45733a682b9614e80c019941f747ab1`); PR #16 merged as `d6b58292df7e00b4b2f15ba22f3a0405035ee549`.
 Status policy: **evidence-weighted estimate; never equate a source file, marker check, architecture document, or host test with a working end-user feature.**
 
-## PDF reference audit — 2026-10-26
+## Current evidence refresh — 2026-10-26
 
-The 2026-10-26 reference-PDF audit is recorded in `ZEROOS_REFERENCE_PDF_AUDIT_AND_ADOPTION_MATRIX.md` and linked from the master index/roadmap. It adds no implementation credit. The last recorded estimate remains ~43% overall (Stages 1–10: 92/84/48/43/44/22/15/13/16/10), pending fresh main-branch CI and clean release-gate evidence. GitHub reported no workflow runs for PDF upload commit `5f0d1a3a012d1f397e9d5561f5081109ced1e521`; this is unknown status, not a pass or fail. The two newly uploaded hardware PDFs still need content extraction, and the 220 optimization items need an individual decision ledger.
+- Current `main` HEAD observed: `5d89992d6c78a2a19108385c3fc4979fa3cfe19e` (`docs: record RECOVER-X archive inventory findings`).
+- GitHub Actions run **1543** for that exact HEAD completed **successfully** on 2026-10-26 (`ZEROOS Build`; run URL: https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/40322921742). Its build job concluded success. This is fresh CI evidence, but it is not a substitute for a separately reproduced local `tools/release.sh` run or physical-hardware certification.
+- The six-file reference-PDF inventory and initial disposition are recorded in `ZEROOS_REFERENCE_PDF_AUDIT_AND_ADOPTION_MATRIX.md`. It is an audit, not implementation credit. The two hardware PDFs added in commit `5f0d1a3a012d1f397e9d5561f5081109ced1e521` still need text/page extraction for a content-level review.
+- The 100-item and 120-item optimization catalogues (220 entries total) still need an individual Adopt / Adapt / Defer / Reject / Hardware-dependent decision ledger.
+- Evidence-weighted estimates remain ~43% overall (Stages 1–10: 92/84/48/43/44/22/15/13/16/10). Do not increase implementation percentages because documentation or CI passed; only verified feature behavior earns credit.
 
 ## Executive status
 
