@@ -29,3 +29,7 @@ For the live evidence-weighted stage percentages and recent hardening, see `ZERO
 **~44% overall** — S1 92%, S2 82%, S3 45%, S4 39%, S5 41%, S6 20%, S7 12%, S8 12%, S9 12%, S10 6%.
 
 Current execution is intentionally focused on the lowest later-stage gaps. Latest hardening added explicit ZERO AI action permissions and revocation enforcement; later-stage percentages remain unchanged until integration evidence is produced.
+
+## Complete implementation directive — 2026-10-26
+
+See [ZEROOS_ALL_FEATURES_IMPLEMENTATION_AND_BOOTABLE_RELEASE_CONTRACT.md](./ZEROOS_ALL_FEATURES_IMPLEMENTATION_AND_BOOTABLE_RELEASE_CONTRACT.md) for the full ten-stage execution plan, bootable release gates, product feature ledger, and the 220-entry optimization-catalog disposition matrix. It is a specification and work plan, not a claim that the OS is complete.
