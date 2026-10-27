@@ -323,6 +323,7 @@ jobs:
           sha="$(git rev-parse --short HEAD)"
           title="ZEROOS bootable image (built and boot-tested by CI)"
           notes="Built with grub-mkrescue from commit ${sha} and booted under QEMU SeaBIOS in the same run - legacy BIOS, El Torito platform id 0x00. Download zeroos.iso, burn it to a DVD (Windows 7: right-click the file, choose Burn disc image) or write it to USB, then boot it from the firmware boot menu. This gives a live session; there is no disk installer."
+          pending_notes="Release publication is in progress; stable ISO verification has not completed."
           cp build-production/zeroos.iso zeroos.iso
           cp build-production/zeroos.iso "zeroos-${sha}.iso"
           mkdir -p build/release-versioned-verify build/release-backup build/release-verify build/release-rollback-verify
@@ -331,9 +332,10 @@ jobs:
           # mutate the stable alias until this copy is confirmed byte-identical.
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" "zeroos-${sha}.iso" --clobber
-            gh release edit "$tag" --notes "$notes"
           else
-            gh release create "$tag" "zeroos-${sha}.iso" --title "$title" --notes "$notes"
+            # Do not publish success notes before the mutable stable alias has
+            # been verified. If publication fails, this temporary note is honest.
+            gh release create "$tag" "zeroos-${sha}.iso" --title "$title" --notes "$pending_notes"
           fi
           gh release view "$tag" --json assets --jq '.assets[].name' | grep -qx "zeroos-${sha}.iso" \
             || { echo "release asset zeroos-${sha}.iso is missing" >&2; exit 1; }
@@ -403,6 +405,8 @@ jobs:
             rollback_stable || exit 1
             exit 1
           fi
+          # The byte comparison above succeeded; only now may release notes describe this build.
+          gh release edit "$tag" --notes "$notes"
           echo "ZEROOS: stable release ISO matches the boot-tested production ISO (sha256=$(sha256sum build/release-verify/zeroos.iso | cut -d' ' -f1))."
 
       - name: Serial summary
