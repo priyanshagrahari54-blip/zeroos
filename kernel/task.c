@@ -1902,7 +1902,7 @@ int task_set_affinity(struct task *task, uint64_t affinity) {
                 owner=(int)previous_queue;
             if (owner<0) {
                 spin_unlock_irqrestore(&task_lock,flags);
-                task_context_panic("ZEROOS PANIC: affinity rollback lost runnable task.\\n",task);
+                task_context_panic("ZEROOS PANIC: affinity rollback lost runnable task.\n",task);
             }
             runqueue_append_locked((uint32_t)owner,task);
             spin_unlock_irqrestore(&task_lock,flags);
