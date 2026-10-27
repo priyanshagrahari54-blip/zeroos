@@ -38,7 +38,8 @@ require_marker "stage2-userspace-cert" "$repo_root/kernel/elf.c" -- \
   "ZEROOS_ELF_PT_INTERP ||" "ZEROOS_ELF_PT_DYNAMIC" \
   "range_end(program->offset,program->file_size,&file_end)"
 require_marker "stage2-userspace-cert" "$repo_root/kernel/exec.c" -- \
-  "ZEROOS_USER_STACK_TOP>ZEROOS_USER_STACK_PAGE+VMM_PAGE_SIZE"
+  "ZEROOS_USER_STACK_TOP>ZEROOS_USER_STACK_PAGE+VMM_PAGE_SIZE" \
+  "source>~0ULL-length"
 
 require_symbols "stage2-userspace-cert" "$kernel_elf" \
   process_address_space_is_executable elf_load_image process_create \
