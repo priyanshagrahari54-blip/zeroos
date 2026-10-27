@@ -31,6 +31,12 @@ Never mark support from detection, parsing, a host contract, or an architecture 
 
 ## Stage 1 — Kernel / scheduler / SMP
 
+Extended-soak command: `make stage1-scheduler-soak` (production ISO, four
+vCPUs, 600-second observation window). Preserve the serial/debug/QEMU logs and
+record the exact commit, host/QEMU version, command, elapsed time, milestone
+result, and panic/failure scan. This command creates a repeatable gate; it is
+not evidence that the soak has passed until it has actually been run.
+
 - [ ] deterministic scheduler trace is emitted and checked in CI
 - [ ] panic context diagnostics are fault-injected and checked in CI
 - [ ] context ownership survives repeated yield/preemption
