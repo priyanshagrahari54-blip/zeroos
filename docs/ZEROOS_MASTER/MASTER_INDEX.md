@@ -122,3 +122,8 @@ Priority is still boot/release gate → kernel/userspace lifecycle correctness �
 - Release publishing has a candidate guard ensuring final release notes are updated only after the stable ISO alias has passed byte-for-byte comparison with the production ISO from the same run.
 - Regression coverage is in `tools/test_release_publish_guard.py`. Current candidate branch: `fix/release-notes-verify-order-20261027`; exact CI is pending.
 - See `VALIDATION.md` and `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md` for the known successful main workflow SHA and the limits of that evidence. Do not infer current-HEAD CI status from an earlier run.
+
+## Evidence update — 2026-10-27
+- PR #24 release-note ordering correction is merged to `main` as `1cd514b641d148b4094c0de524925dbd323b92eb`.
+- Candidate workflow #1553 passed build, clean `make check`, QEMU boot, storage persistence, production desktop/network smoke, and release-policy/diagnostic regression gates. Release publication was skipped for the PR event.
+- Remaining verification: post-merge `main` workflow and the live stable ISO's byte identity against the production image from that run. Do not raise completion estimates based on this workflow-only fix.
