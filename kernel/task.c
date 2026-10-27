@@ -1861,6 +1861,8 @@ int task_set_priority(struct task *task, uint8_t priority) {
 
 int task_set_affinity(struct task *task, uint64_t affinity) {
     uint64_t flags;
+    uint64_t previous_affinity;
+    uint32_t previous_queue=0;
     int online_target=0;
     if (!task_pointer_ok(task) || affinity==0 ||
         (affinity & ~task_valid_cpu_mask())!=0)
@@ -1880,18 +1882,31 @@ int task_set_affinity(struct task *task, uint64_t affinity) {
         spin_unlock_irqrestore(&task_lock,flags);
         return -1;
     }
-    if (task->state==TASK_RUNNABLE)
+    previous_affinity=task->cpu_affinity;
+    if (task->state==TASK_RUNNABLE) {
+        previous_queue=task->runqueue_cpu;
         runqueue_remove_locked(task);
+    }
     task->cpu_affinity=affinity;
     if (task->state==TASK_RUNNABLE) {
         int owner=task_choose_cpu_locked(task);
         if (owner<0) {
-            task->cpu_affinity=ZEROOS_TASK_AFFINITY_ANY & task_valid_cpu_mask();
+            /*
+             * CPU hot-offline can race the pre-lock online-target check.
+             * Never silently broaden a caller's affinity request, and never
+             * leave a RUNNABLE task detached from every runqueue on failure.
+             */
+            task->cpu_affinity=previous_affinity;
             owner=task_choose_cpu_locked(task);
+            if (owner<0 && previous_queue<ZEROOS_MAX_CPUS)
+                owner=(int)previous_queue;
             if (owner<0) {
                 spin_unlock_irqrestore(&task_lock,flags);
-                return -1;
+                task_context_panic("ZEROOS PANIC: affinity rollback lost runnable task.\\n",task);
             }
+            runqueue_append_locked((uint32_t)owner,task);
+            spin_unlock_irqrestore(&task_lock,flags);
+            return -1;
         }
         runqueue_append_locked((uint32_t)owner,task);
     } else if (task->state==TASK_RUNNING &&
