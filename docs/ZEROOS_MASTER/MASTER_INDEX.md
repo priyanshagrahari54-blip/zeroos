@@ -1,6 +1,6 @@
 # ZEROOS — MASTER DOCUMENT INDEX
 Version: 2.4
-Updated: 2026-10-26
+Updated: 2026-10-27
 
 This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md` remains the canonical consolidated product/architecture specification. Stage 6-10 execution is split into dedicated production master documents so an implementation agent can work one stage at a time without losing cross-cutting requirements.
 
@@ -117,3 +117,8 @@ These documents transcribe and technically qualify the two supplied PDF catalogs
 - `LOW_LEVEL_SYSTEM_OPTIMIZATIONS_CATALOG_100.md` and `LOW_LEVEL_SYSTEM_NETWORK_BROWSER_CATALOG_120.md`: catalogues supporting the adoption ledger.
 
 Priority is still boot/release gate → kernel/userspace lifecycle correctness → storage integrity → native interactive session → carefully isolated third-party ports → browser/media/compatibility/AI expansion. Research documentation does not raise implementation completion.
+
+## Current review note — 2026-10-27
+- Release publishing has a candidate guard ensuring final release notes are updated only after the stable ISO alias has passed byte-for-byte comparison with the production ISO from the same run.
+- Regression coverage is in `tools/test_release_publish_guard.py`. Current candidate branch: `fix/release-notes-verify-order-20261027`; exact CI is pending.
+- See `VALIDATION.md` and `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md` for the known successful main workflow SHA and the limits of that evidence. Do not infer current-HEAD CI status from an earlier run.
