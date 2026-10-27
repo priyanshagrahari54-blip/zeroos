@@ -921,6 +921,7 @@ static struct task *runqueue_pick_locked(uint32_t queue_cpu,
     struct task_runqueue *queue=&runqueues[queue_cpu];
     struct task *selected=0;
     uint8_t selected_priority=0;
+    uint64_t selected_age=0;
 
     spin_lock(&queue->lock);
     for (struct task *candidate=queue->head; candidate;
@@ -939,9 +940,21 @@ static struct task *runqueue_pick_locked(uint32_t queue_cpu,
             task_current_on_other_cpu(candidate,execution_cpu))
             continue;
         uint8_t priority=effective_priority(candidate);
-        if (!selected || priority>selected_priority) {
+        /*
+         * Aging must break ties as well as raise the effective priority.
+         * Without this secondary ordering, a permanently runnable high-base-
+         * priority task at the queue head can win every tie after all tasks
+         * age to PRIORITY_MAX, starving older low-priority work indefinitely.
+         * runnable_age is monotonic while queued and reset on dispatch/wake,
+         * so selecting the oldest eligible peer gives aging a real liveness
+         * guarantee instead of merely changing a score that is then ignored.
+         */
+        if (!selected || priority>selected_priority ||
+            (priority==selected_priority &&
+             candidate->runnable_age>selected_age)) {
             selected=candidate;
             selected_priority=priority;
+            selected_age=candidate->runnable_age;
         }
     }
     spin_unlock(&queue->lock);
