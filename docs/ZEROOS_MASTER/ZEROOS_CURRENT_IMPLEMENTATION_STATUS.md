@@ -1,12 +1,12 @@
 # ZEROOS — CURRENT IMPLEMENTATION STATUS
 
 Updated: 2026-10-27
-Branch baseline at review: `main` (before PR #16 merge: `e8fb0a72d45733a682b9614e80c019941f747ab1`); PR #16 merged as `d6b58292df7e00b4b2f15ba22f3a0405035ee549`.
+Branch baseline at this refresh: `main` latest observed commit `b1c848f193940bfd18691f942daf6e32d0dae210` (`docs: record merged release-note fix and candidate CI evidence`). PR #16 remains merged as `d6b58292df7e00b4b2f15ba22f3a0405035ee549`.
 Status policy: **evidence-weighted estimate; never equate a source file, marker check, architecture document, or host test with a working end-user feature.**
 
 ## Current evidence refresh — 2026-10-26
 
-- Current `main` HEAD observed: `5d89992d6c78a2a19108385c3fc4979fa3cfe19e` (`docs: record RECOVER-X archive inventory findings`).
+- Current `main` HEAD observed on 2026-10-27: `b1c848f193940bfd18691f942daf6e32d0dae210` (`docs: record merged release-note fix and candidate CI evidence`). The connected commit-status query returned no status entries for this SHA; treat CI as **unverified**, not passed or failed. The earlier successful run 1543 belongs to `5d89992d6c78a2a19108385c3fc4979fa3cfe19e`, not this newer HEAD.
 - GitHub Actions run **1543** for that exact HEAD completed **successfully** on 2026-10-26 (`ZEROOS Build`; run URL: https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/40322921742). Its build job concluded success. This is fresh CI evidence, but it is not a substitute for a separately reproduced local `tools/release.sh` run or physical-hardware certification.
 - The six-file reference-PDF inventory and initial disposition are recorded in `ZEROOS_REFERENCE_PDF_AUDIT_AND_ADOPTION_MATRIX.md`. It is an audit, not implementation credit. The two hardware PDFs added in commit `5f0d1a3a012d1f397e9d5561f5081109ced1e521` still need text/page extraction for a content-level review.
 - The 100-item and 120-item optimization catalogues (220 entries total) still need an individual Adopt / Adapt / Defer / Reject / Hardware-dependent decision ledger.
@@ -18,7 +18,7 @@ ZEROOS is a real native x86-64 kernel/desktop-session project with an ISO build 
 
 - **Working build path:** `make` / `make iso`, with the bootable ISO requiring a valid GRUB/El Torito toolchain.
 - **Full verification path:** `make check`; release/boot evidence: `tools/release.sh`.
-- **Latest baseline commit reviewed in this session:** `a72c171d` (`docs: expand master prompt to full ZEROOS completion and bootable release`); it expands the completion directive but is documentation-only, so it does not increase implementation progress.
+- **Latest baseline commit reviewed in this refresh:** `b1c848f193940bfd18691f942daf6e32d0dae210`; the latest commit-status query returned no checks, so no new CI pass is claimed. Documentation-only commits do not increase implementation progress.
 - **PR #16:** merged on 2026-10-17 as `d6b58292`. Its branch CI reported success and included parallel-build dependency fixes, ISO validation/writer fixes, shared 91-milestone boot test, reproducibility checks, and local intent-parser foundations.
 - **Post-merge CI:** this session's GitHub status lookup returned no status entries for `a72c171d`; this is not proof of a passing or failing workflow. Run `tools/release.sh` from a clean checkout and inspect the main-branch Actions run before declaring release certification.
 - **Physical hardware:** not certified by this status entry. QEMU is not proof of G560 Wi-Fi, GPU acceleration, fan control, Bluetooth, or sustained 1080p playback.
