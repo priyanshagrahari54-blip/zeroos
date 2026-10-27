@@ -793,3 +793,8 @@ The Library reference PDFs have been catalogued in `EXTERNAL_REFERENCE_AUDIT_202
 - [ ] Obtain green CI for the exact candidate, including build, `make check`, QEMU boot, storage persistence and production desktop/network smoke.
 - [ ] Merge through review, then verify the push-triggered `main` workflow and live `zeroos.iso` bytes/notes against the exact run.
 - This is release-integrity work only; it does not add kernel/desktop functionality or increase the overall implementation estimate.
+
+## Evidence update — 2026-10-27
+- Merged PR #24: release notes are now deferred until after stable `zeroos.iso` byte-verification; newly created releases use an explicit pending-verification note. Merge commit: `1cd514b641d148b4094c0de524925dbd323b92eb`.
+- Candidate workflow #1553 passed the build, clean check, QEMU boot, scheduler fault, AHCI/NVMe persistence, production ISO and desktop/network smoke gates. Actual release publication was skipped on the PR event.
+- Next release gate: inspect the post-merge `main` workflow and verify the live stable ISO against that run's production ISO. No OS completion increase claimed.
