@@ -79,6 +79,15 @@ The two catalogues must be converted into an individually numbered ledger before
 
 This document records high-level dispositions and critical hazards; it does **not** claim that all 220 entries have already received individual implementation or benchmark evidence. A follow-up ledger must preserve all original item numbers, merge duplicates by cross-reference rather than deletion, and state the reason for every defer/reject.
 
+## Evidence refresh — 2026-10-27
+
+- Main HEAD observed during the repository review: `b1c848f193940bfd18691f942daf6e32d0dae210`.
+- Exact-HEAD GitHub Actions run [#40491492164](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/40491492164) was still in progress when checked. The latest completed successful run visible at that time was [#40440843398](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/40440843398) for older commit `1cb4981e9358563b0dda75671c876307cac80039`; do not attribute that pass to the current HEAD.
+- Open release-note/ISO verification PR: [#23](https://github.com/priyanshagrahari54-blip/zeroos/pull/23). It explicitly says candidate CI and byte-for-byte stable ISO verification are pending.
+- The two hardware manuals remain **content-audit pending** in this review. Their repository filenames and metadata were checked, but their PDF page text was not available through the connected GitHub text interface in this pass. No claims are made about their unextracted contents.
+- The 220-item optimization ledger is still a required deliverable. Do not mark the PDF review complete until each original catalogue item has a preserved source/item number, disposition, rationale, target subsystem, validation test, and measurement plan.
+- No implementation percentage is increased by this audit refresh. The next action remains to get one exact-main CI result, fix the first reproducible release-gate failure, and only then continue the next code batch.
+
 ## Current repo reality and next actions
 
 The current status snapshot in `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md` is approximately 43% overall (Stage 1 92%, 2 84%, 3 48%, 4 43%, 5 44%, 6 22%, 7 15%, 8 13%, 9 16%, 10 10%). Treat this as a rough prior estimate until current-main evidence is rechecked; this PDF audit does not increase implementation percentages.
