@@ -9,6 +9,30 @@ Never create a basic version merely to replace it later.
 
 ## Current state
 
+### Evidence refresh — 2026-10-27 (current-main review)
+
+- Repository main HEAD observed during this refresh: `b1c848f193940bfd18691f942daf6e32d0dae210` (`docs: record merged release-note fix and candidate CI evidence`).
+- Latest exact-HEAD workflow observed: [ZEROOS Build #40491492164](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/40491492164) was **in progress** at review time. Several documentation commits had also triggered overlapping runs; do not call this HEAD green until its exact run concludes successfully.
+- Most recent completed successful run observed in the same Actions listing: [run #40440843398](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/40440843398), for older HEAD `1cb4981e9358563b0dda75671c876307cac80039`. It is useful historical evidence, **not** a pass for `b1c848f`.
+- Open PR #23, [publish final release notes only after ISO verification](https://github.com/priyanshagrahari54-blip/zeroos/pull/23), is still open. Its own description says exact candidate CI and stable ISO byte-comparison are pending. Do not merge or publish final release notes based on older workflow evidence.
+- Current repo contains six distinct reference PDFs plus the RECOVER-X planning archive. The PDF audit and reuse plan correctly mark the two newly uploaded hardware manuals as not yet content-audited by the prior pass; filenames/metadata are not a substitute for reading their pages.
+- Implementation estimates below remain evidence-weighted historical estimates until current exact-HEAD build/boot evidence is available. This refresh does not increase any stage percentage.
+
+### Immediate engineering queue (execution, not documentation-only completion)
+
+1. Establish one canonical CI run for the exact main SHA; wait for build, `make check`, repeated SMP QEMU boots, storage persistence, and production desktop/network smoke gates to finish.
+2. Fix the first reproducible failing gate before adding unrelated features. Preserve the failing serial/debug/QEMU logs and add a regression test.
+3. Prioritize scheduler/process/IPC correctness: context ownership, wake/timeout/close/revoke races, exec failure rollback, malformed ELF/user pointers, and exactly-once cleanup.
+4. Prove storage persistence and recovery under repeated boots and injected I/O failures before optimizing throughput.
+5. Turn desktop foundations into an end-to-end usable slice: input -> window/session -> shell/launcher -> Files/Terminal/Settings -> restart/error recovery.
+6. Bring up drivers and network protocols on explicit QEMU devices, then hardware-specific paths; parser/marker tests alone do not count as operational support.
+7. Import mature upstream libraries only after pinning version and source, recording file-level license/provenance, documenting ABI/porting changes, and passing isolated tests.
+8. Implement missing browser/media/runtime/AI/installer work behind capability and resource boundaries; do not replace these gaps with mock UI or feature claims.
+9. Keep the stable ISO alias and release notes gated on byte-comparison against the exact ISO built and boot-tested by the release workflow.
+10. Update stage percentages only from the acceptance evidence ladder in `VALIDATION.md`; require physical G560 measurements for hardware claims.
+
+
+
 ### Evidence snapshot — 2026-10-26
 - The normal `make` image targets a persistent native x86-64 kernel + Ring-3 desktop/session path; the release pipeline has a shared 91-milestone QEMU boot gate.
 - PR #16 was merged as `d6b58292df7e00b4b2f15ba22f3a0405035ee549`, adding parallel-build dependency fixes, ISO structure validation/writing, reproducibility checks, shared boot-test logic, and local intent-parser foundations.
