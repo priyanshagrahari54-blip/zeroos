@@ -149,7 +149,7 @@ for iteration in $(seq 1 "$iterations"); do
     echo "boot_test iteration ${iteration}: QEMU exited unexpectedly (status=$qemu_status; expected timeout status 124)" >&2
     [ ! -f "$build_root/qemu.log" ] || tail -40 "$build_root/qemu.log" >&2
     [ ! -f "$build_root/serial.log" ] || tail -40 "$build_root/serial.log" >&2
-    return 1 2>/dev/null || exit 1
+    exit 1
   fi
 
   assert_log "$build_root/serial.log" "boot_test iteration ${iteration}"
