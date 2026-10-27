@@ -1,6 +1,6 @@
 # ZEROOS — Validation and Support Matrix
 
-Updated: 2026-10-25. This is the evidence policy for Stages 1-10; it must not overstate support.
+Updated: 2026-10-27. This is the evidence policy for Stages 1-10; it must not overstate support.
 
 The binding acceptance checklist is [ZEROOS_10_STAGE_HARDENING.md](./ZEROOS_10_STAGE_HARDENING.md). Current estimates and known limitations are in [ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md](./ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md).
 
@@ -81,3 +81,10 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - It preserves the prior `zeroos.iso` and attempts restoration if stable upload, download, or byte comparison fails. If no prior stable alias existed, cleanup removes the unverified alias and verifies absence.
 - The release regression script checks publication gating, operation ordering, rollback branches, and `bash -n` syntax for the inline shell.
 - **Exact candidate CI:** workflow #1484 (run ID `40263294383`) passed the regression checks, `make`, clean `make check`, kernel/ISO verification, repeated QEMU boots, scheduler fault certification, two-boot AHCI/NVMe persistence, production ISO build, and production desktop/network smoke test. Release publication was skipped on the PR event by design. **Still pending:** exercise rollback on an authorized main push if a failure occurs, and verify the live stable asset against the exact post-merge production ISO.
+
+## 2026-10-27 — Release-note ordering guard (candidate)
+- Latest observed `main` SHA: `fa6fb6e750843ee14dc0b1f9151c20052741f337`; no combined status entries were returned for that exact SHA, so its status is not inferred.
+- Main workflow #1543 (`40322921742`) passed for ancestor SHA `5d89992d6c78a2a19108385c3fc4979fa3cfe19e`. The job-step record shows `tools/release.sh`, QEMU boot test, storage persistence certification, production desktop/network smoke, and release publication all succeeded in that run. It does not certify later commits.
+- Identified defect: final release notes were edited after versioned-asset upload but before stable `zeroos.iso` byte verification.
+- Candidate patch defers final notes on an existing release until after stable ISO verification; a newly created release uses explicit pending-verification notes. Regression test checks that pending path exists and the final edit occurs after the verified boundary. The inline release shell remains syntax-checked by the existing test.
+- **Pending:** exact candidate CI, QEMU/storage/production boot result for candidate, reviewed merge, and post-merge main publication/asset verification. No new test pass is claimed in this entry.
