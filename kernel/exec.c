@@ -38,8 +38,9 @@ static int exec_copy_from_user(const struct process *process,
     uint64_t offset=0;
 
     if (!process || !destination ||
-        (length && !process_address_space_is_user_range(process,source,
-                                                        length,0)))
+        (length && (source>~0ULL-length ||
+                    !process_address_space_is_user_range(process,source,
+                                                        length,0))))
         return -ZEROOS_EFAULT;
     while (offset<length) {
         uint64_t address=source+offset;
