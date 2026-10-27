@@ -784,6 +784,25 @@ static uint8_t effective_priority(const struct task *task) {
     return (uint8_t)value;
 }
 
+/* Deterministic ordering policy used by the real runqueue picker. */
+static int task_candidate_preferred(uint8_t priority, uint64_t age,
+                                    int has_selected,
+                                    uint8_t selected_priority,
+                                    uint64_t selected_age) {
+    return !has_selected || priority>selected_priority ||
+           (priority==selected_priority && age>selected_age);
+}
+
+static int task_scheduler_policy_self_test(void) {
+    if (!task_candidate_preferred(16,0,0,0,0)) return -1;
+    if (!task_candidate_preferred(17,0,1,16,~0ULL)) return -1;
+    if (task_candidate_preferred(15,~0ULL,1,16,0)) return -1;
+    if (!task_candidate_preferred(16,101,1,16,100)) return -1;
+    if (task_candidate_preferred(16,99,1,16,100)) return -1;
+    if (task_candidate_preferred(16,100,1,16,100)) return -1;
+    return 0;
+}
+
 static uint64_t task_valid_cpu_mask(void) {
     return ZEROOS_MAX_CPUS>=64U ? ~0ULL : ((1ULL<<ZEROOS_MAX_CPUS)-1ULL);
 }
@@ -949,9 +968,9 @@ static struct task *runqueue_pick_locked(uint32_t queue_cpu,
          * so selecting the oldest eligible peer gives aging a real liveness
          * guarantee instead of merely changing a score that is then ignored.
          */
-        if (!selected || priority>selected_priority ||
-            (priority==selected_priority &&
-             candidate->runnable_age>selected_age)) {
+        if (task_candidate_preferred(priority,candidate->runnable_age,
+                                      selected!=0,selected_priority,
+                                      selected_age)) {
             selected=candidate;
             selected_priority=priority;
             selected_age=candidate->runnable_age;
@@ -1092,6 +1111,9 @@ int task_system_init(void) {
     if (task_context_bounds_self_test()!=0)
         return -1;
     serial_write_public("ZEROOS: scheduler context bounds self-test passed.\n");
+    if (task_scheduler_policy_self_test()!=0)
+        return -1;
+    serial_write_public("ZEROOS: scheduler priority-aging policy self-test passed.\\n");
 
     for (int i=0;i<ZEROOS_MAX_TASKS;++i) {
         tasks[i].id=0;
