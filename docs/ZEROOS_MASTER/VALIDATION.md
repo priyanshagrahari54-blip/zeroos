@@ -88,3 +88,8 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - Identified defect: final release notes were edited after versioned-asset upload but before stable `zeroos.iso` byte verification.
 - Candidate patch defers final notes on an existing release until after stable ISO verification; a newly created release uses explicit pending-verification notes. Regression test checks that pending path exists and the final edit occurs after the verified boundary. The inline release shell remains syntax-checked by the existing test.
 - **Pending:** exact candidate CI, QEMU/storage/production boot result for candidate, reviewed merge, and post-merge main publication/asset verification. No new test pass is claimed in this entry.
+
+## Evidence update — 2026-10-27 (PR #24 merged)
+- Release-note ordering fix merged to `main` at `1cd514b641d148b4094c0de524925dbd323b92eb`.
+- Candidate workflow #1553 / run ID `40440843398` passed the release-policy and diagnostic-retention regression steps, build, clean `make check`, kernel/ISO verification, repeated QEMU boots, scheduler fault certification, two-boot AHCI/NVMe persistence, production ISO build, production desktop/network smoke test, and diagnostic preservation.
+- Release publication was skipped on the PR event as intended. The post-merge `main` workflow and live stable `zeroos.iso` comparison must still be checked separately. This candidate result is not a claim of post-merge publication.
