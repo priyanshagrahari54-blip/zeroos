@@ -1113,7 +1113,7 @@ int task_system_init(void) {
     serial_write_public("ZEROOS: scheduler context bounds self-test passed.\n");
     if (task_scheduler_policy_self_test()!=0)
         return -1;
-    serial_write_public("ZEROOS: scheduler priority-aging policy self-test passed.\\n");
+    serial_write_public("ZEROOS: scheduler priority-aging policy self-test passed.\n");
 
     for (int i=0;i<ZEROOS_MAX_TASKS;++i) {
         tasks[i].id=0;
