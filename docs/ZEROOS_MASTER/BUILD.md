@@ -67,6 +67,14 @@ the same flavour rebuilds nothing.
 ## Real boot test
 
     make boot-test    # needs qemu-system-x86_64
+    make stage1-scheduler-soak # optional 10-minute, four-vCPU Stage 1 soak
+
+`make stage1-scheduler-soak` runs the production ISO for a full 600-second
+observation window on four virtual CPUs. It starts with fresh serial/debug/QEMU
+logs and fails if QEMU exits before the window completes, a required boot
+milestone is absent, or a panic/failure marker appears. This is extended QEMU
+evidence, not physical-hardware certification; it is intentionally not part of
+the default `make check` because of its runtime.
 
 `tools/boot_test.sh` boots the image in QEMU and asserts the guest serial log
 against `tools/boot_milestones.txt`: 91 required milestones plus two negative
