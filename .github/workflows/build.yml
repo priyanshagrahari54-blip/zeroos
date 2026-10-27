@@ -57,6 +57,8 @@ jobs:
           bash tools/boot_test.sh --build-dir build --iterations 3 --smp 2 --timeout 45
 
           echo "===== ZEROOS four-vCPU SMP certification ====="
+          rm -f build/serial-smp4.log build/debug-smp4.log build/qemu-smp4.log
+          set +e
           timeout 45s qemu-system-x86_64 \
             -smp 4 \
             -cdrom build/zeroos.iso \
@@ -67,7 +69,15 @@ jobs:
             -debugcon file:build/debug-smp4.log \
             -global isa-debugcon.iobase=0xe9 \
             -d int,guest_errors,cpu_reset \
-            -D build/qemu-smp4.log || true
+            -D build/qemu-smp4.log
+          qemu_status=$?
+          set -e
+          if [ "$qemu_status" -ne 124 ]; then
+            echo "four-vCPU QEMU exited unexpectedly (status=$qemu_status; expected timeout 124)" >&2
+            tail -40 build/serial-smp4.log 2>/dev/null || true
+            tail -40 build/qemu-smp4.log 2>/dev/null || true
+            exit 1
+          fi
           if grep -q "ZEROOS PANIC:" build/serial-smp4.log; then
             echo "ZEROOS four-vCPU boot reported a panic before scheduler gates:"
             grep "ZEROOS PANIC:" build/serial-smp4.log
@@ -119,6 +129,8 @@ jobs:
           fi
 
           echo "===== ZEROOS NX-disabled compatibility boot ====="
+          rm -f build/serial-nx-off.log build/debug-nx-off.log build/qemu-nx-off.log
+          set +e
           timeout 45s qemu-system-x86_64 \
             -cpu qemu64,-nx \
             -smp 2 \
@@ -130,7 +142,15 @@ jobs:
             -debugcon file:build/debug-nx-off.log \
             -global isa-debugcon.iobase=0xe9 \
             -d int,guest_errors,cpu_reset \
-            -D build/qemu-nx-off.log || true
+            -D build/qemu-nx-off.log
+          qemu_status=$?
+          set -e
+          if [ "$qemu_status" -ne 124 ]; then
+            echo "NX-disabled QEMU exited unexpectedly (status=$qemu_status; expected timeout 124)" >&2
+            tail -40 build/serial-nx-off.log 2>/dev/null || true
+            tail -40 build/qemu-nx-off.log 2>/dev/null || true
+            exit 1
+          fi
           grep -q "ZEROOS: CPU capabilities detected (APIC=1, NX=0" build/serial-nx-off.log
           grep -q "ZEROOS: foundation milestone reached." build/serial-nx-off.log
           grep -q "ZEROOS: remote TLB shootdown self-test passed." build/serial-nx-off.log
@@ -164,8 +184,10 @@ jobs:
           fi
 
           echo "===== ZEROOS failed-IPI recovery fault boot ====="
+          rm -f build-fault/serial.log build-fault/debug.log build-fault/qemu.log
           trap 'echo "fault-boot milestone failed; serial tail follows"; tail -c 6000 build-fault/serial.log | tr "\\r\\n" "  "; echo' ERR
           make BUILD=build-fault EXTRA_CFLAGS=-DZEROOS_TEST_SMP_FAILED_DISPATCH
+          set +e
           timeout 45s qemu-system-x86_64 \
             -smp 2 \
             -cdrom build-fault/zeroos.iso \
@@ -176,7 +198,15 @@ jobs:
             -debugcon file:build-fault/debug.log \
             -global isa-debugcon.iobase=0xe9 \
             -d int,guest_errors,cpu_reset \
-            -D build-fault/qemu.log || true
+            -D build-fault/qemu.log
+          qemu_status=$?
+          set -e
+          if [ "$qemu_status" -ne 124 ]; then
+            echo "failed-IPI QEMU exited unexpectedly (status=$qemu_status; expected timeout 124)" >&2
+            tail -40 build-fault/serial.log 2>/dev/null || true
+            tail -40 build-fault/qemu.log 2>/dev/null || true
+            exit 1
+          fi
           grep -q "ZEROOS: injected SMP dispatch failure for recovery validation." build-fault/serial.log
           grep -q "ZEROOS: SMP INIT/SIPI dispatch started (cpu=1, attempt=2)." build-fault/serial.log
           grep -q "ZEROOS: SMP startup recovery contract self-test passed." build-fault/serial.log
@@ -209,7 +239,9 @@ jobs:
         run: |
           set -e
           mkdir -p build-panic
+          rm -f build-panic/serial.log build-panic/debug.log build-panic/qemu.log
           make BUILD=build-panic EXTRA_CFLAGS=-DZEROOS_TEST_SCHEDULER_PANIC_DIAGNOSTICS
+          set +e
           timeout 15s qemu-system-x86_64 \
             -smp 2 \
             -cdrom build-panic/zeroos.iso \
@@ -220,7 +252,15 @@ jobs:
             -debugcon file:build-panic/debug.log \
             -global isa-debugcon.iobase=0xe9 \
             -d int,guest_errors,cpu_reset \
-            -D build-panic/qemu.log || true
+            -D build-panic/qemu.log
+          qemu_status=$?
+          set -e
+          if [ "$qemu_status" -ne 124 ]; then
+            echo "scheduler panic-diagnostics QEMU exited unexpectedly (status=$qemu_status; expected timeout 124)" >&2
+            tail -40 build-panic/serial.log 2>/dev/null || true
+            tail -40 build-panic/qemu.log 2>/dev/null || true
+            exit 1
+          fi
           grep -q "ZEROOS PANIC: scheduler panic diagnostics self-test" build-panic/serial.log
           grep -q "task-table invariant dump" build-panic/serial.log
           echo "ZEROOS: scheduler panic-diagnostics exercise produced the expected panic record and invariant dump."

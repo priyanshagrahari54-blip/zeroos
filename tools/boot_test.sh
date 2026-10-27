@@ -120,6 +120,16 @@ iso="$build_root/zeroos.iso"
 # the boot test uses QEMU's timeout as its stop condition - exactly as CI does.
 for iteration in $(seq 1 "$iterations"); do
   echo "===== ZEROOS boot certification iteration ${iteration}/${iterations} ====="
+
+  # Every iteration must stand on its own evidence. Remove old output first:
+  # otherwise a failed QEMU launch can leave a previous iteration's complete
+  # serial log behind and accidentally satisfy the milestone assertions.
+  rm -f "$build_root/serial.log" "$build_root/debug.log" "$build_root/qemu.log"
+
+  # QEMU is expected to remain alive until timeout: -no-shutdown deliberately
+  # keeps the VM running even if the guest requests shutdown. Do not swallow
+  # emulator failures (missing device, bad arguments, startup crash, etc.).
+  set +e
   timeout "${timeout_s}s" qemu-system-x86_64 \
     -smp "$smp" \
     -cdrom "$iso" \
@@ -129,7 +139,19 @@ for iteration in $(seq 1 "$iterations"); do
     -debugcon "file:$build_root/debug.log" \
     -global isa-debugcon.iobase=0xe9 \
     -d int,guest_errors,cpu_reset \
-    -D "$build_root/qemu.log" || true
+    -D "$build_root/qemu.log"
+  qemu_status=$?
+  set -e
+
+  # GNU timeout returns 124 when the requested observation window completes.
+  # Any other status means this was not the expected sustained-boot run.
+  if [ "$qemu_status" -ne 124 ]; then
+    echo "boot_test iteration ${iteration}: QEMU exited unexpectedly (status=$qemu_status; expected timeout status 124)" >&2
+    [ ! -f "$build_root/qemu.log" ] || tail -40 "$build_root/qemu.log" >&2
+    [ ! -f "$build_root/serial.log" ] || tail -40 "$build_root/serial.log" >&2
+    exit 1
+  fi
+
   assert_log "$build_root/serial.log" "boot_test iteration ${iteration}"
 done
 

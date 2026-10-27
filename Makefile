@@ -20,7 +20,7 @@ CFLAGS += $(EXTRA_CFLAGS)
 ASFLAGS := -m64 -ffreestanding -fno-pic -fno-pie -nostdlib
 LDFLAGS := -m elf_x86_64 -T kernel/linker.ld -nostdlib
 
-.PHONY: all clean elf iso iso-test verify-iso verify-multiboot2 repro-check boot-test completion-matrix run run-test check storage-tools-check stage1-scheduler-cert stage2-userspace-cert stage3-storage-cert stage4-hardware-cert stage5-desktop-cert stage6-security-cert stage7-gpu-media-cert stage8-compat-cert stage9-ai-perf-cert stage10-certification-release kernel-simd-check userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check
+.PHONY: all clean elf iso iso-test verify-iso verify-multiboot2 repro-check boot-test completion-matrix run run-test check storage-tools-check stage1-scheduler-cert stage1-scheduler-soak stage2-userspace-cert stage3-storage-cert stage4-hardware-cert stage5-desktop-cert stage6-security-cert stage7-gpu-media-cert stage8-compat-cert stage9-ai-perf-cert stage10-certification-release kernel-simd-check userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check
 
 all: iso
 
@@ -56,6 +56,12 @@ storage-tools-check:
 # targets that produce those artifacts as well.
 stage1-scheduler-cert: elf
 	bash tools/stage1_scheduler_cert.sh $(BUILD)
+
+# Optional extended Stage 1 soak. Uses the production image, four vCPUs, and
+# a fresh serial/debug/QEMU log; fails unless the guest remains alive for the
+# full observation window and every boot milestone passes without a panic.
+stage1-scheduler-soak: iso
+	bash tools/boot_test.sh --build-dir $(BUILD) --iterations 1 --smp 4 --timeout 600
 
 stage2-userspace-cert: elf
 	bash tools/stage2_userspace_cert.sh $(BUILD)
