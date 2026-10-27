@@ -785,3 +785,11 @@ The Library reference PDFs have been catalogued in `EXTERNAL_REFERENCE_AUDIT_202
 **Reuse order:** (1) current-main build/ISO/QEMU release gate; (2) process/exec/timer/IPC/memory lifecycle correctness; (3) storage durability/recovery; (4) native session path; (5) small user-space libraries (compression, fonts/shaping, libc/runtime) behind stable APIs; (6) network/TLS/browser/media; (7) isolated compatibility runtimes and ZERO AI. Candidate shortlist is not an import log. SQLite is for user-space metadata/indexes only, never a kernel dependency. LZ4's library and command-line portions have different licensing. FreeType/HarfBuzz are userspace text components. lwIP is evaluated against existing ZEROOS networking before deciding whether any portion is useful.
 
 **Unreviewed artifacts:** the two hardware/kernel PDFs whose full text is not yet extracted and the contents of RECOVER-X/G560 ZIPs must be inventoried before their code or prescriptions can be adopted. Their presence in the Library is not evidence of compatibility, quality, or license clearance.
+
+### Release metadata integrity — 2026-10-27
+- [x] Identify that final success notes are edited before mutable stable ISO byte verification.
+- [x] Candidate patch uses pending-verification notes for newly created releases and defers final notes until stable ISO comparison succeeds.
+- [x] Add regression assertions for pending notes and final-note ordering.
+- [ ] Obtain green CI for the exact candidate, including build, `make check`, QEMU boot, storage persistence and production desktop/network smoke.
+- [ ] Merge through review, then verify the push-triggered `main` workflow and live `zeroos.iso` bytes/notes against the exact run.
+- This is release-integrity work only; it does not add kernel/desktop functionality or increase the overall implementation estimate.
