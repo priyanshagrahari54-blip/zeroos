@@ -1,0 +1,36 @@
+name: ZEROOS Stage 1 Scheduler CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zeroos-stage1-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  stage1-scheduler:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install compiler and binutils
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc binutils
+      - name: Build native x86-64 kernel
+        run: make elf
+      - name: Run Stage 1 scheduler certification
+        run: make stage1-scheduler-cert
+      - name: Preserve failure diagnostics
+        if: failure()
+        run: |
+          echo "Stage 1 failed. Preserve build artifacts and inspect the failing command above."
+          if [ -f build/zeroos.elf ]; then
+            file build/zeroos.elf
+            nm -n build/zeroos.elf | grep -E 'scheduler_(init|start|tick|yield)|task_block' || true
+          fi
