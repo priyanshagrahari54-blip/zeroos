@@ -1,6 +1,6 @@
 # ZEROOS — CURRENT IMPLEMENTATION STATUS
 
-Updated: 2026-10-26
+Updated: 2026-10-27
 Branch baseline at review: `main` (before PR #16 merge: `e8fb0a72d45733a682b9614e80c019941f747ab1`); PR #16 merged as `d6b58292df7e00b4b2f15ba22f3a0405035ee549`.
 Status policy: **evidence-weighted estimate; never equate a source file, marker check, architecture document, or host test with a working end-user feature.**
 
@@ -152,3 +152,11 @@ Added [ZEROOS_ALL_FEATURES_IMPLEMENTATION_AND_BOOTABLE_RELEASE_CONTRACT.md](./ZE
 Added `LIBRARY_REUSE_AND_INTEGRATION_PLAN.md` and indexed it from `MASTER_INDEX.md` and `ZEROOS_MASTER_ROADMAP.md`. It maps candidates (libc, LZ4, zlib-class compression, FreeType, HarfBuzz, lwIP, TLS libraries, SQLite, FFmpeg-class media, LLVM, AOSP/ART, Wine) to specific ZEROOS layers and defines licensing, provenance, ABI, isolation, test, measurement, and rollback gates. It also records that the 100/120 optimization catalogs are ideas, not ready-made source code, and that RECOVER-X/G560 archives require file-level inventory before reuse.
 
 **Implementation impact: none claimed.** These are documentation and research triage changes. No third-party source was imported by these commits, no boot/CI test was run by the documentation edits, and the existing overall completion estimate is unchanged until a fresh current-main release gate and real integration evidence are available. Two hardware/kernel reference PDFs still need full-text/page-level audit. Next engineering priority remains clean build + ISO verification + repeated QEMU boot, then highest-severity correctness failures.
+
+## Release metadata ordering review — 2026-10-27
+- Latest `main` commit observed: `fa6fb6e750843ee14dc0b1f9151c20052741f337` (documentation/roadmap refresh). The combined-status lookup returned no status entries for this exact SHA; this is **unknown**, not a pass or failure.
+- Latest directly inspected successful `main` run: workflow #1543 / run ID `40322921742` for `5d89992d6c78a2a19108385c3fc4979fa3cfe19e`. Its job steps show success for `make`, `tools/release.sh` reproducibility/release gate, kernel verification, QEMU boot test, scheduler fault certification, two-boot AHCI/NVMe persistence, production ISO build, production desktop/network smoke, diagnostic artifacts, and the release-publishing step. This is evidence for that SHA only.
+- The current workflow still edits final success release notes immediately after uploading the versioned ISO, **before** the mutable `zeroos.iso` alias has been downloaded and byte-compared. If later stable-alias publication fails, metadata can describe a build that is not the verified stable download.
+- Candidate fix on `fix/release-notes-verify-order-20261027`: existing releases retain their notes until stable alias verification succeeds; new releases begin with an explicit pending-verification note; final notes are applied only after the stable ISO byte comparison. `tools/test_release_publish_guard.py` now pins that ordering and checks the pending-note path.
+- Candidate CI/QEMU evidence is pending. No kernel behavior changed and no OS completion estimate is increased. PR #23's older branch is 27 commits behind current `main` and is not being treated as a clean integration base; this candidate was created from current `main`.
+- Release closeout remains: green CI on this exact candidate, reviewed merge, then a successful push-triggered `main` workflow and verification of its stable asset/notes. Physical G560 certification, standalone installer, dynamic linker, production browser/media, Windows/Android runtimes, and full ZERO AI backend remain open.
