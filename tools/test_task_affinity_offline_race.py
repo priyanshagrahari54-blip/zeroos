@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regression checks for affinity updates racing AP hot-offline."""
+"""Regression checks for affinity updates racing CPU hot-offline and remote owners."""
 
 from pathlib import Path
 import unittest
@@ -70,6 +70,32 @@ class SchedulerAffinityOfflineRaceTests(unittest.TestCase):
             "task_affinity_mask_has_online_target(0x1ULL,0x3ULL,0x2ULL)",
             policy,
         )
+
+    def test_running_affinity_change_targets_the_actual_owner_cpu(self):
+        owner_helper = function_body(
+            self.task, "static uint32_t task_running_cpu_locked("
+        )
+        self.assertIn(
+            "__atomic_load_n(&current_tasks[cpu],__ATOMIC_ACQUIRE)==task",
+            owner_helper,
+        )
+
+        setter = function_body(self.task, "int task_set_affinity(")
+        self.assertIn("running_cpu=task_running_cpu_locked(task)", setter)
+        self.assertIn(
+            "task_affinity_excludes_cpu(task->cpu_affinity,running_cpu)",
+            setter,
+        )
+        self.assertNotIn(
+            "task->cpu_affinity & (1ULL<<task_cpu_index())", setter,
+            "remote setter CPU must not be mistaken for the running owner",
+        )
+
+        policy = function_body(
+            self.task, "static int task_scheduler_policy_self_test("
+        )
+        self.assertIn("task_affinity_excludes_cpu(0x1ULL,2U)", policy)
+        self.assertIn("task_affinity_excludes_cpu(0x1ULL,0U)", policy)
 
     def test_runtime_marker_is_required_by_boot_and_stage1_certification(self):
         self.assertIn(MARKER, self.task)
