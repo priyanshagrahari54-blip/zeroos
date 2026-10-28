@@ -134,3 +134,10 @@ Priority is still boot/release gate → kernel/userspace lifecycle correctness �
 - Latest reviewed `main`: `7c45183332f895ad778f08b98458f580b18a0067`; its exact-head CI status is not available from the current lookup.
 - Last inspected completed main run #40491492164 belongs to `b1c848f193940bfd18691f942daf6e32d0dae210`, passed build/QEMU/storage/production smoke and release publication, and verified the stable ISO SHA-256 `9d9c5594a4669936e2ac37320a025365018b785768f73d6d52aebfb56a818529`.
 - Boot-gate integrity candidate: `fix/boot-gate-fail-closed-20261028`; shared QEMU gate and inline CI boots now require expected timeout status, fresh logs and long-mode debug markers. Regression test `tools/test_boot_gate_fail_closed.py` is wired into CI. Candidate CI remains pending; no completion increase is claimed.
+
+## Current engineering queue — 2026-10-28
+
+- Latest `main` ref: `731e9e8856976beb2e717eef169ded72f4917741`; exact-head CI status was not returned, so current CI remains unverified.
+- New candidate: `fix/scheduler-affinity-offline-race-20261028`. `task_set_affinity` now rechecks that at least one requested CPU is online and not offlining while holding `task_lock`, before changing affinity. A policy self-test and boot milestone cover the offline-mask rule; `tools/test_task_affinity_offline_race.py` checks the guard ordering and CI wiring.
+- Candidate CI is pending. Do not count this as a verified runtime fix until the exact branch passes the full build/check/QEMU/storage/desktop workflow.
+- Release blockers remain: exact-main CI, post-merge stable ISO verification, full Stage 1 scheduler exit evidence/soak, and physical hardware certification. Overall completion estimate unchanged.
