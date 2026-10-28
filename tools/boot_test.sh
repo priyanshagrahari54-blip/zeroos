@@ -120,6 +120,14 @@ iso="$build_root/zeroos.iso"
 # the boot test uses QEMU's timeout as its stop condition - exactly as CI does.
 for iteration in $(seq 1 "$iterations"); do
   echo "===== ZEROOS boot certification iteration ${iteration}/${iterations} ====="
+
+  # Every iteration must stand on fresh evidence. A failed QEMU launch must not
+  # be able to reuse a previous iteration's serial/debug/QEMU logs.
+  rm -f "$build_root/serial.log" "$build_root/debug.log" "$build_root/qemu.log"
+
+  # With -no-shutdown, a healthy guest remains alive until timeout. Do not
+  # swallow emulator errors or accept an early guest/emulator exit as a boot.
+  set +e
   timeout "${timeout_s}s" qemu-system-x86_64 \
     -smp "$smp" \
     -cdrom "$iso" \
@@ -129,20 +137,32 @@ for iteration in $(seq 1 "$iterations"); do
     -debugcon "file:$build_root/debug.log" \
     -global isa-debugcon.iobase=0xe9 \
     -d int,guest_errors,cpu_reset \
-    -D "$build_root/qemu.log" || true
-  assert_log "$build_root/serial.log" "boot_test iteration ${iteration}"
-done
+    -D "$build_root/qemu.log"
+  qemu_status=$?
+  set -e
 
-# boot/boot.S writes 'B' at the 32-bit entry and 'L' in long mode; both must
-# have reached the debug port, which proves the transition really happened.
-if [ -f "$build_root/debug.log" ]; then
+  if [ "$qemu_status" -ne 124 ]; then
+    echo "boot_test iteration ${iteration}: QEMU exited unexpectedly (status=$qemu_status; expected timeout 124)" >&2
+    tail -40 "$build_root/serial.log" 2>/dev/null || true
+    tail -40 "$build_root/qemu.log" 2>/dev/null || true
+    exit 1
+  fi
+
+  assert_log "$build_root/serial.log" "boot_test iteration ${iteration}"
+
+  # boot/boot.S writes 'B' at the 32-bit entry and 'L' in long mode. Require
+  # both markers on every fresh run; a missing debug log is a hard failure.
+  [ -f "$build_root/debug.log" ] || {
+    echo "boot_test iteration ${iteration}: debug log not produced: $build_root/debug.log" >&2
+    exit 1
+  }
   for marker in B L; do
     grep -q "$marker" "$build_root/debug.log" || {
-      echo "boot_test: debug port marker '$marker' missing from $build_root/debug.log" >&2
+      echo "boot_test iteration ${iteration}: debug port marker '$marker' missing from $build_root/debug.log" >&2
       exit 1
     }
   done
-  echo "boot_test: debug port markers B (32-bit entry) and L (long mode) present"
-fi
+  echo "boot_test iteration ${iteration}: 32-bit entry and long-mode markers present"
+done
 
 echo "boot_test: PASS - $iterations/$iterations boots reached every milestone"
