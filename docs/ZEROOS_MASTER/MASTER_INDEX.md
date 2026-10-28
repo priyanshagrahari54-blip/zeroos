@@ -147,3 +147,9 @@ Priority is still boot/release gate → kernel/userspace lifecycle correctness �
 - Kernel scheduler priority: remote `task_set_affinity()` calls previously tested affinity against the caller CPU rather than the CPU actually running the target task. Candidate branch `fix/affinity-remote-owner-reschedule-20261028` uses the actual owner under `task_lock` and adds host/runtime regression coverage.
 - Baseline `main` SHA: `218cbc43eaeba24612a91838ee381460aa2212e8`; exact-head CI is unverified by the current connected status lookup. Candidate SHA `f6450de619a4ea052b84d9394fe0d4dd58d98236` passed Build workflow #1626 and Stage 1 Scheduler CI #47, including the affinity regression, clean `make check`, QEMU boot matrix, storage persistence and production smoke. Merge remains pending; this candidate result is not current-main evidence.
 - The change does not close the Stage 1 soak or physical-hardware gates and does not increase the OS completion estimate.
+
+## Post-merge engineering status — 2026-10-28
+
+- PR #30's remote-affinity owner fix is merged to `main` at `acae3eba7b2f9c6cf2c52038d7b5606c28f4a077`.
+- Candidate Build workflows #1626 and #1632 and Stage 1 Scheduler workflows #47 and #53 passed. Verified gates include host regressions, clean `make check`, repeated QEMU boots, scheduler fault certification, two-boot AHCI/NVMe persistence, production ISO and desktop/network smoke. Release publication was skipped for PR events.
+- Post-merge main workflow and live stable ISO verification are not yet established. The Stage 1 soak and physical hardware matrix remain open; no completion estimate increase.
