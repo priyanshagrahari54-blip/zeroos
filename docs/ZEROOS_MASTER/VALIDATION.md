@@ -1,6 +1,6 @@
 # ZEROOS — Validation and Support Matrix
 
-Updated: 2026-10-27. This is the evidence policy for Stages 1-10; it must not overstate support.
+Updated: 2026-10-28. This is the evidence policy for Stages 1-10; it must not overstate support.
 
 The binding acceptance checklist is [ZEROOS_10_STAGE_HARDENING.md](./ZEROOS_10_STAGE_HARDENING.md). Current estimates and known limitations are in [ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md](./ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md).
 
@@ -93,3 +93,11 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - Release-note ordering fix merged to `main` at `1cd514b641d148b4094c0de524925dbd323b92eb`.
 - Candidate workflow #1553 / run ID `40440843398` passed the release-policy and diagnostic-retention regression steps, build, clean `make check`, kernel/ISO verification, repeated QEMU boots, scheduler fault certification, two-boot AHCI/NVMe persistence, production ISO build, production desktop/network smoke test, and diagnostic preservation.
 - Release publication was skipped on the PR event as intended. The post-merge `main` workflow and live stable `zeroos.iso` comparison must still be checked separately. This candidate result is not a claim of post-merge publication.
+
+
+## Evidence refresh — 2026-10-28
+
+- Current `main` reviewed at `7c45183332f895ad778f08b98458f580b18a0067`; no status/workflow result was returned for this exact SHA. Treat current-head CI as unverified.
+- Latest completed main workflow inspected: #40491492164 for older SHA `b1c848f193940bfd18691f942daf6e32d0dae210`. Its job passed build, clean `make check`, repeated QEMU boots, 4-vCPU SMP, NX-disabled, failed-IPI recovery, scheduler fault, two-boot AHCI/NVMe persistence, production desktop/network smoke and release publication. Stable ISO comparison passed with SHA-256 `9d9c5594a4669936e2ac37320a025365018b785768f73d6d52aebfb56a818529`. Do not attribute this run to current HEAD.
+- Candidate boot-gate fix on `fix/boot-gate-fail-closed-20261028` removes swallowed QEMU exits, clears logs before every boot, requires debug-port `B`/ `L` markers each iteration, and adds regression coverage. Exact candidate CI has not yet been verified.
+- Required candidate checks: `python3 tools/test_boot_gate_fail_closed.py`, `python3 tools/test_release_publish_guard.py`, `python3 tools/test_production_boot_diagnostics.py`, clean `make check`, all QEMU boot/fault gates, two-boot storage persistence, production desktop/network smoke, and release artifact integrity. Physical-hardware certification remains a separate gate.
