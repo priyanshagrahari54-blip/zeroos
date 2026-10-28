@@ -304,11 +304,16 @@ static void task_write_u64(uint64_t value) {
  * the stack switch. Every other task must satisfy the complete ownership
  * contract at every observable point.
  */
-static int task_current_owner(const struct task *task) {
+static uint32_t task_running_cpu_locked(const struct task *task) {
     for (uint32_t cpu=0; cpu<ZEROOS_MAX_CPUS; ++cpu)
-        if (cpu_scheduler_started[cpu] && current_tasks[cpu]==task)
-            return 1;
-    return 0;
+        if (cpu_scheduler_started[cpu] &&
+            __atomic_load_n(&current_tasks[cpu],__ATOMIC_ACQUIRE)==task)
+            return cpu;
+    return ZEROOS_MAX_CPUS;
+}
+
+static int task_current_owner(const struct task *task) {
+    return task_running_cpu_locked(task)<ZEROOS_MAX_CPUS;
 }
 
 /* True while `task` is the current task of a CPU other than `cpu`. Such a
@@ -817,6 +822,10 @@ static int task_affinity_has_online_target_locked(uint64_t affinity) {
                                                 offline_mask);
 }
 
+static int task_affinity_excludes_cpu(uint64_t affinity, uint32_t cpu) {
+    return cpu>=64U || (affinity & (1ULL<<cpu))==0;
+}
+
 static int task_scheduler_policy_self_test(void) {
     if (!task_candidate_preferred(16,0,0,0,0)) return -1;
     if (!task_candidate_preferred(17,0,1,16,~0ULL)) return -1;
@@ -832,6 +841,13 @@ static int task_scheduler_policy_self_test(void) {
     if (!task_affinity_mask_has_online_target(0x3ULL,0x3ULL,0x2ULL))
         return -1;
     if (!task_affinity_mask_has_online_target(0x1ULL,0x3ULL,0x2ULL))
+        return -1;
+
+    /* A remote setter running on CPU 0 must still request rescheduling when
+     * the task's actual owner is CPU 2 and the new mask excludes CPU 2. */
+    if (!task_affinity_excludes_cpu(0x1ULL,2U) ||
+        task_affinity_excludes_cpu(0x1ULL,0U) ||
+        !task_affinity_excludes_cpu(0x1ULL,64U))
         return -1;
     return 0;
 }
@@ -1897,6 +1913,7 @@ int task_set_affinity(struct task *task, uint64_t affinity) {
     uint64_t flags;
     uint64_t previous_affinity;
     uint32_t previous_queue=0;
+    uint32_t running_cpu=ZEROOS_MAX_CPUS;
     int online_target=0;
     if (!task_pointer_ok(task) || affinity==0 ||
         (affinity & ~task_valid_cpu_mask())!=0)
@@ -1915,6 +1932,13 @@ int task_set_affinity(struct task *task, uint64_t affinity) {
     if (task->state==TASK_UNUSED || !task_identity_ok(task)) {
         spin_unlock_irqrestore(&task_lock,flags);
         return -1;
+    }
+    if (task->state==TASK_RUNNING) {
+        running_cpu=task_running_cpu_locked(task);
+        if (running_cpu>=ZEROOS_MAX_CPUS) {
+            spin_unlock_irqrestore(&task_lock,flags);
+            return -1;
+        }
     }
     /* The initial online-target probe above is only a fast rejection. A CPU
      * can publish its offline request before we acquire task_lock while its
@@ -1952,7 +1976,7 @@ int task_set_affinity(struct task *task, uint64_t affinity) {
         }
         runqueue_append_locked((uint32_t)owner,task);
     } else if (task->state==TASK_RUNNING &&
-               !(task->cpu_affinity & (1ULL<<task_cpu_index()))) {
+               task_affinity_excludes_cpu(task->cpu_affinity,running_cpu)) {
         task->need_resched=1;
     }
     spin_unlock_irqrestore(&task_lock,flags);
