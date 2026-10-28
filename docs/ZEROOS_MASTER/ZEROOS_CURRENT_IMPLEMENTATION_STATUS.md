@@ -1,13 +1,13 @@
 # ZEROOS — CURRENT IMPLEMENTATION STATUS
 
-Updated: 2026-10-27
-Branch baseline at this refresh: `main` latest observed commit `b1c848f193940bfd18691f942daf6e32d0dae210` (`docs: record merged release-note fix and candidate CI evidence`). PR #16 remains merged as `d6b58292df7e00b4b2f15ba22f3a0405035ee549`.
+Updated: 2026-10-28
+Branch baseline at this refresh: `main` latest observed commit `7c45183332f895ad778f08b98458f580b18a0067` (`test: certify exec user-copy overflow guard`). PR #16 remains merged as `d6b58292df7e00b4b2f15ba22f3a0405035ee549`.
 Status policy: **evidence-weighted estimate; never equate a source file, marker check, architecture document, or host test with a working end-user feature.**
 
-## Current evidence refresh — 2026-10-26
+## Historical evidence refresh — 2026-10-26 (superseded for current HEAD)
 
-- Current `main` HEAD observed on 2026-10-27: `b1c848f193940bfd18691f942daf6e32d0dae210` (`docs: record merged release-note fix and candidate CI evidence`). The connected commit-status query returned no status entries for this SHA; treat CI as **unverified**, not passed or failed. The earlier successful run 1543 belongs to `5d89992d6c78a2a19108385c3fc4979fa3cfe19e`, not this newer HEAD.
-- GitHub Actions run **1543** for that exact HEAD completed **successfully** on 2026-10-26 (`ZEROOS Build`; run URL: https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/40322921742). Its build job concluded success. This is fresh CI evidence, but it is not a substitute for a separately reproduced local `tools/release.sh` run or physical-hardware certification.
+- Historical note: the prior `main` baseline `b1c848f193940bfd18691f942daf6e32d0dae210` is no longer HEAD. The current reviewed `main` SHA is `7c45183332f895ad778f08b98458f580b18a0067`; the current-head status/workflow lookup returned no entries, so CI for this exact SHA is **unverified**.
+- The latest completed main workflow inspected is **#40491492164**, which checked out `b1c848f193940bfd18691f942daf6e32d0dae210`, not current HEAD. That run passed build, clean `make check`, repeated QEMU boot, 4-vCPU SMP, NX-disabled compatibility, failed-IPI recovery, scheduler panic diagnostics, two-boot AHCI/NVMe persistence, production desktop/network smoke, release publication, and stable-ISO byte comparison. The verified ISO SHA-256 was `9d9c5594a4669936e2ac37320a025365018b785768f73d6d52aebfb56a818529`. Run: https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/40491492164. This is strong evidence for that older SHA only; it does not certify current HEAD or physical hardware.
 - The six-file reference-PDF inventory and initial disposition are recorded in `ZEROOS_REFERENCE_PDF_AUDIT_AND_ADOPTION_MATRIX.md`. It is an audit, not implementation credit. The two hardware PDFs added in commit `5f0d1a3a012d1f397e9d5561f5081109ced1e521` still need text/page extraction for a content-level review.
 - The 100-item and 120-item optimization catalogues (220 entries total) still need an individual Adopt / Adapt / Defer / Reject / Hardware-dependent decision ledger.
 - Evidence-weighted estimates remain ~43% overall (Stages 1–10: 92/84/48/43/44/22/15/13/16/10). Do not increase implementation percentages because documentation or CI passed; only verified feature behavior earns credit.
@@ -18,9 +18,9 @@ ZEROOS is a real native x86-64 kernel/desktop-session project with an ISO build 
 
 - **Working build path:** `make` / `make iso`, with the bootable ISO requiring a valid GRUB/El Torito toolchain.
 - **Full verification path:** `make check`; release/boot evidence: `tools/release.sh`.
-- **Latest baseline commit reviewed in this refresh:** `b1c848f193940bfd18691f942daf6e32d0dae210`; the latest commit-status query returned no checks, so no new CI pass is claimed. Documentation-only commits do not increase implementation progress.
+- **Latest baseline commit reviewed in this refresh:** `7c45183332f895ad778f08b98458f580b18a0067`; no current-head workflow/status result was returned, so its CI is unverified. The latest completed main run inspected is #40491492164 for the older `b1c848f` SHA. Documentation-only commits do not increase implementation progress.
 - **PR #16:** merged on 2026-10-17 as `d6b58292`. Its branch CI reported success and included parallel-build dependency fixes, ISO validation/writer fixes, shared 91-milestone boot test, reproducibility checks, and local intent-parser foundations.
-- **Post-merge CI:** this session's GitHub status lookup returned no status entries for `a72c171d`; this is not proof of a passing or failing workflow. Run `tools/release.sh` from a clean checkout and inspect the main-branch Actions run before declaring release certification.
+- **Post-merge CI:** workflow #40491492164 successfully built, boot-tested and published the ISO for `b1c848f`; current `main` (`7c451833`) has no returned check result. Do not attribute the older run to the current SHA.
 - **Physical hardware:** not certified by this status entry. QEMU is not proof of G560 Wi-Fi, GPU acceleration, fan control, Bluetooth, or sustained 1080p playback.
 - **Installer:** a standalone ZEROOS disk installer is not complete; the documented dual-boot path relies on host GRUB.
 - **Dynamic linking:** unsupported ELF dynamic/interpreter segments are rejected. A production dynamic linker is not implemented.
@@ -165,3 +165,11 @@ Added `LIBRARY_REUSE_AND_INTEGRATION_PLAN.md` and indexed it from `MASTER_INDEX.
 - Release-note ordering fix merged to `main` as `1cd514b641d148b4094c0de524925dbd323b92eb`.
 - Exact candidate head `1cb4981e9358563b0dda75671c876307cac80039`, workflow #1553 (run ID `40440843398`): **job succeeded**. Recorded passing steps: release publication policy regression, production diagnostic-retention regression, build, clean `make check`, kernel/ISO artifact verification, repeated QEMU boot gate, scheduler fault certification, two-boot AHCI/NVMe persistence, production ISO build, production desktop/network smoke test, diagnostic preservation. The release publishing step was skipped because this was a pull-request event.
 - Post-merge `main` workflow and current live stable-asset verification are still outstanding; do not infer them from PR CI. Physical hardware certification remains unestablished. Completion estimate unchanged.
+
+
+## Boot-gate integrity candidate — 2026-10-28
+
+- Current `main`'s `tools/boot_test.sh` previously ignored QEMU's exit status with `|| true`, did not remove all prior logs before each iteration, and only checked the 32-bit/long-mode debug markers if a debug log happened to exist. This could allow stale or incomplete evidence to obscure an early QEMU exit.
+- Candidate branch `fix/boot-gate-fail-closed-20261028` changes the shared gate to require the expected timeout status (124), clear serial/debug/QEMU logs for each iteration, and require fresh `B` and `L` debug markers every iteration. The workflow now checks exit statuses for 4-vCPU, NX-disabled, failed-IPI, scheduler-panic, storage persistence and production smoke boots.
+- Added `tools/test_boot_gate_fail_closed.py` for unexpected exits, stale logs, expected-timeout handling, and workflow wiring. Candidate commits: `e754956` (shared gate), `a1449e1` (regression test), `42fb867` (workflow).
+- **Candidate validation is pending** the exact branch CI run. This is test-integrity work, not new kernel functionality. Keep the overall estimate at ~43% until evidence changes; physical-hardware certification remains unestablished.
