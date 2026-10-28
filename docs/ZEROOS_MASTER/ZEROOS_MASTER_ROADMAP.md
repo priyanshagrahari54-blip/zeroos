@@ -824,3 +824,9 @@ The Library reference PDFs have been catalogued in `EXTERNAL_REFERENCE_AUDIT_202
 - Next kernel correctness item: ensure a remote affinity update requests rescheduling based on the CPU actually executing the RUNNING task, not the CPU issuing the setter. Candidate branch `fix/affinity-remote-owner-reschedule-20261028` adds an owner lookup protected by `task_lock`, a fail-closed consistency check, and regression coverage.
 - Exact baseline `main` SHA `218cbc43eaeba24612a91838ee381460aa2212e8` has no returned status entries from the connected lookup; current-main CI is unverified. Candidate SHA `f6450de619a4ea052b84d9394fe0d4dd58d98236` passed Build workflow #1626 and Stage 1 Scheduler CI #47, including clean `make check`, QEMU boot matrix, storage persistence, and production desktop/network smoke. The fix remains unmerged; post-merge `main` workflow and live stable ISO verification remain open.
 - After candidate checks pass: review/merge, verify the post-merge main workflow, then re-check release ISO integrity. The Stage 1 600-second soak and physical-hardware certification remain open. No completion percentage increase.
+
+## Post-merge roadmap evidence — 2026-10-28
+
+- Merged PR #30 at `acae3eba7b2f9c6cf2c52038d7b5606c28f4a077`: affinity updates now test the actual running task owner CPU when deciding whether to set `need_resched`.
+- Candidate Build workflow #1626 and final PR-tip Build workflow #1632 passed build, clean `make check`, QEMU boot matrix, scheduler fault, two-boot AHCI/NVMe persistence, production ISO and desktop/network smoke. Stage 1 Scheduler CI #47 and #53 passed. PR runs skipped actual release publication.
+- Next gates: verify the post-merge `main` workflow and live stable ISO, complete the optional 600-second Stage 1 soak, and gather physical-hardware evidence. Overall completion estimate unchanged.
