@@ -40,6 +40,7 @@ ZEROOS: task context-switch self-test passed.
 ZEROOS: wait queue integration verified.
 ZEROOS: timed sleep integration verified.
 ZEROOS: scheduler policy and affinity self-test passed.
+ZEROOS: scheduler affinity/offline race self-test passed.
 ZEROOS: timer-only preemption stress passed.
 ZEROOS: scheduler fairness and latency stress passed.
 ZEROOS: zombie reaping and slot-reuse stress passed.
