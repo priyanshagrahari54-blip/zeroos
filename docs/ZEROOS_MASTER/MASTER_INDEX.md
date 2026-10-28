@@ -141,3 +141,9 @@ Priority is still boot/release gate → kernel/userspace lifecycle correctness �
 - New candidate: `fix/scheduler-affinity-offline-race-20261028`. `task_set_affinity` now rechecks that at least one requested CPU is online and not offlining while holding `task_lock`, before changing affinity. A policy self-test and boot milestone cover the offline-mask rule; `tools/test_task_affinity_offline_race.py` checks the guard ordering and CI wiring.
 - Exact candidate head `8fe3ee0a97788b762e990ef253238eb51c49b008` passed ZEROOS Build workflow #1610 and Stage 1 Scheduler CI #31: clean check, repeated QEMU, scheduler fault, AHCI/NVMe persistence, production ISO and desktop/network smoke all passed. Release publication was skipped on the PR event. The fix is verified in candidate CI but not merged; current-main CI and live release-asset verification remain open.
 - Release blockers remain: exact-main CI, post-merge stable ISO verification, full Stage 1 scheduler exit evidence/soak, and physical hardware certification. Overall completion estimate unchanged.
+
+## Engineering queue update — 2026-10-28
+
+- Kernel scheduler priority: remote `task_set_affinity()` calls previously tested affinity against the caller CPU rather than the CPU actually running the target task. Candidate branch `fix/affinity-remote-owner-reschedule-20261028` uses the actual owner under `task_lock` and adds host/runtime regression coverage.
+- Baseline `main` SHA: `218cbc43eaeba24612a91838ee381460aa2212e8`; exact-head CI is unverified by the current connected status lookup. Candidate CI is required before merge.
+- The change does not close the Stage 1 soak or physical-hardware gates and does not increase the OS completion estimate.
