@@ -1,6 +1,6 @@
 # ZEROOS — MASTER DOCUMENT INDEX
 Version: 2.4
-Updated: 2026-10-27
+Updated: 2026-10-28
 
 This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md` remains the canonical consolidated product/architecture specification. Stage 6-10 execution is split into dedicated production master documents so an implementation agent can work one stage at a time without losing cross-cutting requirements.
 
@@ -127,3 +127,10 @@ Priority is still boot/release gate → kernel/userspace lifecycle correctness �
 - PR #24 release-note ordering correction is merged to `main` as `1cd514b641d148b4094c0de524925dbd323b92eb`.
 - Candidate workflow #1553 passed build, clean `make check`, QEMU boot, storage persistence, production desktop/network smoke, and release-policy/diagnostic regression gates. Release publication was skipped for the PR event.
 - Remaining verification: post-merge `main` workflow and the live stable ISO's byte identity against the production image from that run. Do not raise completion estimates based on this workflow-only fix.
+
+
+## Current CI and boot-gate evidence — 2026-10-28
+
+- Latest reviewed `main`: `7c45183332f895ad778f08b98458f580b18a0067`; its exact-head CI status is not available from the current lookup.
+- Last inspected completed main run #40491492164 belongs to `b1c848f193940bfd18691f942daf6e32d0dae210`, passed build/QEMU/storage/production smoke and release publication, and verified the stable ISO SHA-256 `9d9c5594a4669936e2ac37320a025365018b785768f73d6d52aebfb56a818529`.
+- Boot-gate integrity candidate: `fix/boot-gate-fail-closed-20261028`; shared QEMU gate and inline CI boots now require expected timeout status, fresh logs and long-mode debug markers. Regression test `tools/test_boot_gate_fail_closed.py` is wired into CI. Candidate CI remains pending; no completion increase is claimed.
