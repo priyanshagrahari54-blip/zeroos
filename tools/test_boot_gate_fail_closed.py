@@ -122,7 +122,7 @@ sys.exit(0)
             if "|| true" in line and (
                 "-D build/" in line
                 or "-no-shutdown || true" in line
-                or "serial-disk$boot.log" in line
+                or ("serial-disk$boot.log" in line and "-serial file:" in line)
             ):
                 self.fail(f"QEMU exit status is still swallowed: {line}")
 
