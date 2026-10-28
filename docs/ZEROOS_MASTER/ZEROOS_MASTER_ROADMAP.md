@@ -798,3 +798,14 @@ The Library reference PDFs have been catalogued in `EXTERNAL_REFERENCE_AUDIT_202
 - Merged PR #24: release notes are now deferred until after stable `zeroos.iso` byte-verification; newly created releases use an explicit pending-verification note. Merge commit: `1cd514b641d148b4094c0de524925dbd323b92eb`.
 - Candidate workflow #1553 passed the build, clean check, QEMU boot, scheduler fault, AHCI/NVMe persistence, production ISO and desktop/network smoke gates. Actual release publication was skipped on the PR event.
 - Next release gate: inspect the post-merge `main` workflow and verify the live stable ISO against that run's production ISO. No OS completion increase claimed.
+
+
+## Execution update — 2026-10-28: fail-closed boot evidence
+
+**Highest-priority current task:** prevent QEMU boot certification from accepting an unexpected emulator exit or stale serial output.
+
+- Candidate branch: `fix/boot-gate-fail-closed-20261028`.
+- Shared `tools/boot_test.sh` now clears per-iteration logs, requires QEMU timeout status 124, fails on missing serial output, and requires both boot-entry and long-mode debug markers for every iteration.
+- `.github/workflows/build.yml` applies explicit status checks to 4-vCPU SMP, NX-disabled, failed-IPI recovery, scheduler panic, storage persistence and production desktop/network boots. Regression coverage is in `tools/test_boot_gate_fail_closed.py`.
+- Current main HEAD `7c45183332f895ad778f08b98458f580b18a0067` has no returned CI result. Workflow #40491492164 passed for older SHA `b1c848f193940bfd18691f942daf6e32d0dae210` and verified its release ISO; that evidence is not transferred to current HEAD.
+- **Gate before merge:** exact candidate workflow must pass the new regression, clean build/check, QEMU boot matrix, storage persistence, production smoke and release guard. The fix strengthens test evidence; it does not earn kernel feature-completion credit. Hardware/soak and the remaining Stage 1 scheduler certification work remain open.
