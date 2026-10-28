@@ -14,6 +14,7 @@ require_marker "stage1-scheduler-cert" \
   "$repo_root/kernel/kernel.c" "$repo_root/kernel/task.c" -- \
   "ZEROOS: scheduler context bounds self-test passed." \
   "ZEROOS: scheduler priority-aging policy self-test passed." \
+  "ZEROOS: scheduler affinity/offline race self-test passed." \
   "ZEROOS: scheduler deterministic trace: 01-02-04-08-10-20-40." \
   "ZEROOS: scheduler certification passed." \
   "ZEROOS PANIC: scheduler panic diagnostics self-test" \

@@ -793,6 +793,30 @@ static int task_candidate_preferred(uint8_t priority, uint64_t age,
            (priority==selected_priority && age>selected_age);
 }
 
+/* Pure mask predicate shared by the affinity race self-test and the
+ * live setter. An AP with its offline request published is not an eligible
+ * target even while cpu_local.online remains true during quiescence. */
+static int task_affinity_mask_has_online_target(uint64_t affinity,
+                                                uint64_t online_mask,
+                                                uint64_t offline_mask) {
+    return (affinity & online_mask & ~offline_mask)!=0;
+}
+
+static int task_affinity_has_online_target_locked(uint64_t affinity) {
+    uint64_t online_mask=0;
+    uint64_t offline_mask=0;
+    for (uint32_t cpu=0; cpu<ZEROOS_MAX_CPUS && cpu<64U; ++cpu) {
+        uint64_t bit=1ULL<<cpu;
+        const struct cpu_local *local=cpu_local_for_id(cpu);
+        if (local && __atomic_load_n(&local->online,__ATOMIC_ACQUIRE))
+            online_mask|=bit;
+        if (__atomic_load_n(&cpu_offline_requested[cpu],__ATOMIC_ACQUIRE))
+            offline_mask|=bit;
+    }
+    return task_affinity_mask_has_online_target(affinity,online_mask,
+                                                offline_mask);
+}
+
 static int task_scheduler_policy_self_test(void) {
     if (!task_candidate_preferred(16,0,0,0,0)) return -1;
     if (!task_candidate_preferred(17,0,1,16,~0ULL)) return -1;
@@ -800,6 +824,15 @@ static int task_scheduler_policy_self_test(void) {
     if (!task_candidate_preferred(16,101,1,16,100)) return -1;
     if (task_candidate_preferred(16,99,1,16,100)) return -1;
     if (task_candidate_preferred(16,100,1,16,100)) return -1;
+
+    /* Reproduce the hot-offline window: the target still appears online in
+     * cpu_local, but its offline request excludes it from new affinities. */
+    if (task_affinity_mask_has_online_target(0x2ULL,0x3ULL,0x2ULL))
+        return -1;
+    if (!task_affinity_mask_has_online_target(0x3ULL,0x3ULL,0x2ULL))
+        return -1;
+    if (!task_affinity_mask_has_online_target(0x1ULL,0x3ULL,0x2ULL))
+        return -1;
     return 0;
 }
 
@@ -1114,6 +1147,7 @@ int task_system_init(void) {
     if (task_scheduler_policy_self_test()!=0)
         return -1;
     serial_write_public("ZEROOS: scheduler priority-aging policy self-test passed.\n");
+    serial_write_public("ZEROOS: scheduler affinity/offline race self-test passed.\n");
 
     for (int i=0;i<ZEROOS_MAX_TASKS;++i) {
         tasks[i].id=0;
@@ -1879,6 +1913,14 @@ int task_set_affinity(struct task *task, uint64_t affinity) {
         return -1;
     flags=spin_lock_irqsave(&task_lock);
     if (task->state==TASK_UNUSED || !task_identity_ok(task)) {
+        spin_unlock_irqrestore(&task_lock,flags);
+        return -1;
+    }
+    /* The initial online-target probe above is only a fast rejection. A CPU
+     * can publish its offline request before we acquire task_lock while its
+     * online bit is still set. Revalidate under task_lock for RUNNING as well
+     * as RUNNABLE tasks, before changing affinity or setting need_resched. */
+    if (!task_affinity_has_online_target_locked(affinity)) {
         spin_unlock_irqrestore(&task_lock,flags);
         return -1;
     }

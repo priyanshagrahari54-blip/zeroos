@@ -809,3 +809,12 @@ The Library reference PDFs have been catalogued in `EXTERNAL_REFERENCE_AUDIT_202
 - `.github/workflows/build.yml` applies explicit status checks to 4-vCPU SMP, NX-disabled, failed-IPI recovery, scheduler panic, storage persistence and production desktop/network boots. Regression coverage is in `tools/test_boot_gate_fail_closed.py`.
 - Current main HEAD `7c45183332f895ad778f08b98458f580b18a0067` has no returned CI result. Workflow #40491492164 passed for older SHA `b1c848f193940bfd18691f942daf6e32d0dae210` and verified its release ISO; that evidence is not transferred to current HEAD.
 - **Gate before merge:** exact candidate workflow must pass the new regression, clean build/check, QEMU boot matrix, storage persistence, production smoke and release guard. The fix strengthens test evidence; it does not earn kernel feature-completion credit. Hardware/soak and the remaining Stage 1 scheduler certification work remain open.
+
+## Execution update — 2026-10-28: affinity update during CPU hot-offline
+
+**Priority:** kernel scheduler correctness before broader desktop/browser/media work.
+
+- Main baseline: `731e9e8856976beb2e717eef169ded72f4917741`; exact-head CI status is not available from the current connector lookup.
+- Candidate branch `fix/scheduler-affinity-offline-race-20261028` revalidates an affinity mask under `task_lock` before mutation. This prevents a RUNNING task from accepting a mask whose only target has already published a CPU-offline request while its online flag is still true.
+- Regression evidence added: pure offline-mask policy self-test, serial marker required by shared QEMU boot milestones and Stage 1 certification, and `tools/test_task_affinity_offline_race.py` wired into CI.
+- Exact candidate head `8fe3ee0a97788b762e990ef253238eb51c49b008` passed ZEROOS Build workflow #1610 and Stage 1 Scheduler CI #31, including build, clean `make check`, repeated QEMU boot matrix, scheduler panic diagnostics, two-boot AHCI/NVMe persistence, production ISO and desktop/network smoke. Release publication was skipped on the PR event. Next gate: review/merge the candidate, then verify the post-merge `main` workflow and live stable ISO. The 600-second Stage 1 soak and physical hardware matrix remain open. No completion percentage increase.
