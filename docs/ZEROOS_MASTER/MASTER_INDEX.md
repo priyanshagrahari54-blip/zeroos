@@ -139,5 +139,5 @@ Priority is still boot/release gate â†’ kernel/userspace lifecycle correctness â
 
 - Latest `main` ref: `731e9e8856976beb2e717eef169ded72f4917741`; exact-head CI status was not returned, so current CI remains unverified.
 - New candidate: `fix/scheduler-affinity-offline-race-20261028`. `task_set_affinity` now rechecks that at least one requested CPU is online and not offlining while holding `task_lock`, before changing affinity. A policy self-test and boot milestone cover the offline-mask rule; `tools/test_task_affinity_offline_race.py` checks the guard ordering and CI wiring.
-- Candidate CI is pending. Do not count this as a verified runtime fix until the exact branch passes the full build/check/QEMU/storage/desktop workflow.
+- Exact candidate head `8fe3ee0a97788b762e990ef253238eb51c49b008` passed ZEROOS Build workflow #1610 and Stage 1 Scheduler CI #31: clean check, repeated QEMU, scheduler fault, AHCI/NVMe persistence, production ISO and desktop/network smoke all passed. Release publication was skipped on the PR event. The fix is verified in candidate CI but not merged; current-main CI and live release-asset verification remain open.
 - Release blockers remain: exact-main CI, post-merge stable ISO verification, full Stage 1 scheduler exit evidence/soak, and physical hardware certification. Overall completion estimate unchanged.
