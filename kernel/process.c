@@ -225,7 +225,7 @@ int process_acquire_live(process_id_t pid, struct process **process_out) {
 int process_release_live(struct process *process) {
     uint64_t flags;
     struct process *parent_to_wake=0;
-    if (!process)
+    if (!process_pointer_valid(process))
         return -1;
     flags=spin_lock_irqsave(&process_lock);
     if (process_lookup_locked(process->pid)!=process ||
@@ -250,7 +250,7 @@ struct process *process_find_child(struct process *parent, process_id_t pid) {
     struct process *child;
     struct process *match=0;
 
-    if (!parent)
+    if (!process_pointer_valid(parent))
         return 0;
     flags=spin_lock_irqsave(&process_lock);
     if (process_lookup_locked(parent->pid)!=parent ||
@@ -276,7 +276,7 @@ int process_child_wait_prepare(struct process *parent, process_id_t pid,
     uint64_t process_flags;
     uint64_t wait_flags;
 
-    if (!parent || !flags_out)
+    if (!process_pointer_valid(parent) || !flags_out)
         return -ZEROOS_EINVAL;
     process_flags=spin_lock_irqsave(&process_lock);
     if (process_lookup_locked(parent->pid)!=parent ||
@@ -317,7 +317,7 @@ int process_child_wait_prepare(struct process *parent, process_id_t pid,
 int process_thread_reserve(struct process *process) {
     uint64_t flags=spin_lock_irqsave(&process_lock);
 
-    if (!process || process_lookup_locked(process->pid)!=process ||
+    if (!process_pointer_valid(process) || process_lookup_locked(process->pid)!=process ||
         process->state==PROCESS_ZOMBIE) {
         spin_unlock_irqrestore(&process_lock,flags);
         return -1;
@@ -342,7 +342,7 @@ static void process_thread_unreserve_locked(struct process *process) {
 
 int process_thread_unreserve(struct process *process) {
     uint64_t flags=spin_lock_irqsave(&process_lock);
-    if (!process || process_lookup_locked(process->pid)!=process ||
+    if (!process_pointer_valid(process) || process_lookup_locked(process->pid)!=process ||
         process->creating_threads==0) {
         spin_unlock_irqrestore(&process_lock,flags);
         return -1;
@@ -355,7 +355,7 @@ int process_thread_unreserve(struct process *process) {
 int process_thread_attach(struct process *process, struct thread *thread) {
     uint64_t flags=spin_lock_irqsave(&process_lock);
 
-    if (!process || !thread ||
+    if (!process_pointer_valid(process) || !thread ||
         process_lookup_locked(process->pid)!=process ||
         process->state==PROCESS_ZOMBIE ||
         process->creating_threads==0) {
@@ -502,7 +502,7 @@ int process_thread_reap_begin(struct thread *thread,
 
 int process_thread_reap_finish(struct process *process) {
     uint64_t flags;
-    if (!process) return -1;
+    if (!process_pointer_valid(process)) return -1;
     flags=spin_lock_irqsave(&process_lock);
     if (process_lookup_locked(process->pid)!=process ||
         process->reaping_threads==0) {
@@ -518,7 +518,7 @@ int process_reap(struct process *process, uint64_t *exit_status_out) {
     uint64_t flags;
     struct process *parent;
 
-    if (!process) return -1;
+    if (!process_pointer_valid(process)) return -1;
     flags=spin_lock_irqsave(&process_lock);
 
     if (process_lookup_locked(process->pid)!=process ||
@@ -586,7 +586,7 @@ int process_abort_new(struct process *process) {
     uint64_t flags;
     struct process *parent;
 
-    if (!process)
+    if (!process_pointer_valid(process))
         return -1;
     flags=spin_lock_irqsave(&process_lock);
     if (process_lookup_locked(process->pid)!=process ||
@@ -622,7 +622,7 @@ int process_abort_new(struct process *process) {
 int process_set_limits(struct process *process, uint64_t max_threads,
                        uint64_t max_children,
                        uint64_t max_address_space_pages) {
-    if (!process || max_threads==0 || max_children==0 ||
+    if (!process_pointer_valid(process) || max_threads==0 || max_children==0 ||
         max_address_space_pages==0)
         return -1;
     uint64_t flags=spin_lock_irqsave(&process_lock);
@@ -647,7 +647,7 @@ int process_set_limits(struct process *process, uint64_t max_threads,
 int process_get_limits(const struct process *process, uint64_t *max_threads,
                        uint64_t *max_children,
                        uint64_t *max_address_space_pages) {
-    if (!process) return -1;
+    if (!process_pointer_valid(process)) return -1;
     uint64_t flags=spin_lock_irqsave(&process_lock);
     if (process_lookup_locked(process->pid)!=process ||
         process->state==PROCESS_UNUSED) {
@@ -667,7 +667,7 @@ int process_address_space_map_page(struct process *process,
                                    uint64_t physical_address,
                                    uint64_t flags) {
     uint64_t irq_flags=spin_lock_irqsave(&process_lock);
-    if (!process || process_lookup_locked(process->pid)!=process ||
+    if (!process_pointer_valid(process) || process_lookup_locked(process->pid)!=process ||
         process->state==PROCESS_UNUSED || process->state==PROCESS_ZOMBIE ||
         process->resident_pages!=
             vmm_space_mapped_pages(&process->address_space) ||
@@ -688,7 +688,7 @@ int process_address_space_map_page(struct process *process,
 int process_address_space_unmap_page(struct process *process,
                                      uint64_t virtual_address) {
     uint64_t irq_flags=spin_lock_irqsave(&process_lock);
-    if (!process || process_lookup_locked(process->pid)!=process ||
+    if (!process_pointer_valid(process) || process_lookup_locked(process->pid)!=process ||
         process->state==PROCESS_UNUSED || process->state==PROCESS_ZOMBIE ||
         process->resident_pages==0 ||
         process->resident_pages!=
@@ -710,7 +710,7 @@ int process_address_space_unmap_range(struct process *process,
                                       const uint64_t *physical_pages,
                                       uint64_t page_count) {
     uint64_t irq_flags;
-    if (!process || !physical_pages || !page_count ||
+    if (!process_pointer_valid(process) || !physical_pages || !page_count ||
         page_count>process->max_address_space_pages ||
         page_count>~0ULL/VMM_PAGE_SIZE ||
         virtual_address&(VMM_PAGE_SIZE-1ULL) ||
@@ -744,7 +744,7 @@ int process_address_space_unmap_range(struct process *process,
 }
 
 uint64_t process_address_space_mapped_pages(const struct process *process) {
-    if (!process) return 0;
+    if (!process_pointer_valid(process)) return 0;
     uint64_t irq_flags=spin_lock_irqsave(&process_lock);
     uint64_t count=0;
     if (process_lookup_locked(process->pid)==process &&
@@ -757,7 +757,7 @@ uint64_t process_address_space_mapped_pages(const struct process *process) {
 int process_address_space_is_user_range(const struct process *process,
                                         uint64_t virtual_address,
                                         uint64_t length, uint64_t write) {
-    if (!process) return 0;
+    if (!process_pointer_valid(process)) return 0;
     uint64_t irq_flags=spin_lock_irqsave(&process_lock);
     int valid=process_lookup_locked(process->pid)==process &&
               process->state!=PROCESS_UNUSED &&
@@ -770,7 +770,7 @@ int process_address_space_is_user_range(const struct process *process,
 uint64_t process_child_count(const struct process *process) {
     uint64_t flags;
     uint64_t count=0;
-    if (!process) return 0;
+    if (!process_pointer_valid(process)) return 0;
     flags=spin_lock_irqsave(&process_lock);
     if (process_lookup_locked(process->pid)==process &&
         process->state!=PROCESS_UNUSED)
@@ -782,7 +782,7 @@ uint64_t process_child_count(const struct process *process) {
 uint64_t process_thread_count(const struct process *process) {
     uint64_t flags;
     uint64_t count=0;
-    if (!process) return 0;
+    if (!process_pointer_valid(process)) return 0;
     flags=spin_lock_irqsave(&process_lock);
     if (process_lookup_locked(process->pid)==process &&
         process->state!=PROCESS_UNUSED)
@@ -794,7 +794,7 @@ uint64_t process_thread_count(const struct process *process) {
 uint64_t process_live_thread_count(const struct process *process) {
     uint64_t flags;
     uint64_t count=0;
-    if (!process) return 0;
+    if (!process_pointer_valid(process)) return 0;
     flags=spin_lock_irqsave(&process_lock);
     if (process_lookup_locked(process->pid)==process &&
         process->state!=PROCESS_UNUSED)
@@ -808,7 +808,7 @@ int process_address_space_is_executable(const struct process *process,
                                         uint64_t length) {
     uint64_t flags;
     int executable=0;
-    if (!process || length==0)
+    if (!process_pointer_valid(process) || length==0)
         return 0;
     flags=spin_lock_irqsave(&process_lock);
     if (process_lookup_locked(process->pid)==process &&
