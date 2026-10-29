@@ -121,3 +121,9 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - PR #30 merged as `acae3eba7b2f9c6cf2c52038d7b5606c28f4a077`. The fix makes a RUNNING task's affinity update use its actual owner CPU rather than the setter CPU.
 - Candidate workflow #1626 (run ID `40630820065`) passed on code head `f6450de619a4ea052b84d9394fe0d4dd58d98236`; Build workflow #1632 (run ID `40631843123`) passed on the final PR tip `a533d6ecdd6db4345ed473ecd9240ce287257256`. Stage 1 Scheduler CI #47 and #53 also passed. The Build runs passed regression tests, `make`, clean `make check`, kernel/ISO verification, repeated QEMU boot matrix, scheduler fault certification, two-boot AHCI/NVMe persistence, production ISO and desktop/network smoke. PR release publication was skipped as intended.
 - Post-merge `main` CI and live stable ISO verification remain unconfirmed by the available status lookup. The 600-second Stage 1 soak and physical hardware are separate outstanding evidence gates.
+
+## Candidate regression — 2026-10-29 (pending)
+- Added a guard to `process_create` so a non-null parent must be a correctly aligned object in the static process table before `state`, `pid`, or child-count fields are read.
+- Added `tools/test_process_parent_validation.py` to check source ordering, the runtime invalid-pointer probe, required boot marker, and CI placement.
+- Added a certification probe using pointer value `1`, a sentinel PID that must remain unchanged on rejection, and required marker `ZEROOS: invalid process parent pointer rejected.`.
+- **Not yet validated:** candidate CI, `make check`, QEMU boot milestone, and the production ISO smoke tests must pass on the exact branch head. No pass is claimed here.
