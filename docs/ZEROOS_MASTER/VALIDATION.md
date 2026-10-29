@@ -1,6 +1,6 @@
 # ZEROOS — Validation and Support Matrix
 
-Updated: 2026-10-28. This is the evidence policy for Stages 1-10; it must not overstate support.
+Updated: 2026-10-29. This is the evidence policy for Stages 1-10; it must not overstate support.
 
 The binding acceptance checklist is [ZEROOS_10_STAGE_HARDENING.md](./ZEROOS_10_STAGE_HARDENING.md). Current estimates and known limitations are in [ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md](./ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md).
 
@@ -138,3 +138,9 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - Candidate code head `f767841d9e6dd98df07005d44ebaf086472512e0`: ZEROOS Build workflow #1651 **SUCCESS** and Stage 1 Scheduler CI #72 **SUCCESS**.
 - Workflow #1651 passed the new `tools/test_process_parent_validation.py` step, all earlier source regression checks, `make`, clean `make check`, kernel/ISO checks, ordered QEMU boot milestones (including invalid-parent rejection), scheduler panic-diagnostics certification, two-boot AHCI/NVMe persistence, production ISO build, production desktop/network smoke, and diagnostic/artifact steps.
 - PR event skipped actual release publication by design. Main SHA `12cdca17f8359fdb6884ec6f1b5b67cc2a78071b` has no returned status entries from the connected lookup; post-merge main CI and live stable ISO verification remain unconfirmed. After this evidence-note update, rerun CI for the final documentation tip before merge.
+
+## 2026-10-29 — Process API pointer-provenance candidate (pending)
+- Main SHA reviewed: `b99e5705fa56558637b1983f5f45992d7ae509cb`. The combined-status endpoint returned no checks for this SHA; the connected workflow-run helper filters to PR-triggered runs, so current-main CI remains **unverified**.
+- Candidate branch `fix/process-api-pointer-provenance-20261029` checks that direct process-pointer API arguments identify an aligned static process-table entry before reading fields. The new regression checks 20 APIs, verifies a boot-time probe uses address `1`, and requires marker `ZEROOS: invalid process API pointers rejected.` before the production ISO smoke gate.
+- The exact candidate's Python regression, clean `make check`, repeated QEMU milestones, scheduler fault tests, two-boot AHCI/NVMe persistence and desktop/network smoke are not yet verified. Do not mark this candidate passed until its own workflow finishes.
+- The merged parent-pointer guard's candidate evidence is recorded above; it is not evidence for this broader candidate. Post-merge main CI, live stable ISO verification, long soak and physical hardware remain separate gates.
