@@ -157,3 +157,7 @@ Priority is still boot/release gate → kernel/userspace lifecycle correctness �
 ## Candidate kernel lifecycle fix — 2026-10-29
 - Branch `fix/process-create-parent-pointer-validation-20261029` adds early process-parent pointer provenance validation in `process_create`, plus a boot-time invalid-pointer rejection probe and CI regression script.
 - Candidate CI and QEMU evidence are pending; see `VALIDATION.md`. Do not count this as implemented-and-verified until the exact candidate workflow passes. Existing release and hardware blockers remain open.
+
+## Candidate kernel lifecycle fix — 2026-10-29
+- Branch `fix/process-create-parent-pointer-validation-20261029` adds early process-parent pointer provenance validation in `process_create`, plus a boot-time invalid-pointer rejection probe and CI regression script.
+- Candidate CI and QEMU evidence are pending; see `VALIDATION.md`. Do not count this as implemented-and-verified until the exact candidate workflow passes. Existing release and hardware blockers remain open.
