@@ -840,3 +840,9 @@ The Library reference PDFs have been catalogued in `EXTERNAL_REFERENCE_AUDIT_202
 - Candidate code head `f767841d9e6dd98df07005d44ebaf086472512e0` passed Build workflow #1651 and Stage 1 Scheduler CI #72, including invalid-parent regression, clean `make check`, QEMU boot milestones, scheduler fault, two-boot AHCI/NVMe persistence, production ISO and desktop/network smoke. Release publication was skipped for the PR event.
 - [ ] Re-run required CI for the final documentation tip; review and merge PR #31 only when those checks pass.
 - [ ] Verify post-merge `main` workflow and live stable ISO against the exact production image. Stage 1 long soak and physical-hardware certification remain open; no completion estimate increase.
+
+### Evidence snapshot — 2026-10-29
+- Latest main commit observed: `b99e5705fa56558637b1983f5f45992d7ae509cb`; exact-main CI remains unverified by the available status lookup.
+- Next code-first hardening candidate: validate process-pointer provenance before any field dereference across public process lifecycle, wait, limits, address-space and counter APIs. Regression and boot-time negative probe are wired in branch `fix/process-api-pointer-provenance-20261029`; candidate CI is pending.
+- Required sequence: candidate regression -> clean `make check` -> repeated QEMU boot milestones -> scheduler/fault gates -> AHCI/NVMe persistence -> production desktop/network smoke -> merge review -> post-merge main workflow -> live stable ISO comparison. Do not treat a PR pass as a post-merge release pass.
+- Physical G560 certification, Stage 1 soak, recovery UX, production browser/media, Windows/Android runtimes and full ZERO AI backend remain separate roadmap work. Completion estimate unchanged.
