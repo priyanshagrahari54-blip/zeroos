@@ -25,6 +25,9 @@ jobs:
       - name: Verify scheduler affinity hot-offline race
         run: python3 tools/test_task_affinity_offline_race.py
 
+      - name: Verify invalid process parent pointer rejection
+        run: python3 tools/test_process_parent_validation.py
+
       - name: Install build and QEMU tools
         run: |
           sudo apt-get update

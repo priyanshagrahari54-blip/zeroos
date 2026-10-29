@@ -361,6 +361,13 @@ static void process_thread_probe_monitor_step(void) {
     uint64_t phase=atomic_u64_load(&process_thread_probe_phase);
 
     if (phase==0) {
+        process_id_t rejected_parent_pid=0xfeedULL;
+        if (process_create((struct process *)(uintptr_t)1,
+                           &rejected_parent_pid)==0 ||
+            rejected_parent_pid!=0xfeedULL)
+            process_thread_probe_fail("invalid process parent pointer was accepted");
+        serial_write_public("ZEROOS: invalid process parent pointer rejected.\n");
+
         if (process_create(0,&process_probe_parent_pid)!=0)
             process_thread_probe_fail("process/thread parent creation failed");
         process_probe_parent=process_lookup(process_probe_parent_pid);

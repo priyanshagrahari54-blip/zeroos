@@ -122,7 +122,11 @@ int process_create(struct process *parent, process_id_t *pid_out) {
     uint64_t flags=spin_lock_irqsave(&process_lock);
     int slot=-1;
 
-    if (parent && (parent->state==PROCESS_UNUSED ||
+    /* Validate the pointer's provenance before reading any parent fields.
+     * process_create() is a kernel API, but a stale/corrupt caller pointer
+     * must be rejected rather than turning a lifecycle error into a #PF. */
+    if (parent && (!process_pointer_valid(parent) ||
+                   parent->state==PROCESS_UNUSED ||
                    parent->state==PROCESS_ZOMBIE ||
                    process_lookup_locked(parent->pid)!=parent ||
                    parent->child_count>=parent->max_children)) {

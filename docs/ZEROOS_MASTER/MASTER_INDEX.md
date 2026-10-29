@@ -153,3 +153,15 @@ Priority is still boot/release gate → kernel/userspace lifecycle correctness �
 - PR #30's remote-affinity owner fix is merged to `main` at `acae3eba7b2f9c6cf2c52038d7b5606c28f4a077`.
 - Candidate Build workflows #1626 and #1632 and Stage 1 Scheduler workflows #47 and #53 passed. Verified gates include host regressions, clean `make check`, repeated QEMU boots, scheduler fault certification, two-boot AHCI/NVMe persistence, production ISO and desktop/network smoke. Release publication was skipped for PR events.
 - Post-merge main workflow and live stable ISO verification are not yet established. The Stage 1 soak and physical hardware matrix remain open; no completion estimate increase.
+
+## Candidate kernel lifecycle fix — 2026-10-29
+- Branch `fix/process-create-parent-pointer-validation-20261029` adds early process-parent pointer provenance validation in `process_create`, plus a boot-time invalid-pointer rejection probe and CI regression script.
+- Candidate CI and QEMU evidence are pending; see `VALIDATION.md`. Do not count this as implemented-and-verified until the exact candidate workflow passes. Existing release and hardware blockers remain open.
+
+## Candidate kernel lifecycle fix — 2026-10-29
+- Branch `fix/process-create-parent-pointer-validation-20261029` adds early process-parent pointer provenance validation in `process_create`, plus a boot-time invalid-pointer rejection probe and CI regression script.
+- Candidate CI and QEMU evidence are pending; see `VALIDATION.md`. Do not count this as implemented-and-verified until the exact candidate workflow passes. Existing release and hardware blockers remain open.
+
+## Process lifecycle candidate — evidence update 2026-10-29
+- `process_create` parent-provenance guard and runtime invalid-pointer probe passed candidate Build workflow #1651 and Stage 1 Scheduler CI #72 at code head `f767841d9e6dd98df07005d44ebaf086472512e0`.
+- The full candidate build/check/QEMU/storage/production desktop smoke gates passed; PR release publication was skipped as intended. This does not establish current-main CI or live release integrity. See `VALIDATION.md`; completion estimate unchanged.
