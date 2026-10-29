@@ -80,8 +80,8 @@ def function_body(source: str, signature: str) -> str:
 
 def strip_c_comments(source: str) -> str:
     import re
-    source = re.sub(r"/\\*.*?\\*/", "", source, flags=re.S)
-    return re.sub(r"//[^\\n]*", "", source)
+    source = re.sub(r"/\*.*?\*/", "", source, flags=re.S)
+    return re.sub(r"//[^\n]*", "", source)
 
 
 class ProcessApiPointerValidationTests(unittest.TestCase):
