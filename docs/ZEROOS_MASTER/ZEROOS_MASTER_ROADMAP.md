@@ -831,12 +831,8 @@ The Library reference PDFs have been catalogued in `EXTERNAL_REFERENCE_AUDIT_202
 - Candidate Build workflow #1626 and final PR-tip Build workflow #1632 passed build, clean `make check`, QEMU boot matrix, scheduler fault, two-boot AHCI/NVMe persistence, production ISO and desktop/network smoke. Stage 1 Scheduler CI #47 and #53 passed. PR runs skipped actual release publication.
 - Next gates: verify the post-merge `main` workflow and live stable ISO, complete the optional 600-second Stage 1 soak, and gather physical-hardware evidence. Overall completion estimate unchanged.
 
-## Kernel lifecycle follow-up — 2026-10-29 (candidate, unverified)
-- [ ] Validate and merge process-parent provenance guard: reject pointers outside/alignment-incompatible with the process table before any dereference; retain a boot-time bad-pointer regression probe and source-order CI test.
-- [ ] Run the exact candidate workflow: regression scripts, clean `make check`, QEMU boot milestones, SMP/feature variants, storage persistence, production ISO and desktop/network smoke tests.
-- [ ] After merge, verify the resulting `main` workflow and live stable ISO separately. This patch does not close browser/media/AI, physical-hardware, or recovery milestones and does not change the overall completion estimate.
-
-## Kernel lifecycle follow-up — evidence update 2026-10-29
-- Candidate code head `f767841d9e6dd98df07005d44ebaf086472512e0` passed Build workflow #1651 and Stage 1 Scheduler CI #72, including invalid-parent regression, clean `make check`, QEMU boot milestones, scheduler fault, two-boot AHCI/NVMe persistence, production ISO and desktop/network smoke. Release publication was skipped for the PR event.
-- [ ] Re-run required CI for the final documentation tip; review and merge PR #31 only when those checks pass.
-- [ ] Verify post-merge `main` workflow and live stable ISO against the exact production image. Stage 1 long soak and physical-hardware certification remain open; no completion estimate increase.
+## Kernel lifecycle follow-up — 2026-10-29 (merged)
+- [x] Merge process-parent provenance guard and regression coverage: PR #31 merged as `b99e5705fa56558637b1983f5f45992d7ae509cb`.
+- Candidate Build workflow #1651 and final-tip Build workflow #1657 passed; Stage 1 Scheduler CI #72 and #78 passed. Verified checks include the new invalid-parent regression, clean `make check`, QEMU boot milestones, scheduler fault, AHCI/NVMe two-boot persistence, production ISO and desktop/network smoke. PR publication was skipped.
+- [ ] Verify the push-triggered workflow for the exact post-merge `main` commit and verify the live stable ISO against that run's production image.
+- [ ] Complete the optional 600-second Stage 1 soak and physical-hardware certification. Browser/media/AI/compatibility and recovery work remain governed by their existing roadmap gates. Overall completion estimate unchanged.
