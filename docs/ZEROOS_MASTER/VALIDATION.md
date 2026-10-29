@@ -133,3 +133,8 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - Added `tools/test_process_parent_validation.py` to check source ordering, the runtime invalid-pointer probe, required boot marker, and CI placement.
 - Added a certification probe using pointer value `1`, a sentinel PID that must remain unchanged on rejection, and required marker `ZEROOS: invalid process parent pointer rejected.`.
 - **Not yet validated:** candidate CI, `make check`, QEMU boot milestone, and production ISO smoke tests must pass on the exact branch head. No pass is claimed here.
+
+## Process-parent provenance regression — 2026-10-29 evidence
+- Candidate code head `f767841d9e6dd98df07005d44ebaf086472512e0`: ZEROOS Build workflow #1651 **SUCCESS** and Stage 1 Scheduler CI #72 **SUCCESS**.
+- Workflow #1651 passed the new `tools/test_process_parent_validation.py` step, all earlier source regression checks, `make`, clean `make check`, kernel/ISO checks, ordered QEMU boot milestones (including invalid-parent rejection), scheduler panic-diagnostics certification, two-boot AHCI/NVMe persistence, production ISO build, production desktop/network smoke, and diagnostic/artifact steps.
+- PR event skipped actual release publication by design. Main SHA `12cdca17f8359fdb6884ec6f1b5b67cc2a78071b` has no returned status entries from the connected lookup; post-merge main CI and live stable ISO verification remain unconfirmed. After this evidence-note update, rerun CI for the final documentation tip before merge.
