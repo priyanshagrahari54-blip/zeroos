@@ -835,3 +835,8 @@ The Library reference PDFs have been catalogued in `EXTERNAL_REFERENCE_AUDIT_202
 - [ ] Validate and merge process-parent provenance guard: reject pointers outside/alignment-incompatible with the process table before any dereference; retain a boot-time bad-pointer regression probe and source-order CI test.
 - [ ] Run the exact candidate workflow: regression scripts, clean `make check`, QEMU boot milestones, SMP/feature variants, storage persistence, production ISO and desktop/network smoke tests.
 - [ ] After merge, verify the resulting `main` workflow and live stable ISO separately. This patch does not close browser/media/AI, physical-hardware, or recovery milestones and does not change the overall completion estimate.
+
+## Kernel lifecycle follow-up — evidence update 2026-10-29
+- Candidate code head `f767841d9e6dd98df07005d44ebaf086472512e0` passed Build workflow #1651 and Stage 1 Scheduler CI #72, including invalid-parent regression, clean `make check`, QEMU boot milestones, scheduler fault, two-boot AHCI/NVMe persistence, production ISO and desktop/network smoke. Release publication was skipped for the PR event.
+- [ ] Re-run required CI for the final documentation tip; review and merge PR #31 only when those checks pass.
+- [ ] Verify post-merge `main` workflow and live stable ISO against the exact production image. Stage 1 long soak and physical-hardware certification remain open; no completion estimate increase.
