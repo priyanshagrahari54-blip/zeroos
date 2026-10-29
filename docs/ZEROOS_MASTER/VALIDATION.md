@@ -122,19 +122,8 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - Candidate workflow #1626 (run ID `40630820065`) passed on code head `f6450de619a4ea052b84d9394fe0d4dd58d98236`; Build workflow #1632 (run ID `40631843123`) passed on the final PR tip `a533d6ecdd6db4345ed473ecd9240ce287257256`. Stage 1 Scheduler CI #47 and #53 also passed. The Build runs passed regression tests, `make`, clean `make check`, kernel/ISO verification, repeated QEMU boot matrix, scheduler fault certification, two-boot AHCI/NVMe persistence, production ISO and desktop/network smoke. PR release publication was skipped as intended.
 - Post-merge `main` CI and live stable ISO verification remain unconfirmed by the available status lookup. The 600-second Stage 1 soak and physical hardware are separate outstanding evidence gates.
 
-## Candidate regression — 2026-10-29 (pending)
-- Added a guard to `process_create` so a non-null parent must be a correctly aligned object in the static process table before `state`, `pid`, or child-count fields are read.
-- Added `tools/test_process_parent_validation.py` to check source ordering, the runtime invalid-pointer probe, required boot marker, and CI placement.
-- Added a certification probe using pointer value `1`, a sentinel PID that must remain unchanged on rejection, and required marker `ZEROOS: invalid process parent pointer rejected.`.
-- **Not yet validated:** candidate CI, `make check`, QEMU boot milestone, and the production ISO smoke tests must pass on the exact branch head. No pass is claimed here.
-
-## Candidate regression — 2026-10-29 (pending)
-- Added a guard to `process_create` so a non-null parent must be a correctly aligned object in the static process table before `state`, `pid`, or child-count fields are read.
-- Added `tools/test_process_parent_validation.py` to check source ordering, the runtime invalid-pointer probe, required boot marker, and CI placement.
-- Added a certification probe using pointer value `1`, a sentinel PID that must remain unchanged on rejection, and required marker `ZEROOS: invalid process parent pointer rejected.`.
-- **Not yet validated:** candidate CI, `make check`, QEMU boot milestone, and production ISO smoke tests must pass on the exact branch head. No pass is claimed here.
-
-## Process-parent provenance regression — 2026-10-29 evidence
-- Candidate code head `f767841d9e6dd98df07005d44ebaf086472512e0`: ZEROOS Build workflow #1651 **SUCCESS** and Stage 1 Scheduler CI #72 **SUCCESS**.
-- Workflow #1651 passed the new `tools/test_process_parent_validation.py` step, all earlier source regression checks, `make`, clean `make check`, kernel/ISO checks, ordered QEMU boot milestones (including invalid-parent rejection), scheduler panic-diagnostics certification, two-boot AHCI/NVMe persistence, production ISO build, production desktop/network smoke, and diagnostic/artifact steps.
-- PR event skipped actual release publication by design. Main SHA `12cdca17f8359fdb6884ec6f1b5b67cc2a78071b` has no returned status entries from the connected lookup; post-merge main CI and live stable ISO verification remain unconfirmed. After this evidence-note update, rerun CI for the final documentation tip before merge.
+## Process-parent provenance fix — merged evidence 2026-10-29
+- PR #31 merged as `b99e5705fa56558637b1983f5f45992d7ae509cb`.
+- Code candidate `f767841d9e6dd98df07005d44ebaf086472512e0` passed Build workflow #1651 and Stage 1 Scheduler CI #72. The final documentation tip `42051f51140a3f0150376d00e3849de5a969c1e8` also passed Build workflow #1657 and Stage 1 Scheduler CI #78.
+- Both Build runs passed `tools/test_process_parent_validation.py`, existing source regressions, `make`, clean `make check`, kernel/ISO verification, QEMU boot milestones including invalid-parent rejection, scheduler panic-diagnostics certification, two-boot AHCI/NVMe persistence, production ISO build, and production desktop/network smoke. PR publication was skipped as intended.
+- The post-merge `main` workflow and live stable release ISO have not yet been independently verified. Physical hardware and the optional 600-second Stage 1 soak remain separate gates.
