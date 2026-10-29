@@ -154,14 +154,7 @@ Priority is still boot/release gate → kernel/userspace lifecycle correctness �
 - Candidate Build workflows #1626 and #1632 and Stage 1 Scheduler workflows #47 and #53 passed. Verified gates include host regressions, clean `make check`, repeated QEMU boots, scheduler fault certification, two-boot AHCI/NVMe persistence, production ISO and desktop/network smoke. Release publication was skipped for PR events.
 - Post-merge main workflow and live stable ISO verification are not yet established. The Stage 1 soak and physical hardware matrix remain open; no completion estimate increase.
 
-## Candidate kernel lifecycle fix — 2026-10-29
-- Branch `fix/process-create-parent-pointer-validation-20261029` adds early process-parent pointer provenance validation in `process_create`, plus a boot-time invalid-pointer rejection probe and CI regression script.
-- Candidate CI and QEMU evidence are pending; see `VALIDATION.md`. Do not count this as implemented-and-verified until the exact candidate workflow passes. Existing release and hardware blockers remain open.
-
-## Candidate kernel lifecycle fix — 2026-10-29
-- Branch `fix/process-create-parent-pointer-validation-20261029` adds early process-parent pointer provenance validation in `process_create`, plus a boot-time invalid-pointer rejection probe and CI regression script.
-- Candidate CI and QEMU evidence are pending; see `VALIDATION.md`. Do not count this as implemented-and-verified until the exact candidate workflow passes. Existing release and hardware blockers remain open.
-
-## Process lifecycle candidate — evidence update 2026-10-29
-- `process_create` parent-provenance guard and runtime invalid-pointer probe passed candidate Build workflow #1651 and Stage 1 Scheduler CI #72 at code head `f767841d9e6dd98df07005d44ebaf086472512e0`.
-- The full candidate build/check/QEMU/storage/production desktop smoke gates passed; PR release publication was skipped as intended. This does not establish current-main CI or live release integrity. See `VALIDATION.md`; completion estimate unchanged.
+## Process lifecycle fix — merged evidence 2026-10-29
+- PR #31 merged to `main` as `b99e5705fa56558637b1983f5f45992d7ae509cb`; invalid process-parent pointers are rejected before parent-field dereferences.
+- Build workflow #1651 passed on code head `f767841d9e6dd98df07005d44ebaf086472512e0`; final documentation tip `42051f51140a3f0150376d00e3849de5a969c1e8` passed Build workflow #1657 and Stage 1 Scheduler CI #78. Candidate QEMU/storage/production smoke gates passed; release publication was skipped on PR events.
+- Post-merge `main` CI and live stable ISO verification remain open. Stage 1 soak and physical hardware remain open; completion estimate unchanged.
