@@ -366,7 +366,7 @@ static void process_thread_probe_monitor_step(void) {
                            &rejected_parent_pid)==0 ||
             rejected_parent_pid!=0xfeedULL)
             process_thread_probe_fail("invalid process parent pointer was accepted");
-        serial_write_public("ZEROOS: invalid process parent pointer rejected.\\n");
+        serial_write_public("ZEROOS: invalid process parent pointer rejected.\n");
 
         if (process_create(0,&process_probe_parent_pid)!=0)
             process_thread_probe_fail("process/thread parent creation failed");
