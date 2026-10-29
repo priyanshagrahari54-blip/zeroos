@@ -127,3 +127,9 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - Added `tools/test_process_parent_validation.py` to check source ordering, the runtime invalid-pointer probe, required boot marker, and CI placement.
 - Added a certification probe using pointer value `1`, a sentinel PID that must remain unchanged on rejection, and required marker `ZEROOS: invalid process parent pointer rejected.`.
 - **Not yet validated:** candidate CI, `make check`, QEMU boot milestone, and the production ISO smoke tests must pass on the exact branch head. No pass is claimed here.
+
+## Candidate regression — 2026-10-29 (pending)
+- Added a guard to `process_create` so a non-null parent must be a correctly aligned object in the static process table before `state`, `pid`, or child-count fields are read.
+- Added `tools/test_process_parent_validation.py` to check source ordering, the runtime invalid-pointer probe, required boot marker, and CI placement.
+- Added a certification probe using pointer value `1`, a sentinel PID that must remain unchanged on rejection, and required marker `ZEROOS: invalid process parent pointer rejected.`.
+- **Not yet validated:** candidate CI, `make check`, QEMU boot milestone, and production ISO smoke tests must pass on the exact branch head. No pass is claimed here.
