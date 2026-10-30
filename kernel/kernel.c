@@ -368,6 +368,46 @@ static void process_thread_probe_monitor_step(void) {
             process_thread_probe_fail("invalid process parent pointer was accepted");
         serial_write_public("ZEROOS: invalid process parent pointer rejected.\n");
 
+        /*
+         * Public process APIs accept kernel pointers, but a stale/corrupt
+         * pointer must be rejected by provenance before any field read.
+         * Use a non-null, non-table address and valid output buffers so each
+         * API's own pointer guard is the condition under test.
+         */
+        {
+            struct process *invalid_process=(struct process *)(uintptr_t)1;
+            struct thread *invalid_thread=(struct thread *)(uintptr_t)1;
+            uint64_t invalid_process_flags=0;
+            uint64_t invalid_process_limit=0;
+            uint64_t invalid_process_pages[1]={0};
+
+            if (process_release_live(invalid_process)!=-1 ||
+                process_find_child(invalid_process,0)!=0 ||
+                process_child_wait_prepare(invalid_process,0,
+                                           &invalid_process_flags)>=0 ||
+                process_thread_reserve(invalid_process)!=-1 ||
+                process_thread_unreserve(invalid_process)!=-1 ||
+                process_thread_attach(invalid_process,invalid_thread)!=-1 ||
+                process_thread_reap_finish(invalid_process)!=-1 ||
+                process_reap(invalid_process,0)!=-1 ||
+                process_abort_new(invalid_process)!=-1 ||
+                process_set_limits(invalid_process,1,1,1)!=-1 ||
+                process_get_limits(invalid_process,&invalid_process_limit,
+                                   0,0)!=-1 ||
+                process_address_space_map_page(invalid_process,0,0,0)!=-1 ||
+                process_address_space_unmap_page(invalid_process,0)!=-1 ||
+                process_address_space_unmap_range(invalid_process,0,
+                    invalid_process_pages,1)!=-1 ||
+                process_address_space_mapped_pages(invalid_process)!=0 ||
+                process_address_space_is_user_range(invalid_process,0,1,0)!=0 ||
+                process_child_count(invalid_process)!=0 ||
+                process_thread_count(invalid_process)!=0 ||
+                process_live_thread_count(invalid_process)!=0 ||
+                process_address_space_is_executable(invalid_process,0,1)!=0)
+                process_thread_probe_fail("invalid process API pointer was accepted");
+        }
+        serial_write_public("ZEROOS: invalid process API pointers rejected.\n");
+
         if (process_create(0,&process_probe_parent_pid)!=0)
             process_thread_probe_fail("process/thread parent creation failed");
         process_probe_parent=process_lookup(process_probe_parent_pid);

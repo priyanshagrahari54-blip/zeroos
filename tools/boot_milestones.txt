@@ -50,6 +50,7 @@ ZEROOS: scheduler deterministic trace: 01-02-04-08-10-20-40.
 ZEROOS: per-CPU scheduler ownership verified.
 ZEROOS: CPU hot-offline queue evacuation and parking passed.
 ZEROOS: invalid process parent pointer rejected.
+ZEROOS: invalid process API pointers rejected.
 ZEROOS: process/thread object model self-test passed.
 ZEROOS: process address-space ownership self-test passed.
 ZEROOS: PID/TID reuse protection self-test passed.

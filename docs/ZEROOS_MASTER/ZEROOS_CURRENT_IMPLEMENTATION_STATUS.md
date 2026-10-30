@@ -1,6 +1,6 @@
 # ZEROOS — CURRENT IMPLEMENTATION STATUS
 
-Updated: 2026-10-28
+Updated: 2026-10-29
 Branch baseline at this refresh: `main` latest observed commit `7c45183332f895ad778f08b98458f580b18a0067` (`test: certify exec user-copy overflow guard`). PR #16 remains merged as `d6b58292df7e00b4b2f15ba22f3a0405035ee549`.
 Status policy: **evidence-weighted estimate; never equate a source file, marker check, architecture document, or host test with a working end-user feature.**
 
@@ -203,3 +203,10 @@ Added `LIBRARY_REUSE_AND_INTEGRATION_PLAN.md` and indexed it from `MASTER_INDEX.
 ## Candidate kernel fix — validation update 2026-10-29
 - Candidate head `f767841d9e6dd98df07005d44ebaf086472512e0` passed ZEROOS Build workflow #1651 and Stage 1 Scheduler CI #72. In #1651, the new process-parent regression, existing release/diagnostic/boot-gate/affinity regressions, build, clean `make check`, kernel/ISO verification, QEMU boot milestones, scheduler panic-diagnostics certification, two-boot AHCI/NVMe persistence, production ISO build, production desktop/network smoke test, and diagnostic/artifact steps passed. Actual release publication was skipped on the PR event.
 - The process fix is candidate-tested but not merged. These results do not verify the current `main` SHA `12cdca17f8359fdb6884ec6f1b5b67cc2a78071b`, nor the live stable release asset. The exact updated documentation tip must also pass CI before merge. Completion estimate unchanged (~43%); physical hardware, Stage 1 long soak, recovery, and later product stages remain open.
+
+## Current-main review and process API hardening — 2026-10-29
+- Latest main commit observed: `b99e5705fa56558637b1983f5f45992d7ae509cb`, which added parent-pointer provenance validation to `process_create`.
+- The exact-main combined-status lookup returned no entries. The connected workflow-run lookup only exposes PR-triggered runs, so main CI for this exact SHA is **unverified**, not presumed green or red.
+- Candidate branch `fix/process-api-pointer-provenance-20261029` extends the same guard to public APIs receiving a `struct process *`: lifecycle pins/reap, child wait/query, thread reservations, resource limits, address-space operations and counters. It adds a boot-time invalid-pointer probe, a required serial milestone, a source-order regression test and a CI step before build/QEMU.
+- Candidate validation is pending until CI for the exact PR head passes. No new boot pass or completion credit is claimed by source edits alone.
+- Release blockers remain: post-merge main workflow and live stable ISO verification; Stage 1 long soak; physical-hardware matrix; recovery and later-stage product acceptance. Overall estimate unchanged (~43%).

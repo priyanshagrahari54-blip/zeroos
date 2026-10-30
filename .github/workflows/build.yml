@@ -28,6 +28,9 @@ jobs:
       - name: Verify invalid process parent pointer rejection
         run: python3 tools/test_process_parent_validation.py
 
+      - name: Verify process API pointer provenance
+        run: python3 tools/test_process_api_pointer_validation.py
+
       - name: Install build and QEMU tools
         run: |
           sudo apt-get update
