@@ -1,7 +1,7 @@
 # ZEROOS — CURRENT IMPLEMENTATION STATUS
 
-Updated: 2026-10-29
-Branch baseline at this refresh: `main` latest observed commit `7c45183332f895ad778f08b98458f580b18a0067` (`test: certify exec user-copy overflow guard`). PR #16 remains merged as `d6b58292df7e00b4b2f15ba22f3a0405035ee549`.
+Updated: 2026-10-30
+Branch baseline at this refresh: `main` latest observed commit `4e3691c64079d6a50f3a0cf5230336b49dfb0bee` (`fix(process): validate pointer provenance across process APIs`). PR #16 remains merged as `d6b58292df7e00b4b2f15ba22f3a0405035ee549`.
 Status policy: **evidence-weighted estimate; never equate a source file, marker check, architecture document, or host test with a working end-user feature.**
 
 ## Historical evidence refresh — 2026-10-26 (superseded for current HEAD)
@@ -210,3 +210,11 @@ Added `LIBRARY_REUSE_AND_INTEGRATION_PLAN.md` and indexed it from `MASTER_INDEX.
 - Candidate branch `fix/process-api-pointer-provenance-20261029` extends the same guard to public APIs receiving a `struct process *`: lifecycle pins/reap, child wait/query, thread reservations, resource limits, address-space operations and counters. It adds a boot-time invalid-pointer probe, a required serial milestone, a source-order regression test and a CI step before build/QEMU.
 - Candidate validation is pending until CI for the exact PR head passes. No new boot pass or completion credit is claimed by source edits alone.
 - Release blockers remain: post-merge main workflow and live stable ISO verification; Stage 1 long soak; physical-hardware matrix; recovery and later-stage product acceptance. Overall estimate unchanged (~43%).
+
+## Main-branch review — 2026-10-30: process API pointer provenance merged
+
+- Current main commit: `4e3691c64079d6a50f3a0cf5230336b49dfb0bee` (squash merge of PR #33). The kernel now validates caller-supplied `struct process *` arguments against the aligned static process table before field dereferences across 20 public lifecycle, child-wait/query, thread-reservation, limits, address-space and counter APIs.
+- Candidate head `2c7a0e9294890341f969c614cde2bae00243907b` passed ZEROOS Build workflow #1677 (run ID `40813814987`) and Stage 1 Scheduler workflow #1677 (run ID `40813814986`). Build steps passed: release-policy, diagnostic-retention, fail-closed QEMU-gate, affinity-race, invalid-parent and process-API pointer regressions; native build; reproducible release gate; kernel/ISO verification; QEMU boot test; scheduler fault certification; two-boot AHCI/NVMe persistence; production ISO build; production desktop/network smoke; and diagnostic/artifact preservation. The bootable GitHub Release publication step was skipped on the PR event; this is not a post-merge release verification.
+- After merge, the combined-status lookup for `4e3691c64079d6a50f3a0cf5230336b49dfb0bee` returned no status entries. The connected workflow-run helper only returns PR-triggered runs, so exact post-merge main CI is **unverified**, not presumed green or red. The live stable `zeroos.iso` has not been independently compared with a production image from a post-merge main run.
+- Open follow-ups include PR #32 and #25 documentation reconciliation, PR #27 Stage 1 scheduler certification, PR #26 QEMU evidence hardening, the optional 600-second Stage 1 soak, and physical-hardware certification. Recovery and later desktop/browser/media/AI/compatibility work remain roadmap items, not completed features.
+- Overall completion estimate remains unchanged (~43%). This process-pointer hardening and its CI evidence do not justify a percentage increase.
