@@ -1,6 +1,6 @@
 # ZEROOS — Validation and Support Matrix
 
-Updated: 2026-10-29. This is the evidence policy for Stages 1-10; it must not overstate support.
+Updated: 2026-10-30. This is the evidence policy for Stages 1-10; it must not overstate support.
 
 The binding acceptance checklist is [ZEROOS_10_STAGE_HARDENING.md](./ZEROOS_10_STAGE_HARDENING.md). Current estimates and known limitations are in [ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md](./ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md).
 
@@ -144,3 +144,11 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - Candidate branch `fix/process-api-pointer-provenance-20261029` checks that direct process-pointer API arguments identify an aligned static process-table entry before reading fields. The new regression checks 20 APIs, verifies a boot-time probe uses address `1`, and requires marker `ZEROOS: invalid process API pointers rejected.` before the production ISO smoke gate.
 - The exact candidate's Python regression, clean `make check`, repeated QEMU milestones, scheduler fault tests, two-boot AHCI/NVMe persistence and desktop/network smoke are not yet verified. Do not mark this candidate passed until its own workflow finishes.
 - The merged parent-pointer guard's candidate evidence is recorded above; it is not evidence for this broader candidate. Post-merge main CI, live stable ISO verification, long soak and physical hardware remain separate gates.
+
+## 2026-10-30 — Process API pointer-provenance merge and validation evidence
+
+- PR #33 merged to `main` as `4e3691c64079d6a50f3a0cf5230336b49dfb0bee`. The patch validates process-table pointer provenance before dereference across 20 direct process-pointer APIs. It adds `tools/test_process_api_pointer_validation.py`, a boot-time invalid-pointer probe, and required milestone `ZEROOS: invalid process API pointers rejected.`.
+- Exact candidate head `2c7a0e9294890341f969c614cde2bae00243907b`: ZEROOS Build workflow #1677 / run ID `40813814987` **SUCCESS**; Stage 1 Scheduler workflow / run ID `40813814986` **SUCCESS**.
+- Build workflow step evidence: release-policy, production-diagnostic retention, fail-closed QEMU boot gate, scheduler-affinity race, invalid-parent pointer and process-API pointer regression scripts all passed; native build, reproducible release gate, kernel/ISO verification, QEMU boot test, scheduler fault certification, two-boot q35 AHCI/NVMe persistence, production ISO build, production desktop/network smoke and diagnostic preservation all passed. The GitHub Release publication step was **skipped** because the run was a pull-request event.
+- Post-merge combined-status lookup for main SHA `4e3691c64079d6a50f3a0cf5230336b49dfb0bee` returned an empty status list. The connected workflow-run helper filters to PR events; therefore it cannot establish the push-triggered main workflow result. Main CI and live stable ISO byte-identity remain **unverified**.
+- These results certify the candidate workflow, not physical hardware. The 600-second Stage 1 soak and Lenovo G560/device matrix remain separate validation gates. No completion estimate increase.

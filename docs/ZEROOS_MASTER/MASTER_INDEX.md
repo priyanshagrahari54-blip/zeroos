@@ -1,6 +1,6 @@
 # ZEROOS — MASTER DOCUMENT INDEX
 Version: 2.4
-Updated: 2026-10-29
+Updated: 2026-10-30
 
 This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md` remains the canonical consolidated product/architecture specification. Stage 6-10 execution is split into dedicated production master documents so an implementation agent can work one stage at a time without losing cross-cutting requirements.
 
@@ -170,3 +170,9 @@ Priority is still boot/release gate → kernel/userspace lifecycle correctness �
 - Main SHA observed: `b99e5705fa56558637b1983f5f45992d7ae509cb`; exact-main CI status is unverified because no check entries were returned.
 - Current candidate `fix/process-api-pointer-provenance-20261029` hardens direct process-table pointer arguments and adds source regression + boot-time negative certification. Candidate CI is pending; this is not yet an accepted implementation.
 - Consult `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md` and `VALIDATION.md` for evidence limits and open gates. Completion estimates remain unchanged.
+
+## Latest implementation and validation snapshot — 2026-10-30
+
+- PR #33's process API pointer-provenance hardening merged to `main` at `4e3691c64079d6a50f3a0cf5230336b49dfb0bee`.
+- Candidate Build workflow #1677 and Stage 1 Scheduler workflow (run ID `40813814986`) passed. Verified candidate gates include the new 20-API pointer regression and boot-time negative probe, native build, clean reproducible release gate, QEMU boot, scheduler fault certification, two-boot AHCI/NVMe persistence, production ISO and desktop/network smoke. PR-triggered run skipped actual GitHub Release publication.
+- Exact post-merge main CI and live stable ISO comparison remain unverified. See `VALIDATION.md` and `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md` for precise evidence boundaries and open blockers. Completion estimate unchanged.

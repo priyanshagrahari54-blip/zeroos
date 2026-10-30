@@ -846,3 +846,12 @@ The Library reference PDFs have been catalogued in `EXTERNAL_REFERENCE_AUDIT_202
 - Next code-first hardening candidate: validate process-pointer provenance before any field dereference across public process lifecycle, wait, limits, address-space and counter APIs. Regression and boot-time negative probe are wired in branch `fix/process-api-pointer-provenance-20261029`; candidate CI is pending.
 - Required sequence: candidate regression -> clean `make check` -> repeated QEMU boot milestones -> scheduler/fault gates -> AHCI/NVMe persistence -> production desktop/network smoke -> merge review -> post-merge main workflow -> live stable ISO comparison. Do not treat a PR pass as a post-merge release pass.
 - Physical G560 certification, Stage 1 soak, recovery UX, production browser/media, Windows/Android runtimes and full ZERO AI backend remain separate roadmap work. Completion estimate unchanged.
+
+## Process lifecycle hardening — merged evidence, 2026-10-30
+
+- [x] Reject invalid `process_create(parent, ...)` pointers before parent-field dereference (main commit `b99e5705fa56558637b1983f5f45992d7ae509cb`; candidate Build #1651 passed).
+- [x] Extend process-table pointer provenance checks across 20 public process lifecycle, child wait/query, thread reservation, resource-limit, address-space and counter APIs. PR #33 merged as `4e3691c64079d6a50f3a0cf5230336b49dfb0bee`.
+- [x] Add source-order regression coverage and a boot-time invalid-pointer certification probe. Candidate Build workflow #1677 and Stage 1 Scheduler workflow run ID `40813814986` passed; QEMU boot, scheduler fault, AHCI/NVMe two-boot persistence, production ISO and desktop/network smoke gates passed.
+- [ ] Verify the push-triggered workflow for the exact post-merge `main` SHA and compare the live stable `zeroos.iso` byte-for-byte with that run's production ISO. The PR run skipped GitHub Release publication, and the connected post-merge status lookup returned no entries.
+- [ ] Complete the optional 600-second Stage 1 soak and physical-hardware/device matrix (including Lenovo G560 where feasible). Later recovery, usable desktop breadth, browser/media/AI and compatibility milestones remain separate requirements; this merge does not close them.
+- Overall OS completion estimate unchanged (~43%).
