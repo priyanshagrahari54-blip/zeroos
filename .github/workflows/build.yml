@@ -31,6 +31,9 @@ jobs:
       - name: Verify process API pointer provenance
         run: python3 tools/test_process_api_pointer_validation.py
 
+      - name: Verify process user-copy mapping stability
+        run: python3 tools/test_process_user_copy_atomic.py
+
       - name: Install build and QEMU tools
         run: |
           sudo apt-get update

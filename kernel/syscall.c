@@ -38,48 +38,17 @@ static struct process *current_process(void) {
  */
 static int copy_from_user(void *destination, uint64_t source, uint64_t length) {
     struct process *process=current_process();
-    uint8_t *out=(uint8_t *)destination;
-    uint64_t offset=0;
-
-    if (!destination || !process ||
-        (length && !process_address_space_is_user_range(process,source,length,0)))
+    if (!destination || !process)
         return -1;
-    while (offset<length) {
-        uint64_t address=source+offset;
-        uint64_t physical=vmm_space_translate(&process->address_space,address);
-        uint64_t within=VMM_PAGE_SIZE-(address & (VMM_PAGE_SIZE-1ULL));
-        uint64_t count=length-offset<within ? length-offset : within;
-        if (!physical)
-            return -1;
-        for (uint64_t i=0; i<count; ++i)
-            out[offset+i]=((const uint8_t *)(uint64_t)(physical+i))[0];
-        offset+=count;
-    }
-    return 0;
+    return process_address_space_copy_from(process,source,destination,length);
 }
 
 static int copy_to_user(uint64_t destination, const void *source,
                         uint64_t length) {
     struct process *process=current_process();
-    const uint8_t *in=(const uint8_t *)source;
-    uint64_t offset=0;
-
-    if (!source || !process ||
-        (length && !process_address_space_is_user_range(process,destination,
-                                                        length,1)))
+    if (!source || !process)
         return -1;
-    while (offset<length) {
-        uint64_t address=destination+offset;
-        uint64_t physical=vmm_space_translate(&process->address_space,address);
-        uint64_t within=VMM_PAGE_SIZE-(address & (VMM_PAGE_SIZE-1ULL));
-        uint64_t count=length-offset<within ? length-offset : within;
-        if (!physical)
-            return -1;
-        for (uint64_t i=0; i<count; ++i)
-            ((uint8_t *)(uint64_t)(physical+i))[0]=in[offset+i];
-        offset+=count;
-    }
-    return 0;
+    return process_address_space_copy_to(process,destination,source,length);
 }
 
 static void syscall_write(struct interrupt_frame *frame) {

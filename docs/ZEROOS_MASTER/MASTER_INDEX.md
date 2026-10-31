@@ -1,6 +1,6 @@
 # ZEROOS — MASTER DOCUMENT INDEX
 Version: 2.4
-Updated: 2026-10-30
+Updated: 2026-10-31
 
 This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md` remains the canonical consolidated product/architecture specification. Stage 6-10 execution is split into dedicated production master documents so an implementation agent can work one stage at a time without losing cross-cutting requirements.
 
@@ -176,3 +176,9 @@ Priority is still boot/release gate → kernel/userspace lifecycle correctness �
 - PR #33's process API pointer-provenance hardening merged to `main` at `4e3691c64079d6a50f3a0cf5230336b49dfb0bee`.
 - Candidate Build workflow #1677 and Stage 1 Scheduler workflow (run ID `40813814986`) passed. Verified candidate gates include the new 20-API pointer regression and boot-time negative probe, native build, clean reproducible release gate, QEMU boot, scheduler fault certification, two-boot AHCI/NVMe persistence, production ISO and desktop/network smoke. PR-triggered run skipped actual GitHub Release publication.
 - Exact post-merge main CI and live stable ISO comparison remain unverified. See `VALIDATION.md` and `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md` for precise evidence boundaries and open blockers. Completion estimate unchanged.
+
+
+## Main review — 2026-10-31
+- Current `main` HEAD is `9f7b715ee9c15506514c4e563ea78801d9c77e9d`; exact-head CI status was not returned, so treat it as unverified.
+- Candidate `fix/atomic-process-user-copy-20261031` addresses a process address-space mapping TOCTOU in syscall and exec user-copy paths. It introduces lock-serialized process copy APIs, a cross-page guest certification milestone, a source regression test, and a CI invocation. Candidate checks are pending; this is not yet an accepted/merged implementation.
+- Priority remains kernel/process memory safety after build/ISO/boot. Preserve the later storage, driver/security/recovery, native desktop, browser/media/AI and compatibility requirements. See `VALIDATION.md` for exact evidence boundaries.
