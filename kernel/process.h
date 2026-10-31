@@ -116,6 +116,13 @@ uint64_t process_address_space_mapped_pages(const struct process *process);
 int process_address_space_is_user_range(const struct process *process,
                                         uint64_t virtual_address,
                                         uint64_t length, uint64_t write);
+/* Copy user bytes while the process lock keeps the validated mappings stable. */
+int process_address_space_copy_from(const struct process *process,
+                                    uint64_t source, void *destination,
+                                    uint64_t length);
+int process_address_space_copy_to(struct process *process,
+                                  uint64_t destination, const void *source,
+                                  uint64_t length);
 int process_address_space_is_executable(const struct process *process,
                                         uint64_t virtual_address,
                                         uint64_t length);
