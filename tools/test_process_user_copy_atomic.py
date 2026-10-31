@@ -57,7 +57,7 @@ class ProcessUserCopyAtomicTests(unittest.TestCase):
         lock = body.find("spin_lock_irqsave(&process_lock)")
         validate = body.find("vmm_space_is_user_range")
         translate = body.find("vmm_space_translate")
-        copy = body.find("destination[offset+i]")
+        copy = body.find("((uint8_t *)destination)[offset+i]")
         unlock = body.find("spin_unlock_irqrestore(&process_lock,flags)")
         self.assertGreaterEqual(lock, 0)
         self.assertGreater(validate, lock)
