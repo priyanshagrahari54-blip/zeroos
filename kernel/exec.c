@@ -34,26 +34,8 @@ static struct exec_workspace exec_workspace;
 static int exec_copy_from_user(const struct process *process,
                                uint64_t source, void *destination,
                                uint64_t length) {
-    uint8_t *out=(uint8_t *)destination;
-    uint64_t offset=0;
-
-    if (!process || !destination ||
-        (length && (source>~0ULL-length ||
-                    !process_address_space_is_user_range(process,source,
-                                                        length,0))))
-        return -ZEROOS_EFAULT;
-    while (offset<length) {
-        uint64_t address=source+offset;
-        uint64_t physical=vmm_space_translate(&process->address_space,address);
-        uint64_t within=VMM_PAGE_SIZE-(address&(VMM_PAGE_SIZE-1ULL));
-        uint64_t count=length-offset<within ? length-offset : within;
-        if (!physical)
-            return -ZEROOS_EFAULT;
-        for (uint64_t i=0; i<count; ++i)
-            out[offset+i]=((const uint8_t *)(uint64_t)(physical+i))[0];
-        offset+=count;
-    }
-    return 0;
+    return process_address_space_copy_from(process,source,destination,length)==0
+        ? 0 : -ZEROOS_EFAULT;
 }
 
 static int exec_copy_string(const struct process *process, uint64_t source,
