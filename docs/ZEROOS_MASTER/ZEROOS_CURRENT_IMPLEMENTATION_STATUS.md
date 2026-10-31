@@ -1,7 +1,7 @@
 # ZEROOS — CURRENT IMPLEMENTATION STATUS
 
-Updated: 2026-10-30
-Branch baseline at this refresh: `main` latest observed commit `4e3691c64079d6a50f3a0cf5230336b49dfb0bee` (`fix(process): validate pointer provenance across process APIs`). PR #16 remains merged as `d6b58292df7e00b4b2f15ba22f3a0405035ee549`.
+Updated: 2026-10-31
+Branch baseline at this refresh: `main` latest observed commit `9f7b715ee9c15506514c4e563ea78801d9c77e9d` (`docs: record merged process API hardening and CI evidence`; documentation-only follow-up to kernel fix `4e3691c`). PR #16 remains merged as `d6b58292df7e00b4b2f15ba22f3a0405035ee549`.
 Status policy: **evidence-weighted estimate; never equate a source file, marker check, architecture document, or host test with a working end-user feature.**
 
 ## Historical evidence refresh — 2026-10-26 (superseded for current HEAD)
@@ -218,3 +218,13 @@ Added `LIBRARY_REUSE_AND_INTEGRATION_PLAN.md` and indexed it from `MASTER_INDEX.
 - After merge, the combined-status lookup for `4e3691c64079d6a50f3a0cf5230336b49dfb0bee` returned no status entries. The connected workflow-run helper only returns PR-triggered runs, so exact post-merge main CI is **unverified**, not presumed green or red. The live stable `zeroos.iso` has not been independently compared with a production image from a post-merge main run.
 - Open follow-ups include PR #32 and #25 documentation reconciliation, PR #27 Stage 1 scheduler certification, PR #26 QEMU evidence hardening, the optional 600-second Stage 1 soak, and physical-hardware certification. Recovery and later desktop/browser/media/AI/compatibility work remain roadmap items, not completed features.
 - Overall completion estimate remains unchanged (~43%). This process-pointer hardening and its CI evidence do not justify a percentage increase.
+
+
+## Main review and atomic user-copy hardening — 2026-10-31
+
+- Confirmed current `main` HEAD by comparing `main` with itself: `9f7b715ee9c15506514c4e563ea78801d9c77e9d`. The combined-status lookup returned no entries for this exact SHA; current-main CI is **unknown/unverified**, not a pass or failure.
+- Latest inspected successful candidate Build workflow #1686 (run ID `40994113537`) completed its build job successfully. Its recorded steps include the release/diagnostic/QEMU/scheduler/process regression checks, native build, clean `make check`, QEMU boot test, scheduler panic-diagnostics, two-boot AHCI/NVMe persistence, production ISO build, production desktop/network smoke, and artifact preservation. The GitHub Release publication step was **skipped** because this was PR validation. Do not attribute that run to current `main` or to live release publication.
+- Code review found a mapping-lifetime TOCTOU in both syscall user-copy helpers and the exec image/argv/envp copier: they checked the user range under `process_lock`, released the lock, then translated and dereferenced physical pages. A concurrent thread could unmap/remap the page in that interval.
+- Candidate branch `fix/atomic-process-user-copy-20261031` adds process-owned copy-from/copy-to operations that keep range validation, page translation, and bounded copying under the same process lock. Syscall and exec paths are routed through these operations. A guest probe checks cross-page read/write correctness and rejects an unmapped tail; a Python source regression checks lock ordering and call-site routing.
+- **Candidate only:** the code, test, boot milestone, workflow step, and this documentation update are committed on the candidate branch. No candidate test pass is claimed until its exact PR workflow finishes. Overall stage estimates remain unchanged (~43% overall).
+- Release/acceptance blockers remain: exact post-merge `main` CI and live stable ISO byte verification; the 600-second Stage 1 scheduler soak; physical Lenovo G560/device certification. Open PRs #26 (boot-test integrity) and #27 (scheduler certification gaps) remain unmerged and their branches are substantially behind/diverged from current `main`; review/rebase before integration.
