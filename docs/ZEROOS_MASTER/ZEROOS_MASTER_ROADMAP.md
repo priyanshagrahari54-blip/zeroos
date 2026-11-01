@@ -864,3 +864,10 @@ The Library reference PDFs have been catalogued in `EXTERNAL_REFERENCE_AUDIT_202
 3. **Candidate validation is pending:** Python regression, clean `make check`, repeated QEMU, SMP/NX/fault boots, storage persistence, production ISO and desktop/network smoke must pass on the exact PR head before merge. No progress estimate change.
 4. **Release/Stage 1 blockers:** verify post-merge main CI and live stable ISO identity; execute the 600-second scheduler soak; certify physical G560/device behavior. Open PRs #26 and #27 need rebase/review against current main before any integration claim.
 5. Continue the full product sequence unchanged: process/runtime and IPC, storage integrity/recovery, drivers/security, usable native desktop, then browser/media/AI/Windows/Android compatibility and performance. Documented plans and research catalogues do not count as implemented features.
+
+## Evidence update — 2026-11-01: process user-copy serialization
+
+- Merged PR #35: process-owned user-copy operations now hold `process_lock` across whole-range validation, translation and bounded copy, preventing concurrent process unmap/remap/destroy from invalidating a page during syscall/exec copies. Main merge SHA: `6521dcf3e2b7d0caef25cb47515b8572f0358fcc`.
+- Candidate Build #1702 and Stage 1 Scheduler #123 passed. Verified gates include the new five-test source regression, native build, clean `make check`, repeated QEMU boot/SMP4/NX-off/failed-IPI, scheduler fault diagnostics, two-boot AHCI/NVMe persistence, production ISO build and desktop/network smoke.
+- Next release/acceptance gates remain ordered ahead of lower-priority product work: post-merge main workflow; live stable ISO byte comparison and final release-note confirmation; 600-second scheduler soak; physical G560/device certification. Reconcile PR #14 overlap and rebase/review #26/#27 before integration. Browser/media/AI/compatibility requirements remain preserved in later roadmap stages.
+- No overall completion estimate increase.
