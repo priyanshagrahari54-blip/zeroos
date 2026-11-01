@@ -53,6 +53,7 @@ ZEROOS: invalid process parent pointer rejected.
 ZEROOS: invalid process API pointers rejected.
 ZEROOS: process/thread object model self-test passed.
 ZEROOS: process address-space ownership self-test passed.
+ZEROOS: process user-copy mapping stability self-test passed.
 ZEROOS: PID/TID reuse protection self-test passed.
 ZEROOS: per-task kernel-stack/TSS handoff self-test passed.
 ZEROOS: Ring-3 GDT and versioned syscall ABI initialized.

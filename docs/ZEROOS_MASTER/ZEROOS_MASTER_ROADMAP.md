@@ -855,3 +855,12 @@ The Library reference PDFs have been catalogued in `EXTERNAL_REFERENCE_AUDIT_202
 - [ ] Verify the push-triggered workflow for the exact post-merge `main` SHA and compare the live stable `zeroos.iso` byte-for-byte with that run's production ISO. The PR run skipped GitHub Release publication, and the connected post-merge status lookup returned no entries.
 - [ ] Complete the optional 600-second Stage 1 soak and physical-hardware/device matrix (including Lenovo G560 where feasible). Later recovery, usable desktop breadth, browser/media/AI and compatibility milestones remain separate requirements; this merge does not close them.
 - Overall OS completion estimate unchanged (~43%).
+
+
+## Execution update — 2026-10-31
+
+1. **Current main baseline:** `9f7b715ee9c15506514c4e563ea78801d9c77e9d`. No combined CI status entries were returned for this exact SHA; do not infer a pass from the successful PR candidate workflow #1686.
+2. **Highest-priority candidate fix:** serialize user-memory range validation, page translation, and copy under `process_lock`. The previous syscall and exec helpers had a TOCTOU window between validation and physical-page access. Candidate branch `fix/atomic-process-user-copy-20261031` adds process-owned copy APIs, routes syscall/exec paths through them, and adds cross-page/unmapped-tail guest checks plus a source regression test.
+3. **Candidate validation is pending:** Python regression, clean `make check`, repeated QEMU, SMP/NX/fault boots, storage persistence, production ISO and desktop/network smoke must pass on the exact PR head before merge. No progress estimate change.
+4. **Release/Stage 1 blockers:** verify post-merge main CI and live stable ISO identity; execute the 600-second scheduler soak; certify physical G560/device behavior. Open PRs #26 and #27 need rebase/review against current main before any integration claim.
+5. Continue the full product sequence unchanged: process/runtime and IPC, storage integrity/recovery, drivers/security, usable native desktop, then browser/media/AI/Windows/Android compatibility and performance. Documented plans and research catalogues do not count as implemented features.

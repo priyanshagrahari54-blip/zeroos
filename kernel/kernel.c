@@ -509,6 +509,62 @@ static void process_thread_probe_monitor_step(void) {
             page_free(probe_page);
             process_thread_probe_fail("process address-space limit transition failed");
         }
+        {
+            void *copy_page=page_alloc_zero();
+            uint8_t expected[16];
+            uint8_t actual[16];
+            uint8_t replacement[16];
+
+            if (!copy_page ||
+                process_address_space_map_page(process_probe_parent,
+                    VMM_SPACE_TEST_VA,(uint64_t)probe_page,
+                    VMM_USER|VMM_WRITABLE|VMM_NO_EXECUTE)!=0 ||
+                process_address_space_map_page(process_probe_parent,
+                    VMM_SPACE_TEST_VA+VMM_PAGE_SIZE,(uint64_t)copy_page,
+                    VMM_USER|VMM_WRITABLE|VMM_NO_EXECUTE)!=0)
+                process_thread_probe_fail("process user-copy test mapping setup failed");
+
+            for (uint64_t i=0; i<sizeof(expected); ++i) {
+                expected[i]=(uint8_t)(0x40U+i);
+                replacement[i]=(uint8_t)(0xa0U+i);
+                if (i<8)
+                    ((uint8_t *)probe_page)[VMM_PAGE_SIZE-8ULL+i]=expected[i];
+                else
+                    ((uint8_t *)copy_page)[i-8ULL]=expected[i];
+            }
+            if (process_address_space_copy_from(process_probe_parent,
+                    VMM_SPACE_TEST_VA+VMM_PAGE_SIZE-8ULL,
+                    actual,sizeof(actual))!=0)
+                process_thread_probe_fail("process user-copy cross-page read failed");
+            for (uint64_t i=0; i<sizeof(expected); ++i)
+                if (actual[i]!=expected[i])
+                    process_thread_probe_fail("process user-copy cross-page read corrupted bytes");
+
+            /* Reject the complete range before copying if its tail is unmapped. */
+            if (process_address_space_copy_from(process_probe_parent,
+                    VMM_SPACE_TEST_VA+2ULL*VMM_PAGE_SIZE-8ULL,
+                    actual,sizeof(actual))==0)
+                process_thread_probe_fail("process user-copy accepted an unmapped tail");
+
+            if (process_address_space_copy_to(process_probe_parent,
+                    VMM_SPACE_TEST_VA+VMM_PAGE_SIZE-8ULL,
+                    replacement,sizeof(replacement))!=0 ||
+                process_address_space_copy_from(process_probe_parent,
+                    VMM_SPACE_TEST_VA+VMM_PAGE_SIZE-8ULL,
+                    actual,sizeof(actual))!=0)
+                process_thread_probe_fail("process user-copy cross-page write failed");
+            for (uint64_t i=0; i<sizeof(replacement); ++i)
+                if (actual[i]!=replacement[i])
+                    process_thread_probe_fail("process user-copy cross-page write corrupted bytes");
+
+            if (process_address_space_unmap_page(process_probe_parent,
+                    VMM_SPACE_TEST_VA)!=0 ||
+                process_address_space_unmap_page(process_probe_parent,
+                    VMM_SPACE_TEST_VA+VMM_PAGE_SIZE)!=0)
+                process_thread_probe_fail("process user-copy test unmap failed");
+            page_free(copy_page);
+        }
+        serial_write_public("ZEROOS: process user-copy mapping stability self-test passed.\n");
         page_free(probe_page);
         serial_write_public("ZEROOS: process address-space ownership self-test passed.\n");
 

@@ -1,6 +1,6 @@
 # ZEROOS — Validation and Support Matrix
 
-Updated: 2026-10-30. This is the evidence policy for Stages 1-10; it must not overstate support.
+Updated: 2026-10-31. This is the evidence policy for Stages 1-10; it must not overstate support.
 
 The binding acceptance checklist is [ZEROOS_10_STAGE_HARDENING.md](./ZEROOS_10_STAGE_HARDENING.md). Current estimates and known limitations are in [ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md](./ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md).
 
@@ -152,3 +152,14 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - Build workflow step evidence: release-policy, production-diagnostic retention, fail-closed QEMU boot gate, scheduler-affinity race, invalid-parent pointer and process-API pointer regression scripts all passed; native build, reproducible release gate, kernel/ISO verification, QEMU boot test, scheduler fault certification, two-boot q35 AHCI/NVMe persistence, production ISO build, production desktop/network smoke and diagnostic preservation all passed. The GitHub Release publication step was **skipped** because the run was a pull-request event.
 - Post-merge combined-status lookup for main SHA `4e3691c64079d6a50f3a0cf5230336b49dfb0bee` returned an empty status list. The connected workflow-run helper filters to PR events; therefore it cannot establish the push-triggered main workflow result. Main CI and live stable ISO byte-identity remain **unverified**.
 - These results certify the candidate workflow, not physical hardware. The 600-second Stage 1 soak and Lenovo G560/device matrix remain separate validation gates. No completion estimate increase.
+
+
+## 2026-10-31 — Atomic process user-copy fix (candidate; not yet validated)
+
+- Current `main` HEAD: `9f7b715ee9c15506514c4e563ea78801d9c77e9d`. Exact-head combined-status lookup returned no entries; current-main CI is unknown. The connected workflow-run lookup returns PR-triggered runs only.
+- Last inspected successful candidate Build workflow #1686 / run ID `40994113537`: build job completed successfully with release-policy, diagnostic-retention, fail-closed boot, scheduler-affinity, invalid-parent and process-pointer regressions; native build; clean `make check`; repeated QEMU boot gate; scheduler fault certification; two-boot AHCI/NVMe persistence; production ISO; production desktop/network smoke; and diagnostic artifact preservation. GitHub Release publication was skipped on the PR event. This is candidate evidence, not current-main publication evidence.
+- New finding: `kernel/syscall.c` and `kernel/exec.c` validated user ranges via a process API that released `process_lock`, then translated/copied through the process page tables without the lock. Concurrent unmap/remap could invalidate the translation before the physical copy.
+- Candidate fix adds `process_address_space_copy_from/to`; each operation validates the complete range, translates pages, and copies while holding `process_lock`, which serializes against process address-space map/unmap/destroy paths. Syscall and exec helpers now use this API.
+- Candidate regression coverage: `tools/test_process_user_copy_atomic.py` checks lock/order/call-site routing and CI wiring; guest boot certification checks a 16-byte cross-page read, rejects a range with an unmapped tail, verifies a cross-page write/readback, and requires marker `ZEROOS: process user-copy mapping stability self-test passed.`.
+- **Pending exact candidate checks:** run the new Python regression, `make`, clean `make check`, repeated QEMU boot milestones, SMP4/NX-off/failed-IPI/panic diagnostics, two-boot AHCI/NVMe persistence, production ISO build, and production desktop/network smoke. No pass is claimed yet for this candidate.
+- **Separate release blockers:** post-merge `main` workflow and live stable `zeroos.iso` byte comparison; 600-second scheduler soak; physical hardware matrix. No completion estimate increase.

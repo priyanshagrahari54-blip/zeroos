@@ -767,6 +767,81 @@ int process_address_space_is_user_range(const struct process *process,
     return valid;
 }
 
+/*
+ * Copy through a process-owned mapping while process_lock excludes unmap,
+ * remap, and address-space destruction. The previous syscall/exec helpers
+ * validated a range, dropped process_lock, then translated and dereferenced
+ * physical pages; another thread could unmap the page in that gap and let the
+ * allocator reuse it while the kernel was copying.
+ *
+ * Callers bound their transfer sizes. Keep validation, translation, and the
+ * byte transfer in one critical section so every physical page remains owned
+ * by the same user mapping for the entire copy.
+ */
+static int process_address_space_copy(const struct process *process,
+                                      uint64_t virtual_address,
+                                      void *destination,
+                                      const void *source,
+                                      uint64_t length,
+                                      uint64_t write_to_user) {
+    uint64_t flags;
+    uint64_t offset=0;
+    int result=-1;
+
+    if (!process_pointer_valid(process) ||
+        (write_to_user ? !source : !destination))
+        return -1;
+
+    flags=spin_lock_irqsave(&process_lock);
+    if (process_lookup_locked(process->pid)!=process ||
+        process->state==PROCESS_UNUSED ||
+        process->state==PROCESS_ZOMBIE)
+        goto out;
+    if (length==0) {
+        result=0;
+        goto out;
+    }
+    if (!vmm_space_is_user_range(&process->address_space,
+                                 virtual_address,length,write_to_user))
+        goto out;
+
+    while (offset<length) {
+        uint64_t address=virtual_address+offset;
+        uint64_t physical=vmm_space_translate(&process->address_space,address);
+        uint64_t within=VMM_PAGE_SIZE-(address&(VMM_PAGE_SIZE-1ULL));
+        uint64_t count=length-offset<within ? length-offset : within;
+        if (!physical)
+            goto out;
+        for (uint64_t i=0; i<count; ++i) {
+            if (write_to_user)
+                ((uint8_t *)(uintptr_t)(physical+i))[0]=
+                    ((const uint8_t *)source)[offset+i];
+            else
+                ((uint8_t *)destination)[offset+i]=
+                    ((const uint8_t *)(uintptr_t)(physical+i))[0];
+        }
+        offset+=count;
+    }
+    result=0;
+out:
+    spin_unlock_irqrestore(&process_lock,flags);
+    return result;
+}
+
+int process_address_space_copy_from(const struct process *process,
+                                    uint64_t source,
+                                    void *destination,
+                                    uint64_t length) {
+    return process_address_space_copy(process,source,destination,0,length,0);
+}
+
+int process_address_space_copy_to(struct process *process,
+                                  uint64_t destination,
+                                  const void *source,
+                                  uint64_t length) {
+    return process_address_space_copy(process,destination,0,source,length,1);
+}
+
 uint64_t process_child_count(const struct process *process) {
     uint64_t flags;
     uint64_t count=0;
