@@ -182,3 +182,9 @@ Priority is still boot/release gate → kernel/userspace lifecycle correctness �
 - Current `main` HEAD is `9f7b715ee9c15506514c4e563ea78801d9c77e9d`; exact-head CI status was not returned, so treat it as unverified.
 - Candidate `fix/atomic-process-user-copy-20261031` addresses a process address-space mapping TOCTOU in syscall and exec user-copy paths. It introduces lock-serialized process copy APIs, a cross-page guest certification milestone, a source regression test, and a CI invocation. Candidate checks are pending; this is not yet an accepted/merged implementation.
 - Priority remains kernel/process memory safety after build/ISO/boot. Preserve the later storage, driver/security/recovery, native desktop, browser/media/AI and compatibility requirements. See `VALIDATION.md` for exact evidence boundaries.
+
+## Latest implementation snapshot — 2026-11-01
+
+- PR #35's process address-space user-copy TOCTOU fix is merged to `main` at `6521dcf3e2b7d0caef25cb47515b8572f0358fcc`.
+- Build #1702 (run ID `41164323843`) passed on PR integration merge commit `59654aa954f56a56eaa1ff7ea444b3a6e486da45`: new atomic-copy regression (5 tests), native build, clean `make check`, repeated QEMU/SMP4/NX-off/failed-IPI gates, scheduler fault certification, two-boot AHCI/NVMe persistence, production ISO and desktop/network smoke. Stage 1 Scheduler #123 also passed.
+- GitHub Release publication was skipped on the PR event. Post-merge main CI and live stable ISO verification remain unconfirmed; the 600-second soak and physical hardware matrix remain outstanding. Overall completion estimate unchanged.
