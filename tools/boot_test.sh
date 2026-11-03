@@ -144,7 +144,7 @@ for iteration in $(seq 1 "$iterations"); do
   set -e
 
   if [ "$qemu_status" -ne 124 ] && [ "$qemu_status" -ne 137 ]; then
-    echo "boot_test iteration ${iteration}: QEMU exited unexpectedly (status=$qemu_status; expected timeout 124)" >&2
+    echo "boot_test iteration ${iteration}: QEMU exited unexpectedly (status=$qemu_status; expected timeout 124 or forced-kill status 137)" >&2
     tail -40 "$build_root/serial.log" 2>/dev/null || true
     tail -40 "$build_root/qemu.log" 2>/dev/null || true
     exit 1
