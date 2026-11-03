@@ -1,6 +1,6 @@
 # ZEROOS — MASTER DOCUMENT INDEX
 Version: 2.4
-Updated: 2026-10-31
+Updated: 2026-11-03
 
 This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md` remains the canonical consolidated product/architecture specification. Stage 6-10 execution is split into dedicated production master documents so an implementation agent can work one stage at a time without losing cross-cutting requirements.
 
@@ -188,3 +188,14 @@ Priority is still boot/release gate → kernel/userspace lifecycle correctness �
 - PR #35's process address-space user-copy TOCTOU fix is merged to `main` at `6521dcf3e2b7d0caef25cb47515b8572f0358fcc`.
 - Build #1702 (run ID `41164323843`) passed on PR integration merge commit `59654aa954f56a56eaa1ff7ea444b3a6e486da45`: new atomic-copy regression (5 tests), native build, clean `make check`, repeated QEMU/SMP4/NX-off/failed-IPI gates, scheduler fault certification, two-boot AHCI/NVMe persistence, production ISO and desktop/network smoke. Stage 1 Scheduler #123 also passed.
 - GitHub Release publication was skipped on the PR event. Post-merge main CI and live stable ISO verification remain unconfirmed; the 600-second soak and physical hardware matrix remain outstanding. Overall completion estimate unchanged.
+
+## Evidence update — 2026-11-03: Ring-3 interrupt GS ownership (candidate)
+
+- Reviewed `main` at `28112603ebbd6a4bfa6cc93a6c6cb0be84cc2f3a`. The exact-main combined-status and workflow-run lookups returned no entries; CI for this exact SHA is **unverified**.
+- PR #36's earlier Build #1714 (run ID `41383120934`) succeeded, but the later documentation-tip Build #1721 (run ID `41383517040`) failed its production desktop/network smoke. Its retained production-boot diagnostics show `ZEROOS PANIC: per-CPU current task invariant failed.` followed by `ZEROOS PANIC: timer observed non-running current task.`; the production serial log did not reach the interactive desktop-ready milestone. This later failure is not erased by the earlier successful run.
+- Source review found that `boot/isr.S:isr_common` called C interrupt dispatch without first establishing the kernel GS base. `cpu_local()` resolves `IA32_GS_BASE` and otherwise falls back to CPU 0. A Ring-3 interrupt on an AP can therefore enter scheduler C code with the user GS base active and be attributed to the BSP's CPU-local record. This is the leading diagnosis for the observed per-CPU ownership failure; the candidate QEMU run must confirm the correction.
+- Candidate branch `fix/ring3-interrupt-gs-ownership-20261103` adds fail-closed GS-base detection and `SWAPGS` entry/return helpers, preserves the original interrupt-frame pointer and entry-swap state across scheduler handoff, initializes the user GS slot on BSP/AP bring-up, and executes `SWAPGS` before the first Ring-3 `iretq`. The return helper restores the pre-entry state for an unchanged frame and selects the target privilege state after a task switch, including nested NMI windows.
+- Added `tools/test_interrupt_gs_entry.py` and a required Build workflow step before toolchain installation. At this documentation update, the exact candidate Build/QEMU workflow has not completed; **no new native-build or QEMU pass is claimed**. The fix is candidate code, not merged main functionality.
+- PR #36 remains open and its latest docs-tip production smoke failure remains an integration blocker until a new exact-head run passes. The candidate GS fix is separate from PR #36's range-unmap preflight change.
+- Release blockers remain: exact post-merge main CI; live stable `zeroos.iso` byte comparison against the production ISO from that exact run and final release-note confirmation; 600-second scheduler soak; physical Lenovo G560/device certification. PR-triggered validation does not publish a GitHub Release.
+- Overall implementation estimate is unchanged; documentation and source regressions do not earn feature-completion credit.
