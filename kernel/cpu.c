@@ -1,4 +1,5 @@
 #include "cpu.h"
+#include "interrupts.h"
 
 #define CPUID_VENDOR 0x00000000U
 #define CPUID_FEATURES 0x00000001U
@@ -21,9 +22,18 @@
 #define EFER_MSR 0xc0000080U
 #define EFER_NXE (1ULL << 11)
 #define IA32_GS_BASE_MSR 0xc0000101U
+#define IA32_KERNEL_GS_BASE_MSR 0xc0000102U
 
 static struct cpu_info boot_cpu;
 static struct cpu_local cpu_locals[ZEROOS_MAX_CPUS] __attribute__((aligned(64)));
+
+/* The active GS base must identify one of this kernel's per-CPU records. */
+static int cpu_local_base_valid(uint64_t base) {
+    uint64_t first=(uint64_t)&cpu_locals[0];
+    uint64_t last=(uint64_t)&cpu_locals[ZEROOS_MAX_CPUS];
+    return base>=first && base<last &&
+           ((base-first)%sizeof(cpu_locals[0]))==0;
+}
 
 static void cpuid(uint32_t leaf, uint32_t subleaf,
                   uint32_t *eax, uint32_t *ebx,
@@ -179,6 +189,7 @@ int cpu_init(void) {
     cpu_locals[0].scheduler_timer_fallback=0;
     cpu_locals[0].prepared=1;
     cpu_locals[0].online=1;
+    cpu_write_msr(IA32_KERNEL_GS_BASE_MSR,0);
     cpu_write_msr(IA32_GS_BASE_MSR,(uint64_t)&cpu_locals[0]);
     return 0;
 }
@@ -189,12 +200,51 @@ const struct cpu_info *cpu_info(void) {
 
 const struct cpu_local *cpu_local(void) {
     uint64_t base=cpu_read_msr(IA32_GS_BASE_MSR);
-    uint64_t first=(uint64_t)&cpu_locals[0];
-    uint64_t last=(uint64_t)&cpu_locals[ZEROOS_MAX_CPUS];
-    if (base>=first && base<last &&
-        ((base-first)%sizeof(cpu_locals[0]))==0)
+    if (cpu_local_base_valid(base))
         return (const struct cpu_local *)(uint64_t)base;
     return &cpu_locals[0];
+}
+
+/* Called by isr_common before any C interrupt handler uses cpu_local().
+ * A Ring-3 interrupt arrives with the user's GS_BASE active and the
+ * kernel's per-CPU base in IA32_KERNEL_GS_BASE. NMI can interrupt either
+ * side of SWAPGS, so detect the active base rather than relying only on CS. */
+static void cpu_gs_transition_halt(void) {
+    __asm__ volatile ("cli" ::: "memory");
+    for (;;) __asm__ volatile ("hlt" ::: "memory");
+}
+
+int cpu_interrupt_gs_enter(void) {
+    uint64_t gs_base=cpu_read_msr(IA32_GS_BASE_MSR);
+    if (cpu_local_base_valid(gs_base))
+        return 0;
+    if (!cpu_local_base_valid(cpu_read_msr(IA32_KERNEL_GS_BASE_MSR)))
+        cpu_gs_transition_halt();
+    __asm__ volatile ("swapgs" ::: "memory");
+    if (!cpu_local_base_valid(cpu_read_msr(IA32_GS_BASE_MSR)))
+        cpu_gs_transition_halt();
+    return 1;
+}
+
+/* Restore the GS state for the frame that will actually be resumed. If the
+ * same frame returns, restore the exact pre-entry state; this also handles
+ * NMI arriving in the SWAPGS/IRET window. A switched frame is selected by
+ * its privilege level while the kernel GS base is active. */
+void cpu_interrupt_gs_restore(const struct interrupt_frame *original_frame,
+                              const struct interrupt_frame *target_frame,
+                              uint64_t entry_swapped) {
+    if (!original_frame || !target_frame || entry_swapped>1U ||
+        !cpu_local_base_valid(cpu_read_msr(IA32_GS_BASE_MSR)))
+        cpu_gs_transition_halt();
+    if (target_frame==original_frame) {
+        if (entry_swapped)
+            __asm__ volatile ("swapgs" ::: "memory");
+        return;
+    }
+    if ((target_frame->cs & 3ULL)==3ULL)
+        __asm__ volatile ("swapgs" ::: "memory");
+    else if ((target_frame->cs & 3ULL)!=0)
+        cpu_gs_transition_halt();
 }
 
 int cpu_has(uint64_t feature) {
@@ -257,6 +307,7 @@ int cpu_mark_online(uint32_t cpu_id) {
     if (cpu_id>=ZEROOS_MAX_CPUS || !cpu_locals[cpu_id].prepared)
         return -1;
     __atomic_store_n(&cpu_locals[cpu_id].online,1,__ATOMIC_RELEASE);
+    cpu_write_msr(IA32_KERNEL_GS_BASE_MSR,0);
     cpu_write_msr(IA32_GS_BASE_MSR,(uint64_t)&cpu_locals[cpu_id]);
     return 0;
 }
