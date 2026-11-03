@@ -4,6 +4,7 @@
 #include "types.h"
 
 struct task;
+struct interrupt_frame;
 
 /* Feature bits are stable kernel-internal capability identifiers. */
 #define ZEROOS_CPU_FEATURE_SSE2       (1ULL << 0)
@@ -54,6 +55,11 @@ struct cpu_local {
 int cpu_init(void);
 const struct cpu_info *cpu_info(void);
 const struct cpu_local *cpu_local(void);
+/* Interrupt entry/return GS ownership helpers; called only by isr_common. */
+int cpu_interrupt_gs_enter(void);
+void cpu_interrupt_gs_restore(const struct interrupt_frame *original_frame,
+                              const struct interrupt_frame *target_frame,
+                              uint64_t entry_swapped);
 int cpu_has(uint64_t feature);
 uint64_t cpu_tsc_frequency_hz(void);
 uint64_t cpu_read_tsc(void);
