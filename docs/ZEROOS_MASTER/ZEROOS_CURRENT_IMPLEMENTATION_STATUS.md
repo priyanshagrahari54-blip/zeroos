@@ -1,7 +1,7 @@
 # ZEROOS — CURRENT IMPLEMENTATION STATUS
 
-Updated: 2026-10-31
-Branch baseline at this refresh: `main` latest observed commit `9f7b715ee9c15506514c4e563ea78801d9c77e9d` (`docs: record merged process API hardening and CI evidence`; documentation-only follow-up to kernel fix `4e3691c`). PR #16 remains merged as `d6b58292df7e00b4b2f15ba22f3a0405035ee549`.
+Updated: 2026-11-03
+Branch baseline at this refresh: `main` latest observed commit `28112603ebbd6a4bfa6cc93a6c6cb0be84cc2f3a` (`docs: record merged atomic user-copy fix and CI evidence`).
 Status policy: **evidence-weighted estimate; never equate a source file, marker check, architecture document, or host test with a working end-user feature.**
 
 ## Historical evidence refresh — 2026-10-26 (superseded for current HEAD)
@@ -238,3 +238,14 @@ Added `LIBRARY_REUSE_AND_INTEGRATION_PLAN.md` and indexed it from `MASTER_INDEX.
 - PR-event validation skipped the GitHub Release publication step. The run's successful production-artifact step is not proof that a GitHub Release was published. The combined-status lookup for post-merge main SHA `6521dcf...` returned no entries, and the connected workflow-run helper exposes PR-triggered runs only. Therefore post-merge main CI and current live stable-ISO byte identity remain **unverified**.
 - Still open: execute/retain the optional 600-second Stage 1 scheduler soak; physical Lenovo G560 and device-matrix certification; reconcile open/stale PRs (notably #26/#27 scheduler/boot evidence, #14 broader runtime work overlapping this user-copy fix, and #23 release-note ordering which should be checked against the already merged release workflow). Browser/media/AI/compatibility requirements remain roadmap work unless separately evidenced.
 - Previous 2026-10-31 candidate-pending statements above are superseded by this merge and candidate CI evidence. Overall completion estimate remains unchanged (~43%); this focused race fix does not justify a percentage increase.
+
+## Evidence update — 2026-11-03: Ring-3 interrupt GS ownership (candidate)
+
+- Reviewed `main` at `28112603ebbd6a4bfa6cc93a6c6cb0be84cc2f3a`. The exact-main combined-status and workflow-run lookups returned no entries; CI for this exact SHA is **unverified**.
+- PR #36's earlier Build #1714 (run ID `41383120934`) succeeded, but the later documentation-tip Build #1721 (run ID `41383517040`) failed its production desktop/network smoke. Its retained production-boot diagnostics show `ZEROOS PANIC: per-CPU current task invariant failed.` followed by `ZEROOS PANIC: timer observed non-running current task.`; the production serial log did not reach the interactive desktop-ready milestone. This later failure is not erased by the earlier successful run.
+- Source review found that `boot/isr.S:isr_common` called C interrupt dispatch without first establishing the kernel GS base. `cpu_local()` resolves `IA32_GS_BASE` and otherwise falls back to CPU 0. A Ring-3 interrupt on an AP can therefore enter scheduler C code with the user GS base active and be attributed to the BSP's CPU-local record. This is the leading diagnosis for the observed per-CPU ownership failure; the candidate QEMU run must confirm the correction.
+- Candidate branch `fix/ring3-interrupt-gs-ownership-20261103` adds fail-closed GS-base detection and `SWAPGS` entry/return helpers, preserves the original interrupt-frame pointer and entry-swap state across scheduler handoff, initializes the user GS slot on BSP/AP bring-up, and executes `SWAPGS` before the first Ring-3 `iretq`. The return helper restores the pre-entry state for an unchanged frame and selects the target privilege state after a task switch, including nested NMI windows.
+- Added `tools/test_interrupt_gs_entry.py` and a required Build workflow step before toolchain installation. At this documentation update, the exact candidate Build/QEMU workflow has not completed; **no new native-build or QEMU pass is claimed**. The fix is candidate code, not merged main functionality.
+- PR #36 remains open and its latest docs-tip production smoke failure remains an integration blocker until a new exact-head run passes. The candidate GS fix is separate from PR #36's range-unmap preflight change.
+- Release blockers remain: exact post-merge main CI; live stable `zeroos.iso` byte comparison against the production ISO from that exact run and final release-note confirmation; 600-second scheduler soak; physical Lenovo G560/device certification. PR-triggered validation does not publish a GitHub Release.
+- Overall implementation estimate is unchanged; documentation and source regressions do not earn feature-completion credit.
