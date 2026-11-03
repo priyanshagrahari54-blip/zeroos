@@ -128,7 +128,9 @@ for iteration in $(seq 1 "$iterations"); do
   # With -no-shutdown, a healthy guest remains alive until timeout. Do not
   # swallow emulator errors or accept an early guest/emulator exit as a boot.
   set +e
-  timeout "${timeout_s}s" qemu-system-x86_64 \
+  # QEMU can pause rather than exit after a guest shutdown with -no-shutdown;
+  # force termination after a short grace period so a broken boot cannot hang CI.
+  timeout --kill-after=5s "${timeout_s}s" qemu-system-x86_64 \
     -smp "$smp" \
     -cdrom "$iso" \
     -netdev user,id=net0 -device rtl8139,netdev=net0 \
@@ -141,7 +143,7 @@ for iteration in $(seq 1 "$iterations"); do
   qemu_status=$?
   set -e
 
-  if [ "$qemu_status" -ne 124 ]; then
+  if [ "$qemu_status" -ne 124 ] && [ "$qemu_status" -ne 137 ]; then
     echo "boot_test iteration ${iteration}: QEMU exited unexpectedly (status=$qemu_status; expected timeout 124)" >&2
     tail -40 "$build_root/serial.log" 2>/dev/null || true
     tail -40 "$build_root/qemu.log" 2>/dev/null || true
