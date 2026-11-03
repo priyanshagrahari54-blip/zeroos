@@ -10,6 +10,7 @@ CPU_H = ROOT / "kernel" / "cpu.h"
 ISR = ROOT / "boot" / "isr.S"
 USER_ENTRY = ROOT / "kernel" / "user_entry.S"
 WORKFLOW = ROOT / ".github" / "workflows" / "build.yml"
+BOOT_TEST = ROOT / "tools" / "boot_test.sh"
 
 
 def function_body(source: str, signature: str) -> str:
@@ -38,6 +39,7 @@ class InterruptGsOwnershipTests(unittest.TestCase):
         cls.isr = ISR.read_text(encoding="utf-8")
         cls.user_entry = USER_ENTRY.read_text(encoding="utf-8")
         cls.workflow = WORKFLOW.read_text(encoding="utf-8")
+        cls.boot_test = BOOT_TEST.read_text(encoding="utf-8")
 
     def test_cpu_local_validation_is_shared_by_lookup_and_entry(self):
         validator = function_body(self.cpu, "static int cpu_local_base_valid(")
@@ -109,6 +111,10 @@ class InterruptGsOwnershipTests(unittest.TestCase):
             "void cpu_interrupt_gs_restore(const struct interrupt_frame *original_frame,",
             self.cpu_header,
         )
+
+    def test_qemu_boot_timeout_force_kills_paused_emulator(self):
+        self.assertIn('timeout --kill-after=5s "${timeout_s}s" qemu-system-x86_64', self.boot_test)
+        self.assertIn('[ "$qemu_status" -ne 124 ] && [ "$qemu_status" -ne 137 ]', self.boot_test)
 
     def test_ci_runs_regression_before_installing_build_tools(self):
         invocation = "python3 tools/test_interrupt_gs_entry.py"
