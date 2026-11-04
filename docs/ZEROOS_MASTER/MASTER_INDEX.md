@@ -203,3 +203,12 @@ Priority is still boot/release gate → kernel/userspace lifecycle correctness �
 - PR #37 full Build #1740 and Stage 1 #161 passed, but code review found `context_switch_ex`'s direct frame `iretq` path in `kernel/context.S` bypasses GS restoration. Keep that separate kernel PR open until covered.
 - Main QEMU serial evidence shows desktop/compositor/input and storage self-tests; network reports no supported device. Do not index the smoke-gate pass as network-driver support.
 - Latest release pointer is stale versus latest main due out-of-order publisher runs; PR #38 is the candidate fix. Completion estimate unchanged.
+
+## Final evidence update — 2026-11-04
+
+- Merged PR #38: stable ISO publication is now serialized per ref and stale-main runs are prevented from mutating the stable alias/final release notes. Main merge: `84f8a5cf23e03098419d92231a25908174e3c21f`.
+- Candidate Build #41574953029 and push Build #41574947638 passed; candidate Stage 1 workflows #41574953139 and #41574947653 passed. Full candidate QEMU, storage, production ISO and desktop/network smoke steps completed successfully.
+- Post-merge main Build #41766774251 and Stage 1 Scheduler #41766774267 passed on `84f8a5cf...`. Main CI completed the native build, clean `make check`, QEMU boot variants, scheduler diagnostics, AHCI/NVMe two-boot persistence, production ISO, production smoke and release publication.
+- Release log byte-compared the stable ISO with the boot-tested production ISO. Stable and versioned release assets both report SHA-256 `297ac5218d9c4e9b4b59cb85638a087fb2633a569c91bd40b8dc23e0e7a6016e`; release notes name `84f8a5c`. The previous stale-alias blocker is closed for this release.
+- QEMU RTL8139/DHCP evidence exists (`10.0.2.15` lease and gateway ARP resolution); physical NIC/G560 support remains unverified.
+- Next indexed work: PR #37 GS ownership return-path correction; PR #36 address-space unmap hardening; 600-second scheduler soak; physical hardware matrix; then storage recovery, drivers/security, desktop hardware integration, browser/media/AI/compatibility. No completion increase.

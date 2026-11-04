@@ -889,3 +889,11 @@ The Library reference PDFs have been catalogued in `EXTERNAL_REFERENCE_AUDIT_202
 4. Continue the 600-second scheduler soak, physical G560/device certification, storage recovery, drivers/security, native desktop hardware integration, then browser/media/AI/compatibility.
 
 No overall completion increase is claimed.
+
+## Final evidence update — 2026-11-04: release ordering blocker closed
+
+- **P0 release ordering:** PR #38 merged as `84f8a5cf23e03098419d92231a25908174e3c21f`. Per-ref workflow concurrency (`cancel-in-progress: false`) and a stale-main SHA guard protect the mutable release alias and final notes. Candidate and main CI passed.
+- **Post-merge acceptance:** Build #41766774251 and Stage 1 Scheduler #41766774267 both succeeded for `84f8a5cf...`. The Build completed clean `make check`, repeated QEMU boot, SMP4, NX-disabled, failed-IPI recovery, scheduler fault diagnostics, two-boot AHCI/NVMe persistence, production ISO and production desktop/network smoke.
+- **Release proof:** The main workflow downloaded and byte-compared `zeroos.iso` with the boot-tested production image and logged SHA-256 `297ac5218d9c4e9b4b59cb85638a087fb2633a569c91bd40b8dc23e0e7a6016e`. Release API metadata gives the same digest for versioned `zeroos-84f8a5c.iso` and stable `zeroos.iso`; notes identify `84f8a5c`. The earlier out-of-order stable-pointer defect is closed for this release.
+- **Next P0 kernel review:** PR #37's GS ownership fix passed its prior Build #1740/Stage 1 #161, but source review identified a direct `context_switch_ex` frame-resume `iretq` path in `kernel/context.S` that still needs GS restoration coverage. Correct and regression-test that path before merging PR #37.
+- Continue PR #36 range-unmap review, Stage 1 600-second soak, physical G560/device certification, storage recovery, drivers/security, native desktop hardware integration, then browser/media/AI/compatibility. QEMU RTL8139 DHCP evidence is not physical NIC certification. No overall completion percentage increase.
