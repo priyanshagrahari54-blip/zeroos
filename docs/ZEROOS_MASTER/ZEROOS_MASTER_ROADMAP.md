@@ -897,3 +897,11 @@ No overall completion increase is claimed.
 - **Release proof:** The main workflow downloaded and byte-compared `zeroos.iso` with the boot-tested production image and logged SHA-256 `297ac5218d9c4e9b4b59cb85638a087fb2633a569c91bd40b8dc23e0e7a6016e`. Release API metadata gives the same digest for versioned `zeroos-84f8a5c.iso` and stable `zeroos.iso`; notes identify `84f8a5c`. The earlier out-of-order stable-pointer defect is closed for this release.
 - **Next P0 kernel review:** PR #37's GS ownership fix passed its prior Build #1740/Stage 1 #161, but source review identified a direct `context_switch_ex` frame-resume `iretq` path in `kernel/context.S` that still needs GS restoration coverage. Correct and regression-test that path before merging PR #37.
 - Continue PR #36 range-unmap review, Stage 1 600-second soak, physical G560/device certification, storage recovery, drivers/security, native desktop hardware integration, then browser/media/AI/compatibility. QEMU RTL8139 DHCP evidence is not physical NIC certification. No overall completion percentage increase.
+
+## Latest release evidence — 2026-11-04
+
+- The current documentation-tip main snapshot `9d77ad3` passed Build #41767825881 and Stage 1 Scheduler #41767825887.
+- The Build passed clean `make check`, native kernel/ISO validation, repeated QEMU boot variants, scheduler fault certification, two-boot AHCI/NVMe persistence, production ISO, production boot smoke and release publication.
+- Stable `zeroos.iso` and versioned `zeroos-9d77ad3.iso` are verified identical by the workflow's byte comparison and both report SHA-256 `cebb728732f1cd04e2058182842e53c5d988cc0463fc7bb2ac4b8217314da413`. Release notes identify `9d77ad3`.
+- PR #38's release-ordering defect is closed for this published image. Remaining priorities: PR #37's GS restoration gap in the direct interrupt-frame resume path; PR #36 range-unmap validation; 600-second scheduler soak; physical G560/device matrix; storage recovery; driver/security; desktop hardware integration; browser/media/AI/compatibility. QEMU RTL8139 DHCP does not equal physical NIC certification.
+- No overall completion percentage increase. This final documentation-only commit skips CI; it does not modify the tested OS image.

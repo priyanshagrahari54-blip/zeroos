@@ -197,3 +197,11 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - Main release job explicitly reports: `stable release ISO matches the boot-tested production ISO`, SHA-256 `297ac5218d9c4e9b4b59cb85638a087fb2633a569c91bd40b8dc23e0e7a6016e`. GitHub Release metadata reports the same digest and 12,369,920-byte size for `zeroos-84f8a5c.iso` and mutable `zeroos.iso`; release notes name `84f8a5c`. This closes the prior stable-alias mismatch for the verified release.
 - QEMU production serial shows RTL8139 attach, DHCP lease `10.0.2.15`, and first-hop ARP resolution. This does not certify physical NICs or the Lenovo G560.
 - Remaining: 600-second scheduler soak, physical hardware/device matrix, PR #37 GS return-path correction/review, PR #36 range-unmap review, and later storage recovery/driver/security/desktop/browser/media/AI/compatibility requirements. No completion estimate increase.
+
+## Latest follow-up — 2026-11-04: exact current release verified
+
+- Latest tested main snapshot: `9d77ad3befb6c782b548020d67d6af38401533b2`. Build #41767825881 and Stage 1 Scheduler #41767825887 both **SUCCESS**.
+- Main Build passed release regression, diagnostic retention, fail-closed QEMU gate, scheduler affinity, process-parent/API-pointer/user-copy regressions, native build, clean `make check`, ISO verification, repeated QEMU variants, scheduler fault diagnostics, two-boot AHCI/NVMe persistence, production ISO, production boot smoke and release publication.
+- The workflow log reports a successful stable-vs-production byte comparison with SHA-256 `cebb728732f1cd04e2058182842e53c5d988cc0463fc7bb2ac4b8217314da413`. Release API metadata reports that same digest and 12,369,920-byte size for `zeroos-9d77ad3.iso` and `zeroos.iso`; notes name `9d77ad3`.
+- QEMU production serial confirms RTL8139 attach, DHCP lease `10.0.2.15`, and gateway ARP resolution. Do not extend this to physical hardware certification.
+- The final documentation-only follow-up skips CI and does not change the OS code or the published image. Remaining: 600-second scheduler soak, physical G560/device matrix, PR #37 GS return-path source gap, PR #36 range-unmap review, and later driver/security/recovery/desktop/browser/media/AI/compatibility work. No completion increase.

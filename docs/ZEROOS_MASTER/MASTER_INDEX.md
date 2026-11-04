@@ -212,3 +212,11 @@ Priority is still boot/release gate → kernel/userspace lifecycle correctness �
 - Release log byte-compared the stable ISO with the boot-tested production ISO. Stable and versioned release assets both report SHA-256 `297ac5218d9c4e9b4b59cb85638a087fb2633a569c91bd40b8dc23e0e7a6016e`; release notes name `84f8a5c`. The previous stale-alias blocker is closed for this release.
 - QEMU RTL8139/DHCP evidence exists (`10.0.2.15` lease and gateway ARP resolution); physical NIC/G560 support remains unverified.
 - Next indexed work: PR #37 GS ownership return-path correction; PR #36 address-space unmap hardening; 600-second scheduler soak; physical hardware matrix; then storage recovery, drivers/security, desktop hardware integration, browser/media/AI/compatibility. No completion increase.
+
+## Latest current-main evidence — 2026-11-04
+
+- Documentation-tip main snapshot `9d77ad3befb6c782b548020d67d6af38401533b2`: Build #41767825881 **SUCCESS** and Stage 1 Scheduler #41767825887 **SUCCESS**.
+- Full Build gates passed: release-policy and existing regressions, native x86-64 build, clean `make check`, kernel/ISO checks, QEMU boot variants, scheduler fault diagnostics, two-boot AHCI/NVMe persistence, production ISO, production boot smoke and release publication.
+- Current release notes identify `9d77ad3`. Versioned and stable ISO assets both have SHA-256 `cebb728732f1cd04e2058182842e53c5d988cc0463fc7bb2ac4b8217314da413` (12,369,920 bytes); workflow log confirms the stable ISO byte comparison passed.
+- QEMU RTL8139 attach, DHCP lease and gateway ARP resolution are evidenced. Physical NIC/G560 certification is still separate.
+- The final follow-up is documentation-only and skips CI; the tested OS code/release remains `9d77ad3`. Keep PR #37 GS return-path review, PR #36 range-unmap review, scheduler soak, physical hardware, and the remaining product roadmap open. No percentage increase.
