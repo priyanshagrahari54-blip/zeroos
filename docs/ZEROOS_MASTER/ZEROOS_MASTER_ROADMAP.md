@@ -871,3 +871,21 @@ The Library reference PDFs have been catalogued in `EXTERNAL_REFERENCE_AUDIT_202
 - Candidate Build #1702 and Stage 1 Scheduler #123 passed. Verified gates include the new five-test source regression, native build, clean `make check`, repeated QEMU boot/SMP4/NX-off/failed-IPI, scheduler fault diagnostics, two-boot AHCI/NVMe persistence, production ISO build and desktop/network smoke.
 - Next release/acceptance gates remain ordered ahead of lower-priority product work: post-merge main workflow; live stable ISO byte comparison and final release-note confirmation; 600-second scheduler soak; physical G560/device certification. Reconcile PR #14 overlap and rebase/review #26/#27 before integration. Browser/media/AI/compatibility requirements remain preserved in later roadmap stages.
 - No overall completion estimate increase.
+
+
+## Evidence update — 2026-11-03: P0 stable release ordering
+
+- Latest main `28112603` passed Build #41265715805 and Stage 1 Scheduler #41265715839, including repeated QEMU, SMP4/NX-off/failed-IPI, scheduler diagnostics, two-boot AHCI/NVMe, production ISO, and desktop/network smoke.
+- Release publication is not currently aligned with latest main: older run #41265707574 for `3ba0dbe` finished after the latest-main run and left stable `zeroos.iso` at digest `c80f4270...`; latest-main `zeroos-2811260.iso` is `eea7d77...`, and release notes name the older commit. Treat this as a P0 release blocker despite both individual workflows reporting success.
+- Candidate `fix/serialize-stable-release-publish-20261103` serializes build/release runs per ref without cancelling active rollback operations and skips stable-alias mutation when `GITHUB_SHA` is no longer current `main`. Regression assertions were added. Merge only after candidate CI passes; then run a fresh main workflow and verify the live stable asset and notes against that exact build.
+- Next priorities remain: close the stable-release race; complete the separate Ring-3 GS ownership fix (PR #37) and scheduler soak; then storage recovery, drivers/security, native desktop integration, browser/media/AI/compatibility. Physical G560 certification remains separate. No completion estimate increase.
+
+
+## Follow-up roadmap evidence — 2026-11-03
+
+1. **P0 release integrity:** PR #38's release-policy and build checks passed, but full QEMU remains in progress. Merge only after all candidate gates pass, then verify a fresh main release run fixes the stable ISO and release notes to its exact commit.
+2. **P0 kernel entry correctness:** PR #37's full CI passed, but `context_switch_ex` in `kernel/context.S` has a direct frame `iretq` path without GS restoration. Correct and regression-test that path before merging PR #37.
+3. **P1 networking:** current QEMU serial logs explicitly report no supported network device; production smoke success does not certify a NIC driver.
+4. Continue the 600-second scheduler soak, physical G560/device certification, storage recovery, drivers/security, native desktop hardware integration, then browser/media/AI/compatibility.
+
+No overall completion increase is claimed.

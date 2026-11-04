@@ -5,6 +5,10 @@ on:
   pull_request:
   workflow_dispatch: # manual re-run of boot certification (CI recovery)
 
+concurrency:
+  group: zeroos-build-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -410,6 +414,14 @@ jobs:
           gh release download "$tag" --pattern "zeroos-${sha}.iso" --dir build/release-versioned-verify --clobber
           cmp --silent build-production/zeroos.iso "build/release-versioned-verify/zeroos-${sha}.iso" \
             || { echo "versioned release ISO differs from the boot-tested production ISO" >&2; exit 1; }
+          # A newer main push may arrive while this build is running. Keep the
+          # immutable per-commit asset, but never let an obsolete run move the
+          # mutable stable alias or rewrite the release notes.
+          latest_main_sha="$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)"
+          if [ "$latest_main_sha" != "$GITHUB_SHA" ]; then
+            echo "ZEROOS: skipping stable release update for stale main commit ${GITHUB_SHA}; main is ${latest_main_sha}."
+            exit 0
+          fi
 
           # Preserve the previous stable alias so a failed update can be rolled
           # back. A metadata-query failure is fatal; it must not be mistaken for

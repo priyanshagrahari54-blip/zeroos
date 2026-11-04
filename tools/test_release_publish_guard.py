@@ -7,6 +7,18 @@ import textwrap
 
 workflow = Path(".github/workflows/build.yml").read_text(encoding="utf-8")
 
+# Main pushes share one publisher slot. Do not cancel an active release update:
+# it may be in the middle of the stable-asset rollback transaction.
+workflow_header = workflow.split("\njobs:", 1)[0]
+expected_concurrency = (
+    "concurrency:\n"
+    "  group: zeroos-build-${{ github.ref }}\n"
+    "  cancel-in-progress: false"
+)
+if expected_concurrency not in workflow_header:
+    print("release publisher must be serialized per ref without cancelling an active update", file=sys.stderr)
+    raise SystemExit(1)
+
 guard_test_step = "      - name: Verify stable release publication policy"
 if workflow.count(guard_test_step) != 1:
     print("expected exactly one stable release policy regression step", file=sys.stderr)
@@ -40,6 +52,9 @@ if conditions != [expected]:
 versioned_upload = 'gh release upload "$tag" "zeroos-${sha}.iso" --clobber'
 versioned_download = 'gh release download "$tag" --pattern "zeroos-${sha}.iso" --dir build/release-versioned-verify --clobber'
 versioned_compare = 'cmp --silent build-production/zeroos.iso "build/release-versioned-verify/zeroos-${sha}.iso"'
+latest_main_check = 'latest_main_sha="$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)"'
+stale_main_condition = 'if [ "$latest_main_sha" != "$GITHUB_SHA" ]; then'
+stale_main_message = 'echo "ZEROOS: skipping stable release update for stale main commit ${GITHUB_SHA}; main is ${latest_main_sha}."'
 stable_backup = 'gh release download "$tag" --pattern "zeroos.iso" --dir build/release-backup --clobber'
 stable_upload = 'if ! gh release upload "$tag" zeroos.iso --clobber; then'
 stable_download = 'if ! gh release download "$tag" --pattern "zeroos.iso" --dir build/release-verify --clobber; then'
@@ -57,6 +72,17 @@ required = (
 missing = [check for check in required if check not in step]
 if missing:
     print(f"release publisher is missing required integrity/rollback checks: {missing!r}", file=sys.stderr)
+    raise SystemExit(1)
+
+stale_check_pos = step.find(latest_main_check)
+stale_condition_pos = step.find(stale_main_condition)
+stable_backup_pos = step.find(stable_backup)
+if not (step.find(versioned_compare) < stale_check_pos < stale_condition_pos < stable_backup_pos):
+    print("stale-main guard must run after versioned verification and before stable-alias mutation", file=sys.stderr)
+    raise SystemExit(1)
+stale_guard_block = step[stale_check_pos:stable_backup_pos]
+if stale_main_message not in stale_guard_block or "exit 0" not in stale_guard_block:
+    print("stale main runs must leave the mutable stable alias and release notes untouched", file=sys.stderr)
     raise SystemExit(1)
 
 positions = [step.find(check) for check in required]

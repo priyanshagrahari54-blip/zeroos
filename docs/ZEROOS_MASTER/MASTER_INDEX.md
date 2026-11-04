@@ -188,3 +188,18 @@ Priority is still boot/release gate → kernel/userspace lifecycle correctness �
 - PR #35's process address-space user-copy TOCTOU fix is merged to `main` at `6521dcf3e2b7d0caef25cb47515b8572f0358fcc`.
 - Build #1702 (run ID `41164323843`) passed on PR integration merge commit `59654aa954f56a56eaa1ff7ea444b3a6e486da45`: new atomic-copy regression (5 tests), native build, clean `make check`, repeated QEMU/SMP4/NX-off/failed-IPI gates, scheduler fault certification, two-boot AHCI/NVMe persistence, production ISO and desktop/network smoke. Stage 1 Scheduler #123 also passed.
 - GitHub Release publication was skipped on the PR event. Post-merge main CI and live stable ISO verification remain unconfirmed; the 600-second soak and physical hardware matrix remain outstanding. Overall completion estimate unchanged.
+
+
+## Evidence update — 2026-11-03: stable release race
+
+- Main `28112603` Build #41265715805 and Stage 1 Scheduler #41265715839 passed, including QEMU boot variants, storage persistence, production desktop/network smoke and release publication.
+- A later-finishing older main workflow #41265707574 overwrote stable `zeroos.iso`: current release digest `c80f4270...` and notes name `3ba0dbe`, while latest-main immutable asset `zeroos-2811260.iso` is `eea7d77...`. The missing per-ref workflow concurrency allowed out-of-order publication.
+- Candidate `fix/serialize-stable-release-publish-20261103` adds non-cancelling per-ref serialization plus a stale-main SHA guard, with regression coverage in `tools/test_release_publish_guard.py`. Not merged; PR CI and a post-merge release repair run remain required. Completion estimate unchanged.
+
+
+## Follow-up evidence — 2026-11-03
+
+- PR #38 release serialization/stale-main regression, all pre-build regressions, native build, reproducible release gate and kernel/ISO verification passed. Its full QEMU Boot test remains in progress; Stage 1 Scheduler #165 passed. Candidate is not merge-ready on partial evidence.
+- PR #37 full Build #1740 and Stage 1 #161 passed, but code review found `context_switch_ex`'s direct frame `iretq` path in `kernel/context.S` bypasses GS restoration. Keep that separate kernel PR open until covered.
+- Main QEMU serial evidence shows desktop/compositor/input and storage self-tests; network reports no supported device. Do not index the smoke-gate pass as network-driver support.
+- Latest release pointer is stale versus latest main due out-of-order publisher runs; PR #38 is the candidate fix. Completion estimate unchanged.
