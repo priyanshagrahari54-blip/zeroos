@@ -155,6 +155,7 @@ static int multiboot_info_range_self_test(void) {
                                      ZEROOS_MAX_MULTIBOOT_INFO_SIZE) &&
            !multiboot_info_size_valid(
                middle,ZEROOS_MAX_MULTIBOOT_INFO_SIZE+1ULL) &&
+           !multiboot_info_size_valid(middle,17ULL) &&
            multiboot_info_size_valid(last_page,ZEROOS_PAGE_SIZE) &&
            !multiboot_info_size_valid(last_page,ZEROOS_PAGE_SIZE+1ULL);
 }
