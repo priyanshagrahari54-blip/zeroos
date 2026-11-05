@@ -315,3 +315,11 @@ Added `LIBRARY_REUSE_AND_INTEGRATION_PLAN.md` and indexed it from `MASTER_INDEX.
 - Candidate Build/QEMU for this new correction has not yet completed. No new boot pass or physical-hardware result is claimed.
 - Remaining release/certification blockers: post-merge main workflow and current-main stable ISO verification; 600-second scheduler soak; physical Lenovo G560/device matrix. PR #26/#27 boot/scheduler evidence branches require reconciliation/rebase against current main. QEMU RTL8139/DHCP evidence does not certify a physical NIC.
 - Overall implementation estimate remains approximately 43%; no percentage increase is assigned for this validation-policy fix.
+
+## Candidate validation correction — PR #40 Build #1770 — 2026-11-05
+
+- PR #40 first Build workflow #1770 failed at `Verify Multiboot2 information range handling`, before toolchain installation, native release build, clean `make check`, or any QEMU boot. The exact failing assertion expected the runtime boundary self-test to include a 17-byte (non-8-byte-aligned) total-size rejection; the C self-test did not yet contain that case. This was a regression-coverage mismatch, not a compiler or guest boot failure.
+- Stage 1 Scheduler workflow #191 completed SUCCESS on the initial PR head, including native x86-64 kernel build and Stage 1 scheduler certification. It does not substitute for the full Build/QEMU gate.
+- Corrected the C runtime self-test to reject the 17-byte size and made the source regression normalize whitespace before checking the call. The current candidate head is `c2010a2175ea6f73b0057143def8d4172fc54d65`.
+- The exact-head rerun has not yet been returned by the available workflow lookup. Do not claim the new regression, native release build, QEMU, storage, or production desktop gates passed until a completed run for the updated PR head is inspected.
+- PR #40 remains open and unmerged. Main's post-merge CI and stable ISO verification for `c3c4eb6ba1a508ff8258d4cf96864317de2da6b4` remain separate release blockers. Overall completion estimate remains unchanged.
