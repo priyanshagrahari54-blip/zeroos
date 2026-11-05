@@ -1,6 +1,6 @@
 # ZEROOS — Validation and Support Matrix
 
-Updated: 2026-11-05. This is the evidence policy for Stages 1-10; it must not overstate support.
+Updated: 2026-11-05. Current main reviewed at `c3c4eb6ba1a508ff8258d4cf96864317de2da6b4`; this is the evidence policy for Stages 1-10 and must not overstate support.
 
 The binding acceptance checklist is [ZEROOS_10_STAGE_HARDENING.md](./ZEROOS_10_STAGE_HARDENING.md). Current estimates and known limitations are in [ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md](./ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md).
 
@@ -230,3 +230,16 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - Build #41960835677 stopped in `Verify QEMU boot gate fails closed`, before native build or QEMU. The newly bounded timeout command added `--kill-after=5s`, but the test's fake `timeout` executable treated that option as the duration and attempted to execute `1s`; the regression then saw the wrapper's traceback instead of the expected exit diagnostic.
 - Updated `tools/test_boot_gate_fail_closed.py` to strip the optional `--kill-after=...` argument before invoking its fake child, match the revised 124/137 diagnostic, and add a case proving forced-kill status 137 is accepted only as a timeout outcome while boot milestones are still mandatory.
 - The next exact-head Build must rerun both the fail-closed boot-gate suite and the GS ownership suite before the compiler/build/QEMU stages. No kernel build or QEMU result is claimed for Build #41960835677.
+
+## Current-main evidence and Multiboot2 handoff range — 2026-11-05
+
+- Current reviewed main SHA: `c3c4eb6ba1a508ff8258d4cf96864317de2da6b4`.
+- Candidate Build #41963710252: job completed SUCCESS. Verified steps include clean `make check`, kernel/ISO verification, repeated QEMU boot, scheduler panic diagnostics, q35 AHCI + NVMe persistence over two boots, production ISO generation, and production desktop/network smoke. GitHub Release publication was skipped because the run was PR-triggered.
+- Stage 1 Scheduler #41963710086: completed SUCCESS. This is candidate evidence; a separate post-merge main push run was not returned by the available workflow-run lookup.
+- Current-main combined-status lookup returned no entries. Treat post-merge main CI as unverified, not failed and not passed.
+- Current main's stable release asset has not been independently compared with a production ISO from `c3c4eb6ba1a508ff8258d4cf96864317de2da6b4`; release publication remains an open gate.
+- Boot parser defect found in `kernel/memory.c`: the Multiboot2 information-block start was incorrectly capped at 16 MiB. The boot identity map covers 1 GiB and the allocator's supported physical window is 512 MiB. The 16 MiB cap belongs on `total_size`, not on the starting physical address.
+- Candidate branch `fix/multiboot-info-window-20261105` separates aligned start-address validation from the 16 MiB size limit, checks the full block fits within the 512 MiB managed window, adds a boot-time boundary self-test (32 MiB start, final managed page, invalid alignment/size/window cases), and reserves the parsed block.
+- New host/source regression: `tools/test_multiboot_info_range.py`; Build workflow invocation is before toolchain installation. New required guest marker: `ZEROOS: Multiboot2 info range policy self-test passed.`
+- Exact candidate CI/QEMU for this change is pending. Until it completes, the change is implemented on the candidate branch but not boot-certified.
+- Remaining release gates: post-merge main workflow, stable ISO byte comparison for current main, 600-second scheduler soak, and physical hardware certification. Do not equate QEMU RTL8139/DHCP with physical NIC support.
