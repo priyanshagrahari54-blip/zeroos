@@ -264,3 +264,8 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - Stage 1 #230's native kernel build and scheduler certification steps both completed SUCCESS, but the overall workflow conclusion was CANCELLED. Stage 1 #231 remained pending with no job started.
 - No completed full Build/QEMU/storage/production-smoke result exists for the final candidate. Local clone was blocked by DNS and local QEMU is unavailable.
 - Keep PR #40 unmerged until a completed exact-head Build passes the new regression, native release build, clean `make check`, QEMU boot matrix, storage, and production smoke.
+## PR #40 latest CI result — 2026-11-05
+
+- Stage 1 Scheduler #231 completed SUCCESS on code/test head `9c14a4a4fed9d0f3a8e21e3f5c2ecbf45a819a99`: native x86-64 kernel build and Stage 1 scheduler certification both passed.
+- Build #1810 was cancelled during overlapping PR validation events. Latest Build #1816 for docs tip `9c1d3b1d5d9fc04c0857056b2fe5dea6a0cd9928` was pending with no job started at last lookup.
+- The corrected Multiboot2 source regression has not yet completed in a successful Build workflow. Full QEMU boot, storage persistence, production ISO and desktop smoke remain unverified for this candidate.
