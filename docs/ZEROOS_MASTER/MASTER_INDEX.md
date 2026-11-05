@@ -1,6 +1,6 @@
 # ZEROOS — MASTER DOCUMENT INDEX
 Version: 2.4
-Updated: 2026-11-05
+Updated: 2026-11-05 (main reviewed at c3c4eb6ba1a508ff8258d4cf96864317de2da6b4)
 
 This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md` remains the canonical consolidated product/architecture specification. Stage 6-10 execution is split into dedicated production master documents so an implementation agent can work one stage at a time without losing cross-cutting requirements.
 
@@ -245,3 +245,13 @@ Priority is still boot/release gate → kernel/userspace lifecycle correctness �
 - Build #41960835677 stopped in `Verify QEMU boot gate fails closed`, before native build or QEMU. The newly bounded timeout command added `--kill-after=5s`, but the test's fake `timeout` executable treated that option as the duration and attempted to execute `1s`; the regression then saw the wrapper's traceback instead of the expected exit diagnostic.
 - Updated `tools/test_boot_gate_fail_closed.py` to strip the optional `--kill-after=...` argument before invoking its fake child, match the revised 124/137 diagnostic, and add a case proving forced-kill status 137 is accepted only as a timeout outcome while boot milestones are still mandatory.
 - The next exact-head Build must rerun both the fail-closed boot-gate suite and the GS ownership suite before the compiler/build/QEMU stages. No kernel build or QEMU result is claimed for Build #41960835677.
+
+## Current-main implementation/evidence update — 2026-11-05
+
+- Current main baseline reviewed: `c3c4eb6ba1a508ff8258d4cf96864317de2da6b4`.
+- GS frame-resume and process range-unmap corrections are now included in main; see the current implementation status and validation evidence.
+- New candidate boot fix: Multiboot2 information-block addresses are no longer constrained to the first 16 MiB; the candidate accepts aligned starts within the 512 MiB managed identity-mapped window while retaining a 16 MiB maximum block size.
+- New regression file: `tools/test_multiboot_info_range.py`; new required boot milestone: `ZEROOS: Multiboot2 info range policy self-test passed.`
+- Candidate branch: `fix/multiboot-info-window-20261105`. Its new Build/QEMU result is pending; do not list the fix as merged or boot-certified until CI finishes and the candidate is integrated.
+- Main candidate evidence: Build #41963710252 and Stage 1 Scheduler #41963710086 passed; PR-event release publication was skipped. Post-merge main workflow and stable ISO verification for the current main SHA remain open.
+- The canonical product specification and all Stage 0-10 requirements remain unchanged. No completion percentage increase.
