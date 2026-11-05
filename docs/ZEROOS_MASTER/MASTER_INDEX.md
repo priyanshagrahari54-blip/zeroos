@@ -261,3 +261,8 @@ Priority is still boot/release gate → kernel/userspace lifecycle correctness �
 - New Multiboot2 handoff-range regression was added to the Build workflow. Its first Build #1770 failed at the new test because the runtime self-test lacked the expected 17-byte size-alignment case; no native release build or QEMU step ran in that attempt.
 - The missing C self-test case and whitespace-sensitive test assertion have been corrected. Candidate head: `c2010a2175ea6f73b0057143def8d4172fc54d65`; exact-head Build/QEMU validation is pending.
 - Do not merge PR #40 until the new regression, clean release gate, QEMU, storage and production smoke checks pass. No completion percentage increase.
+## PR #40 latest validation snapshot — 2026-11-05
+
+- Stage 1 Scheduler #203 passed on PR tip `7043444b45c5cd068651b7a2bb054851ae5d18cb`, including native x86-64 build and Stage 1 scheduler certification.
+- Build #1782 for that tip was pending with no job started at the last lookup; Build #1770 failed earlier in the new source regression before native release build/QEMU, and Build #1781 was cancelled during PR close/reopen.
+- Corrected PR head has not yet completed the full Build/QEMU/storage/production smoke gate. Keep PR #40 unmerged until it does.
