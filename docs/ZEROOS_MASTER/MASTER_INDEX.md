@@ -266,3 +266,9 @@ Priority is still boot/release gate → kernel/userspace lifecycle correctness �
 - Stage 1 Scheduler #203 passed on PR tip `7043444b45c5cd068651b7a2bb054851ae5d18cb`, including native x86-64 build and Stage 1 scheduler certification.
 - Build #1782 for that tip was pending with no job started at the last lookup; Build #1770 failed earlier in the new source regression before native release build/QEMU, and Build #1781 was cancelled during PR close/reopen.
 - Corrected PR head has not yet completed the full Build/QEMU/storage/production smoke gate. Keep PR #40 unmerged until it does.
+## Latest PR #40 CI snapshot — 2026-11-05
+
+- Stage 1 Scheduler #203 passed native kernel build and scheduler certification on PR tip `7043444b45c5cd068651b7a2bb054851ae5d18cb`.
+- Build #1770 failed in the new Multiboot2 regression before native release build/QEMU; the missing 17-byte runtime case and whitespace-sensitive assertion were corrected.
+- Build #1782 was cancelled; latest Build #1789 for docs tip `beaba6139cc06426ce5dc0243f6978a48e842e1f` is pending with no job started. No full QEMU/production validation is claimed for PR #40.
+- Keep PR #40 open/unmerged until the exact current head passes the full Build workflow.
