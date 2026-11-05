@@ -117,3 +117,4 @@ ZEROOS: session shell process reaped cleanly.
 # Negative gates: these indicate a failed or panicked boot.
 never:storage.*FAILED
 never:ZEROOS PANIC:
+ZEROOS: process address-space range unmap preflight self-test passed.
