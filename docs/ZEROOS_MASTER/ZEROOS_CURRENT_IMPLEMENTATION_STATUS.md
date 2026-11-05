@@ -1,7 +1,7 @@
 # ZEROOS — CURRENT IMPLEMENTATION STATUS
 
 Updated: 2026-11-05
-Branch baseline at this refresh: `main` latest observed commit `49eb15d2aad3e96bb67efe9808c25ac40937e756` (documentation-only follow-up; last OS-bearing snapshot `9d77ad3befb6c782b548020d67d6af38401533b2`).
+Branch baseline at this refresh: `main` latest observed commit `c3c4eb6ba1a508ff8258d4cf96864317de2da6b4` (includes GS frame-resume and process range-unmap corrections; candidate Build #41963710252 and Stage 1 Scheduler #41963710086 passed; post-merge main push workflow and current-main stable ISO remain unverified).
 Status policy: **evidence-weighted estimate; never equate a source file, marker check, architecture document, or host test with a working end-user feature.**
 
 ## Historical evidence refresh — 2026-10-26 (superseded for current HEAD)
@@ -300,3 +300,18 @@ Added `LIBRARY_REUSE_AND_INTEGRATION_PLAN.md` and indexed it from `MASTER_INDEX.
 - Build #41960835677 stopped in `Verify QEMU boot gate fails closed`, before native build or QEMU. The newly bounded timeout command added `--kill-after=5s`, but the test's fake `timeout` executable treated that option as the duration and attempted to execute `1s`; the regression then saw the wrapper's traceback instead of the expected exit diagnostic.
 - Updated `tools/test_boot_gate_fail_closed.py` to strip the optional `--kill-after=...` argument before invoking its fake child, match the revised 124/137 diagnostic, and add a case proving forced-kill status 137 is accepted only as a timeout outcome while boot milestones are still mandatory.
 - The next exact-head Build must rerun both the fail-closed boot-gate suite and the GS ownership suite before the compiler/build/QEMU stages. No kernel build or QEMU result is claimed for Build #41960835677.
+
+## Current-main review and Multiboot2 boot-range correction — 2026-11-05
+
+- Reviewed `main` at `c3c4eb6ba1a508ff8258d4cf96864317de2da6b4`; compare `main...c3c4eb6ba1a508ff8258d4cf96864317de2da6b4` is identical.
+- The Ring-3 GS frame-resume correction (`0336bfb407f7194838cc2508dba61d3264aa3ce5`) and process range-unmap preflight correction (`c3c4eb6ba1a508ff8258d4cf96864317de2da6b4`) are now in main. Earlier entries in this document that described those two fixes as candidate-only are superseded by this evidence update.
+- Candidate Build workflow #41963710252 completed successfully. Its job steps report PASS for the release-policy/diagnostic/QEMU-gate/scheduler-affinity/GS/process regressions, native build, clean `make check`, kernel/ISO verification, repeated QEMU boot, scheduler fault diagnostics, two-boot AHCI/NVMe persistence, production ISO generation, and production desktop/network smoke. The GitHub Release publication step was skipped on the PR event.
+- Stage 1 Scheduler workflow #41963710086 completed successfully, including native x86-64 kernel build and Stage 1 scheduler certification.
+- The combined-status query for the current main SHA returned no status entries; the available workflow-run lookup exposes PR-triggered runs only. Do not claim a post-merge push workflow from the candidate runs above.
+- The stable release asset has not been independently verified against a production ISO built from `c3c4eb6ba1a508ff8258d4cf96864317de2da6b4`; the candidate run skipped GitHub Release publication. Stable-release verification remains open for this main snapshot.
+- New boot finding: `memory_init()` rejected a Multiboot2 information-block start address above 16 MiB even though `boot/boot.S` identity-maps 1 GiB and the allocator manages the first 512 MiB. Multiboot2 does not require the information block to start below 16 MiB; a valid handoff above that address could leave the allocator empty and prevent boot.
+- Candidate correction: branch `fix/multiboot-info-window-20261105` validates the 8-byte-aligned information-block start against the managed 512 MiB physical window, independently caps the block length at 16 MiB, verifies that the complete block remains inside the managed window, and reserves the actual block range after parsing. A boot-time boundary self-test covers a 32 MiB start and the last managed page.
+- Added `tools/test_multiboot_info_range.py`, wired it before toolchain installation in the Build workflow, and added the required serial milestone `ZEROOS: Multiboot2 info range policy self-test passed.`
+- Candidate Build/QEMU for this new correction has not yet completed. No new boot pass or physical-hardware result is claimed.
+- Remaining release/certification blockers: post-merge main workflow and current-main stable ISO verification; 600-second scheduler soak; physical Lenovo G560/device matrix. PR #26/#27 boot/scheduler evidence branches require reconciliation/rebase against current main. QEMU RTL8139/DHCP evidence does not certify a physical NIC.
+- Overall implementation estimate remains approximately 43%; no percentage increase is assigned for this validation-policy fix.
