@@ -94,7 +94,7 @@ class MultibootInfoRangeTests(unittest.TestCase):
         self.assertNotIn("multiboot_info>ZEROOS_MAX_MULTIBOOT_INFO_SIZE", body)
         self.assertIn(MARKER, body)
 
-    def test_boot_identity_map_covers_the_allocator_window(self):
+    def test_boot_identity_map_covers_the_multiboot_window(self):
         self.assertIn("Identity-map the first 1 GiB", self.boot)
         self.assertIn(".rept 512", self.boot)
         self.assertIn("(pd_index << 21) | 0x83", self.boot)
