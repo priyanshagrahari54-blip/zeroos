@@ -26,6 +26,7 @@ zeroos_user_enter:
     orq $0x200, (%rsp)
     pushq $0x1b
     pushq %rdi
+    swapgs
     iretq
 
 .size zeroos_user_enter, .-zeroos_user_enter

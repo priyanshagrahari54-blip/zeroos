@@ -1801,7 +1801,17 @@ isr_common:
     pushq %r13
     pushq %r14
     pushq %r15
-    mov %rsp, %rdi
+
+    /*
+     * Keep a 16-byte scratch slot below the architectural frame. The entry
+     * helper must run before interrupt_dispatch (which reads cpu_local()).
+     * Its return value records whether this entry had to SWAPGS. Passing
+     * frame+16 preserves the struct interrupt_frame layout expected by C.
+     */
+    subq $16, %rsp
+    call cpu_interrupt_gs_enter
+    movq %rax, (%rsp)
+    leaq 16(%rsp), %rdi
     call interrupt_dispatch
 
     /*
@@ -1809,11 +1819,8 @@ isr_common:
      *   - an aligned architectural frame pointer (bit 0 clear), or
      *   - a tagged cooperative saved-stack pointer (bit 0 set).
      *
-     * The latter is necessary when the selected task last yielded
-     * cooperatively: it has a valid callee-saved context but no live hardware
-     * interrupt frame. Restore that context and return normally; interrupts
-     * are enabled immediately before retq because the interrupted IRQ has
-     * left IF cleared.
+     * Cooperative contexts are kernel contexts, so keep kernel GS active and
+     * restore their saved callee-saved registers directly.
      */
     test $1, %rax
     jz 1f
@@ -1836,22 +1843,28 @@ isr_common:
 
 1:
     /*
-     * Bit 1 set: the IRQ path switched to another task's frame and published
-     * a per-CPU handoff marker for the outgoing task, whose kernel stack this
-     * CPU was still using. Move onto the destination frame first, then clear
-     * the marker (the frame is 16-byte aligned, so the call is ABI-aligned
-     * and uses only the destination stack below its frame). Untagged frames
-     * (no switch) never touch task_lock here.
+     * A frame result may carry bit 1 to request completion of the outgoing
+     * per-CPU handoff. Keep the original frame pointer and entry SWAPGS flag
+     * in callee-saved registers while moving to the target frame stack.
      */
+    movq %rax, %r12
+    andq $-3, %r12
+    leaq 16(%rsp), %r14
+    movq 0(%rsp), %r13
     test $2, %rax
     jz 2f
-    andq $-3, %rax
-    movq %rax, %rsp
+    movq %r12, %rsp
     call task_handoff_complete
     jmp 3f
 2:
-    movq %rax, %rsp
+    movq %r12, %rsp
 3:
+    movq %r14, %rdi
+    movq %r12, %rsi
+    movq %r13, %rdx
+    call cpu_interrupt_gs_restore
+    movq %r12, %rsp
+
     popq %r15
     popq %r14
     popq %r13

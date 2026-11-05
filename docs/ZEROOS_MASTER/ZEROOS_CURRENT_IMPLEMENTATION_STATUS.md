@@ -1,7 +1,7 @@
 # ZEROOS — CURRENT IMPLEMENTATION STATUS
 
-Updated: 2026-10-31
-Branch baseline at this refresh: `main` latest observed commit `9f7b715ee9c15506514c4e563ea78801d9c77e9d` (`docs: record merged process API hardening and CI evidence`; documentation-only follow-up to kernel fix `4e3691c`). PR #16 remains merged as `d6b58292df7e00b4b2f15ba22f3a0405035ee549`.
+Updated: 2026-11-05
+Branch baseline at this refresh: `main` latest observed commit `49eb15d2aad3e96bb67efe9808c25ac40937e756` (documentation-only follow-up; last OS-bearing snapshot `9d77ad3befb6c782b548020d67d6af38401533b2`).
 Status policy: **evidence-weighted estimate; never equate a source file, marker check, architecture document, or host test with a working end-user feature.**
 
 ## Historical evidence refresh — 2026-10-26 (superseded for current HEAD)
@@ -275,3 +275,14 @@ Added `LIBRARY_REUSE_AND_INTEGRATION_PLAN.md` and indexed it from `MASTER_INDEX.
 - Release notes now identify `9d77ad3`. Versioned `zeroos-9d77ad3.iso` and stable `zeroos.iso` both report SHA-256 `cebb728732f1cd04e2058182842e53c5d988cc0463fc7bb2ac4b8217314da413` and size 12,369,920 bytes. The workflow log explicitly confirms that stable `zeroos.iso` was downloaded and byte-compared with the boot-tested production ISO.
 - Production QEMU serial evidence includes RTL8139 attach, DHCP lease `10.0.2.15`, and gateway ARP resolution. This remains QEMU virtual-NIC evidence, not physical NIC or G560 certification.
 - This final follow-up commit changes only these four documentation files and intentionally skips CI; the boot-tested/released OS code snapshot remains `9d77ad3`. The release-ordering blocker is closed for the current published image. Scheduler soak, physical hardware, PR #37 GS-return-path correction, PR #36 range-unmap review, and broader roadmap requirements remain open. No completion estimate increase.
+
+## Evidence update — 2026-11-05: complete GS ownership on direct frame resume (candidate)
+
+- Current `main` HEAD is `49eb15d2aad3e96bb67efe9808c25ac40937e756`, a documentation-only `[skip ci]` commit. The latest OS-bearing snapshot is `9d77ad3befb6c782b548020d67d6af38401533b2`; Build #1748 / run `41767825881` and Stage 1 Scheduler #169 / run `41767825887` both completed successfully.
+- Build #41767825881 passed existing source regressions, native x86-64 build, clean `make check`, kernel/ISO verification, repeated QEMU boot, SMP4, NX-disabled and failed-IPI boots, scheduler fault diagnostics, two-boot AHCI/NVMe persistence, production ISO, production desktop/network smoke, diagnostic preservation and GitHub Release publication.
+- Release API metadata reports versioned `zeroos-9d77ad3.iso` and stable `zeroos.iso` with the same SHA-256 `cebb728732f1cd04e2058182842e53c5d988cc0463fc7bb2ac4b8217314da413` and size 12,369,920 bytes. The main Build log confirms the stable asset was downloaded and byte-compared with the production ISO; release notes identify `9d77ad3`.
+- Existing PR #37 candidate `cb92e9b9aa944bfaaa5be8dbce48800bc193494e` passed Build #41573450851 and Stage 1 Scheduler #41573450849. It establishes GS ownership in `boot/isr.S:isr_common`, but source review found that its separate cooperative `kernel/context.S:.Lresume_frame` path can also resume a saved Ring-3 interrupt frame via `iretq` without selecting the target GS state.
+- Candidate branch `fix/complete-gs-frame-resume-20261105` ports the reviewed GS entry/return changes onto current main and adds `cpu_interrupt_gs_prepare_frame()`: it verifies that kernel per-CPU GS is active and selects user GS only for a Ring-3 target immediately before the direct frame restore. No C call follows the Ring-3 `SWAPGS`.
+- Added source regressions for the direct `.Lresume_frame` call order and fail-closed target-CPL selection; the Build workflow runs `python3 tools/test_interrupt_gs_entry.py` before toolchain installation. The exact new candidate head has not yet completed CI/QEMU; no new boot pass is claimed.
+- PR #36 range-unmap preflight remains a separate unmerged candidate. The 600-second scheduler soak and physical Lenovo G560/device matrix remain outstanding. QEMU RTL8139/DHCP evidence does not certify a physical NIC. Browser/media/AI/compatibility remain roadmap work.
+- Overall completion estimate is unchanged; source assertions and documentation do not earn feature-completion credit.
