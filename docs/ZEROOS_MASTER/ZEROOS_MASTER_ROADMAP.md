@@ -9,7 +9,7 @@ Never create a basic version merely to replace it later.
 
 ## Current state
 
-### Evidence snapshot — 2026-10-26
+### Historical evidence snapshot — 2026-10-26 (superseded by 2026-11-05 update)
 - The normal `make` image targets a persistent native x86-64 kernel + Ring-3 desktop/session path; the release pipeline has a shared 91-milestone QEMU boot gate.
 - PR #16 was merged as `d6b58292df7e00b4b2f15ba22f3a0405035ee549`, adding parallel-build dependency fixes, ISO structure validation/writing, reproducibility checks, shared boot-test logic, and local intent-parser foundations.
 - **Fresh main CI evidence:** GitHub Actions run 1543 for `main` HEAD `5d89992d6c78a2a19108385c3fc4979fa3cfe19e` completed successfully on 2026-10-26: https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/40322921742. This is evidence that the configured CI build passed, not proof that every product feature is complete or that physical G560 hardware is certified.
@@ -930,3 +930,14 @@ No overall completion increase is claimed.
 - Build #41960835677 stopped in `Verify QEMU boot gate fails closed`, before native build or QEMU. The newly bounded timeout command added `--kill-after=5s`, but the test's fake `timeout` executable treated that option as the duration and attempted to execute `1s`; the regression then saw the wrapper's traceback instead of the expected exit diagnostic.
 - Updated `tools/test_boot_gate_fail_closed.py` to strip the optional `--kill-after=...` argument before invoking its fake child, match the revised 124/137 diagnostic, and add a case proving forced-kill status 137 is accepted only as a timeout outcome while boot milestones are still mandatory.
 - The next exact-head Build must rerun both the fail-closed boot-gate suite and the GS ownership suite before the compiler/build/QEMU stages. No kernel build or QEMU result is claimed for Build #41960835677.
+
+## Evidence snapshot and next boot-priority fix — 2026-11-05
+
+- Latest reviewed `main`: `c3c4eb6ba1a508ff8258d4cf96864317de2da6b4`. The GS frame-resume correction and process range-unmap preflight correction are included in this baseline.
+- Candidate Build #41963710252 passed its native build, clean `make check`, repeated QEMU boot, scheduler fault diagnostics, AHCI/NVMe two-boot persistence, production ISO generation, and production desktop/network smoke steps. Stage 1 Scheduler #41963710086 passed. Both are candidate workflow evidence; the PR-event release publication step was skipped.
+- The post-merge main workflow and stable ISO byte identity for `c3c4eb6ba1a508ff8258d4cf96864317de2da6b4` remain unverified. Close these release gates separately; do not infer them from PR CI.
+- P0 boot fix in candidate branch `fix/multiboot-info-window-20261105`: remove the incorrect 16 MiB start-address ceiling on the Multiboot2 information block. Validate 8-byte alignment and the 512 MiB managed physical window; apply the 16 MiB ceiling to total block size; reject a block that crosses the managed window; reserve the actual metadata range. Add a runtime boundary self-test, host/source regression, Build workflow step, and required boot milestone.
+- Candidate code is implemented but its new CI/QEMU run is pending. Merge only after the regression, native build, clean checks, repeated QEMU boot, storage, and production desktop gates pass.
+- Next after this fix: verify post-merge main CI and stable ISO; reconcile/rebase PR #26 boot-test integrity and PR #27 scheduler certification work; run the 600-second scheduler soak; then continue process/runtime, storage recovery, drivers/security, native desktop hardware integration, browser/media, AI, and Windows/Android compatibility.
+- Physical Lenovo G560 and device-matrix certification remain separate from QEMU. QEMU RTL8139/DHCP is not physical NIC evidence.
+- Preserve the complete canonical product requirements and all Stage 0-10 workstreams. Overall implementation estimate remains unchanged.
