@@ -16,6 +16,7 @@
  * accidentally releasing kernel, boot-info or page-table reservations.
  */
 #define ZEROOS_MAX_PHYS_MEM (512ULL * 1024ULL * 1024ULL)
+#define ZEROOS_BOOT_IDENTITY_MAP_LIMIT (1024ULL * 1024ULL * 1024ULL)
 #define ZEROOS_MAX_PAGES (ZEROOS_MAX_PHYS_MEM / ZEROOS_PAGE_SIZE)
 #define ZEROOS_BITMAP_WORDS ((ZEROOS_MAX_PAGES + 63ULL) / 64ULL)
 #define ZEROOS_SUMMARY_WORDS ((ZEROOS_BITMAP_WORDS + 63ULL) / 64ULL)
@@ -132,30 +133,36 @@ static void summary_refresh(uint64_t word) {
  */
 static int multiboot_info_address_valid(uint64_t address) {
     return address!=0 && (address&7ULL)==0 &&
-           address<ZEROOS_MAX_PHYS_MEM;
+           address<ZEROOS_BOOT_IDENTITY_MAP_LIMIT;
 }
 
 static int multiboot_info_size_valid(uint64_t address, uint64_t size) {
     return multiboot_info_address_valid(address) &&
            size>=16ULL && (size&7ULL)==0 &&
            size<=ZEROOS_MAX_MULTIBOOT_INFO_SIZE &&
-           size<=ZEROOS_MAX_PHYS_MEM-address;
+           size<=ZEROOS_BOOT_IDENTITY_MAP_LIMIT-address;
 }
 
 static int multiboot_info_range_self_test(void) {
     const uint64_t middle=32ULL*1024ULL*1024ULL;
-    const uint64_t last_page=ZEROOS_MAX_PHYS_MEM-ZEROOS_PAGE_SIZE;
+    const uint64_t above_allocator=
+        ZEROOS_MAX_PHYS_MEM+256ULL*1024ULL*1024ULL;
+    const uint64_t last_page=
+        ZEROOS_BOOT_IDENTITY_MAP_LIMIT-ZEROOS_PAGE_SIZE;
     return multiboot_info_address_valid(middle) &&
+           multiboot_info_address_valid(ZEROOS_MAX_PHYS_MEM) &&
+           multiboot_info_address_valid(above_allocator) &&
            multiboot_info_address_valid(last_page) &&
            !multiboot_info_address_valid(0) &&
            !multiboot_info_address_valid(middle+1ULL) &&
-           !multiboot_info_address_valid(ZEROOS_MAX_PHYS_MEM) &&
+           !multiboot_info_address_valid(ZEROOS_BOOT_IDENTITY_MAP_LIMIT) &&
            multiboot_info_size_valid(middle,16ULL) &&
            multiboot_info_size_valid(middle,
                                      ZEROOS_MAX_MULTIBOOT_INFO_SIZE) &&
            !multiboot_info_size_valid(
                middle,ZEROOS_MAX_MULTIBOOT_INFO_SIZE+1ULL) &&
            !multiboot_info_size_valid(middle,17ULL) &&
+           multiboot_info_size_valid(above_allocator,16ULL) &&
            multiboot_info_size_valid(last_page,ZEROOS_PAGE_SIZE) &&
            !multiboot_info_size_valid(last_page,ZEROOS_PAGE_SIZE+1ULL);
 }
@@ -322,8 +329,10 @@ void memory_init(uint64_t multiboot_info) {
     /* Never return firmware, kernel or Multiboot metadata to the allocator. */
     reserve_range(0,ZEROOS_PAGE_SIZE);
     reserve_range((uint64_t)&__kernel_start,(uint64_t)&__kernel_end);
-    if (multiboot_info<=ZEROOS_MAX_PHYS_MEM-(uint64_t)total_size)
-        reserve_range(multiboot_info,multiboot_info+(uint64_t)total_size);
+    /* reserve_range() clips to the allocator's 512 MiB window. Call it
+     * unconditionally so metadata straddling the 512 MiB boundary still
+     * reserves the managed portion, while metadata above 512 MiB is harmless. */
+    reserve_range(multiboot_info,multiboot_info+(uint64_t)total_size);
 
     for (uint64_t word=0; word<ZEROOS_BITMAP_WORDS; ++word)
         summary_refresh(word);
