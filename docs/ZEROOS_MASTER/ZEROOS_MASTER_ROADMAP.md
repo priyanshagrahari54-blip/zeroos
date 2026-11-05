@@ -954,3 +954,9 @@ No overall completion increase is claimed.
 - Initial Build #1770 failed in the new Multiboot2 regression before build/QEMU because the 17-byte misaligned-size runtime case was missing; the candidate source/test were corrected.
 - Build #1782 was cancelled during PR close/reopen; latest Build #1789 for docs tip `beaba6139cc06426ce5dc0243f6978a48e842e1f` is pending without a job. Exact-head full QEMU/storage/production validation remains blocked.
 - Do not merge PR #40 until the corrected regression, clean build, QEMU, storage and production smoke gates pass. Main stable ISO and post-merge workflow verification remain separate.
+## Final candidate-head validation snapshot — 2026-11-05
+
+- Final Multiboot2 boot-range code/test head: `9c14a4a4fed9d0f3a8e21e3f5c2ecbf45a819a99`. It accepts aligned metadata below the 1 GiB identity-map limit, caps and aligns total size at 16 MiB, and reserves only the portion within the allocator's first 512 MiB.
+- Build #1810 was pending with no job started; Build #1809 was cancelled. Build #1770's first regression attempt failed before build/QEMU due to the omitted 17-byte negative case, which has since been added.
+- Stage 1 #230 completed native kernel build and scheduler-certification steps successfully but the overall workflow was cancelled; Stage 1 #231 was pending. Do not claim a green Stage 1 workflow for the final tip.
+- Full Build/QEMU/storage/production validation for the final candidate remains blocked. Keep PR #40 open until exact-head checks complete; post-merge main and stable ISO verification remain separate.
