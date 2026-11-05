@@ -243,3 +243,10 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - New host/source regression: `tools/test_multiboot_info_range.py`; Build workflow invocation is before toolchain installation. New required guest marker: `ZEROOS: Multiboot2 info range policy self-test passed.`
 - Exact candidate CI/QEMU for this change is pending. Until it completes, the change is implemented on the candidate branch but not boot-certified.
 - Remaining release gates: post-merge main workflow, stable ISO byte comparison for current main, 600-second scheduler soak, and physical hardware certification. Do not equate QEMU RTL8139/DHCP with physical NIC support.
+
+## PR #40 first-run failure and correction — 2026-11-05
+
+- Build #1770 failed only in the new `Verify Multiboot2 information range handling` step. It stopped before toolchain installation, kernel release build, `make check`, and QEMU; no boot result can be inferred from this run.
+- The failing assertion required the runtime boundary self-test to cover a 17-byte, non-8-byte-aligned Multiboot2 total size. The C self-test initially omitted that case. The candidate now includes it, and the Python assertion normalizes whitespace.
+- Stage 1 Scheduler #191 passed native kernel compilation and scheduler certification on the initial PR head. This is not full release or QEMU evidence for the corrected head.
+- Corrected candidate head: `c2010a2175ea6f73b0057143def8d4172fc54d65`. Exact-head Build/QEMU retry is pending. PR #40 is not merge-ready until the full required gate passes.
