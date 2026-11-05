@@ -344,3 +344,8 @@ Added `LIBRARY_REUSE_AND_INTEGRATION_PLAN.md` and indexed it from `MASTER_INDEX.
 - No full Build, clean `make check`, QEMU boot, storage, production ISO, or desktop smoke result is established for the final 1 GiB-boundary code/test head.
 - Local checkout was unavailable because the container could not resolve `github.com`; QEMU is not installed in the local environment. GitHub Actions is the required execution path.
 - PR #40 remains open and unmerged. Post-merge main workflow and stable ISO verification for main `c3c4eb6ba1a508ff8258d4cf96864317de2da6b4` remain open. Completion estimate unchanged.
+## PR #40 latest CI result — 2026-11-05
+
+- Stage 1 Scheduler #231 completed SUCCESS on code/test head `9c14a4a4fed9d0f3a8e21e3f5c2ecbf45a819a99`. Both `Build native x86-64 kernel` and `Run Stage 1 scheduler certification` passed. This verifies compilation and Stage 1 scheduler certification for the 1 GiB Multiboot2-boundary code.
+- Build #1810 was cancelled during overlapping PR validation events. Latest full Build #1816 for documentation tip `9c1d3b1d5d9fc04c0857056b2fe5dea6a0cd9928` remained pending with no job started at the last lookup. No new Multiboot2 source-regression, full `make check`, QEMU, storage, production ISO, or desktop result is established.
+- The initial Build #1770 source-regression mismatch was corrected; the corrected regression has not yet completed in a successful Build workflow. PR #40 remains open/unmerged.
