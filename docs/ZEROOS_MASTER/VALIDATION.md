@@ -250,3 +250,10 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - The failing assertion required the runtime boundary self-test to cover a 17-byte, non-8-byte-aligned Multiboot2 total size. The C self-test initially omitted that case. The candidate now includes it, and the Python assertion normalizes whitespace.
 - Stage 1 Scheduler #203 completed SUCCESS on current PR tip `7043444b45c5cd068651b7a2bb054851ae5d18cb`, including native kernel build and Stage 1 certification. Build #1782 for that tip remains pending with no job started; Build #1770 is the earlier regression failure. The Stage 1 pass does not substitute for full release/QEMU validation.
 - Corrected candidate head: `c2010a2175ea6f73b0057143def8d4172fc54d65`. Exact-head Build/QEMU retry is pending. PR #40 is not merge-ready until the full required gate passes.
+## Latest PR #40 workflow snapshot — 2026-11-05
+
+- Stage 1 Scheduler #203 completed SUCCESS on PR tip `7043444b45c5cd068651b7a2bb054851ae5d18cb`, including native kernel build and Stage 1 certification.
+- Build #1770 failed at the new Multiboot2 regression before compiler installation and QEMU; the missing 17-byte runtime case and formatting-sensitive assertion were corrected.
+- Build #1782 was cancelled during PR close/reopen. Latest Build #1789 for docs tip `beaba6139cc06426ce5dc0243f6978a48e842e1f` remains pending with no job started. Stage 1 #209/#210 had not both completed at last lookup.
+- No full Build, clean `make check`, QEMU boot, storage, or production smoke pass is established for the corrected PR #40 head. Do not merge until a completed exact-head Build passes.
+- Current main post-merge CI and stable ISO verification remain separate release gates.
