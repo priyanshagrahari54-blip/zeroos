@@ -960,3 +960,8 @@ No overall completion increase is claimed.
 - Build #1810 was pending with no job started; Build #1809 was cancelled. Build #1770's first regression attempt failed before build/QEMU due to the omitted 17-byte negative case, which has since been added.
 - Stage 1 #230 completed native kernel build and scheduler-certification steps successfully but the overall workflow was cancelled; Stage 1 #231 was pending. Do not claim a green Stage 1 workflow for the final tip.
 - Full Build/QEMU/storage/production validation for the final candidate remains blocked. Keep PR #40 open until exact-head checks complete; post-merge main and stable ISO verification remain separate.
+## PR #40 latest CI result — 2026-11-05
+
+- Stage 1 Scheduler #231 passed on code/test head `9c14a4a4fed9d0f3a8e21e3f5c2ecbf45a819a99`; native kernel build and Stage 1 scheduler certification both passed.
+- Build #1810 was cancelled; latest Build #1816 for docs tip `9c1d3b1d5d9fc04c0857056b2fe5dea6a0cd9928` remained pending with no job started.
+- The corrected Multiboot2 regression, full QEMU boot matrix, storage persistence, production ISO and desktop smoke remain unverified. Keep PR #40 unmerged until the full Build workflow succeeds.
