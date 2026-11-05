@@ -948,3 +948,9 @@ No overall completion increase is claimed.
 - The runtime self-test now includes the misaligned 17-byte case, and the Python regression normalizes whitespace. Candidate head is `c2010a2175ea6f73b0057143def8d4172fc54d65`.
 - Stage 1 Scheduler #203 passed on PR tip `7043444b45c5cd068651b7a2bb054851ae5d18cb`. Build #1782 for that tip remains pending with no job started; Build #1770 is the earlier source-regression failure.
 - Exact-head full Build/QEMU/storage/production validation remains pending. Keep PR #40 unmerged until it passes. Main release verification and the stable ISO for the current main SHA remain separate gates.
+## Latest PR #40 CI state — 2026-11-05
+
+- Stage 1 Scheduler #203 passed native kernel build and Stage 1 scheduler certification on PR tip `7043444b45c5cd068651b7a2bb054851ae5d18cb`.
+- Initial Build #1770 failed in the new Multiboot2 regression before build/QEMU because the 17-byte misaligned-size runtime case was missing; the candidate source/test were corrected.
+- Build #1782 was cancelled during PR close/reopen; latest Build #1789 for docs tip `beaba6139cc06426ce5dc0243f6978a48e842e1f` is pending without a job. Exact-head full QEMU/storage/production validation remains blocked.
+- Do not merge PR #40 until the corrected regression, clean build, QEMU, storage and production smoke gates pass. Main stable ISO and post-merge workflow verification remain separate.
