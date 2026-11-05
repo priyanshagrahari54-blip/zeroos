@@ -19,7 +19,7 @@
 #define ZEROOS_MAX_PAGES (ZEROOS_MAX_PHYS_MEM / ZEROOS_PAGE_SIZE)
 #define ZEROOS_BITMAP_WORDS ((ZEROOS_MAX_PAGES + 63ULL) / 64ULL)
 #define ZEROOS_SUMMARY_WORDS ((ZEROOS_BITMAP_WORDS + 63ULL) / 64ULL)
-#define ZEROOS_MAX_MULTIBOOT_INFO (16ULL * 1024ULL * 1024ULL)
+#define ZEROOS_MAX_MULTIBOOT_INFO_SIZE (16ULL * 1024ULL * 1024ULL)
 
 struct multiboot_tag {
     uint32_t type;
@@ -123,6 +123,41 @@ static void summary_refresh(uint64_t word) {
         free_word_summary[word >> 6] &= ~(1ULL << (word & 63));
 }
 
+
+/*
+ * Multiboot2 places its information block at an implementation-chosen
+ * physical address. boot.S identity-maps the first 1 GiB and the allocator
+ * currently manages the first 512 MiB, so validate the start against that
+ * managed window and cap the block's SIZE independently.
+ */
+static int multiboot_info_address_valid(uint64_t address) {
+    return address!=0 && (address&7ULL)==0 &&
+           address<ZEROOS_MAX_PHYS_MEM;
+}
+
+static int multiboot_info_size_valid(uint64_t address, uint64_t size) {
+    return multiboot_info_address_valid(address) &&
+           size>=16ULL && size<=ZEROOS_MAX_MULTIBOOT_INFO_SIZE &&
+           size<=ZEROOS_MAX_PHYS_MEM-address;
+}
+
+static int multiboot_info_range_self_test(void) {
+    const uint64_t middle=32ULL*1024ULL*1024ULL;
+    const uint64_t last_page=ZEROOS_MAX_PHYS_MEM-ZEROOS_PAGE_SIZE;
+    return multiboot_info_address_valid(middle) &&
+           multiboot_info_address_valid(last_page) &&
+           !multiboot_info_address_valid(0) &&
+           !multiboot_info_address_valid(middle+1ULL) &&
+           !multiboot_info_address_valid(ZEROOS_MAX_PHYS_MEM) &&
+           multiboot_info_size_valid(middle,16ULL) &&
+           multiboot_info_size_valid(middle,
+                                     ZEROOS_MAX_MULTIBOOT_INFO_SIZE) &&
+           !multiboot_info_size_valid(
+               middle,ZEROOS_MAX_MULTIBOOT_INFO_SIZE+1ULL) &&
+           multiboot_info_size_valid(last_page,ZEROOS_PAGE_SIZE) &&
+           !multiboot_info_size_valid(last_page,ZEROOS_PAGE_SIZE+1ULL);
+}
+
 static uint64_t align_up_page(uint64_t value) {
     if (value > ~0ULL-(ZEROOS_PAGE_SIZE-1ULL))
         return ~0ULL;
@@ -187,16 +222,25 @@ void memory_init(uint64_t multiboot_info) {
     memory_debug_u64((uint64_t)(sizeof(page_bitmap)+sizeof(usable_bitmap)));
     serial_write_public("\n");
 
-    /* The Multiboot information block is identity-mapped by boot.S. */
-    if (multiboot_info==0 || multiboot_info>=ZEROOS_MAX_PHYS_MEM ||
-        multiboot_info>ZEROOS_MAX_MULTIBOOT_INFO) {
+    /*
+     * The Multiboot2 information block may be above 16 MiB. Only its total
+     * size is capped at 16 MiB; its physical start may be anywhere in the
+     * allocator's identity-mapped 512 MiB window.
+     */
+    if (!multiboot_info_range_self_test()) {
+        memory_debug('!');
+        serial_write_public("ZEROOS PANIC: Multiboot2 info range policy self-test failed.\\n");
+        return;
+    }
+    serial_write_public("ZEROOS: Multiboot2 info range policy self-test passed.\\n");
+
+    if (!multiboot_info_address_valid(multiboot_info)) {
         memory_debug('!');
         return;
     }
 
     uint32_t total_size=*(uint32_t *)(uint64_t)multiboot_info;
-    if (total_size<16U || total_size>0x1000000U ||
-        (uint64_t)total_size>ZEROOS_MAX_PHYS_MEM-multiboot_info) {
+    if (!multiboot_info_size_valid(multiboot_info,(uint64_t)total_size)) {
         memory_debug('!');
         return;
     }
