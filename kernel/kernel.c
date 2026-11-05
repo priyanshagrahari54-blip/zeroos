@@ -557,12 +557,42 @@ static void process_thread_probe_monitor_step(void) {
                 if (actual[i]!=replacement[i])
                     process_thread_probe_fail("process user-copy cross-page write corrupted bytes");
 
+            /*
+             * Keep two process-owned pages resident, but make the second page
+             * in the requested range absent. A zero expected frame must make
+             * range-unmap reject before it releases the first valid page.
+             * The third mapping keeps resident_pages >= page_count so this
+             * exercises the complete preflight rather than the quota guard.
+             */
+            void *guard_page=page_alloc_zero();
+            uint64_t expected_range_pages[2]={
+                (uint64_t)probe_page,0
+            };
+            if (!guard_page ||
+                process_address_space_map_page(process_probe_parent,
+                    VMM_SPACE_TEST_VA+2ULL*VMM_PAGE_SIZE,
+                    (uint64_t)guard_page,
+                    VMM_USER|VMM_WRITABLE|VMM_NO_EXECUTE)!=0)
+                process_thread_probe_fail("process range-unmap test mapping setup failed");
+            if (process_address_space_unmap_page(process_probe_parent,
+                    VMM_SPACE_TEST_VA+VMM_PAGE_SIZE)!=0 ||
+                process_address_space_unmap_range(process_probe_parent,
+                    VMM_SPACE_TEST_VA,expected_range_pages,2)==0 ||
+                vmm_space_translate(&process_probe_parent->address_space,
+                    VMM_SPACE_TEST_VA)!=(uint64_t)probe_page ||
+                vmm_space_translate(&process_probe_parent->address_space,
+                    VMM_SPACE_TEST_VA+2ULL*VMM_PAGE_SIZE)!=(uint64_t)guard_page ||
+                process_address_space_mapped_pages(process_probe_parent)!=2)
+                process_thread_probe_fail("process range-unmap preflight partially unmapped a valid page");
             if (process_address_space_unmap_page(process_probe_parent,
                     VMM_SPACE_TEST_VA)!=0 ||
                 process_address_space_unmap_page(process_probe_parent,
-                    VMM_SPACE_TEST_VA+VMM_PAGE_SIZE)!=0)
-                process_thread_probe_fail("process user-copy test unmap failed");
+                    VMM_SPACE_TEST_VA+2ULL*VMM_PAGE_SIZE)!=0 ||
+                process_address_space_mapped_pages(process_probe_parent)!=0)
+                process_thread_probe_fail("process range-unmap regression cleanup failed");
             page_free(copy_page);
+            page_free(guard_page);
+            serial_write_public("ZEROOS: process address-space range unmap preflight self-test passed.\n");
         }
         serial_write_public("ZEROOS: process user-copy mapping stability self-test passed.\n");
         page_free(probe_page);
