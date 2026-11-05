@@ -59,8 +59,10 @@ class MultibootInfoRangeTests(unittest.TestCase):
         )
         self.assertIn("multiboot_info_address_valid(address)", body)
         self.assertIn("size>=16ULL", body)
+        self.assertIn("(size&7ULL)==0", body)
         self.assertIn("size<=ZEROOS_MAX_MULTIBOOT_INFO_SIZE", body)
         self.assertIn("size<=ZEROOS_MAX_PHYS_MEM-address", body)
+        self.assertNotIn("multiboot_info>ZEROOS_MAX_MULTIBOOT_INFO_SIZE", body)
 
     def test_runtime_boundary_self_test_covers_above_16m_and_window_end(self):
         body = function_body(
@@ -69,6 +71,7 @@ class MultibootInfoRangeTests(unittest.TestCase):
         self.assertIn("32ULL*1024ULL*1024ULL", body)
         self.assertIn("ZEROOS_MAX_PHYS_MEM-ZEROOS_PAGE_SIZE", body)
         self.assertIn("ZEROOS_MAX_MULTIBOOT_INFO_SIZE+1ULL", body)
+        self.assertIn("multiboot_info_size_valid(middle,17ULL)", body)
         self.assertIn("ZEROOS_PAGE_SIZE+1ULL", body)
         self.assertIn("multiboot_info_size_valid(last_page,ZEROOS_PAGE_SIZE)", body)
 
