@@ -257,3 +257,10 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - Build #1782 was cancelled during PR close/reopen. Latest Build #1789 for docs tip `beaba6139cc06426ce5dc0243f6978a48e842e1f` remains pending with no job started. Stage 1 #209/#210 had not both completed at last lookup.
 - No full Build, clean `make check`, QEMU boot, storage, or production smoke pass is established for the corrected PR #40 head. Do not merge until a completed exact-head Build passes.
 - Current main post-merge CI and stable ISO verification remain separate release gates.
+## Final candidate-head validation snapshot — 2026-11-05
+
+- Code/test head: `9c14a4a4fed9d0f3a8e21e3f5c2ecbf45a819a99`. Multiboot2 info start is checked against the 1 GiB identity map; total size is capped/aligned at 16 MiB; `reserve_range()` clips reservations to the allocator's first 512 MiB.
+- Build #1810 was pending with no job started; Build #1809 was cancelled. Build #1770 failed in the earlier version of the new regression before toolchain installation/QEMU; the missing 17-byte size-alignment case was added afterward.
+- Stage 1 #230's native kernel build and scheduler certification steps both completed SUCCESS, but the overall workflow conclusion was CANCELLED. Stage 1 #231 remained pending with no job started.
+- No completed full Build/QEMU/storage/production-smoke result exists for the final candidate. Local clone was blocked by DNS and local QEMU is unavailable.
+- Keep PR #40 unmerged until a completed exact-head Build passes the new regression, native release build, clean `make check`, QEMU boot matrix, storage, and production smoke.
