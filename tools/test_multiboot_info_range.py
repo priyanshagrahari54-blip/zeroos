@@ -44,13 +44,14 @@ class MultibootInfoRangeTests(unittest.TestCase):
         cls.milestones = MILESTONES.read_text(encoding="utf-8")
         cls.workflow = WORKFLOW.read_text(encoding="utf-8")
 
-    def test_start_address_uses_managed_window_and_multiboot_alignment(self):
+    def test_start_address_uses_identity_map_and_multiboot_alignment(self):
         body = function_body(
             self.memory, "static int multiboot_info_address_valid("
         )
         self.assertIn("address!=0", body)
         self.assertIn("(address&7ULL)==0", body)
-        self.assertIn("address<ZEROOS_MAX_PHYS_MEM", body)
+        self.assertIn("address<ZEROOS_BOOT_IDENTITY_MAP_LIMIT", body)
+        self.assertNotIn("address<ZEROOS_MAX_PHYS_MEM", body)
         self.assertNotIn("ZEROOS_MAX_MULTIBOOT_INFO_SIZE", body)
 
     def test_size_cap_is_applied_to_block_length_not_start_address(self):
@@ -61,7 +62,7 @@ class MultibootInfoRangeTests(unittest.TestCase):
         self.assertIn("size>=16ULL", body)
         self.assertIn("(size&7ULL)==0", body)
         self.assertIn("size<=ZEROOS_MAX_MULTIBOOT_INFO_SIZE", body)
-        self.assertIn("size<=ZEROOS_MAX_PHYS_MEM-address", body)
+        self.assertIn("size<=ZEROOS_BOOT_IDENTITY_MAP_LIMIT-address", body)
         self.assertNotIn("multiboot_info>ZEROOS_MAX_MULTIBOOT_INFO_SIZE", body)
 
     def test_runtime_boundary_self_test_covers_above_16m_and_window_end(self):
@@ -69,7 +70,9 @@ class MultibootInfoRangeTests(unittest.TestCase):
             self.memory, "static int multiboot_info_range_self_test("
         )
         self.assertIn("32ULL*1024ULL*1024ULL", body)
-        self.assertIn("ZEROOS_MAX_PHYS_MEM-ZEROOS_PAGE_SIZE", body)
+        self.assertIn("ZEROOS_MAX_PHYS_MEM+256ULL*1024ULL*1024ULL", body)
+        self.assertIn("ZEROOS_BOOT_IDENTITY_MAP_LIMIT-ZEROOS_PAGE_SIZE", body)
+        self.assertIn("ZEROOS_BOOT_IDENTITY_MAP_LIMIT", body)
         self.assertIn("ZEROOS_MAX_MULTIBOOT_INFO_SIZE+1ULL", body)
         compact = re.sub(r"\s+", "", body)
         self.assertIn("multiboot_info_size_valid(middle,17ULL)", compact)
@@ -104,6 +107,7 @@ class MultibootInfoRangeTests(unittest.TestCase):
         )
         self.assertGreaterEqual(parse_end, 0)
         self.assertGreater(reserve, parse_end)
+        self.assertNotIn("multiboot_info<=ZEROOS_MAX_PHYS_MEM", body[parse_end:reserve])
 
     def test_ci_runs_this_regression_once_before_toolchain_install(self):
         invocation = "python3 tools/test_multiboot_info_range.py"
