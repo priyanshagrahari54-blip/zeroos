@@ -941,3 +941,10 @@ No overall completion increase is claimed.
 - Next after this fix: verify post-merge main CI and stable ISO; reconcile/rebase PR #26 boot-test integrity and PR #27 scheduler certification work; run the 600-second scheduler soak; then continue process/runtime, storage recovery, drivers/security, native desktop hardware integration, browser/media, AI, and Windows/Android compatibility.
 - Physical Lenovo G560 and device-matrix certification remain separate from QEMU. QEMU RTL8139/DHCP is not physical NIC evidence.
 - Preserve the complete canonical product requirements and all Stage 0-10 workstreams. Overall implementation estimate remains unchanged.
+
+## PR #40 validation correction — 2026-11-05
+
+- First Build #1770 stopped at the new Multiboot2 range regression before compiler installation, clean `make check`, or QEMU. The source test expected a 17-byte total-size rejection that the first version of the runtime self-test had omitted.
+- The runtime self-test now includes the misaligned 17-byte case, and the Python regression normalizes whitespace. Candidate head is `c2010a2175ea6f73b0057143def8d4172fc54d65`.
+- Stage 1 Scheduler #191 passed the native kernel build and scheduler certification on the initial PR head; this does not certify the corrected full release candidate.
+- Exact-head full Build/QEMU/storage/production validation remains pending. Keep PR #40 unmerged until it passes. Main release verification and the stable ISO for the current main SHA remain separate gates.
