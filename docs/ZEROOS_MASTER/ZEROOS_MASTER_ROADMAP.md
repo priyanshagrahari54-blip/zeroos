@@ -938,7 +938,7 @@ No overall completion increase is claimed.
 - The post-merge main workflow and stable ISO byte identity for `c3c4eb6ba1a508ff8258d4cf96864317de2da6b4` remain unverified. Close these release gates separately; do not infer them from PR CI.
 - P0 boot fix in candidate branch `fix/multiboot-info-window-20261105`: remove the incorrect 16 MiB start-address ceiling on the Multiboot2 information block. Validate 8-byte alignment and the 512 MiB managed physical window; apply the 16 MiB ceiling to total block size; reject a block that crosses the managed window; reserve the actual metadata range. Add a runtime boundary self-test, host/source regression, Build workflow step, and required boot milestone.
 - Candidate code is implemented but its new CI/QEMU run is pending. Merge only after the regression, native build, clean checks, repeated QEMU boot, storage, and production desktop gates pass.
-- Next after this fix: verify post-merge main CI and stable ISO; reconcile/rebase PR #26 boot-test integrity and PR #27 scheduler certification work; run the 600-second scheduler soak; then continue process/runtime, storage recovery, drivers/security, native desktop hardware integration, browser/media, AI, and Windows/Android compatibility.
+- Next after this fix: verify post-merge main CI and stable ISO; rebase/reconcile PR #26 (6 ahead/30 behind) boot-test integrity and PR #27 (1 ahead/29 behind) scheduler certification work; review PR #14 (19 ahead/321 behind) as a separate broad integration queue; run the 600-second scheduler soak; then continue process/runtime, storage recovery, drivers/security, native desktop hardware integration, browser/media, AI, and Windows/Android compatibility.
 - Physical Lenovo G560 and device-matrix certification remain separate from QEMU. QEMU RTL8139/DHCP is not physical NIC evidence.
 - Preserve the complete canonical product requirements and all Stage 0-10 workstreams. Overall implementation estimate remains unchanged.
 
@@ -946,5 +946,5 @@ No overall completion increase is claimed.
 
 - First Build #1770 stopped at the new Multiboot2 range regression before compiler installation, clean `make check`, or QEMU. The source test expected a 17-byte total-size rejection that the first version of the runtime self-test had omitted.
 - The runtime self-test now includes the misaligned 17-byte case, and the Python regression normalizes whitespace. Candidate head is `c2010a2175ea6f73b0057143def8d4172fc54d65`.
-- Stage 1 Scheduler #191 passed the native kernel build and scheduler certification on the initial PR head; this does not certify the corrected full release candidate.
+- Stage 1 Scheduler #203 passed on PR tip `7043444b45c5cd068651b7a2bb054851ae5d18cb`. Build #1782 for that tip remains pending with no job started; Build #1770 is the earlier source-regression failure.
 - Exact-head full Build/QEMU/storage/production validation remains pending. Keep PR #40 unmerged until it passes. Main release verification and the stable ISO for the current main SHA remain separate gates.
