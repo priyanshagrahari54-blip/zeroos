@@ -329,3 +329,10 @@ Added `LIBRARY_REUSE_AND_INTEGRATION_PLAN.md` and indexed it from `MASTER_INDEX.
 - Build workflow #1782 for that same PR tip is pending and had not yet created a job at the last lookup. Build #1770 is the earlier failed run caused by the missing 17-byte runtime self-test case; Build #1781 was cancelled during PR close/reopen to trigger a fresh `reopened` validation event.
 - The corrected C boundary case and whitespace-normalized source assertion are present on the current PR branch. No full Build, clean `make check`, QEMU, storage, or production-smoke pass is claimed for the corrected PR tip.
 - PR #40 remains open/unmerged. PR #26 is 6 ahead/30 behind main, PR #27 is 1 ahead/29 behind, and broad PR #14 is 19 ahead/321 behind; rebase/reconcile before considering those branches.
+## Latest PR #40 workflow snapshot — 2026-11-05
+
+- On the reviewed PR tip `7043444b45c5cd068651b7a2bb054851ae5d18cb`, Stage 1 Scheduler #203 completed SUCCESS, including native kernel build and Stage 1 scheduler certification.
+- Build #1770 failed at the new Multiboot2 source regression before toolchain installation or QEMU; the missing 17-byte runtime self-test case and whitespace-sensitive assertion were corrected afterward.
+- Build #1782 was cancelled during the PR close/reopen used to request a fresh PR validation event. The latest observed Build #1789 for documentation tip `beaba6139cc06426ce5dc0243f6978a48e842e1f` is pending with no job started. Stage 1 #209/#210 were also queued/in progress at the last lookup; #203 is the completed pass.
+- Therefore, the corrected source regression has not yet been shown passing in a completed Build workflow, and no QEMU, storage, or production ISO result exists for PR #40. Keep it open and unmerged.
+- Main remains `c3c4eb6ba1a508ff8258d4cf96864317de2da6b4`; post-merge main CI and stable ISO verification for that SHA remain open. Overall completion estimate unchanged.
