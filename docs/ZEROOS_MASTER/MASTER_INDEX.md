@@ -272,3 +272,9 @@ Priority is still boot/release gate → kernel/userspace lifecycle correctness �
 - Build #1770 failed in the new Multiboot2 regression before native release build/QEMU; the missing 17-byte runtime case and whitespace-sensitive assertion were corrected.
 - Build #1782 was cancelled; latest Build #1789 for docs tip `beaba6139cc06426ce5dc0243f6978a48e842e1f` is pending with no job started. No full QEMU/production validation is claimed for PR #40.
 - Keep PR #40 open/unmerged until the exact current head passes the full Build workflow.
+## Final candidate-head validation snapshot — 2026-11-05
+
+- Final code/test head: `9c14a4a4fed9d0f3a8e21e3f5c2ecbf45a819a99`; Multiboot2 metadata is accepted within the 1 GiB identity map while allocator reservation is clipped to 512 MiB.
+- Build #1810 remained pending without a job; Build #1809 was cancelled. Build #1770 failed in the first source-regression version before native build/QEMU.
+- Stage 1 #230's native build and scheduler-certification steps passed, but the overall workflow was cancelled. Stage 1 #231 remained pending.
+- Full QEMU, storage, production ISO and desktop validation for this final candidate are not established. PR #40 remains open/unmerged.
