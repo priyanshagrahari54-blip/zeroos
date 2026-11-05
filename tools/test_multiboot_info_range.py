@@ -71,7 +71,8 @@ class MultibootInfoRangeTests(unittest.TestCase):
         self.assertIn("32ULL*1024ULL*1024ULL", body)
         self.assertIn("ZEROOS_MAX_PHYS_MEM-ZEROOS_PAGE_SIZE", body)
         self.assertIn("ZEROOS_MAX_MULTIBOOT_INFO_SIZE+1ULL", body)
-        self.assertIn("multiboot_info_size_valid(middle,17ULL)", body)
+        compact = re.sub(r"\\s+", "", body)
+        self.assertIn("multiboot_info_size_valid(middle,17ULL)", compact)
         self.assertIn("ZEROOS_PAGE_SIZE+1ULL", body)
         self.assertIn("multiboot_info_size_valid(last_page,ZEROOS_PAGE_SIZE)", body)
 
@@ -87,6 +88,7 @@ class MultibootInfoRangeTests(unittest.TestCase):
         self.assertGreater(address_check, self_test)
         self.assertGreater(dereference, address_check)
         self.assertGreater(size_check, dereference)
+        self.assertNotIn("multiboot_info>ZEROOS_MAX_MULTIBOOT_INFO_SIZE", body)
         self.assertIn(MARKER, body)
 
     def test_boot_identity_map_covers_the_allocator_window(self):
