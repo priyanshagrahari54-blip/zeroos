@@ -323,3 +323,9 @@ Added `LIBRARY_REUSE_AND_INTEGRATION_PLAN.md` and indexed it from `MASTER_INDEX.
 - Corrected the C runtime self-test to reject the 17-byte size and made the source regression normalize whitespace before checking the call. The current candidate head is `c2010a2175ea6f73b0057143def8d4172fc54d65`.
 - The exact-head rerun has not yet been returned by the available workflow lookup. Do not claim the new regression, native release build, QEMU, storage, or production desktop gates passed until a completed run for the updated PR head is inspected.
 - PR #40 remains open and unmerged. Main's post-merge CI and stable ISO verification for `c3c4eb6ba1a508ff8258d4cf96864317de2da6b4` remain separate release blockers. Overall completion estimate remains unchanged.
+## PR #40 latest validation snapshot — 2026-11-05
+
+- Stage 1 Scheduler workflow #203 completed SUCCESS on PR tip `7043444b45c5cd068651b7a2bb054851ae5d18cb`, including native x86-64 kernel build and Stage 1 scheduler certification.
+- Build workflow #1782 for that same PR tip is pending and had not yet created a job at the last lookup. Build #1770 is the earlier failed run caused by the missing 17-byte runtime self-test case; Build #1781 was cancelled during PR close/reopen to trigger a fresh `reopened` validation event.
+- The corrected C boundary case and whitespace-normalized source assertion are present on the current PR branch. No full Build, clean `make check`, QEMU, storage, or production-smoke pass is claimed for the corrected PR tip.
+- PR #40 remains open/unmerged. PR #26 is 6 ahead/30 behind main, PR #27 is 1 ahead/29 behind, and broad PR #14 is 19 ahead/321 behind; rebase/reconcile before considering those branches.
