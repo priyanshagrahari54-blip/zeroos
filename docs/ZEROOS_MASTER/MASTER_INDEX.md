@@ -278,3 +278,8 @@ Priority is still boot/release gate → kernel/userspace lifecycle correctness �
 - Build #1810 remained pending without a job; Build #1809 was cancelled. Build #1770 failed in the first source-regression version before native build/QEMU.
 - Stage 1 #230's native build and scheduler-certification steps passed, but the overall workflow was cancelled. Stage 1 #231 remained pending.
 - Full QEMU, storage, production ISO and desktop validation for this final candidate are not established. PR #40 remains open/unmerged.
+## PR #40 latest CI result — 2026-11-05
+
+- Stage 1 Scheduler #231 passed on code/test head `9c14a4a4fed9d0f3a8e21e3f5c2ecbf45a819a99`, including native x86-64 kernel build and Stage 1 scheduler certification.
+- Build #1816 for docs tip `9c1d3b1d5d9fc04c0857056b2fe5dea6a0cd9928` was pending with no job started; Build #1810 was cancelled. The corrected Multiboot2 regression and full QEMU/production gates remain unverified.
+- PR #40 remains open and unmerged.
