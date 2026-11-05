@@ -137,7 +137,8 @@ static int multiboot_info_address_valid(uint64_t address) {
 
 static int multiboot_info_size_valid(uint64_t address, uint64_t size) {
     return multiboot_info_address_valid(address) &&
-           size>=16ULL && size<=ZEROOS_MAX_MULTIBOOT_INFO_SIZE &&
+           size>=16ULL && (size&7ULL)==0 &&
+           size<=ZEROOS_MAX_MULTIBOOT_INFO_SIZE &&
            size<=ZEROOS_MAX_PHYS_MEM-address;
 }
 
@@ -229,10 +230,10 @@ void memory_init(uint64_t multiboot_info) {
      */
     if (!multiboot_info_range_self_test()) {
         memory_debug('!');
-        serial_write_public("ZEROOS PANIC: Multiboot2 info range policy self-test failed.\\n");
+        serial_write_public("ZEROOS PANIC: Multiboot2 info range policy self-test failed.\n");
         return;
     }
-    serial_write_public("ZEROOS: Multiboot2 info range policy self-test passed.\\n");
+    serial_write_public("ZEROOS: Multiboot2 info range policy self-test passed.\n");
 
     if (!multiboot_info_address_valid(multiboot_info)) {
         memory_debug('!');
