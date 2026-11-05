@@ -336,3 +336,11 @@ Added `LIBRARY_REUSE_AND_INTEGRATION_PLAN.md` and indexed it from `MASTER_INDEX.
 - Build #1782 was cancelled during the PR close/reopen used to request a fresh PR validation event. The latest observed Build #1789 for documentation tip `beaba6139cc06426ce5dc0243f6978a48e842e1f` is pending with no job started. Stage 1 #209/#210 were also queued/in progress at the last lookup; #203 is the completed pass.
 - Therefore, the corrected source regression has not yet been shown passing in a completed Build workflow, and no QEMU, storage, or production ISO result exists for PR #40. Keep it open and unmerged.
 - Main remains `c3c4eb6ba1a508ff8258d4cf96864317de2da6b4`; post-merge main CI and stable ISO verification for that SHA remain open. Overall completion estimate unchanged.
+## Final candidate-head validation snapshot — 2026-11-05
+
+- Final reviewed code/test head: `9c14a4a4fed9d0f3a8e21e3f5c2ecbf45a819a99` (Multiboot2 information may be anywhere below the 1 GiB identity-map limit; total block size remains capped at 16 MiB; reservation is clipped to the allocator's first 512 MiB).
+- Build #1810 for this head was pending with no job started at the last lookup. Build #1809 was cancelled. The earlier Build #1770 failed at the first version of the new source regression; the missing 17-byte size-alignment case was added afterward.
+- Stage 1 #230 completed the native x86-64 kernel build and Stage 1 scheduler certification steps successfully, but the overall workflow conclusion was CANCELLED. Stage 1 #231 was pending with no job started. Do not label the current candidate's Stage 1 workflow green.
+- No full Build, clean `make check`, QEMU boot, storage, production ISO, or desktop smoke result is established for the final 1 GiB-boundary code/test head.
+- Local checkout was unavailable because the container could not resolve `github.com`; QEMU is not installed in the local environment. GitHub Actions is the required execution path.
+- PR #40 remains open and unmerged. Post-merge main workflow and stable ISO verification for main `c3c4eb6ba1a508ff8258d4cf96864317de2da6b4` remain open. Completion estimate unchanged.
