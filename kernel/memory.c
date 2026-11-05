@@ -234,7 +234,7 @@ void memory_init(uint64_t multiboot_info) {
     /*
      * The Multiboot2 information block may be above 16 MiB. Only its total
      * size is capped at 16 MiB; its physical start may be anywhere in the
-     * allocator's identity-mapped 512 MiB window.
+     * boot identity-mapped 1 GiB window. The allocator manages the first 512 MiB.
      */
     if (!multiboot_info_range_self_test()) {
         memory_debug('!');
