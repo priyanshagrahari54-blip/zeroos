@@ -71,7 +71,7 @@ class MultibootInfoRangeTests(unittest.TestCase):
         self.assertIn("32ULL*1024ULL*1024ULL", body)
         self.assertIn("ZEROOS_MAX_PHYS_MEM-ZEROOS_PAGE_SIZE", body)
         self.assertIn("ZEROOS_MAX_MULTIBOOT_INFO_SIZE+1ULL", body)
-        compact = re.sub(r"\\s+", "", body)
+        compact = re.sub(r"\s+", "", body)
         self.assertIn("multiboot_info_size_valid(middle,17ULL)", compact)
         self.assertIn("ZEROOS_PAGE_SIZE+1ULL", body)
         self.assertIn("multiboot_info_size_valid(last_page,ZEROOS_PAGE_SIZE)", body)
