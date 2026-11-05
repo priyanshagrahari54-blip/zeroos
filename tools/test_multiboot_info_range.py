@@ -53,6 +53,7 @@ class MultibootInfoRangeTests(unittest.TestCase):
         self.assertIn("address<ZEROOS_BOOT_IDENTITY_MAP_LIMIT", body)
         self.assertNotIn("address<ZEROOS_MAX_PHYS_MEM", body)
         self.assertNotIn("ZEROOS_MAX_MULTIBOOT_INFO_SIZE", body)
+        self.assertIn("#define ZEROOS_BOOT_IDENTITY_MAP_LIMIT (1024ULL * 1024ULL * 1024ULL)", self.memory)
 
     def test_size_cap_is_applied_to_block_length_not_start_address(self):
         body = function_body(
@@ -108,6 +109,25 @@ class MultibootInfoRangeTests(unittest.TestCase):
         self.assertGreaterEqual(parse_end, 0)
         self.assertGreater(reserve, parse_end)
         self.assertNotIn("multiboot_info<=ZEROOS_MAX_PHYS_MEM", body[parse_end:reserve])
+
+    def test_metadata_reservation_clips_to_allocator_window(self):
+        reserve_body = function_body(
+            self.memory, "static void reserve_range("
+        )
+        self.assertIn("start>=ZEROOS_MAX_PHYS_MEM", reserve_body)
+        self.assertIn("if (end>ZEROOS_MAX_PHYS_MEM)", reserve_body)
+        self.assertIn("end=ZEROOS_MAX_PHYS_MEM", reserve_body)
+
+        init_body = function_body(self.memory, "void memory_init(")
+        parse_end = init_body.find("if (!end_tag_found)")
+        reserve = init_body.find(
+            "reserve_range(multiboot_info,multiboot_info+(uint64_t)total_size)"
+        )
+        self.assertGreaterEqual(parse_end, 0)
+        self.assertGreater(reserve, parse_end)
+        self.assertNotIn(
+            "multiboot_info<=ZEROOS_MAX_PHYS_MEM", init_body[parse_end:reserve]
+        )
 
     def test_ci_runs_this_regression_once_before_toolchain_install(self):
         invocation = "python3 tools/test_multiboot_info_range.py"
