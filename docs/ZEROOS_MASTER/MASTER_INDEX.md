@@ -250,7 +250,7 @@ Priority is still boot/release gate â†’ kernel/userspace lifecycle correctness â
 
 - Current main baseline reviewed: `c3c4eb6ba1a508ff8258d4cf96864317de2da6b4`.
 - GS frame-resume and process range-unmap corrections are now included in main; see the current implementation status and validation evidence.
-- New candidate boot fix: Multiboot2 information-block addresses are no longer constrained to the first 16 MiB; the candidate accepts aligned starts within the 512 MiB managed identity-mapped window while retaining a 16 MiB maximum block size.
+- New candidate boot fix: Multiboot2 information-block addresses are no longer constrained to the first 16 MiB; the candidate accepts aligned starts within the 1 GiB boot identity map while retaining a 16 MiB maximum block size; the allocator still manages only the first 512 MiB.
 - New regression file: `tools/test_multiboot_info_range.py`; new required boot milestone: `ZEROOS: Multiboot2 info range policy self-test passed.`
 - Candidate branch: `fix/multiboot-info-window-20261105`. Its new Build/QEMU result is pending; do not list the fix as merged or boot-certified until CI finishes and the candidate is integrated.
 - Main candidate evidence: Build #41963710252 and Stage 1 Scheduler #41963710086 passed; PR-event release publication was skipped. Post-merge main workflow and stable ISO verification for the current main SHA remain open.
