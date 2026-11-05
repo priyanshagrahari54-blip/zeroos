@@ -255,3 +255,9 @@ Priority is still boot/release gate → kernel/userspace lifecycle correctness �
 - Candidate branch: `fix/multiboot-info-window-20261105`. Its new Build/QEMU result is pending; do not list the fix as merged or boot-certified until CI finishes and the candidate is integrated.
 - Main candidate evidence: Build #41963710252 and Stage 1 Scheduler #41963710086 passed; PR-event release publication was skipped. Post-merge main workflow and stable ISO verification for the current main SHA remain open.
 - The canonical product specification and all Stage 0-10 requirements remain unchanged. No completion percentage increase.
+
+## PR #40 validation status — 2026-11-05
+
+- New Multiboot2 handoff-range regression was added to the Build workflow. Its first Build #1770 failed at the new test because the runtime self-test lacked the expected 17-byte size-alignment case; no native release build or QEMU step ran in that attempt.
+- The missing C self-test case and whitespace-sensitive test assertion have been corrected. Candidate head: `c2010a2175ea6f73b0057143def8d4172fc54d65`; exact-head Build/QEMU validation is pending.
+- Do not merge PR #40 until the new regression, clean release gate, QEMU, storage and production smoke checks pass. No completion percentage increase.
