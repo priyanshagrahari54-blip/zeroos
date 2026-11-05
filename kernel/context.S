@@ -74,7 +74,14 @@ context_switch_ex:
      * clear the marker using the destination stack below the saved frame. */
     movq %rdx, %rsp
     call task_handoff_complete
-    /* Identical restore sequence to the isr_common frame epilogue. */
+    /*
+     * This cooperative-to-frame path bypasses isr_common's GS epilogue.
+     * Select the target frame's GS privilege state while the kernel GS base
+     * is still active; no C call may follow once a Ring-3 SWAPGS is done.
+     */
+    movq %rsp, %rdi
+    call cpu_interrupt_gs_prepare_frame
+    /* Identical register/IRET restore sequence to the isr_common epilogue. */
     popq %r15
     popq %r14
     popq %r13

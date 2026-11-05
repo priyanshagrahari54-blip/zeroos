@@ -905,3 +905,28 @@ No overall completion increase is claimed.
 - Stable `zeroos.iso` and versioned `zeroos-9d77ad3.iso` are verified identical by the workflow's byte comparison and both report SHA-256 `cebb728732f1cd04e2058182842e53c5d988cc0463fc7bb2ac4b8217314da413`. Release notes identify `9d77ad3`.
 - PR #38's release-ordering defect is closed for this published image. Remaining priorities: PR #37's GS restoration gap in the direct interrupt-frame resume path; PR #36 range-unmap validation; 600-second scheduler soak; physical G560/device matrix; storage recovery; driver/security; desktop hardware integration; browser/media/AI/compatibility. QEMU RTL8139 DHCP does not equal physical NIC certification.
 - No overall completion percentage increase. This final documentation-only commit skips CI; it does not modify the tested OS image.
+
+## Evidence update — 2026-11-05: complete GS ownership on direct frame resume (candidate)
+
+- Current `main` HEAD is `49eb15d2aad3e96bb67efe9808c25ac40937e756`, a documentation-only `[skip ci]` commit. The latest OS-bearing snapshot is `9d77ad3befb6c782b548020d67d6af38401533b2`; Build #1748 / run `41767825881` and Stage 1 Scheduler #169 / run `41767825887` both completed successfully.
+- Build #41767825881 passed existing source regressions, native x86-64 build, clean `make check`, kernel/ISO verification, repeated QEMU boot, SMP4, NX-disabled and failed-IPI boots, scheduler fault diagnostics, two-boot AHCI/NVMe persistence, production ISO, production desktop/network smoke, diagnostic preservation and GitHub Release publication.
+- Release API metadata reports versioned `zeroos-9d77ad3.iso` and stable `zeroos.iso` with the same SHA-256 `cebb728732f1cd04e2058182842e53c5d988cc0463fc7bb2ac4b8217314da413` and size 12,369,920 bytes. The main Build log confirms the stable asset was downloaded and byte-compared with the production ISO; release notes identify `9d77ad3`.
+- Existing PR #37 candidate `cb92e9b9aa944bfaaa5be8dbce48800bc193494e` passed Build #41573450851 and Stage 1 Scheduler #41573450849. It establishes GS ownership in `boot/isr.S:isr_common`, but source review found that its separate cooperative `kernel/context.S:.Lresume_frame` path can also resume a saved Ring-3 interrupt frame via `iretq` without selecting the target GS state.
+- Candidate branch `fix/complete-gs-frame-resume-20261105` ports the reviewed GS entry/return changes onto current main and adds `cpu_interrupt_gs_prepare_frame()`: it verifies that kernel per-CPU GS is active and selects user GS only for a Ring-3 target immediately before the direct frame restore. No C call follows the Ring-3 `SWAPGS`.
+- Added source regressions for the direct `.Lresume_frame` call order and fail-closed target-CPL selection; the Build workflow runs `python3 tools/test_interrupt_gs_entry.py` before toolchain installation. The exact new candidate head has not yet completed CI/QEMU; no new boot pass is claimed.
+- PR #36 range-unmap preflight remains a separate unmerged candidate. The 600-second scheduler soak and physical Lenovo G560/device matrix remain outstanding. QEMU RTL8139/DHCP evidence does not certify a physical NIC. Browser/media/AI/compatibility remain roadmap work.
+- Overall completion estimate is unchanged; source assertions and documentation do not earn feature-completion credit.
+
+
+## Candidate validation correction — 2026-11-05
+
+- First exact-head Build #41960677907 stopped at `Verify Ring-3 interrupt GS ownership`: the inherited regression expected `timeout --kill-after=5s`, but current-main `tools/boot_test.sh` used plain `timeout`. This was a test/harness contract mismatch, not a compiler or guest-kernel failure; build and all later QEMU steps were skipped in that run.
+- The candidate now ports the bounded QEMU termination behavior into `tools/boot_test.sh`: `timeout --kill-after=5s` and explicit acceptance of timeout status 124 or forced-kill status 137. This prevents a paused `-no-shutdown` QEMU process from hanging the boot gate and makes the existing regression match the actual harness.
+- The updated exact-head Build/QEMU run must still complete. No native build, QEMU boot, storage or production-smoke pass is inferred from the failed first run.
+
+
+## Candidate validation correction — second CI attempt (2026-11-05)
+
+- Build #41960835677 stopped in `Verify QEMU boot gate fails closed`, before native build or QEMU. The newly bounded timeout command added `--kill-after=5s`, but the test's fake `timeout` executable treated that option as the duration and attempted to execute `1s`; the regression then saw the wrapper's traceback instead of the expected exit diagnostic.
+- Updated `tools/test_boot_gate_fail_closed.py` to strip the optional `--kill-after=...` argument before invoking its fake child, match the revised 124/137 diagnostic, and add a case proving forced-kill status 137 is accepted only as a timeout outcome while boot milestones are still mandatory.
+- The next exact-head Build must rerun both the fail-closed boot-gate suite and the GS ownership suite before the compiler/build/QEMU stages. No kernel build or QEMU result is claimed for Build #41960835677.

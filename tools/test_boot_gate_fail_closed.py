@@ -28,6 +28,8 @@ import os
 import subprocess
 import sys
 args = sys.argv[1:]
+if args and args[0].startswith("--kill-after="):
+    args = args[1:]
 if len(args) < 2:
     sys.exit(125)
 child = subprocess.run(args[1:], env=os.environ.copy())
@@ -98,7 +100,10 @@ sys.exit(0)
             (self.build / name).write_text("stale success evidence\\n", encoding="utf-8")
         result = self.run_gate(timeout_status=1)
         self.assertNotEqual(result.returncode, 0, result.stdout)
-        self.assertIn("QEMU exited unexpectedly (status=1; expected timeout 124)", result.stdout)
+        self.assertIn(
+            "QEMU exited unexpectedly (status=1; expected timeout 124 or forced-kill status 137)",
+            result.stdout,
+        )
         self.assertNotIn("boot_test: PASS", result.stdout)
 
     def test_stale_serial_log_is_removed_before_each_boot(self):
@@ -110,6 +115,13 @@ sys.exit(0)
 
     def test_expected_timeout_is_accepted_but_milestones_are_still_required(self):
         result = self.run_gate(timeout_status=124, mode="partial")
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn(": FAIL -", result.stdout)
+        self.assertNotIn("QEMU exited unexpectedly", result.stdout)
+
+
+    def test_forced_timeout_kill_is_accepted_but_milestones_are_still_required(self):
+        result = self.run_gate(timeout_status=137, mode="partial")
         self.assertNotEqual(result.returncode, 0, result.stdout)
         self.assertIn(": FAIL -", result.stdout)
         self.assertNotIn("QEMU exited unexpectedly", result.stdout)
