@@ -968,7 +968,7 @@ No overall completion increase is claimed.
 
 ## Evidence update — 2026-11-06 (Multiboot2 boot handoff)
 
-- Latest main HEAD at this documentation refresh: `ddd8f9c7313931a54d9483e08e30031016b7d69e` (four documentation-only `[skip ci]` commits after code-bearing merge `f20ea855fc30baf54cdc5d45915d357266f2ae6e`). PR #40 merged to main as `f20ea855fc30baf54cdc5d45915d357266f2ae6e`. The fix separates the 1 GiB boot identity-map address limit from the 16 MiB information-block size limit and keeps allocator reservation clipped to the first 512 MiB.
+- Code-bearing main merge for this review: `f20ea855fc30baf54cdc5d45915d357266f2ae6e`; subsequent commits in this documentation refresh are documentation-only and use `[skip ci]`. PR #40 merged to main as `f20ea855fc30baf54cdc5d45915d357266f2ae6e`. The fix separates the 1 GiB boot identity-map address limit from the 16 MiB information-block size limit and keeps allocator reservation clipped to the first 512 MiB.
 - Candidate Build #1822 / run ID `41968388714` passed the Multiboot2 source regression, native build, clean `make check`, kernel/ISO checks, repeated QEMU boot, scheduler fault diagnostics, two-boot AHCI/NVMe persistence, production ISO and production desktop/network smoke. Release publication was skipped for the PR event.
 - Stage 1 Scheduler #243 / run ID `41968388659` passed native build and Stage 1 certification.
 - **Still required:** post-merge main push workflow evidence and publication/byte-comparison of the stable ISO against the exact production image from that main run. The earlier stable asset evidence for `9d77ad3` must not be attributed to `f20ea85`.
