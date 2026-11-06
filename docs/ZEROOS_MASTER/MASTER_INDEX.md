@@ -1,6 +1,6 @@
 # ZEROOS — MASTER DOCUMENT INDEX
 Version: 2.4
-Updated: 2026-11-05 (main reviewed at c3c4eb6ba1a508ff8258d4cf96864317de2da6b4)
+Updated: 2026-11-06 (main reviewed at f20ea855fc30baf54cdc5d45915d357266f2ae6e)
 
 This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md` remains the canonical consolidated product/architecture specification. Stage 6-10 execution is split into dedicated production master documents so an implementation agent can work one stage at a time without losing cross-cutting requirements.
 
@@ -283,3 +283,10 @@ Priority is still boot/release gate → kernel/userspace lifecycle correctness �
 - Stage 1 Scheduler #231 passed on code/test head `9c14a4a4fed9d0f3a8e21e3f5c2ecbf45a819a99`, including native x86-64 kernel build and Stage 1 scheduler certification.
 - Build #1816 for docs tip `9c1d3b1d5d9fc04c0857056b2fe5dea6a0cd9928` was pending with no job started; Build #1810 was cancelled. The corrected Multiboot2 regression and full QEMU/production gates remain unverified.
 - PR #40 remains open and unmerged.
+
+## Current implementation/evidence note — 2026-11-06
+
+- Latest main merge: PR #40, `f20ea855fc30baf54cdc5d45915d357266f2ae6e` — Multiboot2 information-block range validation.
+- The boot handoff start is validated within the 1 GiB identity map; total size is separately capped at 16 MiB; metadata reservation is clipped by the existing 512 MiB allocator window.
+- Candidate Build #1822 and Stage 1 Scheduler #243 both completed SUCCESS. Build #1822 passed the new regression, clean build/check, repeated QEMU boot, AHCI/NVMe two-boot persistence, production ISO and desktop/network smoke. PR-event release publication was skipped.
+- See `VALIDATION.md` for evidence classes and the remaining post-merge main/stable-ISO, scheduler-soak and physical-hardware gates. The canonical product specification and all Stage 0–10 requirements remain unchanged; no completion estimate increase.
