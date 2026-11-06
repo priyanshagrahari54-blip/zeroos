@@ -1,7 +1,7 @@
 # ZEROOS — CURRENT IMPLEMENTATION STATUS
 
 Updated: 2026-11-06
-Branch baseline at this refresh: `main` latest observed commit `f20ea855fc30baf54cdc5d45915d357266f2ae6e` (PR #40 Multiboot2 handoff-range fix merged; candidate Build #1822 and Stage 1 Scheduler #243 passed; exact post-merge main push workflow and stable ISO for this SHA remain unverified).
+Branch baseline at this refresh: `main` HEAD `ddd8f9c7313931a54d9483e08e30031016b7d69e` (four `[skip ci]` documentation-only commits after code-bearing merge `f20ea855fc30baf54cdc5d45915d357266f2ae6e`; PR #40 Multiboot2 fix merged; candidate Build #1822 and Stage 1 Scheduler #243 passed; post-merge main push workflow and stable ISO for the code-bearing SHA remain unverified).
 Status policy: **evidence-weighted estimate; never equate a source file, marker check, architecture document, or host test with a working end-user feature.**
 
 ## Historical evidence refresh — 2026-10-26 (superseded for current HEAD)
