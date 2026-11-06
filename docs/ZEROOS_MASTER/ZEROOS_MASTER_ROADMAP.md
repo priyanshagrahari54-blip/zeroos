@@ -965,3 +965,11 @@ No overall completion increase is claimed.
 - Stage 1 Scheduler #231 passed on code/test head `9c14a4a4fed9d0f3a8e21e3f5c2ecbf45a819a99`; native kernel build and Stage 1 scheduler certification both passed.
 - Build #1810 was cancelled; latest Build #1816 for docs tip `9c1d3b1d5d9fc04c0857056b2fe5dea6a0cd9928` remained pending with no job started.
 - The corrected Multiboot2 regression, full QEMU boot matrix, storage persistence, production ISO and desktop smoke remain unverified. Keep PR #40 unmerged until the full Build workflow succeeds.
+
+## Evidence update — 2026-11-06 (Multiboot2 boot handoff)
+
+- PR #40 merged to main as `f20ea855fc30baf54cdc5d45915d357266f2ae6e`. The fix separates the 1 GiB boot identity-map address limit from the 16 MiB information-block size limit and keeps allocator reservation clipped to the first 512 MiB.
+- Candidate Build #1822 / run ID `41968388714` passed the Multiboot2 source regression, native build, clean `make check`, kernel/ISO checks, repeated QEMU boot, scheduler fault diagnostics, two-boot AHCI/NVMe persistence, production ISO and production desktop/network smoke. Release publication was skipped for the PR event.
+- Stage 1 Scheduler #243 / run ID `41968388659` passed native build and Stage 1 certification.
+- **Still required:** post-merge main push workflow evidence and publication/byte-comparison of the stable ISO against the exact production image from that main run. The earlier stable asset evidence for `9d77ad3` must not be attributed to `f20ea85`.
+- Next gates remain the 600-second scheduler soak, physical G560/device certification, and continued kernel/process, storage recovery, driver/security and native desktop work before browser/media/AI/compatibility expansion. Product requirements are preserved; no completion estimate increase.
