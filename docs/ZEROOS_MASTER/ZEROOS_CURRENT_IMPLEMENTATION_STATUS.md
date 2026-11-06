@@ -1,7 +1,7 @@
 # ZEROOS — CURRENT IMPLEMENTATION STATUS
 
-Updated: 2026-11-05
-Branch baseline at this refresh: `main` latest observed commit `c3c4eb6ba1a508ff8258d4cf96864317de2da6b4` (includes GS frame-resume and process range-unmap corrections; candidate Build #41963710252 and Stage 1 Scheduler #41963710086 passed; post-merge main push workflow and current-main stable ISO remain unverified).
+Updated: 2026-11-06
+Branch baseline at this refresh: `main` latest observed commit `f20ea855fc30baf54cdc5d45915d357266f2ae6e` (PR #40 Multiboot2 handoff-range fix merged; candidate Build #1822 and Stage 1 Scheduler #243 passed; exact post-merge main push workflow and stable ISO for this SHA remain unverified).
 Status policy: **evidence-weighted estimate; never equate a source file, marker check, architecture document, or host test with a working end-user feature.**
 
 ## Historical evidence refresh — 2026-10-26 (superseded for current HEAD)
@@ -349,3 +349,15 @@ Added `LIBRARY_REUSE_AND_INTEGRATION_PLAN.md` and indexed it from `MASTER_INDEX.
 - Stage 1 Scheduler #231 completed SUCCESS on code/test head `9c14a4a4fed9d0f3a8e21e3f5c2ecbf45a819a99`. Both `Build native x86-64 kernel` and `Run Stage 1 scheduler certification` passed. This verifies compilation and Stage 1 scheduler certification for the 1 GiB Multiboot2-boundary code.
 - Build #1810 was cancelled during overlapping PR validation events. Latest full Build #1816 for documentation tip `9c1d3b1d5d9fc04c0857056b2fe5dea6a0cd9928` remained pending with no job started at the last lookup. No new Multiboot2 source-regression, full `make check`, QEMU, storage, production ISO, or desktop result is established.
 - The initial Build #1770 source-regression mismatch was corrected; the corrected regression has not yet completed in a successful Build workflow. PR #40 remains open/unmerged.
+
+## 2026-11-06 — PR #40 merged: Multiboot2 information-block range
+
+- Current main after merge: `f20ea855fc30baf54cdc5d45915d357266f2ae6e`. PR #40 merged the Multiboot2 handoff-range correction.
+- The kernel now validates the information-block start against the first 1 GiB identity-mapped window, applies the 16 MiB limit to the total block size, requires the Multiboot2 alignment constraints, and reserves the block's intersection with the allocator-managed first 512 MiB. The allocator itself remains 512 MiB; no wider physical-memory support is claimed.
+- Candidate code/test head: `9c14a4a4fed9d0f3a8e21e3f5c2ecbf45a819a99`; final documentation tip validated by Build #1822 / run ID `41968388714` and Stage 1 Scheduler #243 / run ID `41968388659`.
+- **Build #1822 completed SUCCESS.** Its job passed the release/diagnostic/QEMU/scheduler/process regressions, the new Multiboot2 range regression, native build, clean `make check`, kernel/ISO verification, repeated QEMU boot, scheduler fault diagnostics, q35 AHCI + NVMe two-boot persistence, production ISO build, and production desktop/network smoke. The GitHub Release publication step was skipped because the run was PR-triggered.
+- **Stage 1 Scheduler #243 completed SUCCESS**, including native x86-64 kernel build and Stage 1 scheduler certification.
+- Post-merge main verification remains distinct: the combined-status lookup for merge commit `f20ea855fc30baf54cdc5d45915d357266f2ae6e` returned no status entries, and the available commit-workflow lookup exposes PR-triggered runs only. Do not label the post-merge push workflow green from candidate evidence.
+- The previously recorded stable-ISO byte comparison applied to the earlier `9d77ad3` image. No live stable-asset comparison against the new `f20ea85` main build is established here; main release publication and exact stable-asset verification remain open.
+- Remaining evidence gaps: 600-second scheduler soak, physical Lenovo G560/device matrix, and post-merge main/release verification. Relevant open engineering queues include PR #26 (boot evidence/soak), #27 (scheduler certification), and #14 (broad cross-stage hardening; reconcile overlapping work before integration).
+- **Implementation estimate unchanged (~43% overall).** This boot-handoff correction does not complete a stage or certify physical hardware.
