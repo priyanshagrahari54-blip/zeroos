@@ -44,6 +44,9 @@ jobs:
       - name: Verify process address-space range-unmap atomicity
         run: python3 tools/test_process_address_space_unmap_atomic.py
 
+      - name: Verify Multiboot2 information range handling
+        run: python3 tools/test_multiboot_info_range.py
+
       - name: Install build and QEMU tools
         run: |
           sudo apt-get update

@@ -1,6 +1,6 @@
 # ZEROOS — MASTER DOCUMENT INDEX
 Version: 2.4
-Updated: 2026-11-05
+Updated: 2026-11-05 (main reviewed at c3c4eb6ba1a508ff8258d4cf96864317de2da6b4)
 
 This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md` remains the canonical consolidated product/architecture specification. Stage 6-10 execution is split into dedicated production master documents so an implementation agent can work one stage at a time without losing cross-cutting requirements.
 
@@ -245,3 +245,41 @@ Priority is still boot/release gate → kernel/userspace lifecycle correctness �
 - Build #41960835677 stopped in `Verify QEMU boot gate fails closed`, before native build or QEMU. The newly bounded timeout command added `--kill-after=5s`, but the test's fake `timeout` executable treated that option as the duration and attempted to execute `1s`; the regression then saw the wrapper's traceback instead of the expected exit diagnostic.
 - Updated `tools/test_boot_gate_fail_closed.py` to strip the optional `--kill-after=...` argument before invoking its fake child, match the revised 124/137 diagnostic, and add a case proving forced-kill status 137 is accepted only as a timeout outcome while boot milestones are still mandatory.
 - The next exact-head Build must rerun both the fail-closed boot-gate suite and the GS ownership suite before the compiler/build/QEMU stages. No kernel build or QEMU result is claimed for Build #41960835677.
+
+## Current-main implementation/evidence update — 2026-11-05
+
+- Current main baseline reviewed: `c3c4eb6ba1a508ff8258d4cf96864317de2da6b4`.
+- GS frame-resume and process range-unmap corrections are now included in main; see the current implementation status and validation evidence.
+- New candidate boot fix: Multiboot2 information-block addresses are no longer constrained to the first 16 MiB; the candidate accepts aligned starts within the 1 GiB boot identity map while retaining a 16 MiB maximum block size; the allocator still manages only the first 512 MiB.
+- New regression file: `tools/test_multiboot_info_range.py`; new required boot milestone: `ZEROOS: Multiboot2 info range policy self-test passed.`
+- Candidate branch: `fix/multiboot-info-window-20261105`. Its new Build/QEMU result is pending; do not list the fix as merged or boot-certified until CI finishes and the candidate is integrated.
+- Main candidate evidence: Build #41963710252 and Stage 1 Scheduler #41963710086 passed; PR-event release publication was skipped. Post-merge main workflow and stable ISO verification for the current main SHA remain open.
+- The canonical product specification and all Stage 0-10 requirements remain unchanged. No completion percentage increase.
+
+## PR #40 validation status — 2026-11-05
+
+- New Multiboot2 handoff-range regression was added to the Build workflow. Its first Build #1770 failed at the new test because the runtime self-test lacked the expected 17-byte size-alignment case; no native release build or QEMU step ran in that attempt.
+- The missing C self-test case and whitespace-sensitive test assertion have been corrected. Candidate head: `c2010a2175ea6f73b0057143def8d4172fc54d65`; exact-head Build/QEMU validation is pending.
+- Do not merge PR #40 until the new regression, clean release gate, QEMU, storage and production smoke checks pass. No completion percentage increase.
+## PR #40 latest validation snapshot — 2026-11-05
+
+- Stage 1 Scheduler #203 passed on PR tip `7043444b45c5cd068651b7a2bb054851ae5d18cb`, including native x86-64 build and Stage 1 scheduler certification.
+- Build #1782 for that tip was pending with no job started at the last lookup; Build #1770 failed earlier in the new source regression before native release build/QEMU, and Build #1781 was cancelled during PR close/reopen.
+- Corrected PR head has not yet completed the full Build/QEMU/storage/production smoke gate. Keep PR #40 unmerged until it does.
+## Latest PR #40 CI snapshot — 2026-11-05
+
+- Stage 1 Scheduler #203 passed native kernel build and scheduler certification on PR tip `7043444b45c5cd068651b7a2bb054851ae5d18cb`.
+- Build #1770 failed in the new Multiboot2 regression before native release build/QEMU; the missing 17-byte runtime case and whitespace-sensitive assertion were corrected.
+- Build #1782 was cancelled; latest Build #1789 for docs tip `beaba6139cc06426ce5dc0243f6978a48e842e1f` is pending with no job started. No full QEMU/production validation is claimed for PR #40.
+- Keep PR #40 open/unmerged until the exact current head passes the full Build workflow.
+## Final candidate-head validation snapshot — 2026-11-05
+
+- Final code/test head: `9c14a4a4fed9d0f3a8e21e3f5c2ecbf45a819a99`; Multiboot2 metadata is accepted within the 1 GiB identity map while allocator reservation is clipped to 512 MiB.
+- Build #1810 remained pending without a job; Build #1809 was cancelled. Build #1770 failed in the first source-regression version before native build/QEMU.
+- Stage 1 #230's native build and scheduler-certification steps passed, but the overall workflow was cancelled. Stage 1 #231 remained pending.
+- Full QEMU, storage, production ISO and desktop validation for this final candidate are not established. PR #40 remains open/unmerged.
+## PR #40 latest CI result — 2026-11-05
+
+- Stage 1 Scheduler #231 passed on code/test head `9c14a4a4fed9d0f3a8e21e3f5c2ecbf45a819a99`, including native x86-64 kernel build and Stage 1 scheduler certification.
+- Build #1816 for docs tip `9c1d3b1d5d9fc04c0857056b2fe5dea6a0cd9928` was pending with no job started; Build #1810 was cancelled. The corrected Multiboot2 regression and full QEMU/production gates remain unverified.
+- PR #40 remains open and unmerged.

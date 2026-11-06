@@ -9,7 +9,7 @@ Never create a basic version merely to replace it later.
 
 ## Current state
 
-### Evidence snapshot — 2026-10-26
+### Historical evidence snapshot — 2026-10-26 (superseded by 2026-11-05 update)
 - The normal `make` image targets a persistent native x86-64 kernel + Ring-3 desktop/session path; the release pipeline has a shared 91-milestone QEMU boot gate.
 - PR #16 was merged as `d6b58292df7e00b4b2f15ba22f3a0405035ee549`, adding parallel-build dependency fixes, ISO structure validation/writing, reproducibility checks, shared boot-test logic, and local intent-parser foundations.
 - **Fresh main CI evidence:** GitHub Actions run 1543 for `main` HEAD `5d89992d6c78a2a19108385c3fc4979fa3cfe19e` completed successfully on 2026-10-26: https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/40322921742. This is evidence that the configured CI build passed, not proof that every product feature is complete or that physical G560 hardware is certified.
@@ -930,3 +930,38 @@ No overall completion increase is claimed.
 - Build #41960835677 stopped in `Verify QEMU boot gate fails closed`, before native build or QEMU. The newly bounded timeout command added `--kill-after=5s`, but the test's fake `timeout` executable treated that option as the duration and attempted to execute `1s`; the regression then saw the wrapper's traceback instead of the expected exit diagnostic.
 - Updated `tools/test_boot_gate_fail_closed.py` to strip the optional `--kill-after=...` argument before invoking its fake child, match the revised 124/137 diagnostic, and add a case proving forced-kill status 137 is accepted only as a timeout outcome while boot milestones are still mandatory.
 - The next exact-head Build must rerun both the fail-closed boot-gate suite and the GS ownership suite before the compiler/build/QEMU stages. No kernel build or QEMU result is claimed for Build #41960835677.
+
+## Evidence snapshot and next boot-priority fix — 2026-11-05
+
+- Latest reviewed `main`: `c3c4eb6ba1a508ff8258d4cf96864317de2da6b4`. The GS frame-resume correction and process range-unmap preflight correction are included in this baseline.
+- Candidate Build #41963710252 passed its native build, clean `make check`, repeated QEMU boot, scheduler fault diagnostics, AHCI/NVMe two-boot persistence, production ISO generation, and production desktop/network smoke steps. Stage 1 Scheduler #41963710086 passed. Both are candidate workflow evidence; the PR-event release publication step was skipped.
+- The post-merge main workflow and stable ISO byte identity for `c3c4eb6ba1a508ff8258d4cf96864317de2da6b4` remain unverified. Close these release gates separately; do not infer them from PR CI.
+- P0 boot fix in candidate branch `fix/multiboot-info-window-20261105`: remove the incorrect 16 MiB start-address ceiling on the Multiboot2 information block. Validate 8-byte alignment and the 1 GiB boot identity map; apply the 16 MiB ceiling to total block size; reject a block that crosses the identity map; call `reserve_range()` unconditionally so only the portion inside the allocator's 512 MiB window is reserved. Add a runtime boundary self-test, host/source regression, Build workflow step, and required boot milestone.
+- Candidate code is implemented but its new CI/QEMU run is pending. Merge only after the regression, native build, clean checks, repeated QEMU boot, storage, and production desktop gates pass.
+- Next after this fix: verify post-merge main CI and stable ISO; rebase/reconcile PR #26 (6 ahead/30 behind) boot-test integrity and PR #27 (1 ahead/29 behind) scheduler certification work; review PR #14 (19 ahead/321 behind) as a separate broad integration queue; run the 600-second scheduler soak; then continue process/runtime, storage recovery, drivers/security, native desktop hardware integration, browser/media, AI, and Windows/Android compatibility.
+- Physical Lenovo G560 and device-matrix certification remain separate from QEMU. QEMU RTL8139/DHCP is not physical NIC evidence.
+- Preserve the complete canonical product requirements and all Stage 0-10 workstreams. Overall implementation estimate remains unchanged.
+
+## PR #40 validation correction — 2026-11-05
+
+- First Build #1770 stopped at the new Multiboot2 range regression before compiler installation, clean `make check`, or QEMU. The source test expected a 17-byte total-size rejection that the first version of the runtime self-test had omitted.
+- The runtime self-test now includes the misaligned 17-byte case, and the Python regression normalizes whitespace. Candidate head is `c2010a2175ea6f73b0057143def8d4172fc54d65`.
+- Stage 1 Scheduler #203 passed on PR tip `7043444b45c5cd068651b7a2bb054851ae5d18cb`. Build #1782 for that tip remains pending with no job started; Build #1770 is the earlier source-regression failure.
+- Exact-head full Build/QEMU/storage/production validation remains pending. Keep PR #40 unmerged until it passes. Main release verification and the stable ISO for the current main SHA remain separate gates.
+## Latest PR #40 CI state — 2026-11-05
+
+- Stage 1 Scheduler #203 passed native kernel build and Stage 1 scheduler certification on PR tip `7043444b45c5cd068651b7a2bb054851ae5d18cb`.
+- Initial Build #1770 failed in the new Multiboot2 regression before build/QEMU because the 17-byte misaligned-size runtime case was missing; the candidate source/test were corrected.
+- Build #1782 was cancelled during PR close/reopen; latest Build #1789 for docs tip `beaba6139cc06426ce5dc0243f6978a48e842e1f` is pending without a job. Exact-head full QEMU/storage/production validation remains blocked.
+- Do not merge PR #40 until the corrected regression, clean build, QEMU, storage and production smoke gates pass. Main stable ISO and post-merge workflow verification remain separate.
+## Final candidate-head validation snapshot — 2026-11-05
+
+- Final Multiboot2 boot-range code/test head: `9c14a4a4fed9d0f3a8e21e3f5c2ecbf45a819a99`. It accepts aligned metadata below the 1 GiB identity-map limit, caps and aligns total size at 16 MiB, and reserves only the portion within the allocator's first 512 MiB.
+- Build #1810 was pending with no job started; Build #1809 was cancelled. Build #1770's first regression attempt failed before build/QEMU due to the omitted 17-byte negative case, which has since been added.
+- Stage 1 #230 completed native kernel build and scheduler-certification steps successfully but the overall workflow was cancelled; Stage 1 #231 was pending. Do not claim a green Stage 1 workflow for the final tip.
+- Full Build/QEMU/storage/production validation for the final candidate remains blocked. Keep PR #40 open until exact-head checks complete; post-merge main and stable ISO verification remain separate.
+## PR #40 latest CI result — 2026-11-05
+
+- Stage 1 Scheduler #231 passed on code/test head `9c14a4a4fed9d0f3a8e21e3f5c2ecbf45a819a99`; native kernel build and Stage 1 scheduler certification both passed.
+- Build #1810 was cancelled; latest Build #1816 for docs tip `9c1d3b1d5d9fc04c0857056b2fe5dea6a0cd9928` remained pending with no job started.
+- The corrected Multiboot2 regression, full QEMU boot matrix, storage persistence, production ISO and desktop smoke remain unverified. Keep PR #40 unmerged until the full Build workflow succeeds.

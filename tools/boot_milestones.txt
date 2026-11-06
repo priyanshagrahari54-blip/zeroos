@@ -114,6 +114,8 @@ ZEROOS: session input routing passed.
 ZEROOS: session shell process complete.
 ZEROOS: session shell process reaped cleanly.
 
+ZEROOS: Multiboot2 info range policy self-test passed.
+
 # Negative gates: these indicate a failed or panicked boot.
 never:storage.*FAILED
 never:ZEROOS PANIC:
