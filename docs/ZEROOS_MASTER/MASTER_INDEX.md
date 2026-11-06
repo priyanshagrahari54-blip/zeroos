@@ -1,6 +1,6 @@
 # ZEROOS — MASTER DOCUMENT INDEX
 Version: 2.4
-Updated: 2026-11-06 (main HEAD ddd8f9c7313931a54d9483e08e30031016b7d69e; code-bearing merge f20ea855fc30baf54cdc5d45915d357266f2ae6e)
+Updated: 2026-11-06 (code-bearing main merge f20ea855fc30baf54cdc5d45915d357266f2ae6e; subsequent commits in this documentation refresh are docs-only)
 
 This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md` remains the canonical consolidated product/architecture specification. Stage 6-10 execution is split into dedicated production master documents so an implementation agent can work one stage at a time without losing cross-cutting requirements.
 
