@@ -1,6 +1,6 @@
 # ZEROOS — Validation and Support Matrix
 
-Updated: 2026-11-06. Current main HEAD `ddd8f9c7313931a54d9483e08e30031016b7d69e` is documentation-only after code-bearing merge `f20ea855fc30baf54cdc5d45915d357266f2ae6e`; this is the evidence policy for Stages 1-10 and must not overstate support.
+Updated: 2026-11-06. Code-bearing main baseline is `f20ea855fc30baf54cdc5d45915d357266f2ae6e`; subsequent commits in this documentation refresh are `[skip ci]` documentation-only changes. This is the evidence policy for Stages 1-10 and must not overstate support.
 
 The binding acceptance checklist is [ZEROOS_10_STAGE_HARDENING.md](./ZEROOS_10_STAGE_HARDENING.md). Current estimates and known limitations are in [ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md](./ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md).
 
