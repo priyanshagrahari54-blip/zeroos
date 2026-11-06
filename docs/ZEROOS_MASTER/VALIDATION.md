@@ -1,6 +1,6 @@
 # ZEROOS — Validation and Support Matrix
 
-Updated: 2026-11-05. Current main reviewed at `c3c4eb6ba1a508ff8258d4cf96864317de2da6b4`; this is the evidence policy for Stages 1-10 and must not overstate support.
+Updated: 2026-11-06. Current main reviewed at `f20ea855fc30baf54cdc5d45915d357266f2ae6e`; this is the evidence policy for Stages 1-10 and must not overstate support.
 
 The binding acceptance checklist is [ZEROOS_10_STAGE_HARDENING.md](./ZEROOS_10_STAGE_HARDENING.md). Current estimates and known limitations are in [ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md](./ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md).
 
@@ -269,3 +269,14 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - Stage 1 Scheduler #231 completed SUCCESS on code/test head `9c14a4a4fed9d0f3a8e21e3f5c2ecbf45a819a99`: native x86-64 kernel build and Stage 1 scheduler certification both passed.
 - Build #1810 was cancelled during overlapping PR validation events. Latest Build #1816 for docs tip `9c1d3b1d5d9fc04c0857056b2fe5dea6a0cd9928` was pending with no job started at last lookup.
 - The corrected Multiboot2 source regression has not yet completed in a successful Build workflow. Full QEMU boot, storage persistence, production ISO and desktop smoke remain unverified for this candidate.
+
+## 2026-11-06 — Multiboot2 handoff-range fix merged (PR #40)
+
+- Merge commit: `f20ea855fc30baf54cdc5d45915d357266f2ae6e`.
+- The new `tools/test_multiboot_info_range.py` regression passed in candidate Build #1822 (run ID `41968388714`). The required guest milestone is `ZEROOS: Multiboot2 info range policy self-test passed.`.
+- Build #1822 job completed SUCCESS and passed all listed source regressions, native `make`, clean `make check`, kernel/ISO verification, repeated QEMU boot, scheduler fault diagnostics, two-boot q35 AHCI/NVMe persistence, production ISO generation, and production desktop/network smoke. The release-publication step was skipped on the PR event by design.
+- Stage 1 Scheduler #243 (run ID `41968388659`) completed SUCCESS, including native x86-64 build and Stage 1 scheduler certification.
+- Evidence class: **candidate BUILD + QEMU + STORAGE + production-smoke** for the final PR tree before merge. This is not a post-merge main push result and does not certify physical hardware.
+- The combined-status lookup for merge commit `f20ea855fc30baf54cdc5d45915d357266f2ae6e` returned no entries. The connector's commit-workflow lookup returns PR-triggered runs only, so exact post-merge main CI remains unverified.
+- Release blocker: the PR run skipped GitHub Release publication. The previously recorded stable ISO comparison was for older commit `9d77ad3`; verify the live `zeroos.iso` against the production ISO from a successful post-merge main run before declaring the current release aligned.
+- Other open validation: 600-second scheduler soak and physical G560/device certification. Do not increase stage or overall completion percentages.
