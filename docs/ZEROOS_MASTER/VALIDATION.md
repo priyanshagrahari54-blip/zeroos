@@ -280,3 +280,14 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - The combined-status lookup for merge commit `f20ea855fc30baf54cdc5d45915d357266f2ae6e` returned no entries. The connector's commit-workflow lookup returns PR-triggered runs only, so exact post-merge main CI remains unverified.
 - Release blocker: the PR run skipped GitHub Release publication. The previously recorded stable ISO comparison was for older commit `9d77ad3`; verify the live `zeroos.iso` against the production ISO from a successful post-merge main run before declaring the current release aligned.
 - Other open validation: 600-second scheduler soak and physical G560/device certification. Do not increase stage or overall completion percentages.
+
+
+## 2026-11-07 — main Build #1823 and release-alias check
+
+- Latest main ref: documentation HEAD `9a0d4d30d5cef5ca4842033c6a75abd589b1c93b`; latest code-bearing commit: `f20ea855fc30baf54cdc5d45915d357266f2ae6e`. The compare endpoint reports the 12 intervening commits touch only `MASTER_INDEX.md`, `VALIDATION.md`, `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md`, and `ZEROOS_MASTER_ROADMAP.md`.
+- Push workflow Build #1823 (`42152327282`) on `f20ea855`: SUCCESS. The job step summary records PASS for source regressions, native build, clean `make check`, artifact validation, repeated QEMU boot, scheduler diagnostics, AHCI/NVMe two-boot persistence, production ISO, production desktop smoke, and release-artifact upload/publication steps.
+- The release log records: `skipping stable release update for stale main commit f20ea855...; main is 9a0d4d30...`. The immutable versioned asset was verified, but the stable alias was not changed.
+- GitHub Release metadata: versioned `zeroos-f20ea85.iso` SHA-256 `e40ac5276a83dc24f45866024a2871aa1ce7b6eaafc3dda64a4e22e9bee764d2`; stable `zeroos.iso` SHA-256 `ef092a8c9cb2c7b98ec8af20ce53239b8d3b36cc4525ee833ef94376e2404e53` (same digest as `zeroos-c3c4eb6.iso`). Release notes still point to `c3c4eb6`. Therefore the current stable alias is not verified as the latest main code image.
+- Candidate release-guard correction allows only documentation-only advances (`docs/**`, `**/*.md`) and still rejects any other changed path. The regression test creates a temporary Git history and verifies both cases. This candidate has not yet passed GitHub Actions; no merge is authorized by this snapshot.
+- Post-merge acceptance: successful push Build for the merged main SHA; inspect QEMU/storage/desktop step conclusions; download both versioned and stable ISO; compare each with the production ISO; verify release notes name the same code-bearing commit.
+- Physical Lenovo G560/device matrix and 600-second scheduler soak remain unverified. No overall completion increase.
