@@ -54,7 +54,7 @@ versioned_download = 'gh release download "$tag" --pattern "zeroos-${sha}.iso" -
 versioned_compare = 'cmp --silent build-production/zeroos.iso "build/release-versioned-verify/zeroos-${sha}.iso"'
 latest_main_fetch = "git fetch --no-tags origin main"
 latest_main_check = 'latest_main_sha="$(git rev-parse FETCH_HEAD)"'
-stale_main_condition = 'if ! git diff --quiet "$GITHUB_SHA" "$latest_main_sha" -- . ':(exclude,glob)docs/**' ':(exclude,glob)**/*.md'; then'
+stale_main_condition = """if ! git diff --quiet "$GITHUB_SHA" "$latest_main_sha" -- . ':(exclude,glob)docs/**' ':(exclude,glob)**/*.md'; then"""
 stale_main_message = 'echo "ZEROOS: skipping stable release update because release-relevant files changed between ${GITHUB_SHA} and ${latest_main_sha}."'
 docs_only_message = 'echo "ZEROOS: main advanced only through documentation files; publishing boot-tested code snapshot ${GITHUB_SHA}."'
 stable_backup = 'gh release download "$tag" --pattern "zeroos.iso" --dir build/release-backup --clobber'
