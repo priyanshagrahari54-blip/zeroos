@@ -290,3 +290,11 @@ Priority is still boot/release gate → kernel/userspace lifecycle correctness �
 - The boot handoff start is validated within the 1 GiB identity map; total size is separately capped at 16 MiB; metadata reservation is clipped by the existing 512 MiB allocator window.
 - Candidate Build #1822 and Stage 1 Scheduler #243 both completed SUCCESS. Build #1822 passed the new regression, clean build/check, repeated QEMU boot, AHCI/NVMe two-boot persistence, production ISO and desktop/network smoke. PR-event release publication was skipped.
 - See `VALIDATION.md` for evidence classes and the remaining post-merge main/stable-ISO, scheduler-soak and physical-hardware gates. The canonical product specification and all Stage 0–10 requirements remain unchanged; no completion estimate increase.
+
+
+## 2026-11-07 — release freshness correction
+
+- Current main documentation head: `9a0d4d30`; latest code-bearing commit: `f20ea855`.
+- Main Build #1823 passed the complete configured QEMU/storage/production smoke gates and uploaded a verified versioned ISO. Its stable-alias update was skipped because documentation-only commits had advanced main.
+- Current stable `zeroos.iso` digest remains `ef092a8c...` (older `c3c4eb6` image), while `zeroos-f20ea85.iso` is `e40ac527...`. Treat the live stable alias as stale until post-fix main publication and byte comparison complete.
+- Release-publisher source: `.github/workflows/build.yml`; regression: `tools/test_release_publish_guard.py`. Candidate branch `fix/release-guard-docs-only-20261107` tests that docs-only advances are allowed but kernel/source changes still block stale publication. Candidate CI is pending; do not mark the release gate closed yet.

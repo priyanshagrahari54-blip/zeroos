@@ -973,3 +973,11 @@ No overall completion increase is claimed.
 - Stage 1 Scheduler #243 / run ID `41968388659` passed native build and Stage 1 certification.
 - **Still required:** post-merge main push workflow evidence and publication/byte-comparison of the stable ISO against the exact production image from that main run. The earlier stable asset evidence for `9d77ad3` must not be attributed to `f20ea85`.
 - Next gates remain the 600-second scheduler soak, physical G560/device certification, and continued kernel/process, storage recovery, driver/security and native desktop work before browser/media/AI/compatibility expansion. Product requirements are preserved; no completion estimate increase.
+
+
+## 2026-11-07 — immediate P0 release action
+
+1. Fix the stale-main publication predicate: compare the boot-tested build commit to fetched current main, excluding only documentation paths (`docs/**` and Markdown files). Documentation-only commits must not strand a verified bootable ISO; any kernel, source, test, build, boot configuration or workflow change must continue to block an obsolete publisher.
+2. Run `tools/test_release_publish_guard.py` on PR CI, including temporary-Git-history cases for docs-only acceptance and kernel-change rejection. Then require the full native build, clean `make check`, QEMU boot matrix, storage persistence and production desktop smoke before merging.
+3. After merge, verify the push-triggered main Build, compare the immutable versioned ISO and stable `zeroos.iso` byte-for-byte against that run's production ISO, and ensure release notes identify the same code-bearing commit.
+4. Resume the 600-second scheduler soak and physical G560/device certification. Continue process/runtime hardening, storage recovery, driver/security, native desktop hardware integration, then browser/media/AI/compatibility. Preserve all Stage 0–10 and canonical product requirements; no completion percentage is raised by this CI/release correction.
