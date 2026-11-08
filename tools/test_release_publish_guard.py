@@ -52,9 +52,11 @@ if conditions != [expected]:
 versioned_upload = 'gh release upload "$tag" "zeroos-${sha}.iso" --clobber'
 versioned_download = 'gh release download "$tag" --pattern "zeroos-${sha}.iso" --dir build/release-versioned-verify --clobber'
 versioned_compare = 'cmp --silent build-production/zeroos.iso "build/release-versioned-verify/zeroos-${sha}.iso"'
-latest_main_check = 'latest_main_sha="$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)"'
-stale_main_condition = 'if [ "$latest_main_sha" != "$GITHUB_SHA" ]; then'
-stale_main_message = 'echo "ZEROOS: skipping stable release update for stale main commit ${GITHUB_SHA}; main is ${latest_main_sha}."'
+latest_main_fetch = "git fetch --no-tags origin main"
+latest_main_check = 'latest_main_sha="$(git rev-parse FETCH_HEAD)"'
+stale_main_condition = """if ! git diff --quiet "$GITHUB_SHA" "$latest_main_sha" -- . ':(exclude,glob)docs/**' ':(exclude,glob)**/*.md'; then"""
+stale_main_message = 'echo "ZEROOS: skipping stable release update because release-relevant files changed between ${GITHUB_SHA} and ${latest_main_sha}."'
+docs_only_message = 'echo "ZEROOS: main advanced only through documentation files; publishing boot-tested code snapshot ${GITHUB_SHA}."'
 stable_backup = 'gh release download "$tag" --pattern "zeroos.iso" --dir build/release-backup --clobber'
 stable_upload = 'if ! gh release upload "$tag" zeroos.iso --clobber; then'
 stable_download = 'if ! gh release download "$tag" --pattern "zeroos.iso" --dir build/release-verify --clobber; then'
@@ -74,16 +76,69 @@ if missing:
     print(f"release publisher is missing required integrity/rollback checks: {missing!r}", file=sys.stderr)
     raise SystemExit(1)
 
+stale_fetch_pos = step.find(latest_main_fetch)
 stale_check_pos = step.find(latest_main_check)
 stale_condition_pos = step.find(stale_main_condition)
 stable_backup_pos = step.find(stable_backup)
-if not (step.find(versioned_compare) < stale_check_pos < stale_condition_pos < stable_backup_pos):
-    print("stale-main guard must run after versioned verification and before stable-alias mutation", file=sys.stderr)
+if not (
+    step.find(versioned_compare) < stale_fetch_pos < stale_check_pos <
+    stale_condition_pos < stable_backup_pos
+):
+    print("release freshness check must run after versioned verification and before stable-alias mutation", file=sys.stderr)
     raise SystemExit(1)
-stale_guard_block = step[stale_check_pos:stable_backup_pos]
-if stale_main_message not in stale_guard_block or "exit 0" not in stale_guard_block:
-    print("stale main runs must leave the mutable stable alias and release notes untouched", file=sys.stderr)
+stale_guard_block = step[stale_fetch_pos:stable_backup_pos]
+if stale_main_message not in stale_guard_block or docs_only_message not in stale_guard_block or "exit 0" not in stale_guard_block:
+    print("release guard must skip code-stale runs but permit documentation-only main advances", file=sys.stderr)
     raise SystemExit(1)
+
+# Exercise the exact Git pathspec used by the workflow. Documentation-only
+# successors are compatible with the boot-tested code snapshot; kernel or
+# other release-relevant changes must keep the stale-run guard closed.
+def git(repo_path, *args):
+    return subprocess.run(
+        ["git", *args], cwd=repo_path, check=True,
+        text=True, capture_output=True,
+    ).stdout.strip()
+
+with __import__("tempfile").TemporaryDirectory() as temp:
+    from pathlib import Path as _Path
+    root = _Path(temp)
+    git(root, "init", "-q")
+    git(root, "config", "user.name", "ZEROOS regression")
+    git(root, "config", "user.email", "zeroos-regression@example.invalid")
+    (root / "kernel").mkdir()
+    (root / "kernel" / "memory.c").write_text("baseline\\n", encoding="utf-8")
+    git(root, "add", ".")
+    git(root, "commit", "-qm", "baseline")
+    base_sha = git(root, "rev-parse", "HEAD")
+
+    (root / "docs" / "ZEROOS_MASTER").mkdir(parents=True)
+    (root / "docs" / "ZEROOS_MASTER" / "VALIDATION.md").write_text("docs update\\n", encoding="utf-8")
+    (root / "README.md").write_text("readme update\\n", encoding="utf-8")
+    git(root, "add", ".")
+    git(root, "commit", "-qm", "documentation only")
+    docs_sha = git(root, "rev-parse", "HEAD")
+    pathspec = [
+        "git", "diff", "--quiet", base_sha, docs_sha, "--", ".",
+        ":(exclude,glob)docs/**", ":(exclude,glob)**/*.md",
+    ]
+    docs_result = subprocess.run(pathspec, cwd=root)
+    if docs_result.returncode != 0:
+        print("documentation-only commits must not make a boot-tested code snapshot stale", file=sys.stderr)
+        raise SystemExit(1)
+
+    (root / "kernel" / "memory.c").write_text("kernel change\\n", encoding="utf-8")
+    git(root, "add", ".")
+    git(root, "commit", "-qm", "kernel change")
+    code_sha = git(root, "rev-parse", "HEAD")
+    code_result = subprocess.run(
+        ["git", "diff", "--quiet", base_sha, code_sha, "--", ".",
+         ":(exclude,glob)docs/**", ":(exclude,glob)**/*.md"],
+        cwd=root,
+    )
+    if code_result.returncode != 1:
+        print("release-relevant kernel changes must keep the stale-run guard closed", file=sys.stderr)
+        raise SystemExit(1)
 
 positions = [step.find(check) for check in required]
 if positions != sorted(positions) or len(set(positions)) != len(positions):

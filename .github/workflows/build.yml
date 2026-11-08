@@ -426,10 +426,23 @@ jobs:
           # A newer main push may arrive while this build is running. Keep the
           # immutable per-commit asset, but never let an obsolete run move the
           # mutable stable alias or rewrite the release notes.
-          latest_main_sha="$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)"
+          # Documentation-only commits do not invalidate an ISO that was
+          # built and boot-tested from the latest code-bearing main snapshot.
+          # Fetch main so both trees are available to git diff even in a shallow
+          # actions/checkout clone.
+          if ! git fetch --no-tags origin main; then
+            echo "ERROR: could not fetch latest main for release freshness check" >&2
+            exit 1
+          fi
+          latest_main_sha="$(git rev-parse FETCH_HEAD)"
           if [ "$latest_main_sha" != "$GITHUB_SHA" ]; then
-            echo "ZEROOS: skipping stable release update for stale main commit ${GITHUB_SHA}; main is ${latest_main_sha}."
-            exit 0
+            # Ignore documentation paths only. Any source, test, build-script,
+            # boot-config, or workflow change keeps the stale-run guard closed.
+            if ! git diff --quiet "$GITHUB_SHA" "$latest_main_sha" -- . ':(exclude,glob)docs/**' ':(exclude,glob)**/*.md'; then
+              echo "ZEROOS: skipping stable release update because release-relevant files changed between ${GITHUB_SHA} and ${latest_main_sha}."
+              exit 0
+            fi
+            echo "ZEROOS: main advanced only through documentation files; publishing boot-tested code snapshot ${GITHUB_SHA}."
           fi
 
           # Preserve the previous stable alias so a failed update can be rolled
