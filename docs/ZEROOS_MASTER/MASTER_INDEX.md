@@ -298,3 +298,12 @@ Priority is still boot/release gate → kernel/userspace lifecycle correctness �
 - Main Build #1823 passed the complete configured QEMU/storage/production smoke gates and uploaded a verified versioned ISO. Its stable-alias update was skipped because documentation-only commits had advanced main.
 - Current stable `zeroos.iso` digest remains `ef092a8c...` (older `c3c4eb6` image), while `zeroos-f20ea85.iso` is `e40ac527...`. Treat the live stable alias as stale until post-fix main publication and byte comparison complete.
 - Release-publisher source: `.github/workflows/build.yml`; regression: `tools/test_release_publish_guard.py`. Candidate branch `fix/release-guard-docs-only-20261107` tests that docs-only advances are allowed but kernel/source changes still block stale publication. Candidate CI is pending; do not mark the release gate closed yet.
+
+
+## 2026-11-08 — PR #41 merged; release publication pending
+
+- Merged release-publisher freshness correction: `fff32e9b35fa61f1911d43d45fc1b99aabfbdd57` (PR #41).
+- Candidate Build #1826 and branch Build #1825 both passed the release regression, native build/check, repeated QEMU boot matrix, storage persistence, production ISO, and desktop/network smoke. Stage 1 Scheduler #247 and #246 passed.
+- Post-merge main Build #1827 is the authoritative acceptance run and was still in progress at the last check; main Stage 1 #248 passed.
+- Stable `zeroos.iso` was still the older `c3c4eb6` image at the last release API query. Do not mark the release current until Build #1827 publishes and the downloaded stable asset matches that run's production ISO byte-for-byte.
+- 600-second scheduler soak and physical G560/device matrix remain open. Product roadmap and all Stage 0–10 requirements are preserved; overall completion estimate unchanged (~43%).

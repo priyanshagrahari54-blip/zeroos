@@ -291,3 +291,14 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - Candidate release-guard correction allows only documentation-only advances (`docs/**`, `**/*.md`) and still rejects any other changed path. The regression test creates a temporary Git history and verifies both cases. This candidate has not yet passed GitHub Actions; no merge is authorized by this snapshot.
 - Post-merge acceptance: successful push Build for the merged main SHA; inspect QEMU/storage/desktop step conclusions; download both versioned and stable ISO; compare each with the production ISO; verify release notes name the same code-bearing commit.
 - Physical Lenovo G560/device matrix and 600-second scheduler soak remain unverified. No overall completion increase.
+
+
+## 2026-11-08 — merged release guard and post-merge gate
+
+- PR #41 merged as `fff32e9b35fa61f1911d43d45fc1b99aabfbdd57`. It changes only the stable-release freshness predicate, its regression test, and master documentation; no kernel behavior changed.
+- Candidate Build #1826 / run `42332516298` and push Build #1825 / run `42332496757` both completed SUCCESS. The exact job summaries show success for release guard regression, diagnostics/QEMU gate regressions, Multiboot2 regression, native build, clean `make check`, three standard QEMU boots with all 104 milestones, SMP4, NX-disabled, failed-IPI, scheduler panic diagnostics, AHCI/NVMe two-boot persistence, production ISO, and production desktop/network smoke. The PR release-publication step was skipped by its event condition, as expected.
+- Stage 1 Scheduler #247 / run `42332516393` and #246 / run `42332496715` completed SUCCESS.
+- Post-merge main Build #1827 / run `42442854152` was still `in_progress` at last inspection; Stage 1 Scheduler #248 / run `42442854128` completed SUCCESS. The candidate runs are not substitutes for this main run.
+- The release API was queried after merge. At that point `zeroos.iso` still had SHA-256 `ef092a8c9cb2c7b98ec8af20ce53239b8d3b36cc4525ee833ef94376e2404e53` and notes still said `c3c4eb6`; this is older than the verified `zeroos-f20ea85.iso` asset (SHA-256 `e40ac5276a83dc24f45866024a2871aa1ce7b6eaafc3dda64a4e22e9bee764d2`). Current stable-release alignment remains OPEN until Build #1827 completes publication and the downloaded stable/versioned assets are byte-compared with its production ISO.
+- The new release guard permits a build SHA to publish after documentation-only main commits, but continues to skip if any non-documentation path changed. The main run must show the exact guard decision, versioned ISO comparison, stable ISO comparison, and final release-note update before the release blocker is closed.
+- 600-second scheduler soak and physical G560/device certification remain unverified. No completion estimate increase.

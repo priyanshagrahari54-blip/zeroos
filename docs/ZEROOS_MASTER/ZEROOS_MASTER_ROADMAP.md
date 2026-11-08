@@ -981,3 +981,12 @@ No overall completion increase is claimed.
 2. Run `tools/test_release_publish_guard.py` on PR CI, including temporary-Git-history cases for docs-only acceptance and kernel-change rejection. Then require the full native build, clean `make check`, QEMU boot matrix, storage persistence and production desktop smoke before merging.
 3. After merge, verify the push-triggered main Build, compare the immutable versioned ISO and stable `zeroos.iso` byte-for-byte against that run's production ISO, and ensure release notes identify the same code-bearing commit.
 4. Resume the 600-second scheduler soak and physical G560/device certification. Continue process/runtime hardening, storage recovery, driver/security, native desktop hardware integration, then browser/media/AI/compatibility. Preserve all Stage 0–10 and canonical product requirements; no completion percentage is raised by this CI/release correction.
+
+
+## 2026-11-08 — release freshness fix merged
+
+1. **Completed:** PR #41 merged as `fff32e9b35fa61f1911d43d45fc1b99aabfbdd57`. The release guard now permits a boot-tested image when main advances only through `docs/**` or Markdown changes; it still blocks publication after any release-relevant source, test, build, boot-config, or workflow change.
+2. **Candidate evidence:** Build #1826 (`42332516298`) and Build #1825 (`42332496757`) passed the release regression, native build/check, three QEMU boots with 104 milestones each, SMP4, NX-disabled, failed-IPI, scheduler diagnostics, two-boot AHCI/NVMe persistence, production ISO and desktop/network smoke. Stage 1 #247 and #246 passed.
+3. **P0 still open:** post-merge main Build #1827 (`42442854152`) was in progress at last inspection; Stage 1 #248 (`42442854128`) passed. Verify the main Build's exact QEMU/storage/desktop steps and release-guard decision.
+4. **P0 still open:** the stable release API still showed the older `zeroos.iso` digest `ef092a8c...` and notes identifying `c3c4eb6` at the last query. After the main run, verify the immutable versioned and stable ISO assets byte-for-byte against its production ISO, and confirm notes identify the same build commit.
+5. Continue the 600-second scheduler soak, physical Lenovo G560 boot/device matrix, physical SATA/NVMe/NIC/USB/graphics validation, storage recovery/fault injection, process/runtime hardening, driver/security and native desktop integration. Browser/media/AI/compatibility remain later roadmap work. Preserve every Stage 0–10 and canonical product requirement; no completion percentage is raised by this release-pipeline change.
