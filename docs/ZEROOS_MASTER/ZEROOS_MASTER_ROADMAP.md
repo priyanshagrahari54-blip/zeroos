@@ -10,12 +10,11 @@ Never create a basic version merely to replace it later.
 ## Current state
 
 ### Current main / release evidence — 2026-11-09
-- Latest main documentation HEAD: `1b2caeb7ce0a735f0b792c2f114ceaedc5a5062e`; latest release/CI code commit: `fff32e9b35fa61f1911d43d45fc1b99aabfbdd57`; kernel-source baseline: `f20ea855fc30baf54cdc5d45915d357266f2ae6e`.
-- Main Build #1827 and Stage 1 Scheduler #248 both completed SUCCESS. Build #1827 passed the configured native build/check, boot, storage, production desktop/network and release-publication steps.
-- The stable `zeroos.iso` and versioned `zeroos-fff32e9.iso` assets both match SHA-256 `18cfe872ab7c946d6e4adc75e411043971d5e3878eb4a4df499e4320b94af15a`; release notes identify `fff32e9`. Stable release alignment is no longer the immediate P0 blocker.
-- Current highest-priority boot-evidence work: require the GNU `timeout` supervisor's deadline TERM marker before accepting QEMU exit statuses 124/137. Candidate implementation and regressions are on `fix/boot-timeout-duration-guard-20261109`; exact candidate CI is pending.
-- The 600-second scheduler soak and physical Lenovo G560/device matrix remain unverified. The optional soak target from stale PR #26 is not present on main; reconcile its useful pieces rather than merging the 45-commit-behind branch wholesale.
-
+- Latest main merge: 1a57d5cebe0e1eff87fd10450be841708de4e01d (PR #42). This changes QEMU timeout-deadline evidence and diagnostic retention; kernel source is unchanged. Latest kernel-source baseline remains f20ea855.
+- Candidate Build #1833/#1834 and Stage 1 Scheduler #254/#255 passed on 3f36bb5. The candidate boot test passed 3/3 repeated QEMU boots with all 104 milestones; storage persistence and production desktop/network smoke passed. The timeout diagnostics artifact contains the expected GNU timeout TERM-at-deadline marker.
+- Post-merge main Stage 1 Scheduler #256 passed. Main Build #1835 is in progress at the reproducible release gate; its own boot, storage, desktop and release conclusions remain pending.
+- The latest fully release-verified stable/versioned pair remains commit fff32e9, both SHA-256 18cfe872ab7c946d6e4adc75e411043971d5e3878eb4a4df499e4320b94af15a. Do not claim the stable alias identifies 1a57d5d until Build #1835 publishes and verifies it.
+- The 600-second scheduler soak and physical Lenovo G560/device matrix remain unverified. Reconcile useful work from stale PR #26/#27 selectively; do not merge their branches wholesale.
 
 ### Historical evidence snapshot — 2026-10-26 (superseded by 2026-11-05 update)
 - The normal `make` image targets a persistent native x86-64 kernel + Ring-3 desktop/session path; the release pipeline has a shared 91-milestone QEMU boot gate.
@@ -1015,3 +1014,12 @@ No overall completion increase is claimed.
 - The failure was an outdated test expectation for the exact command string. The candidate correctly added `LC_ALL=C timeout --verbose` and the deadline TERM-marker check, but the cross-suite GS/boot regression still asserted the previous unprefixed `timeout --kill-after=5s` command.
 - Updated the cross-suite regression to assert the new verbose command, the retained timeout log, and that the deadline marker is checked before serial milestones. Removed an unused test-module import and clarified fresh-log comments.
 - This is a test-contract mismatch, not a kernel compile, guest boot, or QEMU failure. No native build or QEMU result is claimed for Build #1829/#1830. A new exact-head Build is required.
+
+
+## 2026-11-09 — QEMU timeout evidence guard merged
+
+1. Merged boot-test integrity fix: PR #42 merged as 1a57d5cebe0e1eff87fd10450be841708de4e01d. The shared QEMU gate now requires GNU timeout's explicit deadline TERM marker before accepting timeout-like exit status 124/137, clears stale timeout logs, and preserves the fresh log in the boot diagnostics artifact. Regression tests cover early 124/137 exits and full-window timeouts. This is test-harness hardening, not a kernel feature.
+2. Candidate evidence: Build #1833 (push) and #1834 (PR) both passed on exact head 3f36bb5; Stage 1 Scheduler #254/#255 passed. All three repeated QEMU boots reached all 104 milestones, with 32-bit entry and long-mode markers. AHCI/NVMe two-boot persistence and production desktop/network smoke passed on the candidate.
+3. Post-merge gate: Stage 1 Scheduler #256 passed on main merge 1a57d5d. Main Build #1835 is still in progress at the reproducible release gate. Require its own boot, storage, production desktop and release-publication steps before recording a post-merge pass.
+4. Release baseline: stable and versioned ISO assets remain byte-identical for previously release-tested snapshot fff32e9 (SHA-256 18cfe872ab7c946d6e4adc75e411043971d5e3878eb4a4df499e4320b94af15a). Publication for 1a57d5d is pending.
+5. Next priorities: finish Build #1835; execute the 600-second/four-vCPU scheduler soak; selectively reconcile PR #26/#27; harden process lifecycle/VFS mount lifetime; expand storage crash/recovery tests; certify physical G560, SATA/NVMe, NIC, USB and graphics. Continue native desktop integration before browser/media/AI/compatibility. Preserve all canonical requirements and Stage 0–10 workstreams; no completion percentage is raised for test-harness work.

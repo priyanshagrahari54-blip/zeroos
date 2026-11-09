@@ -1,6 +1,6 @@
 # ZEROOS — Validation and Support Matrix
 
-Updated: 2026-11-09. Latest main HEAD is documentation-only `1b2caeb7ce0a735f0b792c2f114ceaedc5a5062e`; release/CI code commit `fff32e9b35fa61f1911d43d45fc1b99aabfbdd57` passed post-merge Build #1827 and Stage 1 Scheduler #248. The stable and versioned ISO assets match the production image digest recorded below. This remains the evidence policy for Stages 1-10 and must not overstate support.
+Updated: 2026-11-09. Latest main HEAD is 1a57d5cebe0e1eff87fd10450be841708de4e01d (PR #42 merged); the change hardens QEMU timeout/deadline evidence and does not change kernel source. Candidate Build #1833/#1834 and Stage 1 #254/#255 passed; post-merge Stage 1 #256 passed and main Build #1835 is in progress. The latest fully release-verified stable/versioned ISO remains snapshot fff32e9 with SHA-256 18cfe872ab7c946d6e4adc75e411043971d5e3878eb4a4df499e4320b94af15a. Do not attribute that asset to 1a57d5d until its own main Build/release gate completes. This remains the evidence policy for Stages 1–10 and must not overstate support.
 
 The binding acceptance checklist is [ZEROOS_10_STAGE_HARDENING.md](./ZEROOS_10_STAGE_HARDENING.md). Current estimates and known limitations are in [ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md](./ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md).
 
@@ -321,3 +321,15 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - The failure was an outdated test expectation for the exact command string. The candidate correctly added `LC_ALL=C timeout --verbose` and the deadline TERM-marker check, but the cross-suite GS/boot regression still asserted the previous unprefixed `timeout --kill-after=5s` command.
 - Updated the cross-suite regression to assert the new verbose command, the retained timeout log, and that the deadline marker is checked before serial milestones. Removed an unused test-module import and clarified fresh-log comments.
 - This is a test-contract mismatch, not a kernel compile, guest boot, or QEMU failure. No native build or QEMU result is claimed for Build #1829/#1830. A new exact-head Build is required.
+
+
+## 2026-11-09 — merged QEMU observation-deadline validation
+
+- PR #42 merged as 1a57d5cebe0e1eff87fd10450be841708de4e01d. The change is in the boot-test harness and regressions, not kernel source.
+- Candidate exact head 3f36bb5e0eb9de9bcd16df39f912f382a37716b2: Build #1833 / run 42558262851 and Build #1834 / run 42558267310 both SUCCESS. Their exact job-step summaries show PASS for the fail-closed QEMU regression, native x86-64 build, reproducible release gate, kernel-image verification, boot test, scheduler diagnostics, AHCI/NVMe two-boot persistence, production ISO and production desktop/network smoke. PR-event release publication was skipped as expected.
+- tools/test_boot_gate_fail_closed.py: 7 tests passed in Build #1833. The complete source-regression sequence also passed. Stage 1 Scheduler #254 / run 42558262771 and #255 / run 42558267278 both passed.
+- QEMU evidence from Build #1833: boot iterations 1/3, 2/3 and 3/3 each report all 104 milestones present with no failure markers, plus 32-bit entry and long-mode markers. Final summary: boot_test: PASS - 3/3 boots reached every milestone.
+- Artifact zeroos-boot-diagnostics ID 13648807591 contains a fresh timeout.log with GNU timeout's deadline TERM marker. The guard checks this marker before evaluating serial milestones; early 124/137 regression cases fail closed.
+- Post-merge main Build #1835 / run 42560302805 on 1a57d5d remains in progress at the reproducible release gate. Main Stage 1 Scheduler #256 / run 42560302640 passed. Full post-merge QEMU/storage/desktop/release conclusions remain pending.
+- The last fully verified stable/versioned release pair is still for fff32e9, both SHA-256 18cfe872ab7c946d6e4adc75e411043971d5e3878eb4a4df499e4320b94af15a. The stable alias has not yet been verified for 1a57d5d.
+- Physical G560/device certification and the 600-second scheduler soak remain unverified. No completion percentage increase.
