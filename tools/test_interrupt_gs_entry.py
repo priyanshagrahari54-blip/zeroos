@@ -141,6 +141,7 @@ class InterruptGsOwnershipTests(unittest.TestCase):
         )
 
     def test_qemu_boot_timeout_force_kills_paused_emulator(self):
+        # The timeout supervisor must reach its deadline before a QEMU result is accepted.
         self.assertIn(
             'LC_ALL=C timeout --verbose --kill-after=5s "${timeout_s}s" qemu-system-x86_64',
             self.boot_test,
