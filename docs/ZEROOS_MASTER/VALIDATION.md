@@ -1,6 +1,6 @@
 # ZEROOS — Validation and Support Matrix
 
-Updated: 2026-11-09. Latest main HEAD is documentation-only c887cabf0caade5d6c33a3d013f02df01e93c347; latest code-bearing commit 1a57d5cebe0e1eff87fd10450be841708de4e01d passed main Build #1835 and Stage 1 Scheduler #256. Build #1835 passed 3/3 QEMU boots, storage persistence, production desktop/network smoke, and release publication. Versioned zeroos-1a57d5c.iso and stable zeroos.iso both have SHA-256 082bd06046aad31f8f9d2d39b20b5361b46d0a44cd39ddda26bff07a321e58cd; release notes identify 1a57d5c. Physical hardware and long scheduler soak remain unverified. This remains the evidence policy for Stages 1–10 and must not overstate support.
+Updated: 2026-11-09. Latest main HEAD is documentation-only documentation-only main successor; latest code-bearing commit 1a57d5cebe0e1eff87fd10450be841708de4e01d passed main Build #1835 and Stage 1 Scheduler #256. Build #1835 passed 3/3 QEMU boots, storage persistence, production desktop/network smoke, and release publication. Versioned zeroos-1a57d5c.iso and stable zeroos.iso both have SHA-256 082bd06046aad31f8f9d2d39b20b5361b46d0a44cd39ddda26bff07a321e58cd; release notes identify 1a57d5c. Physical hardware and long scheduler soak remain unverified. This remains the evidence policy for Stages 1–10 and must not overstate support.
 
 The binding acceptance checklist is [ZEROOS_10_STAGE_HARDENING.md](./ZEROOS_10_STAGE_HARDENING.md). Current estimates and known limitations are in [ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md](./ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md).
 

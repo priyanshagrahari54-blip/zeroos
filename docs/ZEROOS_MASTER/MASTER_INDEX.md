@@ -1,6 +1,6 @@
 # ZEROOS — MASTER DOCUMENT INDEX
 Version: 2.7
-Updated: 2026-11-09 (main docs HEAD c887cab; release-tested code snapshot 1a57d5d; Build #1835 and Stage 1 #256 passed; stable/versioned ISO SHA-256 082bd06046aad31f8f9d2d39b20b5361b46d0a44cd39ddda26bff07a321e58cd)
+Updated: 2026-11-09 (main docs HEAD documentation-only main successor; release-tested code snapshot 1a57d5d; Build #1835 and Stage 1 #256 passed; stable/versioned ISO SHA-256 082bd06046aad31f8f9d2d39b20b5361b46d0a44cd39ddda26bff07a321e58cd)
 
 This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md` remains the canonical consolidated product/architecture specification. Stage 6-10 execution is split into dedicated production master documents so an implementation agent can work one stage at a time without losing cross-cutting requirements.
 
@@ -334,7 +334,7 @@ Priority is still boot/release gate → kernel/userspace lifecycle correctness �
 
 ## Main/release acceptance snapshot — 2026-11-09
 
-- Current main HEAD c887cab is documentation-only; latest code-bearing commit 1a57d5d passed Build #1835 and Stage 1 Scheduler #256.
+- Current main HEAD documentation-only main successor is documentation-only; latest code-bearing commit 1a57d5d passed Build #1835 and Stage 1 Scheduler #256.
 - Build #1835 passed all configured checks. The boot test passed 3/3 QEMU iterations with all 104 milestones and 32-bit/long-mode markers. The timeout diagnostics artifact contains the supervisor TERM-at-deadline marker.
 - Retained storage serial logs for both QEMU disk boots show SATA/NVMe discovery, destructive driver tests, persistent /data counters 1 and 2, file check, Ring-3 fsync probe and Stage 3 completion without panic/failure markers.
 - Production QEMU smoke reached the desktop session, RTL8139 attached, DHCP bound and gateway ARP resolved.

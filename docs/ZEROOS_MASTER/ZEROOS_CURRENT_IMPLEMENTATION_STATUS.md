@@ -1,7 +1,7 @@
 # ZEROOS — CURRENT IMPLEMENTATION STATUS
 
 Updated: 2026-11-09
-Branch baseline: latest main HEAD is documentation-only commit c887cabf0caade5d6c33a3d013f02df01e93c347; latest code-bearing main commit is 1a57d5cebe0e1eff87fd10450be841708de4e01d (PR #42). Main Build #1835 and Stage 1 Scheduler #256 passed. The release publisher allowed the docs-only main advance and published the QEMU-tested 1a57d5d snapshot; versioned and stable ISO SHA-256 both equal 082bd06046aad31f8f9d2d39b20b5361b46d0a44cd39ddda26bff07a321e58cd. Kernel-source baseline remains f20ea855fc30baf54cdc5d45915d357266f2ae6e.
+Branch baseline: latest main HEAD is documentation-only commit documentation-only main successor; latest code-bearing main commit is 1a57d5cebe0e1eff87fd10450be841708de4e01d (PR #42). Main Build #1835 and Stage 1 Scheduler #256 passed. The release publisher allowed the docs-only main advance and published the QEMU-tested 1a57d5d snapshot; versioned and stable ISO SHA-256 both equal 082bd06046aad31f8f9d2d39b20b5361b46d0a44cd39ddda26bff07a321e58cd. Kernel-source baseline remains f20ea855fc30baf54cdc5d45915d357266f2ae6e.
 Status policy: **evidence-weighted estimate; never equate a source file, marker check, architecture document, or host test with a working end-user feature.**
 
 ## Historical evidence refresh — 2026-10-26 (superseded for current HEAD)

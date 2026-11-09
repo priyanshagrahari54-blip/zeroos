@@ -10,7 +10,7 @@ Never create a basic version merely to replace it later.
 ## Current state
 
 ### Current main / release evidence — 2026-11-09
-- Latest main HEAD c887cab is documentation-only; latest code-bearing main commit 1a57d5d (PR #42) passed main Build #1835 and Stage 1 Scheduler #256. The kernel-source baseline remains f20ea855.
+- Latest main HEAD documentation-only main successor is documentation-only; latest code-bearing main commit 1a57d5d (PR #42) passed main Build #1835 and Stage 1 Scheduler #256. The kernel-source baseline remains f20ea855.
 - Build #1835 passed all configured regressions, native build/check, kernel-image verification, 3/3 QEMU boots with all 104 milestones, scheduler panic diagnostics, AHCI/NVMe two-boot persistence, production ISO, production desktop/network smoke, artifact retention and release publication.
 - Retained serial-disk1.log and serial-disk2.log confirm both storage boots: SATA/NVMe discovery, driver tests, persistent /data counters 1 and 2, file check, Ring-3 fsync probe and Stage 3 completion; neither has a panic/failure marker.
 - The versioned zeroos-1a57d5c.iso and stable zeroos.iso assets both have SHA-256 082bd06046aad31f8f9d2d39b20b5361b46d0a44cd39ddda26bff07a321e58cd. Release notes identify 1a57d5c. The post-merge P0 boot/release gate is closed for this code snapshot.
