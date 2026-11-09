@@ -9,6 +9,14 @@ Never create a basic version merely to replace it later.
 
 ## Current state
 
+### Current main / release evidence — 2026-11-09
+- Latest main documentation HEAD: `1b2caeb7ce0a735f0b792c2f114ceaedc5a5062e`; latest release/CI code commit: `fff32e9b35fa61f1911d43d45fc1b99aabfbdd57`; kernel-source baseline: `f20ea855fc30baf54cdc5d45915d357266f2ae6e`.
+- Main Build #1827 and Stage 1 Scheduler #248 both completed SUCCESS. Build #1827 passed the configured native build/check, boot, storage, production desktop/network and release-publication steps.
+- The stable `zeroos.iso` and versioned `zeroos-fff32e9.iso` assets both match SHA-256 `18cfe872ab7c946d6e4adc75e411043971d5e3878eb4a4df499e4320b94af15a`; release notes identify `fff32e9`. Stable release alignment is no longer the immediate P0 blocker.
+- Current highest-priority boot-evidence work: require the GNU `timeout` supervisor's deadline TERM marker before accepting QEMU exit statuses 124/137. Candidate implementation and regressions are on `fix/boot-timeout-duration-guard-20261109`; exact candidate CI is pending.
+- The 600-second scheduler soak and physical Lenovo G560/device matrix remain unverified. The optional soak target from stale PR #26 is not present on main; reconcile its useful pieces rather than merging the 45-commit-behind branch wholesale.
+
+
 ### Historical evidence snapshot — 2026-10-26 (superseded by 2026-11-05 update)
 - The normal `make` image targets a persistent native x86-64 kernel + Ring-3 desktop/session path; the release pipeline has a shared 91-milestone QEMU boot gate.
 - PR #16 was merged as `d6b58292df7e00b4b2f15ba22f3a0405035ee549`, adding parallel-build dependency fixes, ISO structure validation/writing, reproducibility checks, shared boot-test logic, and local intent-parser foundations.
@@ -990,3 +998,20 @@ No overall completion increase is claimed.
 3. **P0 still open:** post-merge main Build #1827 (`42442854152`) was in progress at last inspection; Stage 1 #248 (`42442854128`) passed. Verify the main Build's exact QEMU/storage/desktop steps and release-guard decision.
 4. **P0 still open:** the stable release API still showed the older `zeroos.iso` digest `ef092a8c...` and notes identifying `c3c4eb6` at the last query. After the main run, verify the immutable versioned and stable ISO assets byte-for-byte against its production ISO, and confirm notes identify the same build commit.
 5. Continue the 600-second scheduler soak, physical Lenovo G560 boot/device matrix, physical SATA/NVMe/NIC/USB/graphics validation, storage recovery/fault injection, process/runtime hardening, driver/security and native desktop integration. Browser/media/AI/compatibility remain later roadmap work. Preserve every Stage 0–10 and canonical product requirement; no completion percentage is raised by this release-pipeline change.
+
+
+## 2026-11-09 — release aligned; QEMU deadline evidence hardening
+
+1. **Release integrity:** Main Build #1827 (`42442854152`) and Stage 1 Scheduler #248 (`42442854128`) passed on `fff32e9`. The release log confirms the docs-only freshness decision and stable ISO byte comparison. GitHub metadata reports identical SHA-256 `18cfe872ab7c946d6e4adc75e411043971d5e3878eb4a4df499e4320b94af15a` for `zeroos-fff32e9.iso` and `zeroos.iso`; release notes identify the same code-bearing commit.
+2. **Boot-test correctness candidate:** Main's `tools/boot_test.sh` accepted QEMU exit statuses 124/137 without verifying that GNU `timeout` sent TERM at the requested deadline. A timeout-like exit before the observation window could therefore be confused with a sustained boot if all serial milestones had already been emitted. Candidate branch `fix/boot-timeout-duration-guard-20261109` uses `timeout --verbose`, requires the explicit deadline TERM marker, and retains `timeout.log` as an artifact. Its regression simulates early 124/137 exits. Do not claim this candidate passes until its exact Build workflow completes.
+3. **Next P1 gates:** execute the optional 600-second/four-vCPU scheduler soak; reconcile PR #26 boot-test/soak changes and PR #27 scheduler-certification checks against current main; complete physical G560, SATA/NVMe, NIC, USB and graphics validation; expand storage crash/recovery fault injection.
+4. Continue kernel/process lifecycle and memory-safety work, then drivers/security/recovery and usable native desktop integration, followed by browser/media, AI, and Windows/Android compatibility. Preserve every canonical product requirement and all Stage 0–10 workstreams. No completion percentage is increased for CI or documentation work.
+
+
+
+## 2026-11-09 — first boot-timeout candidate CI correction
+
+- Candidate PR #42 Build #1829 (run `42558109355`) and PR Build #1830 (run `42558124850`) stopped before compiler installation/native build/QEMU at the existing `tools/test_interrupt_gs_entry.py::test_qemu_boot_timeout_force_kills_paused_emulator` source assertion.
+- The failure was an outdated test expectation for the exact command string. The candidate correctly added `LC_ALL=C timeout --verbose` and the deadline TERM-marker check, but the cross-suite GS/boot regression still asserted the previous unprefixed `timeout --kill-after=5s` command.
+- Updated the cross-suite regression to assert the new verbose command, the retained timeout log, and that the deadline marker is checked before serial milestones. Removed an unused test-module import and clarified fresh-log comments.
+- This is a test-contract mismatch, not a kernel compile, guest boot, or QEMU failure. No native build or QEMU result is claimed for Build #1829/#1830. A new exact-head Build is required.
