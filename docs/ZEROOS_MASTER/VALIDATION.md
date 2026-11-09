@@ -1,6 +1,6 @@
 # ZEROOS — Validation and Support Matrix
 
-Updated: 2026-11-06. Code-bearing main baseline is `f20ea855fc30baf54cdc5d45915d357266f2ae6e`; subsequent commits in this documentation refresh are `[skip ci]` documentation-only changes. This is the evidence policy for Stages 1-10 and must not overstate support.
+Updated: 2026-11-09. Latest main HEAD is documentation-only `1b2caeb7ce0a735f0b792c2f114ceaedc5a5062e`; release/CI code commit `fff32e9b35fa61f1911d43d45fc1b99aabfbdd57` passed post-merge Build #1827 and Stage 1 Scheduler #248. The stable and versioned ISO assets match the production image digest recorded below. This remains the evidence policy for Stages 1-10 and must not overstate support.
 
 The binding acceptance checklist is [ZEROOS_10_STAGE_HARDENING.md](./ZEROOS_10_STAGE_HARDENING.md). Current estimates and known limitations are in [ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md](./ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md).
 
@@ -302,3 +302,13 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - The release API was queried after merge. At that point `zeroos.iso` still had SHA-256 `ef092a8c9cb2c7b98ec8af20ce53239b8d3b36cc4525ee833ef94376e2404e53` and notes still said `c3c4eb6`; this is older than the verified `zeroos-f20ea85.iso` asset (SHA-256 `e40ac5276a83dc24f45866024a2871aa1ce7b6eaafc3dda64a4e22e9bee764d2`). Current stable-release alignment remains OPEN until Build #1827 completes publication and the downloaded stable/versioned assets are byte-compared with its production ISO.
 - The new release guard permits a build SHA to publish after documentation-only main commits, but continues to skip if any non-documentation path changed. The main run must show the exact guard decision, versioned ISO comparison, stable ISO comparison, and final release-note update before the release blocker is closed.
 - 600-second scheduler soak and physical G560/device certification remain unverified. No completion estimate increase.
+
+
+## 2026-11-09 — post-merge main release and boot evidence
+
+- **Main Build #1827** (run `42442854152`, commit `fff32e9b35fa61f1911d43d45fc1b99aabfbdd57`): SUCCESS. The job-step API reports success for the release-policy, diagnostic-retention, QEMU fail-closed, scheduler-affinity, GS-ownership, process-pointer/user-copy/range-unmap, and Multiboot2 regressions; native build; reproducible release gate; kernel-image verification; boot test; scheduler panic-diagnostics; AHCI/NVMe two-boot persistence; production ISO; production desktop/network smoke; and release publication.
+- **Main Stage 1 Scheduler #248** (run `42442854128`): SUCCESS. Compiler/binutils setup, native x86-64 kernel build, and Stage 1 scheduler certification all completed successfully.
+- The Build #1827 release log records the documentation-only freshness decision and the final stable-ISO comparison. The versioned `zeroos-fff32e9.iso` and mutable `zeroos.iso` assets are both 12,369,920 bytes with SHA-256 `18cfe872ab7c946d6e4adc75e411043971d5e3878eb4a4df499e4320b94af15a`. Release notes identify `fff32e9`. This closes the stable-alias mismatch for the exact production ISO from Build #1827; it does not certify physical hardware or an installer.
+- The latest `main` documentation head `1b2caeb7` is a `[skip ci]` documentation-only successor to the release-tested code commit. No executable kernel changes occurred after `fff32e9`; the kernel-source baseline remains `f20ea855`.
+- **New candidate (not yet validated):** `tools/boot_test.sh` accepted statuses 124/137 without proving that GNU `timeout` had reached the requested observation deadline. The candidate requires the `timeout --verbose` TERM-at-deadline marker before accepting boot milestones and preserves `timeout.log`. Regression tests simulate early status 124 and 137 and require rejection. Wait for the exact PR Build before claiming the new guard passes; no new QEMU boot is claimed for this candidate.
+- Remaining release/product gates: run the 600-second four-vCPU scheduler soak; physical Lenovo G560 and device matrix; crash/power-cut recovery and physical storage validation; real NIC/USB/graphics support. Browser/media, Windows/Android compatibility, and full AI execution remain later-stage work.

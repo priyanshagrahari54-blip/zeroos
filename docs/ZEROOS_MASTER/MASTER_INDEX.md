@@ -1,6 +1,6 @@
 # ZEROOS — MASTER DOCUMENT INDEX
-Version: 2.4
-Updated: 2026-11-06 (code-bearing main merge f20ea855fc30baf54cdc5d45915d357266f2ae6e; subsequent commits in this documentation refresh are docs-only)
+Version: 2.5
+Updated: 2026-11-09 (main documentation HEAD 1b2caeb7; release-tested code snapshot fff32e9; kernel-source baseline f20ea855)
 
 This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md` remains the canonical consolidated product/architecture specification. Stage 6-10 execution is split into dedicated production master documents so an implementation agent can work one stage at a time without losing cross-cutting requirements.
 
@@ -307,3 +307,12 @@ Priority is still boot/release gate → kernel/userspace lifecycle correctness �
 - Post-merge main Build #1827 is the authoritative acceptance run and was still in progress at the last check; main Stage 1 #248 passed.
 - Stable `zeroos.iso` was still the older `c3c4eb6` image at the last release API query. Do not mark the release current until Build #1827 publishes and the downloaded stable asset matches that run's production ISO byte-for-byte.
 - 600-second scheduler soak and physical G560/device matrix remain open. Product roadmap and all Stage 0–10 requirements are preserved; overall completion estimate unchanged (~43%).
+
+
+## Current main validation snapshot — 2026-11-09
+
+- Main Build #1827 and Stage 1 Scheduler #248 passed on release/CI commit `fff32e9`; the latest main HEAD `1b2caeb7` is a documentation-only successor.
+- The stable `zeroos.iso` and immutable `zeroos-fff32e9.iso` release assets match exactly by GitHub's SHA-256 digest: `18cfe872ab7c946d6e4adc75e411043971d5e3878eb4a4df499e4320b94af15a`. Release notes identify `fff32e9`.
+- The P0 stable-release alignment issue is closed for the QEMU-tested code snapshot. Physical hardware, installation, and long-soak certification remain separate requirements.
+- A candidate boot-test hardening change requires GNU `timeout` to emit its deadline TERM marker before a 124/137 QEMU result can satisfy the repeated-boot gate. Candidate CI is pending; see `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md` and `VALIDATION.md`.
+- Preserve the canonical specification and all Stage 0–10 requirements. No implementation percentage increase is recorded for CI, release, or test-harness work.

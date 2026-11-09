@@ -4,6 +4,7 @@ from pathlib import Path
 import os
 import subprocess
 import tempfile
+import time
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,13 +28,22 @@ class BootGateFailClosedTests(unittest.TestCase):
 import os
 import subprocess
 import sys
+import time
 args = sys.argv[1:]
+if args and args[0].startswith("--verbose"):
+    args = args[1:]
 if args and args[0].startswith("--kill-after="):
     args = args[1:]
 if len(args) < 2:
     sys.exit(125)
 child = subprocess.run(args[1:], env=os.environ.copy())
 forced = os.environ.get("FAKE_TIMEOUT_STATUS")
+elapsed = float(os.environ.get("FAKE_TIMEOUT_ELAPSED", "0"))
+if elapsed > 0:
+    time.sleep(elapsed)
+duration = float(args[0][:-1]) if args[0].endswith("s") else None
+if forced in ("124", "137") and duration is not None and elapsed >= duration:
+    print("timeout: sending signal TERM to command 'qemu-system-x86_64'", file=sys.stderr)
 sys.exit(int(forced) if forced is not None else child.returncode)
 """,
         )
@@ -74,11 +84,14 @@ sys.exit(0)
         path.write_text(content, encoding="utf-8")
         path.chmod(0o755)
 
-    def run_gate(self, timeout_status, mode="none"):
+    def run_gate(self, timeout_status, mode="none", elapsed=None):
         env = os.environ.copy()
         env["PATH"] = str(self.fakebin) + os.pathsep + env.get("PATH", "")
         env["FAKE_TIMEOUT_STATUS"] = str(timeout_status)
         env["FAKE_QEMU_MODE"] = mode
+        if elapsed is None:
+            elapsed = 1.1 if timeout_status in (124, 137) else 0.0
+        env["FAKE_TIMEOUT_ELAPSED"] = str(elapsed)
         return subprocess.run(
             [
                 "bash", str(BOOT_TEST),
@@ -96,7 +109,7 @@ sys.exit(0)
         )
 
     def test_unexpected_qemu_exit_is_failure_even_if_old_logs_exist(self):
-        for name in ("serial.log", "debug.log", "qemu.log"):
+        for name in ("serial.log", "debug.log", "qemu.log", "timeout.log"):
             (self.build / name).write_text("stale success evidence\\n", encoding="utf-8")
         result = self.run_gate(timeout_status=1)
         self.assertNotEqual(result.returncode, 0, result.stdout)
@@ -126,9 +139,36 @@ sys.exit(0)
         self.assertIn(": FAIL -", result.stdout)
         self.assertNotIn("QEMU exited unexpectedly", result.stdout)
 
+    def test_timeout_like_status_requires_the_supervisor_deadline_signal(self):
+        for status in (124, 137):
+            with self.subTest(status=status):
+                result = self.run_gate(
+                    timeout_status=status,
+                    mode="partial",
+                    elapsed=0.05,
+                )
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIn(
+                    "without the timeout supervisor sending TERM at the requested deadline",
+                    result.stdout,
+                )
+                self.assertNotIn(": FAIL -", result.stdout)
+                self.assertNotIn("boot_test: PASS", result.stdout)
+
+    def test_boot_gate_checks_timeout_supervisor_before_accepting_milestones(self):
+        script = BOOT_TEST.read_text(encoding="utf-8")
+        self.assertIn("timeout --verbose --kill-after=5s", script)
+        self.assertIn('2>"$build_root/timeout.log"', script)
+        deadline_guard = script.index(
+            "without the timeout supervisor sending TERM at the requested deadline"
+        )
+        milestone_check = script.index('assert_log "$build_root/serial.log"')
+        self.assertLess(deadline_guard, milestone_check)
+
     def test_ci_covers_the_shared_gate_and_does_not_ignore_qemu_exit(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("python3 tools/test_boot_gate_fail_closed.py", workflow)
+        self.assertIn("build/timeout.log", workflow)
         self.assertGreaterEqual(workflow.count("qemu_status=$?"), 5)
         for line in workflow.splitlines():
             if "|| true" in line and (

@@ -123,13 +123,13 @@ for iteration in $(seq 1 "$iterations"); do
 
   # Every iteration must stand on fresh evidence. A failed QEMU launch must not
   # be able to reuse a previous iteration's serial/debug/QEMU logs.
-  rm -f "$build_root/serial.log" "$build_root/debug.log" "$build_root/qemu.log"
+  rm -f "$build_root/serial.log" "$build_root/debug.log" "$build_root/qemu.log" "$build_root/timeout.log"
 
   # With -no-shutdown, a healthy guest remains alive until timeout. Do not
   # swallow emulator errors or accept an early guest/emulator exit as a boot.
   set +e
   # Bound a QEMU instance that pauses after guest shutdown instead of exiting.
-  timeout --kill-after=5s "${timeout_s}s" qemu-system-x86_64 \
+  LC_ALL=C timeout --verbose --kill-after=5s "${timeout_s}s" qemu-system-x86_64 \
     -smp "$smp" \
     -cdrom "$iso" \
     -netdev user,id=net0 -device rtl8139,netdev=net0 \
@@ -138,12 +138,24 @@ for iteration in $(seq 1 "$iterations"); do
     -debugcon "file:$build_root/debug.log" \
     -global isa-debugcon.iobase=0xe9 \
     -d int,guest_errors,cpu_reset \
-    -D "$build_root/qemu.log"
+    -D "$build_root/qemu.log" 2>"$build_root/timeout.log"
   qemu_status=$?
   set -e
 
   if [ "$qemu_status" -ne 124 ] && [ "$qemu_status" -ne 137 ]; then
     echo "boot_test iteration ${iteration}: QEMU exited unexpectedly (status=$qemu_status; expected timeout 124 or forced-kill status 137)" >&2
+    tail -40 "$build_root/timeout.log" 2>/dev/null || true
+    tail -40 "$build_root/serial.log" 2>/dev/null || true
+    tail -40 "$build_root/qemu.log" 2>/dev/null || true
+    exit 1
+  fi
+
+  # Exit status 124/137 alone is ambiguous: QEMU can itself exit with 124 or
+  # be killed externally with SIGKILL (137) before the requested window. GNU
+  # timeout --verbose emits this marker only when its deadline sends TERM.
+  if ! grep -Fq "timeout: sending signal TERM to command" "$build_root/timeout.log"; then
+    echo "boot_test iteration ${iteration}: QEMU returned a timeout-like status without the timeout supervisor sending TERM at the requested deadline (status=$qemu_status)" >&2
+    tail -40 "$build_root/timeout.log" 2>/dev/null || true
     tail -40 "$build_root/serial.log" 2>/dev/null || true
     tail -40 "$build_root/qemu.log" 2>/dev/null || true
     exit 1
