@@ -552,12 +552,84 @@ static int tf_concurrency(void) {
     return 0;
 }
 
+/* ----------------------------------------------------- mount lifetime */
+
+struct tf_mount_lookup_race {
+    struct kcompletion done;
+    uint32_t errors;
+};
+
+static void tf_mount_lookup_worker(void *argument) {
+    struct tf_mount_lookup_race *race=(struct tf_mount_lookup_race *)argument;
+    for (uint32_t i=0; i<128U; ++i) {
+        struct vfs_stat st;
+        int rc=vfs_stat(&tf_root,"/t/mount-race",&st);
+        if (rc!=0 && rc!=-SE_NOENT)
+            __atomic_add_fetch(&race->errors,1U,__ATOMIC_RELAXED);
+        else if (rc==0 && st.size!=1U)
+            __atomic_add_fetch(&race->errors,1U,__ATOMIC_RELAXED);
+        task_yield();
+    }
+    kcompletion_signal(&race->done);
+    task_exit();
+}
+
+static int tf_mount_lifetime(struct block_device *device) {
+    static struct tf_mount_lookup_race race;
+    const uint8_t value=0x5a;
+    uint8_t scratch=0;
+    uint64_t id=0;
+
+    TF_CHECK(tf_write_file("/t/mount-race",&value,1,1)==0,
+             "mount-race durable file");
+    race.errors=0;
+    kcompletion_init(&race.done);
+    TF_CHECK(task_create(tf_mount_lookup_worker,&race,&id)==0,
+             "mount lookup worker create");
+
+    int operation_error=0;
+    for (uint32_t i=0; i<64U; ++i) {
+        int rc=vfs_unmount("/t",1);
+        if (rc==0) {
+            if (vfs_mount(device,"/t",0)!=0) {
+                operation_error=1;
+                break;
+            }
+        } else if (rc!=-SE_BUSY) {
+            operation_error=1;
+            break;
+        }
+        task_yield();
+    }
+    kcompletion_wait(&race.done);
+    TF_CHECK(!operation_error,"forced unmount/lookup race returned unexpected error");
+    TF_CHECK(__atomic_load_n(&race.errors,__ATOMIC_ACQUIRE)==0,
+             "concurrent lookup survived mount transitions");
+
+    TF_CHECK(vfs_unmount("/t",1)==0,"unmount after lookup drain");
+    TF_CHECK(vfs_mount(device,"/t",0)==0,"remount after lookup drain");
+    TF_CHECK(tf_verify_file("/t/mount-race",&value,1,&scratch)==0,
+             "mount-race file survived remount");
+    TF_CHECK(vfs_unlink(&tf_root,"/t/mount-race")==0,
+             "mount-race cleanup");
+    klog("ZEROOS: storage VFS mount/unmount lifetime stress passed.");
+    return 0;
+}
+
 /* ------------------------------------------------------------- unmount */
 
 static int tf_unmount_rules(struct block_device *device) {
     struct vfs_file *f;
+    const uint8_t value=0x31;
+    uint8_t readback=0;
     TF_CHECK(vfs_open(&tf_root,"/t/busy",VFS_O_CREAT|VFS_O_RDWR,0644,&f)==0,"busy file");
     TF_CHECK(vfs_unmount("/t",0)==-SE_BUSY,"unmount with open file -> EBUSY");
+    TF_CHECK(vfs_unmount("/t",1)==-SE_BUSY,
+             "forced unmount with open file -> EBUSY");
+    TF_CHECK(vfs_pwrite(f,&value,1,0)==1,
+             "open file remains usable after forced-unmount refusal");
+    TF_CHECK(vfs_pread(f,&readback,1,0)==1 && readback==value,
+             "open file data survives forced-unmount refusal");
     vfs_file_put(f);
     TF_CHECK(vfs_unlink(&tf_root,"/t/busy")==0,"unlink busy");
     TF_CHECK(vfs_unmount("/t",0)==0,"clean unmount");
@@ -595,6 +667,7 @@ int storage_selftest_fs(void) {
     TF_RUN(tf_corruption(device,a),"corruption");
     TF_CHECK(vfs_unlink(&tf_root,"/t/hello")==0 && vfs_unlink(&tf_root,"/t/hard")==0,
              "final cleanup");
+    TF_RUN(tf_mount_lifetime(device),"mount-lifetime");
     TF_RUN(tf_unmount_rules(device),"unmount-fsck");
     page_free_contiguous(a,16);
     page_free_contiguous(b,16);

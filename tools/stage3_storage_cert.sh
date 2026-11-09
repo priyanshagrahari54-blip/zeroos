@@ -10,8 +10,10 @@ build_dir="${1:-build}"
 kernel_elf="$(cert_resolve_build "$build_dir")/zeroos.elf"
 
 require_marker "stage3-storage-cert" \
-  "$repo_root/kernel/storage/storage.c" "$repo_root/kernel/kernel.c" -- \
+  "$repo_root/kernel/storage/storage.c" "$repo_root/kernel/kernel.c" \
+  "$repo_root/kernel/storage/test_fs.c" -- \
   "ZEROOS: storage block layer scheduler/fault/timeout self-test passed." \
+  "ZEROOS: storage VFS mount/unmount lifetime stress passed." \
   "ZEROOS: storage GPT validation/recovery self-test passed." \
   "ZEROOS: storage VFS/ZJFS/page-cache self-test passed." \
   "ZEROOS: storage crash-consistency (power-cut/replay/fsck) self-test passed." \

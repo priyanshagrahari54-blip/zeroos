@@ -226,6 +226,8 @@ int vfs_init(void);
  * Only filesystems whose signature validates are mounted; nothing is ever
  * formatted implicitly. */
 int vfs_mount(struct block_device *device, const char *path, uint32_t flags);
+/* force may continue after a writeback error; it never overrides live
+ * superblock/inode/mmap references. A busy mount always returns -SE_BUSY. */
 int vfs_unmount(const char *path, int force);
 int vfs_unmount_all(void);
 int vfs_sync_all(void);

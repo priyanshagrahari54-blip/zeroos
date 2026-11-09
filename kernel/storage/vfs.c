@@ -143,11 +143,18 @@ static void inode_free_slot_locked(struct vfs_inode *inode) {
 
 struct vfs_inode *vfs_inode_cached(struct vfs_superblock *sb, uint64_t ino) {
     uint64_t flags=spin_lock_irqsave(&vfs_lock);
-    struct vfs_inode *inode=inode_lookup_locked(sb,ino);
-    if (inode && !(inode->flags&(VFS_I_LOADING|VFS_I_BUSY)))
-        ++inode->refcount;
-    else
-        inode=0;
+    struct vfs_inode *inode=0;
+    /* Once unmount marks a superblock DYING, no new cached-inode references
+     * may appear behind its busy-reference preflight. Existing references
+     * remain valid and force unmount to return EBUSY. */
+    if (sb && !(sb->flags&VFS_SB_DYING)) {
+        inode=inode_lookup_locked(sb,ino);
+        if (inode && !(inode->flags&(VFS_I_LOADING|VFS_I_BUSY)) &&
+            inode->refcount!=0xffffffffU)
+            ++inode->refcount;
+        else
+            inode=0;
+    }
     spin_unlock_irqrestore(&vfs_lock,flags);
     return inode;
 }
@@ -350,6 +357,15 @@ struct vfs_path {
     uint32_t length;
 };
 
+static void vfs_mount_ref_put(struct vfs_superblock *sb) {
+    uint64_t flags=spin_lock_irqsave(&vfs_lock);
+    if (sb && sb->refcount)
+        --sb->refcount;
+    spin_unlock_irqrestore(&vfs_lock,flags);
+}
+
+/* The returned superblock carries a temporary reference. vfs_resolve()
+ * transfers that protection to the root inode before dropping the pin. */
 static int vfs_find_mount(const char *path, uint32_t *consumed, struct vfs_superblock **sb) {
     /* "/<name>" mounts first, then "/". */
     const char *p=path+1;
@@ -365,15 +381,27 @@ static int vfs_find_mount(const char *path, uint32_t *consumed, struct vfs_super
         if (mlen==0) {
             root=mounts[i].sb;
         } else if (mlen==len && len && memcmp(mounts[i].name,p,len)==0) {
+            if (mounts[i].sb->refcount==0xffffffffU) {
+                spin_unlock_irqrestore(&vfs_lock,flags);
+                return -SE_BUSY;
+            }
             *sb=mounts[i].sb;
+            ++(*sb)->refcount;
             *consumed=1U+len;
             spin_unlock_irqrestore(&vfs_lock,flags);
             return 0;
         }
     }
-    spin_unlock_irqrestore(&vfs_lock,flags);
-    if (!root)
+    if (!root) {
+        spin_unlock_irqrestore(&vfs_lock,flags);
         return -SE_NOENT;
+    }
+    if (root->refcount==0xffffffffU) {
+        spin_unlock_irqrestore(&vfs_lock,flags);
+        return -SE_BUSY;
+    }
+    ++root->refcount;
+    spin_unlock_irqrestore(&vfs_lock,flags);
     *sb=root;
     *consumed=1;
     return 0;
@@ -412,7 +440,14 @@ static int vfs_resolve(const struct vfs_cred *cred, const char *path, int want_p
         return rc;
     out->sb=sb;
     struct vfs_inode *current=sb->root;
+    if (!current) {
+        vfs_mount_ref_put(sb);
+        return -SE_NOENT;
+    }
+    /* Acquire the root inode while the temporary mount pin prevents unmount
+     * from clearing sb->root or releasing filesystem-private state. */
     vfs_inode_get(current);
+    vfs_mount_ref_put(sb);
     const char *p=path+consumed;
     for (;;) {
         while (*p=='/')
@@ -1251,14 +1286,26 @@ int vfs_unmount(const char *path, int force) {
     }
     struct vfs_superblock *sb=mounts[slot].sb;
     uint64_t lf=spin_lock_irqsave(&vfs_lock);
+    /* Close the lookup gate before checking references. vfs_find_mount() and
+     * vfs_inode_cached() test this flag under the same lock before acquiring
+     * a new reference, so the preflight is stable once the lock is released. */
+    sb->flags|=VFS_SB_DYING;
     int busy=sb->refcount!=0;
-    for (uint32_t i=0; i<VFS_MAX_INODES; ++i)
-        if (inodes[i].sb==sb && inodes[i].mmap_count)
+    for (uint32_t i=0; i<VFS_MAX_INODES; ++i) {
+        struct vfs_inode *inode=&inodes[i];
+        if (inode->sb!=sb)
+            continue;
+        uint32_t expected_refs=inode==sb->root ? 1U : 0U;
+        if (inode->refcount!=expected_refs || inode->mmap_count ||
+            (inode->flags&(VFS_I_BUSY|VFS_I_LOADING)))
             busy=1;
-    if (!busy || force)
-        sb->flags|=VFS_SB_DYING;           /* no new lookups */
+    }
+    if (busy)
+        sb->flags&=~VFS_SB_DYING;
     spin_unlock_irqrestore(&vfs_lock,lf);
-    if (busy && !force) {
+    /* force may ignore writeback errors; it must never invalidate live
+     * file, inode, mmap, or in-flight lookup references. */
+    if (busy) {
         kmutex_unlock(&vfs_mount_lock);
         return -SE_BUSY;
     }

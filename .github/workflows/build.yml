@@ -20,6 +20,9 @@ jobs:
       - name: Verify stable release publication policy
         run: python3 tools/test_release_publish_guard.py
 
+      - name: Verify VFS mount/unmount lifetime
+        run: python3 tools/test_vfs_mount_lifetime.py
+
       - name: Verify production boot diagnostic retention
         run: python3 tools/test_production_boot_diagnostics.py
 
