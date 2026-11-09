@@ -397,3 +397,12 @@ Added `LIBRARY_REUSE_AND_INTEGRATION_PLAN.md` and indexed it from `MASTER_INDEX.
 - Candidate branch `fix/boot-timeout-duration-guard-20261109` changes the gate to use `timeout --verbose`, requires the supervisor's explicit `sending signal TERM` deadline marker before milestone acceptance, removes stale timeout logs, and retains `timeout.log` as a CI artifact. The fail-closed regression now simulates early 124/137 exits and requires them to fail before milestone evaluation. Candidate CI is pending; this is test-harness hardening, not a new kernel feature or QEMU pass.
 - Open evidence gates remain: execute the optional 600-second/four-vCPU scheduler soak; certify physical Lenovo G560, SATA/NVMe, NIC, USB, and graphics behavior; expand storage crash/recovery fault injection. PR #26 (boot evidence/soak) and PR #27 (scheduler certification) are stale/diverged and need selective reconciliation; PR #14 is a broad integration branch and must not be merged wholesale.
 - Preserve all Stage 0–10 and canonical product requirements. Overall estimate remains approximately 43%; no completion credit is assigned for release-pipeline or test-harness changes.
+
+
+
+## 2026-11-09 — first boot-timeout candidate CI correction
+
+- Candidate PR #42 Build #1829 (run `42558109355`) and PR Build #1830 (run `42558124850`) stopped before compiler installation/native build/QEMU at the existing `tools/test_interrupt_gs_entry.py::test_qemu_boot_timeout_force_kills_paused_emulator` source assertion.
+- The failure was an outdated test expectation for the exact command string. The candidate correctly added `LC_ALL=C timeout --verbose` and the deadline TERM-marker check, but the cross-suite GS/boot regression still asserted the previous unprefixed `timeout --kill-after=5s` command.
+- Updated the cross-suite regression to assert the new verbose command, the retained timeout log, and that the deadline marker is checked before serial milestones. Removed an unused test-module import and clarified fresh-log comments.
+- This is a test-contract mismatch, not a kernel compile, guest boot, or QEMU failure. No native build or QEMU result is claimed for Build #1829/#1830. A new exact-head Build is required.

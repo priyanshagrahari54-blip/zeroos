@@ -316,3 +316,9 @@ Priority is still boot/release gate → kernel/userspace lifecycle correctness �
 - The P0 stable-release alignment issue is closed for the QEMU-tested code snapshot. Physical hardware, installation, and long-soak certification remain separate requirements.
 - A candidate boot-test hardening change requires GNU `timeout` to emit its deadline TERM marker before a 124/137 QEMU result can satisfy the repeated-boot gate. Candidate CI is pending; see `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md` and `VALIDATION.md`.
 - Preserve the canonical specification and all Stage 0–10 requirements. No implementation percentage increase is recorded for CI, release, or test-harness work.
+
+
+## Candidate CI correction — 2026-11-09
+
+- The first PR #42 Build #1829 and PR Build #1830 stopped at the existing GS/boot source regression because it expected the old timeout command literal. The implementation's new `LC_ALL=C timeout --verbose` invocation made that assertion stale.
+- Updated `tools/test_interrupt_gs_entry.py` to verify the new command, retained timeout diagnostics, and deadline-marker ordering. No native build/QEMU result is claimed for the failed attempts; rerun exact-head CI.

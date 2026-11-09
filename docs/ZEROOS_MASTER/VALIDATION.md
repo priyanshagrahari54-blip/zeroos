@@ -312,3 +312,12 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - The latest `main` documentation head `1b2caeb7` is a `[skip ci]` documentation-only successor to the release-tested code commit. No executable kernel changes occurred after `fff32e9`; the kernel-source baseline remains `f20ea855`.
 - **New candidate (not yet validated):** `tools/boot_test.sh` accepted statuses 124/137 without proving that GNU `timeout` had reached the requested observation deadline. The candidate requires the `timeout --verbose` TERM-at-deadline marker before accepting boot milestones and preserves `timeout.log`. Regression tests simulate early status 124 and 137 and require rejection. Wait for the exact PR Build before claiming the new guard passes; no new QEMU boot is claimed for this candidate.
 - Remaining release/product gates: run the 600-second four-vCPU scheduler soak; physical Lenovo G560 and device matrix; crash/power-cut recovery and physical storage validation; real NIC/USB/graphics support. Browser/media, Windows/Android compatibility, and full AI execution remain later-stage work.
+
+
+
+## 2026-11-09 — first boot-timeout candidate CI correction
+
+- Candidate PR #42 Build #1829 (run `42558109355`) and PR Build #1830 (run `42558124850`) stopped before compiler installation/native build/QEMU at the existing `tools/test_interrupt_gs_entry.py::test_qemu_boot_timeout_force_kills_paused_emulator` source assertion.
+- The failure was an outdated test expectation for the exact command string. The candidate correctly added `LC_ALL=C timeout --verbose` and the deadline TERM-marker check, but the cross-suite GS/boot regression still asserted the previous unprefixed `timeout --kill-after=5s` command.
+- Updated the cross-suite regression to assert the new verbose command, the retained timeout log, and that the deadline marker is checked before serial milestones. Removed an unused test-module import and clarified fresh-log comments.
+- This is a test-contract mismatch, not a kernel compile, guest boot, or QEMU failure. No native build or QEMU result is claimed for Build #1829/#1830. A new exact-head Build is required.

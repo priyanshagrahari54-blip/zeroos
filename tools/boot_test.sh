@@ -122,7 +122,7 @@ for iteration in $(seq 1 "$iterations"); do
   echo "===== ZEROOS boot certification iteration ${iteration}/${iterations} ====="
 
   # Every iteration must stand on fresh evidence. A failed QEMU launch must not
-  # be able to reuse a previous iteration's serial/debug/QEMU logs.
+  # be able to reuse a previous iteration's serial/debug/QEMU/timeout logs.
   rm -f "$build_root/serial.log" "$build_root/debug.log" "$build_root/qemu.log" "$build_root/timeout.log"
 
   # With -no-shutdown, a healthy guest remains alive until timeout. Do not

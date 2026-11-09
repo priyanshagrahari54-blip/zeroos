@@ -141,8 +141,17 @@ class InterruptGsOwnershipTests(unittest.TestCase):
         )
 
     def test_qemu_boot_timeout_force_kills_paused_emulator(self):
-        self.assertIn('timeout --kill-after=5s "${timeout_s}s" qemu-system-x86_64', self.boot_test)
+        self.assertIn(
+            'LC_ALL=C timeout --verbose --kill-after=5s "${timeout_s}s" qemu-system-x86_64',
+            self.boot_test,
+        )
         self.assertIn('[ "$qemu_status" -ne 124 ] && [ "$qemu_status" -ne 137 ]', self.boot_test)
+        self.assertIn('2>"$build_root/timeout.log"', self.boot_test)
+        deadline_guard = self.boot_test.index(
+            'grep -Fq "timeout: sending signal TERM to command"'
+        )
+        milestone_check = self.boot_test.index('assert_log "$build_root/serial.log"')
+        self.assertLess(deadline_guard, milestone_check)
 
     def test_ci_runs_regression_before_installing_build_tools(self):
         invocation = "python3 tools/test_interrupt_gs_entry.py"
