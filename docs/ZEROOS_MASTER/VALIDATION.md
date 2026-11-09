@@ -1,6 +1,6 @@
 # ZEROOS — Validation and Support Matrix
 
-Updated: 2026-11-09. Latest main HEAD is 1a57d5cebe0e1eff87fd10450be841708de4e01d (PR #42 merged); the change hardens QEMU timeout/deadline evidence and does not change kernel source. Candidate Build #1833/#1834 and Stage 1 #254/#255 passed; post-merge Stage 1 #256 passed and main Build #1835 is in progress. The latest fully release-verified stable/versioned ISO remains snapshot fff32e9 with SHA-256 18cfe872ab7c946d6e4adc75e411043971d5e3878eb4a4df499e4320b94af15a. Do not attribute that asset to 1a57d5d until its own main Build/release gate completes. This remains the evidence policy for Stages 1–10 and must not overstate support.
+Updated: 2026-11-09. Latest main HEAD is documentation-only c887cabf0caade5d6c33a3d013f02df01e93c347; latest code-bearing commit 1a57d5cebe0e1eff87fd10450be841708de4e01d passed main Build #1835 and Stage 1 Scheduler #256. Build #1835 passed 3/3 QEMU boots, storage persistence, production desktop/network smoke, and release publication. Versioned zeroos-1a57d5c.iso and stable zeroos.iso both have SHA-256 082bd06046aad31f8f9d2d39b20b5361b46d0a44cd39ddda26bff07a321e58cd; release notes identify 1a57d5c. Physical hardware and long scheduler soak remain unverified. This remains the evidence policy for Stages 1–10 and must not overstate support.
 
 The binding acceptance checklist is [ZEROOS_10_STAGE_HARDENING.md](./ZEROOS_10_STAGE_HARDENING.md). Current estimates and known limitations are in [ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md](./ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md).
 
@@ -333,3 +333,14 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - Post-merge main Build #1835 / run 42560302805 on 1a57d5d remains in progress at the reproducible release gate. Main Stage 1 Scheduler #256 / run 42560302640 passed. Full post-merge QEMU/storage/desktop/release conclusions remain pending.
 - The last fully verified stable/versioned release pair is still for fff32e9, both SHA-256 18cfe872ab7c946d6e4adc75e411043971d5e3878eb4a4df499e4320b94af15a. The stable alias has not yet been verified for 1a57d5d.
 - Physical G560/device certification and the 600-second scheduler soak remain unverified. No completion percentage increase.
+
+## 2026-11-09 — post-merge main acceptance
+
+- Main Build #1835 / run 42560302805 completed SUCCESS on 1a57d5d. Main Stage 1 Scheduler #256 / run 42560302640 completed SUCCESS.
+- Exact Build #1835 job-step conclusions are SUCCESS for the fail-closed QEMU regression, all existing source regressions, native x86-64 build, reproducible release gate, kernel-image verification, boot test, scheduler panic-diagnostics, storage persistence, production ISO, production desktop/network smoke, artifact retention and release publication.
+- Boot log: 3/3 QEMU iterations passed all 104 milestones; 32-bit entry and long-mode markers present on each. Artifact 13649770651 contains timeout.log with the supervisor's deadline TERM marker.
+- Storage artifact 13649770651 contains serial-disk1.log and serial-disk2.log. Both logs show SATA/NVMe discovery, driver tests, /data persistence counters 1 and 2, persistent-file validation, Ring-3 fsync probe and Stage 3 completion; no panic/failure markers. The storage step concluded SUCCESS. A transient ERR-trap diagnostic appears between sequential boots; retained per-boot logs establish the actual result.
+- Production QEMU smoke reached the interactive desktop session, attached RTL8139, obtained DHCP 10.0.2.15 and resolved the first-hop gateway. This does not establish physical-device compatibility.
+- Release log confirms main advanced only through documentation files after the tested SHA and permitted publication of 1a57d5d. Versioned asset zeroos-1a57d5c.iso and stable zeroos.iso are each 12,369,920 bytes with identical SHA-256 082bd06046aad31f8f9d2d39b20b5361b46d0a44cd39ddda26bff07a321e58cd. Release notes identify 1a57d5c.
+- The ISO verifier's optional pycdlib cross-check was unavailable and produced a generic warning; the actual QEMU boot gate passed 3/3. Do not treat the optional-tool warning as a boot failure.
+- Closed: post-merge main boot/release verification for 1a57d5d. Open: 600-second scheduler soak, physical G560/device matrix, physical storage recovery/power-cut validation, and actual USB/graphics/NIC hardware support. No completion percentage increase.

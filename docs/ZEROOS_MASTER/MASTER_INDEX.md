@@ -1,6 +1,6 @@
 # ZEROOS — MASTER DOCUMENT INDEX
-Version: 2.6
-Updated: 2026-11-09 (main merge 1a57d5d; candidate Build #1833/#1834 and Stage 1 #254/#255 passed; main Stage 1 #256 passed; main Build #1835 in progress; last release-verified code snapshot fff32e9)
+Version: 2.7
+Updated: 2026-11-09 (main docs HEAD c887cab; release-tested code snapshot 1a57d5d; Build #1835 and Stage 1 #256 passed; stable/versioned ISO SHA-256 082bd06046aad31f8f9d2d39b20b5361b46d0a44cd39ddda26bff07a321e58cd)
 
 This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md` remains the canonical consolidated product/architecture specification. Stage 6-10 execution is split into dedicated production master documents so an implementation agent can work one stage at a time without losing cross-cutting requirements.
 
@@ -328,6 +328,15 @@ Priority is still boot/release gate → kernel/userspace lifecycle correctness �
 
 - PR #42 merged as 1a57d5cebe0e1eff87fd10450be841708de4e01d; this hardens the QEMU observation deadline check and artifact retention. No kernel source changed.
 - Candidate Build #1833 and #1834 passed on 3f36bb5; Stage 1 Scheduler #254 and #255 passed. Three repeated QEMU boots each reached all 104 milestones; the timeout diagnostics artifact contains the supervisor TERM-at-deadline marker.
-- Post-merge main Stage 1 Scheduler #256 passed. Main Build #1835 is still running at the reproducible release gate; do not attribute candidate boot/storage/desktop evidence to main until it finishes.
+- Post-merge main Stage 1 Scheduler #256 and Build #1835 both passed. Main Build #1835 completed 3/3 QEMU boots, storage persistence, production desktop/network smoke and release publication.
 - Latest fully verified release pair remains zeroos-fff32e9.iso and zeroos.iso, both SHA-256 18cfe872ab7c946d6e4adc75e411043971d5e3878eb4a4df499e4320b94af15a. New main release verification is pending.
 - Open: 600-second scheduler soak; physical G560/device matrix; expanded storage recovery/fault testing; kernel/process lifecycle hardening. Preserve the canonical specification and all Stage 0–10 requirements. No completion estimate increase.
+
+## Main/release acceptance snapshot — 2026-11-09
+
+- Current main HEAD c887cab is documentation-only; latest code-bearing commit 1a57d5d passed Build #1835 and Stage 1 Scheduler #256.
+- Build #1835 passed all configured checks. The boot test passed 3/3 QEMU iterations with all 104 milestones and 32-bit/long-mode markers. The timeout diagnostics artifact contains the supervisor TERM-at-deadline marker.
+- Retained storage serial logs for both QEMU disk boots show SATA/NVMe discovery, destructive driver tests, persistent /data counters 1 and 2, file check, Ring-3 fsync probe and Stage 3 completion without panic/failure markers.
+- Production QEMU smoke reached the desktop session, RTL8139 attached, DHCP bound and gateway ARP resolved.
+- Versioned and stable ISO assets match SHA-256 082bd06046aad31f8f9d2d39b20b5361b46d0a44cd39ddda26bff07a321e58cd; release notes identify 1a57d5c. The P0 post-merge boot/release gate is closed for this snapshot.
+- Remaining: 600-second scheduler soak; physical G560/device certification; physical crash/power-cut storage recovery; physical NIC/USB/graphics. No completion estimate increase.

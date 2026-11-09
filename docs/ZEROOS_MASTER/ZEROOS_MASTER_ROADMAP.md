@@ -10,11 +10,11 @@ Never create a basic version merely to replace it later.
 ## Current state
 
 ### Current main / release evidence — 2026-11-09
-- Latest main merge: 1a57d5cebe0e1eff87fd10450be841708de4e01d (PR #42). This changes QEMU timeout-deadline evidence and diagnostic retention; kernel source is unchanged. Latest kernel-source baseline remains f20ea855.
-- Candidate Build #1833/#1834 and Stage 1 Scheduler #254/#255 passed on 3f36bb5. The candidate boot test passed 3/3 repeated QEMU boots with all 104 milestones; storage persistence and production desktop/network smoke passed. The timeout diagnostics artifact contains the expected GNU timeout TERM-at-deadline marker.
-- Post-merge main Stage 1 Scheduler #256 passed. Main Build #1835 is in progress at the reproducible release gate; its own boot, storage, desktop and release conclusions remain pending.
-- The latest fully release-verified stable/versioned pair remains commit fff32e9, both SHA-256 18cfe872ab7c946d6e4adc75e411043971d5e3878eb4a4df499e4320b94af15a. Do not claim the stable alias identifies 1a57d5d until Build #1835 publishes and verifies it.
-- The 600-second scheduler soak and physical Lenovo G560/device matrix remain unverified. Reconcile useful work from stale PR #26/#27 selectively; do not merge their branches wholesale.
+- Latest main HEAD c887cab is documentation-only; latest code-bearing main commit 1a57d5d (PR #42) passed main Build #1835 and Stage 1 Scheduler #256. The kernel-source baseline remains f20ea855.
+- Build #1835 passed all configured regressions, native build/check, kernel-image verification, 3/3 QEMU boots with all 104 milestones, scheduler panic diagnostics, AHCI/NVMe two-boot persistence, production ISO, production desktop/network smoke, artifact retention and release publication.
+- Retained serial-disk1.log and serial-disk2.log confirm both storage boots: SATA/NVMe discovery, driver tests, persistent /data counters 1 and 2, file check, Ring-3 fsync probe and Stage 3 completion; neither has a panic/failure marker.
+- The versioned zeroos-1a57d5c.iso and stable zeroos.iso assets both have SHA-256 082bd06046aad31f8f9d2d39b20b5361b46d0a44cd39ddda26bff07a321e58cd. Release notes identify 1a57d5c. The post-merge P0 boot/release gate is closed for this code snapshot.
+- The 600-second scheduler soak and physical Lenovo G560/device matrix remain unverified. Selectively reconcile stale PR #26/#27; do not merge their divergent branches wholesale.
 
 ### Historical evidence snapshot — 2026-10-26 (superseded by 2026-11-05 update)
 - The normal `make` image targets a persistent native x86-64 kernel + Ring-3 desktop/session path; the release pipeline has a shared 91-milestone QEMU boot gate.
@@ -1023,3 +1023,12 @@ No overall completion increase is claimed.
 3. Post-merge gate: Stage 1 Scheduler #256 passed on main merge 1a57d5d. Main Build #1835 is still in progress at the reproducible release gate. Require its own boot, storage, production desktop and release-publication steps before recording a post-merge pass.
 4. Release baseline: stable and versioned ISO assets remain byte-identical for previously release-tested snapshot fff32e9 (SHA-256 18cfe872ab7c946d6e4adc75e411043971d5e3878eb4a4df499e4320b94af15a). Publication for 1a57d5d is pending.
 5. Next priorities: finish Build #1835; execute the 600-second/four-vCPU scheduler soak; selectively reconcile PR #26/#27; harden process lifecycle/VFS mount lifetime; expand storage crash/recovery tests; certify physical G560, SATA/NVMe, NIC, USB and graphics. Continue native desktop integration before browser/media/AI/compatibility. Preserve all canonical requirements and Stage 0–10 workstreams; no completion percentage is raised for test-harness work.
+
+## 2026-11-09 — post-merge boot/release gate closed
+
+1. Main Build #1835 (run 42560302805, code commit 1a57d5d) and Stage 1 Scheduler #256 (run 42560302640) completed SUCCESS.
+2. Build #1835 boot gate passed all three QEMU iterations; each reached all 104 milestones and reported 32-bit entry and long-mode markers. The retained timeout.log confirms GNU timeout sent TERM at the configured observation deadline.
+3. Storage persistence step passed. The retained serial-disk1.log and serial-disk2.log each contain SATA/NVMe discovery, successful destructive driver tests, /data boot counters 1 and 2, persistent-file validation, Ring-3 fsync probe and Stage 3 completion, with no panic/failure marker. The log contains a transient ERR-trap diagnostic between boots; retained serial evidence and the successful step conclusion establish both boot results.
+4. Production QEMU smoke reached the interactive desktop session; RTL8139 attached, DHCP bound 10.0.2.15, and the first-hop gateway resolved. This is QEMU-only device evidence.
+5. Release publisher observed only documentation changes after the tested SHA and published the 1a57d5d code snapshot. GitHub Release metadata confirms versioned zeroos-1a57d5c.iso and stable zeroos.iso are 12,369,920 bytes with identical SHA-256 082bd06046aad31f8f9d2d39b20b5361b46d0a44cd39ddda26bff07a321e58cd. Release notes identify 1a57d5c. The P0 post-merge boot/release gate is closed.
+6. Remaining roadmap gates: 600-second/four-vCPU scheduler soak; physical G560 boot and device matrix; physical SATA/NVMe, NIC, USB and graphics; power-cut/crash recovery on physical storage. Continue process lifecycle/VFS mount lifetime hardening, then security/recovery and native desktop; browser/media/AI/compatibility remain later priorities. Preserve all Stage 0–10 and canonical product requirements; no completion percentage increase.
