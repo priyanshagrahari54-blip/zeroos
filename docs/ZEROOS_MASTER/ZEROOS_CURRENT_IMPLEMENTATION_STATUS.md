@@ -1,7 +1,7 @@
 # ZEROOS — CURRENT IMPLEMENTATION STATUS
 
-Updated: 2026-11-09
-Branch baseline: latest main HEAD is documentation-only commit documentation-only main successor; latest code-bearing main commit is 1a57d5cebe0e1eff87fd10450be841708de4e01d (PR #42). Main Build #1835 and Stage 1 Scheduler #256 passed. The release publisher allowed the docs-only main advance and published the QEMU-tested 1a57d5d snapshot; versioned and stable ISO SHA-256 both equal 082bd06046aad31f8f9d2d39b20b5361b46d0a44cd39ddda26bff07a321e58cd. Kernel-source baseline remains f20ea855fc30baf54cdc5d45915d357266f2ae6e.
+Updated: 2026-11-10
+Branch baseline: main HEAD `3f42def2a0695c53f6d9b6d37d807ce627feaae0` includes PR #43's ordered-data writeback error-abort correction. PR Build #1837 (`42747010883`) and Stage 1 Scheduler #258 (`42747011119`) passed on tested head `fb1e973b0b41ebeb273c37350bd0bb0d785c1b09`; the main merge commit compares one commit ahead with no changed-file delta. The PR Build step summary includes native build, reproducible release gate, 3/3 QEMU boots with 105 milestones, two-boot AHCI/NVMe persistence, production ISO and desktop/network smoke. Post-merge main CI and a stable ISO for `3f42def` are not verified. Candidate branch `fix/zjfs-ordered-data-flush-barrier-20261110` adds a pre-journal device FLUSH barrier and injected-FLUSH-EIO runtime regression; candidate CI is pending.
 Status policy: **evidence-weighted estimate; never equate a source file, marker check, architecture document, or host test with a working end-user feature.**
 
 ## Historical evidence refresh — 2026-10-26 (superseded for current HEAD)
