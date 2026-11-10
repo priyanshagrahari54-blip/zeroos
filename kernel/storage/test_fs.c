@@ -695,6 +695,42 @@ static int tf_ordered_flush_failure(struct block_device *device,
     return 0;
 }
 
+
+/* ------------------------------------------------ torn journal superblock */
+static int tf_torn_journal_superblock_recovery(struct block_device *device,
+                                                uint8_t *data, uint8_t *scratch) {
+    uint32_t spb=4096U/block_root(device)->sector_size;
+    uint64_t journal_lba;
+
+    TF_CHECK(zjfs_format(device,0)==0,"torn-jsb reformat");
+    TF_CHECK(vfs_mount(device,"/r",0)==0,"torn-jsb mount");
+    tf_fill(data,4096,0x73U);
+    TF_CHECK(tf_write_file("/r/jsb-recovery",data,4096,1)==0,
+             "torn-jsb durable file");
+    TF_CHECK(vfs_unmount("/r",0)==0,"torn-jsb unmount before corruption");
+
+    TF_CHECK(block_rw(device,BLOCK_OP_READ,0,scratch,4096,BLOCK_PRIO_NORMAL)==0,
+             "torn-jsb read primary superblock");
+    TF_CHECK(((struct zj_super *)scratch)->magic==ZJ_MAGIC,
+             "torn-jsb primary superblock valid");
+    journal_lba=((struct zj_super *)scratch)->journal_start*spb;
+
+    /* Model a torn/invalid journal-superblock sector while preserving the
+     * descriptor, commit record, and transaction images from the last commit. */
+    memset(data+4096,0xa5,4096);
+    TF_CHECK(ramdisk_poke(device,journal_lba,data+4096,spb)==0,
+             "torn-jsb corrupt journal superblock");
+    TF_CHECK(vfs_mount(device,"/r",0)==0,
+             "torn-jsb mount recovers from descriptor and commit");
+    TF_CHECK(tf_verify_file("/r/jsb-recovery",data,4096,scratch)==0,
+             "torn-jsb durable file survives replay");
+    TF_CHECK(vfs_unmount("/r",0)==0,"torn-jsb unmount after replay");
+    TF_CHECK(tf_fsck_clean(device,"torn journal superblock recovery")==0,
+             "torn-jsb recovery leaves clean filesystem");
+    klog("ZEROOS: ZJFS torn journal superblock recovery self-test passed.");
+    return 0;
+}
+
 int storage_selftest_fs(void) {
     struct block_device *device=ramdisk_create("ramfs0",24U*1024U*1024U,BLOCK_MEDIA_SSD,8);
     uint8_t *a=(uint8_t *)page_alloc_contiguous(16);
@@ -723,6 +759,7 @@ int storage_selftest_fs(void) {
     TF_RUN(tf_unmount_rules(device),"unmount-fsck");
     TF_RUN(tf_ordered_writeback_failure(device,a),"ordered-writeback-failure");
     TF_RUN(tf_ordered_flush_failure(device,a),"ordered-flush-failure");
+    TF_RUN(tf_torn_journal_superblock_recovery(device,a,b),"torn-jsb-recovery");
     page_free_contiguous(a,16);
     page_free_contiguous(b,16);
     page_free_contiguous(big,1280);
