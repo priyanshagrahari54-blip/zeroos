@@ -1,7 +1,7 @@
 # ZEROOS — CURRENT IMPLEMENTATION STATUS
 
 Updated: 2026-11-10
-Branch baseline: main HEAD `100c8e2cf4cdd049c4bf5565b5eebbc0f5284651` contains PR #44's ZJFS pre-journal FLUSH barrier and torn-journal-superblock recovery. PR Build #1854 and Stage 1 Scheduler #275 passed on tested head `8ce02ea537489c7daea0537d6dc36e31e4364a13`; the merge commit is `100c8e2cf4cdd049c4bf5565b5eebbc0f5284651`. The Build evidence includes native build, reproducible release gate, 3/3 QEMU boots with 106 milestones, eight power-cut recovery rounds, two-boot AHCI/NVMe persistence, production ISO and desktop/network smoke. Post-merge main CI and stable ISO publication for `100c8e2cf4cdd049c4bf5565b5eebbc0f5284651` remain unverified.
+Branch baseline: code-bearing main merge commit `100c8e2cf4cdd049c4bf5565b5eebbc0f5284651` contains PR #44's ZJFS pre-journal FLUSH barrier and torn-journal-superblock recovery. PR Build #1854 and Stage 1 Scheduler #275 passed on tested head `8ce02ea537489c7daea0537d6dc36e31e4364a13`; the merge commit is `100c8e2cf4cdd049c4bf5565b5eebbc0f5284651`. The Build evidence includes native build, reproducible release gate, 3/3 QEMU boots with 106 milestones, eight power-cut recovery rounds, two-boot AHCI/NVMe persistence, production ISO and desktop/network smoke. Post-merge main CI and stable ISO publication for `100c8e2cf4cdd049c4bf5565b5eebbc0f5284651` remain unverified.
 
 Status policy: **evidence-weighted estimate; never equate a source file, marker check, architecture document, or host test with a working end-user feature.**
 
@@ -455,7 +455,7 @@ Added `LIBRARY_REUSE_AND_INTEGRATION_PLAN.md` and indexed it from `MASTER_INDEX.
 
 ## 2026-11-10 — merged ZJFS ordered-data durability and torn-JSB recovery
 
-- PR #44 was squash-merged as `100c8e2cf4cdd049c4bf5565b5eebbc0f5284651`; current main compares identical to that merge commit.
+- PR #44 was squash-merged as `100c8e2cf4cdd049c4bf5565b5eebbc0f5284651`; the four follow-up commits update only the master documentation.
 - Build #1854 (PR run `42751115805`, tested head `8ce02ea537489c7daea0537d6dc36e31e4364a13`) and Stage 1 Scheduler #275 (`42751115731`) passed. The Build job passed source regressions, native x86-64 build, reproducible release gate, kernel verification, boot certification, scheduler panic-diagnostics certification, two-boot storage persistence, production ISO generation, production boot smoke and artifact preservation.
 - The boot diagnostics ZIP was inspected. It records 3/3 normal QEMU boots with all 106 required milestones and no failure markers; four-vCPU topology and scheduler certification passed. The new ordered-data FLUSH-EIO self-test marker is present.
 - The eight-round crash/power-cut matrix passed. Round 2 explicitly exercised the torn journal-superblock fallback (`journal superblock invalid; checking descriptor/commit`) and recovered with fsck clean. All eight rounds report recovered/fsck clean.
