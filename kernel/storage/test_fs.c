@@ -570,6 +570,71 @@ static int tf_unmount_rules(struct block_device *device) {
     return 0;
 }
 
+
+/* A failed ordered-data write must abort before the journal can publish
+ * metadata for the newly allocated file block. The injected error is scoped
+ * to that data block, so journal and ERROR-superblock writes remain usable. */
+static int tf_ordered_writeback_failure(struct block_device *device,
+                                        uint8_t *data) {
+    struct vfs_file *file;
+    struct vfs_superblock *sb;
+    struct pc_page *page;
+    struct block_fault fault;
+    struct zj_metrics before, after;
+    struct vfs_stat st;
+    uint64_t data_lba;
+    int rc;
+
+    TF_CHECK(zjfs_format(device,0)==0,"ordered-writeback reformat");
+    TF_CHECK(vfs_mount(device,"/e",0)==0,"ordered-writeback mount");
+    tf_fill(data,4096,0x51U);
+    TF_CHECK(vfs_open(&tf_root,"/e/ordered-failure",
+                      VFS_O_CREAT|VFS_O_TRUNC|VFS_O_WRONLY,0644,&file)==0,
+             "ordered-writeback file open");
+    TF_CHECK(vfs_write(file,data,4096)==4096,"ordered-writeback file dirty");
+
+    sb=file->inode->sb;
+    page=pc_find(&file->inode->mapping,0);
+    TF_CHECK(page && page->block &&
+             (page->flags&PC_DIRTY) && !(page->flags&PC_WRITEBACK),
+             "ordered data page remains dirty before commit");
+    data_lba=page->block*file->inode->mapping.sectors_per_block;
+    pc_put(page);
+
+    zjfs_metrics_snapshot(sb,&before);
+    memset(&fault,0,sizeof(fault));
+    fault.mode=BLOCK_FAULT_EIO;
+    fault.op_mask=1U<<BLOCK_OP_WRITE;
+    fault.lba_start=data_lba;
+    fault.lba_end=data_lba+file->inode->mapping.sectors_per_block;
+    /* remaining=0 keeps failing this data block through block-layer retries. */
+    block_fault_set(device,&fault);
+    rc=zjfs_commit(sb);
+    block_fault_clear(device);
+    zjfs_metrics_snapshot(sb,&after);
+
+    TF_CHECK(rc==-SE_IO,"ordered-data writeback error returned");
+    TF_CHECK(after.aborts==before.aborts+1U,
+             "ordered-data writeback failure aborts transaction");
+    TF_CHECK(after.commits==before.commits,
+             "ordered-data writeback failure does not commit metadata");
+    TF_CHECK((sb->flags&(VFS_SB_ERROR|VFS_SB_RDONLY))==
+             (VFS_SB_ERROR|VFS_SB_RDONLY),
+             "failed ordered-data write makes filesystem read-only");
+
+    vfs_file_put(file);
+    TF_CHECK(vfs_unmount("/e",1)==-SE_IO,
+             "aborted filesystem unmount reports I/O failure");
+    TF_CHECK(vfs_mount(device,"/e",0)==0,
+             "remount filesystem after ordered-data failure");
+    TF_CHECK(vfs_stat(&tf_root,"/e/ordered-failure",&st)==-SE_NOENT,
+             "uncommitted file metadata is absent after remount");
+    TF_CHECK(vfs_unmount("/e",0)==0,
+             "unmount read-only filesystem after verification");
+    klog("ZEROOS: ZJFS ordered-data writeback failure abort self-test passed.");
+    return 0;
+}
+
 int storage_selftest_fs(void) {
     struct block_device *device=ramdisk_create("ramfs0",24U*1024U*1024U,BLOCK_MEDIA_SSD,8);
     uint8_t *a=(uint8_t *)page_alloc_contiguous(16);
@@ -596,6 +661,7 @@ int storage_selftest_fs(void) {
     TF_CHECK(vfs_unlink(&tf_root,"/t/hello")==0 && vfs_unlink(&tf_root,"/t/hard")==0,
              "final cleanup");
     TF_RUN(tf_unmount_rules(device),"unmount-fsck");
+    TF_RUN(tf_ordered_writeback_failure(device,a),"ordered-writeback-failure");
     page_free_contiguous(a,16);
     page_free_contiguous(b,16);
     page_free_contiguous(big,1280);

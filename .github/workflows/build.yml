@@ -47,6 +47,9 @@ jobs:
       - name: Verify Multiboot2 information range handling
         run: python3 tools/test_multiboot_info_range.py
 
+      - name: Verify ZJFS ordered-data writeback failure handling
+        run: python3 tools/test_zjfs_ordered_writeback.py
+
       - name: Install build and QEMU tools
         run: |
           sudo apt-get update

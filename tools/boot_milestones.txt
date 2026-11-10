@@ -93,6 +93,7 @@ ZEROOS: init userspace process reaped cleanly.
 ZEROOS: Ring-3 transition, syscall ABI, and init recovery passed.
 ZEROOS: storage block layer scheduler/fault/timeout self-test passed.
 ZEROOS: storage GPT validation/recovery self-test passed.
+ZEROOS: ZJFS ordered-data writeback failure abort self-test passed.
 ZEROOS: storage VFS/ZJFS/page-cache self-test passed.
 ZEROOS: storage crash-consistency (power-cut/replay/fsck) self-test passed.
 ZEROOS: storage stack certification passed

@@ -1032,3 +1032,11 @@ No overall completion increase is claimed.
 4. Production QEMU smoke reached the interactive desktop session; RTL8139 attached, DHCP bound 10.0.2.15, and the first-hop gateway resolved. This is QEMU-only device evidence.
 5. Release publisher observed only documentation changes after the tested SHA and published the 1a57d5d code snapshot. GitHub Release metadata confirms versioned zeroos-1a57d5c.iso and stable zeroos.iso are 12,369,920 bytes with identical SHA-256 082bd06046aad31f8f9d2d39b20b5361b46d0a44cd39ddda26bff07a321e58cd. Release notes identify 1a57d5c. The P0 post-merge boot/release gate is closed.
 6. Remaining roadmap gates: 600-second/four-vCPU scheduler soak; physical G560 boot and device matrix; physical SATA/NVMe, NIC, USB and graphics; power-cut/crash recovery on physical storage. Continue process lifecycle/VFS mount lifetime hardening, then security/recovery and native desktop; browser/media/AI/compatibility remain later priorities. Preserve all Stage 0–10 and canonical product requirements; no completion percentage increase.
+
+### 2026-11-10 — storage integrity: ordered-data writeback error handling
+
+- Main baseline reviewed: code-bearing `1a57d5c`, documentation HEAD `e1392c0`. Main Build #1835 and Stage 1 #256 passed; the stable ISO is checksum-matched to the production image for `1a57d5c`.
+- Highest-priority source defect found: `zj_commit_locked` ignored errors returned by `pc_writeback_mapping` for ordered data and proceeded to commit metadata. This could publish a file mapping whose data write failed.
+- Candidate fix aborts ZJFS before writing the journal when ordered-data writeback fails. The runtime regression scopes injected EIO to the new file's allocated data-block LBA, verifies no metadata commit, and verifies the file is absent after remount.
+- Candidate host regression and boot milestone are wired into CI. **Do not mark this milestone validated or merged until the exact candidate Build/QEMU/storage gates pass.**
+- Continue scheduler soak, kernel/process lifecycle, crash/power-loss recovery, physical drivers and desktop. Keep browser/media/AI/compatibility behind those dependencies. Overall estimate remains ~43%.
