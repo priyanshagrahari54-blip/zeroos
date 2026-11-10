@@ -9,15 +9,14 @@ Never create a basic version merely to replace it later.
 
 ## Current state
 
-### Current main and merged storage-durability work — 2026-11-10
-- Code-bearing main merge commit is `100c8e2cf4cdd049c4bf5565b5eebbc0f5284651`; subsequent changes in this review are documentation-only; PR #44 is merged as `100c8e2cf4cdd049c4bf5565b5eebbc0f5284651`. ZJFS now flushes ordered data to stable media before journal metadata/commit records and aborts read-only if that barrier fails.
-- Torn journal-superblock recovery validates descriptor, commit record, target ranges and image CRC. A valid transaction is replayed; an incomplete/torn slot is discarded safely and sequence state is advanced.
-- Build #1854 / Stage 1 #275 passed on the tested PR tree. Evidence: 3/3 QEMU boots, 106 milestones, four-vCPU SMP certification, eight power-cut rounds (including a logged torn-JSB fallback), clean fsck after every round, AHCI/NVMe two-boot persistence, production ISO generation and production desktop/network smoke.
-- The first candidate Build #1851 exposed a torn-JSB recovery failure; the fallback correction was then validated by Build #1854. Do not erase this failed-run history.
-- The PR-event release-publication step was skipped. Post-merge main push CI and a stable ISO/checksum for `100c8e2cf4cdd049c4bf5565b5eebbc0f5284651` are not verified. Last stable release snapshot documented in-repo: `1a57d5c`.
-- Next P0: verify the post-merge main workflow and compare stable/versioned ISO bytes with the exact main production image. Remaining P1/P2 gates: 600-second/four-vCPU scheduler soak; physical G560/device testing; power-loss recovery on real hardware; USB/graphics/NIC drivers; clean ACPI S5 shutdown; then desktop/browser/media/AI/compatibility work. Overall estimate remains ~43%.
+### Current main and release acceptance — 2026-11-10
+- Code-bearing main merge commit is `100c8e2cf4cdd049c4bf5565b5eebbc0f5284651`; PR #44 is merged. ZJFS flushes ordered data to stable media before journal metadata/commit records and aborts read-only if that barrier fails. Torn journal-superblock recovery validates descriptor, commit record, target ranges and image CRC; valid transactions replay and incomplete slots are discarded safely.
+- Main Build #1855 and Stage 1 Scheduler #276 passed. Evidence includes 3/3 QEMU boots with 106 milestones, four-vCPU SMP certification, scheduler panic-diagnostics fault certification, eight power-cut rounds (including a logged torn-JSB fallback), clean fsck after every round, AHCI/NVMe two-boot persistence, production ISO generation and production desktop/network smoke.
+- The main Build published the boot-tested code snapshot despite later documentation-only commits. Versioned `zeroos-100c8e2.iso` and stable `zeroos.iso` are both 12,374,016 bytes and byte-identical at SHA-256 `4628a75807bb9a074ce48eaf8e627997fd86b9c33c63201d66dacc785b498e80`; the extracted production ISO independently has the same digest. Release notes identify `100c8e2` and specify a legacy BIOS El Torito live session, not an installer.
+- The first candidate Build #1851 exposed torn-JSB recovery failure; descriptor/commit fallback was added and passed Build #1854, then main Build #1855. Preserve this failure/correction history.
+- No P0 build/boot/stable-release blocker remains for this snapshot. Remaining P1/P2 gates: 600-second/four-vCPU scheduler soak; physical G560/device testing; physical power-loss recovery; USB/graphics/NIC drivers; clean ACPI S5 shutdown; disk installer if required; then desktop/browser/media/AI/compatibility work. Overall estimate remains ~43%.
 
-Historical candidate-pending notes below are superseded by the merged Build #1854 evidence above.
+
 
 
 ### Current main and storage-durability candidate — 2026-11-10
@@ -1059,3 +1058,17 @@ No overall completion increase is claimed.
 - Candidate fix aborts ZJFS before writing the journal when ordered-data writeback fails. The runtime regression scopes injected EIO to the new file's allocated data-block LBA, verifies no metadata commit, and verifies the file is absent after remount.
 - Candidate host regression and boot milestone are wired into CI. **Do not mark this milestone validated or merged until the exact candidate Build/QEMU/storage gates pass.**
 - Continue scheduler soak, kernel/process lifecycle, crash/power-loss recovery, physical drivers and desktop. Keep browser/media/AI/compatibility behind those dependencies. Overall estimate remains ~43%.
+
+## 2026-11-10 — PR #44 merged; main CI and stable ISO verified
+
+- PR #44 was squash-merged as `100c8e2cf4cdd049c4bf5565b5eebbc0f5284651`. The latest code-bearing main commit is `100c8e2cf4cdd049c4bf5565b5eebbc0f5284651`; subsequent documentation updates do not change executable code.
+- Main push Build #1855 (`42752361937`) completed successfully. Main Stage 1 Scheduler #276 (`42752361843`) completed successfully. The Build job passed the source regressions, native x86-64 build, reproducible release gate, kernel-image verification, QEMU boot test, scheduler panic-diagnostics fault certification, two-boot AHCI/NVMe persistence, production ISO generation, production desktop/network smoke, artifact preservation and GitHub Release publication.
+- The main Build log records that main had advanced only through documentation files and that it published the boot-tested code snapshot `100c8e2cf4cdd049c4bf5565b5eebbc0f5284651`. It ends with: `stable release ISO matches the boot-tested production ISO`.
+- The main boot-diagnostics artifact was downloaded and inspected: 3/3 normal QEMU boots reached all 106 required milestones; the new ordered-data FLUSH-EIO self-test marker is present; the four-vCPU log reports 4 CPUs online and scheduler certification passed.
+- The eight-round crash/power-cut matrix passed. Round 2 explicitly exercised the torn journal-superblock fallback (`journal superblock invalid; checking descriptor/commit`) and recovered with fsck clean. All eight rounds report recovered/fsck clean.
+- AHCI/NVMe two-boot persistence passed: the /data counter advanced from 1 on boot 1 to 2 on boot 2; both runs emitted the persistence-check and Stage 3 completion markers. Production desktop/network smoke passed.
+- Release assets `zeroos-100c8e2.iso` and `zeroos.iso` are both 12,374,016 bytes and have identical SHA-256 `4628a75807bb9a074ce48eaf8e627997fd86b9c33c63201d66dacc785b498e80`. The Build release artifact's extracted production ISO independently hashes to the same value. Release notes identify commit `100c8e2` and describe a legacy BIOS El Torito live session; there is no disk installer.
+- Candidate Build #1851 initially failed in crash round 2 because a torn journal-superblock write caused recovery to return `-SE_UCLEAN`. Descriptor/commit fallback recovery was added; Build #1854 passed the complete candidate matrix, and main Build #1855 then passed and published the verified image. Preserve this failed-run/correction history.
+- No P0 build/boot/stable-release blocker remains for this snapshot. Remaining engineering gates: 600-second/four-vCPU scheduler soak; physical Lenovo G560 and device matrix; physical power-loss/recovery; USB/graphics/NIC certification; clean ACPI S5 shutdown; and a disk installer if installation (rather than live boot) is required.
+- Overall completion estimate remains ~43%. No completion credit is assigned for CI or release-pipeline work.
+
