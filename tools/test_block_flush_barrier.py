@@ -68,6 +68,13 @@ for required in (
 ):
     assert required in barrier, f"in-flight barrier tracking missing: {required}"
 
+pick = function_body(
+    block, "static struct block_request *block_pick_locked(struct block_device *device) {"
+)
+assert "uint64_t barrier=block_barrier_sequence(device);" in pick, (
+    "scheduler must use the combined pending/in-flight barrier sequence"
+)
+
 runtime = function_body(
     test_block, "static int tb_barrier(struct block_device *disk, uint8_t *buffer) {"
 )
