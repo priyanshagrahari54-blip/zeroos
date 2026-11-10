@@ -646,29 +646,45 @@ static int zj_replay(struct zj_fs *fs, int write_allowed) {
     if (rc)
         return rc;
     memcpy(&jsb,page,sizeof(jsb));
-    if (jsb.magic!=ZJ_JSB_MAGIC || jsb.checksum!=zj_meta_csum(&jsb,j0) ||
-        jsb.blocks!=jn) {
-        klog("ZEROOS: zjfs %s: journal superblock invalid.",fs->device->name);
-        return -SE_UCLEAN;
+    int jsb_valid=jsb.magic==ZJ_JSB_MAGIC &&
+                  jsb.checksum==zj_meta_csum(&jsb,j0) && jsb.blocks==jn;
+    if (jsb_valid) {
+        fs->seq=jsb.sequence;
+    } else {
+        /* The JSB can be one of the volatile writes lost/torn by a power
+         * cut. The descriptor + commit record are the actual transaction
+         * proof; validate them before deciding whether anything needs replay. */
+        klog("ZEROOS: zjfs %s: journal superblock invalid; checking descriptor/commit.",
+             fs->device->name);
     }
-    fs->seq=jsb.sequence;
     struct zj_desc *desc=(struct zj_desc *)(fs->scratch+4096);
     rc=zj_io(fs,BLOCK_OP_READ,j0+1U,desc);
     if (rc)
         return rc;
     uint32_t max=(uint32_t)(jn-3U<ZJ_DESC_MAX ? jn-3U : ZJ_DESC_MAX);
     if (desc->magic!=ZJ_DESC_MAGIC || desc->checksum!=zj_meta_csum(desc,j0+1U) ||
-        desc->count==0 || desc->count>max || desc->sequence<jsb.sequence)
+        desc->count==0 || desc->count>max || desc->sequence==0 ||
+        desc->sequence==~0ULL) {
+        if (!jsb_valid)
+            fs->seq=1U;
+        return 0;
+    }
+    if (jsb_valid && desc->sequence<jsb.sequence)
         return 0;
     uint32_t n=desc->count;
     uint64_t seq=desc->sequence;
+    if (!jsb_valid)
+        fs->seq=seq;
     struct zj_commit *commit=(struct zj_commit *)(fs->scratch+8192);
     rc=zj_io(fs,BLOCK_OP_READ,j0+2U+n,commit);
     if (rc)
         return rc;
     if (commit->magic!=ZJ_COMMIT_MAGIC || commit->checksum!=zj_meta_csum(commit,j0+2U+n) ||
-        commit->sequence!=seq || commit->count!=n)
+        commit->sequence!=seq || commit->count!=n) {
+        if (!jsb_valid)
+            fs->seq=seq+1U;
         return 0;                               /* uncommitted: discard */
+    }
     /* Validate targets and the image CRC before touching home blocks. */
     for (uint32_t i=0; i<n; ++i) {
         uint64_t t=desc->targets[i];
@@ -691,6 +707,8 @@ static int zj_replay(struct zj_fs *fs, int write_allowed) {
         /* Torn journal write: the commit record reached the media but
          * some images did not. The transaction never became durable in
          * the protocol sense (no flush completed), so discard it. */
+        if (!jsb_valid)
+            fs->seq=seq+1U;
         page_free_contiguous(images,n);
         return 0;
     }
