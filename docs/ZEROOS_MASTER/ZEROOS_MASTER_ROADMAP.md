@@ -1048,3 +1048,5 @@ No overall completion increase is claimed.
 - Candidate fix aborts ZJFS before writing the journal when ordered-data writeback fails. The runtime regression scopes injected EIO to the new file's allocated data-block LBA, verifies no metadata commit, and verifies the file is absent after remount.
 - Candidate host regression and boot milestone are wired into CI. **Do not mark this milestone validated or merged until the exact candidate Build/QEMU/storage gates pass.**
 - Continue scheduler soak, kernel/process lifecycle, crash/power-loss recovery, physical drivers and desktop. Keep browser/media/AI/compatibility behind those dependencies. Overall estimate remains ~43%.
+
+- Additional deterministic guest regression: corrupt the journal superblock after a durable transaction while preserving descriptor/commit/images; remount must recover through descriptor/commit validation, preserve file contents, and leave fsck clean. The new serial milestone is required by the QEMU boot gate. This is candidate test coverage only; exact-head CI/QEMU remains pending.
