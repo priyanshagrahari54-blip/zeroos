@@ -1072,3 +1072,23 @@ No overall completion increase is claimed.
 - No P0 build/boot/stable-release blocker remains for this snapshot. Remaining engineering gates: 600-second/four-vCPU scheduler soak; physical Lenovo G560 and device matrix; physical power-loss/recovery; USB/graphics/NIC certification; clean ACPI S5 shutdown; and a disk installer if installation (rather than live boot) is required.
 - Overall completion estimate remains ~43%. No completion credit is assigned for CI or release-pipeline work.
 
+
+## 2026-11-10 — current open engineering queue
+
+Open PRs remain, but their branches are stale relative to main and are not merge-ready. Current main-to-head comparisons:
+
+| PR | Workstream | Ahead | Behind | Current action |
+|---|---|---:|---:|---|
+| #26 | Stage 1 QEMU boot evidence | 6 | 64 | Rebase; retain only still-missing evidence |
+| #27 | Scheduler certification | 1 | 63 | Reconcile with main; do not merge stale snapshot |
+| #9 | Repeated-boot SMP/storage stress | 4 | 256 | Rebase selectively |
+| #14 | Kernel/runtime hardening | 7 | 149 | Isolate individual fixes and retest |
+| #23 | Release-note ordering | 16 | 96 | Reconcile; main Build #1855 already published verified notes/assets |
+| #4 | Storage/device/desktop stack | 10 | 355 | Do not merge wholesale; review per subsystem |
+| #32 | Process-parent documentation | 4 | 46 | Documentation reconciliation only |
+| #25 | Current-main evidence docs | 3 | 64 | Superseded documentation; close or rebase after review |
+| #8 | Shell/platform activation | 147 | 256 | Major staged rebase required |
+| #6 | Pipe semantics | 19 | 355 | Rebase and rerun IPC tests |
+
+The release pipeline itself is no longer a P0 blocker for code snapshot `100c8e2cf4cdd049c4bf5565b5eebbc0f5284651`: main Build #1855 verified and published the stable/versioned ISO pair at SHA-256 `4628a75807bb9a074ce48eaf8e627997fd86b9c33c63201d66dacc785b498e80`. The open #23 branch is therefore a reconciliation item, not evidence that publication is currently broken.
+
