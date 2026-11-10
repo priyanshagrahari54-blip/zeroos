@@ -9,6 +9,14 @@ Never create a basic version merely to replace it later.
 
 ## Current state
 
+### Current main and storage-durability candidate — 2026-11-10
+- Main HEAD is `3f42def2a0695c53f6d9b6d37d807ce627feaae0`; PR #43's ordered-writeback error-abort correction is present. PR Build #1837 / Stage 1 #258 passed on tested head `fb1e973b0b41ebeb273c37350bd0bb0d785c1b09`; the main merge commit is one commit ahead with no changed-file delta. This is PR validation, not a verified post-merge main push workflow.
+- Build #1837 completed native build/check and reproducible release gate, 3/3 QEMU boots with 105 milestones, two-boot AHCI/NVMe persistence, production ISO and production desktop/network smoke. PR-event release publication was skipped.
+- The last release snapshot documented in the repository remains `1a57d5c`; stable ISO publication for `3f42def2a0695c53f6d9b6d37d807ce627feaae0` is not verified.
+- Candidate `fix/zjfs-ordered-data-flush-barrier-20261110` adds a pre-journal device FLUSH after ordered data writeback. A failed barrier aborts before journal metadata; a RAM-disk FLUSH-EIO regression checks that the file remains absent after remount. Candidate CI/QEMU is pending.
+- Remaining: 600-second/four-vCPU scheduler soak; physical G560/device matrix; physical power-loss recovery; USB/graphics/NIC certification; clean ACPI S5 shutdown. Overall estimate remains ~43%.
+
+
 ### Current main / release evidence — 2026-11-09
 - Latest main HEAD documentation-only main successor is documentation-only; latest code-bearing main commit 1a57d5d (PR #42) passed main Build #1835 and Stage 1 Scheduler #256. The kernel-source baseline remains f20ea855.
 - Build #1835 passed all configured regressions, native build/check, kernel-image verification, 3/3 QEMU boots with all 104 milestones, scheduler panic diagnostics, AHCI/NVMe two-boot persistence, production ISO, production desktop/network smoke, artifact retention and release publication.
