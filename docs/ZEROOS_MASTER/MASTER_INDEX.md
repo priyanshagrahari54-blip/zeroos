@@ -1,6 +1,6 @@
 # ZEROOS — MASTER DOCUMENT INDEX
-Version: 2.7
-Updated: 2026-11-09 (main docs HEAD documentation-only main successor; release-tested code snapshot 1a57d5d; Build #1835 and Stage 1 #256 passed; stable/versioned ISO SHA-256 082bd06046aad31f8f9d2d39b20b5361b46d0a44cd39ddda26bff07a321e58cd)
+Version: 2.8-candidate
+Updated: 2026-11-10 (main code snapshot 1a57d5d verified; ordered-writeback integrity fix on candidate branch) (main docs HEAD documentation-only main successor; release-tested code snapshot 1a57d5d; Build #1835 and Stage 1 #256 passed; stable/versioned ISO SHA-256 082bd06046aad31f8f9d2d39b20b5361b46d0a44cd39ddda26bff07a321e58cd)
 
 This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md` remains the canonical consolidated product/architecture specification. Stage 6-10 execution is split into dedicated production master documents so an implementation agent can work one stage at a time without losing cross-cutting requirements.
 
@@ -340,3 +340,9 @@ Priority is still boot/release gate → kernel/userspace lifecycle correctness �
 - Production QEMU smoke reached the desktop session, RTL8139 attached, DHCP bound and gateway ARP resolved.
 - Versioned and stable ISO assets match SHA-256 082bd06046aad31f8f9d2d39b20b5361b46d0a44cd39ddda26bff07a321e58cd; release notes identify 1a57d5c. The P0 post-merge boot/release gate is closed for this snapshot.
 - Remaining: 600-second scheduler soak; physical G560/device certification; physical crash/power-cut storage recovery; physical NIC/USB/graphics. No completion estimate increase.
+
+## 2026-11-10 — ordered-data durability review
+
+- Main remains verified at code-bearing commit `1a57d5c` (Build #1835 and Stage 1 #256 passed; stable ISO checksum is recorded in `VALIDATION.md`).
+- Candidate branch `fix/zjfs-ordered-data-writeback-20261110` fixes a ZJFS ordered-data error path: failed page-cache writeback now aborts before metadata journaling. A block-LBA-scoped EIO runtime test and source-contract regression are included.
+- Candidate CI/QEMU is pending. The candidate is not part of main or the published stable ISO until the exact full Build passes and the change is integrated.

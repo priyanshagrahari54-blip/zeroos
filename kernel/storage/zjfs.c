@@ -528,10 +528,17 @@ static int zj_commit_locked(struct zj_fs *fs) {
         fs->pending_count=0;
         return 0;
     }
-    /* 1. Ordered data. Errors are reported through the files' mappings
-     * (fsync) and do not block metadata durability. */
+    /* 1. Ordered data. Metadata must not become durable until every data
+     * block allocated by this transaction has reached the device. If an
+     * ordered write fails, abort before journaling metadata that could expose
+     * stale or unwritten contents. */
     for (uint32_t i=0; i<fs->ordered_count; ++i) {
-        (void)pc_writeback_mapping(&fs->ordered[i]->mapping,1,BLOCK_PRIO_NORMAL);
+        int data_rc=pc_writeback_mapping(&fs->ordered[i]->mapping,1,
+                                         BLOCK_PRIO_NORMAL);
+        if (data_rc) {
+            zj_abort(fs,data_rc,"ordered data writeback");
+            return data_rc;
+        }
     }
     fs->ordered_count=0;
     if (fs->txn_count==0)

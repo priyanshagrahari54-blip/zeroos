@@ -344,3 +344,13 @@ The release-policy regression script now also asserts that CI invokes it exactly
 - Release log confirms main advanced only through documentation files after the tested SHA and permitted publication of 1a57d5d. Versioned asset zeroos-1a57d5c.iso and stable zeroos.iso are each 12,369,920 bytes with identical SHA-256 082bd06046aad31f8f9d2d39b20b5361b46d0a44cd39ddda26bff07a321e58cd. Release notes identify 1a57d5c.
 - The ISO verifier's optional pycdlib cross-check was unavailable and produced a generic warning; the actual QEMU boot gate passed 3/3. Do not treat the optional-tool warning as a boot failure.
 - Closed: post-merge main boot/release verification for 1a57d5d. Open: 600-second scheduler soak, physical G560/device matrix, physical storage recovery/power-cut validation, and actual USB/graphics/NIC hardware support. No completion percentage increase.
+
+## 2026-11-10 — current main review and ordered-writeback candidate
+
+- Reviewed `main` HEAD `e1392c094e1ea58594cee6907001858fec361f96`. The latest code-bearing commit is `1a57d5cebe0e1eff87fd10450be841708de4e01d`; subsequent commits in the inspected history are documentation-only.
+- Current main Build #1835 / run `42560302805`: SUCCESS. Main Stage 1 Scheduler #256 / run `42560302640`: SUCCESS. Build #1835 reports native build and clean `make check`, 3/3 QEMU boots with all 104 milestones, scheduler panic diagnostics, two-boot AHCI/NVMe persistence, production ISO, production desktop/network smoke, and release publication all successful.
+- Stable `zeroos.iso` and versioned `zeroos-1a57d5c.iso` are both 12,369,920 bytes with SHA-256 `082bd06046aad31f8f9d2d39b20b5361b46d0a44cd39ddda26bff07a321e58cd`. The release is a GRUB/SeaBIOS legacy-BIOS El Torito live ISO; it is not a disk installer.
+- New review finding: `zj_commit_locked` ignored ordered page-cache writeback errors before writing the metadata journal. This violates the ordered-data commit contract and can expose metadata for data that did not reach storage.
+- Candidate correction: propagate the first ordered writeback error, abort the ZJFS transaction before journaling, and force the filesystem read-only. Runtime regression injects EIO at the precise allocated data-block LBA and checks that the transaction is not committed and the file is absent after remount. Source regression and new boot milestone are wired into Build CI.
+- **Candidate branch CI and QEMU are pending.** The new source and runtime regressions are not yet counted as passed; the main evidence above remains the only accepted release evidence.
+- Open gates: 600-second/four-vCPU scheduler soak; physical G560 and device matrix; physical power-loss/recovery and USB/graphics/NIC certification; clean ACPI S5 shutdown. No completion percentage increase.
