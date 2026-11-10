@@ -122,3 +122,4 @@ ZEROOS: Multiboot2 info range policy self-test passed.
 never:storage.*FAILED
 never:ZEROOS PANIC:
 ZEROOS: process address-space range unmap preflight self-test passed.
+ZEROOS: ZJFS torn journal superblock recovery self-test passed.
