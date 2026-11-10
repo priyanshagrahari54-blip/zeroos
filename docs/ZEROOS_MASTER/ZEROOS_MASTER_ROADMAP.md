@@ -9,6 +9,17 @@ Never create a basic version merely to replace it later.
 
 ## Current state
 
+### Current main and merged storage-durability work — 2026-11-10
+- Main HEAD is `100c8e2cf4cdd049c4bf5565b5eebbc0f5284651`; PR #44 is merged. ZJFS now flushes ordered data to stable media before journal metadata/commit records and aborts read-only if that barrier fails.
+- Torn journal-superblock recovery validates descriptor, commit record, target ranges and image CRC. A valid transaction is replayed; an incomplete/torn slot is discarded safely and sequence state is advanced.
+- Build #1854 / Stage 1 #275 passed on the tested PR tree. Evidence: 3/3 QEMU boots, 106 milestones, four-vCPU SMP certification, eight power-cut rounds (including a logged torn-JSB fallback), clean fsck after every round, AHCI/NVMe two-boot persistence, production ISO generation and production desktop/network smoke.
+- The first candidate Build #1851 exposed a torn-JSB recovery failure; the fallback correction was then validated by Build #1854. Do not erase this failed-run history.
+- The PR-event release-publication step was skipped. Post-merge main push CI and a stable ISO/checksum for `100c8e2cf4cdd049c4bf5565b5eebbc0f5284651` are not verified. Last stable release snapshot documented in-repo: `1a57d5c`.
+- Next P0: verify the post-merge main workflow and compare stable/versioned ISO bytes with the exact main production image. Remaining P1/P2 gates: 600-second/four-vCPU scheduler soak; physical G560/device testing; power-loss recovery on real hardware; USB/graphics/NIC drivers; clean ACPI S5 shutdown; then desktop/browser/media/AI/compatibility work. Overall estimate remains ~43%.
+
+Historical candidate-pending notes below are superseded by the merged Build #1854 evidence above.
+
+
 ### Current main and storage-durability candidate — 2026-11-10
 - Main HEAD is `3f42def2a0695c53f6d9b6d37d807ce627feaae0`; PR #43's ordered-writeback error-abort correction is present. PR Build #1837 / Stage 1 #258 passed on tested head `fb1e973b0b41ebeb273c37350bd0bb0d785c1b09`; the main merge commit is one commit ahead with no changed-file delta. This is PR validation, not a verified post-merge main push workflow.
 - Build #1837 completed native build/check and reproducible release gate, 3/3 QEMU boots with 105 milestones, two-boot AHCI/NVMe persistence, production ISO and production desktop/network smoke. PR-event release publication was skipped.
