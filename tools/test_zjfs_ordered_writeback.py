@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Guard ZJFS ordered-data durability: failed data writeback must abort before journaling."""
+"""Guard ZJFS ordered-data durability and torn-journal recovery."""
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -81,6 +81,18 @@ assert journal > flush_return, "journal metadata can be written before the order
 assert "(void)pc_writeback_mapping" not in commit, "ordered-data writeback error is discarded"
 assert "zj_flush(fs);" in commit[writeback:journal], (
     "the ordered-data durability barrier must precede the metadata journal"
+)
+
+replay = function_body(zjfs, "static int zj_replay(struct zj_fs *fs, int write_allowed) {")
+assert "int jsb_valid=" in replay, "journal superblock validity must be tracked separately"
+assert "checking descriptor/commit" in replay, (
+    "a torn journal superblock must fall back to validating the transaction records"
+)
+assert "if (jsb_valid && desc->sequence<jsb.sequence)" in replay, (
+    "sequence filtering must only use a validated journal superblock"
+)
+assert "if (!jsb_valid)\n            fs->seq=seq+1U;" in replay, (
+    "fallback recovery must advance sequence when discarding an uncommitted slot"
 )
 
 done = function_body(pagecache, "static void pc_writeback_done(struct block_request *request) {")
