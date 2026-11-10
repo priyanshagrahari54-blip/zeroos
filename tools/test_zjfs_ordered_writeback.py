@@ -133,6 +133,23 @@ assert flush_marker in milestones, "flush-barrier runtime regression is not a re
 
 marker = "ZEROOS: ZJFS ordered-data writeback failure abort self-test passed."
 assert marker in milestones, "runtime regression is not a required QEMU boot milestone"
+
+jsb_runtime = function_body(
+    test_fs,
+    "static int tf_torn_journal_superblock_recovery(struct block_device *device,",
+)
+for required in (
+    "journal_start",
+    "ramdisk_poke(device,journal_lba,data+4096,spb)",
+    'vfs_mount(device,"/r",0)==0',
+    'tf_verify_file("/r/jsb-recovery",data,4096,scratch)==0',
+    'tf_fsck_clean(device,"torn journal superblock recovery")==0',
+):
+    assert required in jsb_runtime, f"torn-JSB recovery regression missing: {required}"
+assert "ZEROOS: ZJFS torn journal superblock recovery self-test passed." in milestones, (
+    "torn-JSB replay regression is not a required QEMU boot milestone"
+)
+
 assert workflow.count("python3 tools/test_zjfs_ordered_writeback.py") == 1, (
     "CI must run this source regression exactly once"
 )
