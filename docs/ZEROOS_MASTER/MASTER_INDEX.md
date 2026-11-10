@@ -372,20 +372,20 @@ Priority is still boot/release gate → kernel/userspace lifecycle correctness �
 
 ## 2026-11-10 — current open engineering queue
 
-Open PRs remain, but their branches are stale relative to main and are not merge-ready. Current main-to-head comparisons:
+Open PRs remain, but their branches are stale and not merge-ready. Ahead/behind counts below are measured against the code-bearing main commit 100c8e2; later documentation-only commits are excluded:
 
 | PR | Workstream | Ahead | Behind | Current action |
 |---|---|---:|---:|---|
-| #26 | Stage 1 QEMU boot evidence | 6 | 64 | Rebase; retain only still-missing evidence |
-| #27 | Scheduler certification | 1 | 63 | Reconcile with main; do not merge stale snapshot |
-| #9 | Repeated-boot SMP/storage stress | 4 | 256 | Rebase selectively |
-| #14 | Kernel/runtime hardening | 7 | 149 | Isolate individual fixes and retest |
-| #23 | Release-note ordering | 16 | 96 | Reconcile; main Build #1855 already published verified notes/assets |
-| #4 | Storage/device/desktop stack | 10 | 355 | Do not merge wholesale; review per subsystem |
-| #32 | Process-parent documentation | 4 | 46 | Documentation reconciliation only |
-| #25 | Current-main evidence docs | 3 | 64 | Superseded documentation; close or rebase after review |
-| #8 | Shell/platform activation | 147 | 256 | Major staged rebase required |
-| #6 | Pipe semantics | 19 | 355 | Rebase and rerun IPC tests |
+| #26 | Stage 1 QEMU boot evidence | 6 | 52 | Rebase; retain only still-missing evidence |
+| #27 | Scheduler certification | 1 | 51 | Reconcile with main; do not merge stale snapshot |
+| #9 | Repeated-boot SMP/storage stress | 4 | 244 | Rebase selectively |
+| #14 | Kernel/runtime hardening | 7 | 137 | Isolate individual fixes and retest |
+| #23 | Release-note ordering | 16 | 84 | Reconcile; main Build #1855 already published verified notes/assets |
+| #4 | Storage/device/desktop stack | 10 | 343 | Do not merge wholesale; review per subsystem |
+| #32 | Process-parent documentation | 4 | 34 | Documentation reconciliation only |
+| #25 | Current-main evidence docs | 3 | 52 | Superseded documentation; close or rebase after review |
+| #8 | Shell/platform activation | 147 | 244 | Major staged rebase required |
+| #6 | Pipe semantics | 19 | 343 | Rebase and rerun IPC tests |
 
 The release pipeline itself is no longer a P0 blocker for code snapshot `100c8e2cf4cdd049c4bf5565b5eebbc0f5284651`: main Build #1855 verified and published the stable/versioned ISO pair at SHA-256 `4628a75807bb9a074ce48eaf8e627997fd86b9c33c63201d66dacc785b498e80`. The open #23 branch is therefore a reconciliation item, not evidence that publication is currently broken.
 
