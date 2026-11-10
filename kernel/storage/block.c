@@ -463,7 +463,14 @@ static void block_queue_remove_locked(struct block_device *device,
 }
 
 static uint64_t block_barrier_sequence(struct block_device *device) {
-    return device->flush_waiting ? device->flush_waiting->sequence : ~0ULL;
+    uint64_t barrier=device->flush_waiting ?
+                     device->flush_waiting->sequence : ~0ULL;
+    /* A dispatched FLUSH remains a barrier until its completion callback.
+     * Removing it from flush_waiting must not let later requests overtake it. */
+    for (struct block_request *request=device->inflight; request; request=request->next)
+        if (request->op==BLOCK_OP_FLUSH && request->sequence<barrier)
+            barrier=request->sequence;
+    return barrier;
 }
 
 /* Back-merge `request` into a queued request of the same op/priority that
