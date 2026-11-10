@@ -18,13 +18,15 @@
  *
  * Commit (ordered data mode):
  *   1. write back dirty page-cache data of inodes that allocated blocks in
- *      this transaction (no stale data can become visible);
- *   2. write jsb(sequence), descriptor, block images and commit record;
+ *      this transaction;
+ *   2. FLUSH: make every ordered data write durable before any metadata
+ *      journal block or commit record is submitted;
+ *   3. write jsb(sequence), descriptor, block images and commit record;
  *      commit carries a CRC over all images, so a torn journal write is
- *      detected and discarded without a pre-commit flush;
- *   3. FLUSH (transaction durable);
- *   4. checkpoint the images to their home locations; FLUSH;
- *   5. sequence++. Blocks freed in the transaction become allocatable only
+ *      detected and discarded;
+ *   4. FLUSH (journal transaction durable);
+ *   5. checkpoint the images to their home locations; FLUSH;
+ *   6. sequence++. Blocks freed in the transaction become allocatable only
  *      now (pending-free set), so ordered data writes never overwrite
  *      blocks that the last durable state still references.
  */
@@ -538,6 +540,16 @@ static int zj_commit_locked(struct zj_fs *fs) {
         if (data_rc) {
             zj_abort(fs,data_rc,"ordered data writeback");
             return data_rc;
+        }
+    }
+    if (fs->ordered_count) {
+        /* Completion means the device accepted each write; it does not
+         * guarantee that volatile write cache contents reached stable media.
+         * This barrier must finish before any journal metadata is submitted. */
+        int data_flush_rc=zj_flush(fs);
+        if (data_flush_rc) {
+            zj_abort(fs,data_flush_rc,"ordered data flush");
+            return data_flush_rc;
         }
     }
     fs->ordered_count=0;
