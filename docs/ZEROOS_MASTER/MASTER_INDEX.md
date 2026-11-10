@@ -1,6 +1,6 @@
 # ZEROOS — MASTER DOCUMENT INDEX
-Version: 2.9-candidate
-Updated: 2026-11-10 (main HEAD `3f42def` includes PR #43; PR Build #1837 / Stage 1 #258 passed on `fb1e973`; post-merge main CI and release for `3f42def` unverified; pre-journal ZJFS FLUSH barrier is on candidate)
+Version: 3.0
+Updated: 2026-11-10 (main HEAD 100c8e2; PR #44 merged; Build #1854 and Stage 1 #275 passed on tested tree 8ce02ea; post-merge main CI and stable ISO for 100c8e2 remain unverified)
 
 This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md` remains the canonical consolidated product/architecture specification. Stage 6-10 execution is split into dedicated production master documents so an implementation agent can work one stage at a time without losing cross-cutting requirements.
 
@@ -355,3 +355,16 @@ Priority is still boot/release gate → kernel/userspace lifecycle correctness �
 - Additional storage-integrity finding: ordered page-cache writeback completion does not itself prove data reached stable media. The commit protocol needs a device FLUSH barrier after all ordered data writes complete and before any journal metadata/commit record is submitted. The later journal FLUSH cannot guarantee that ordering if the device reorders volatile-cache writes.
 - Candidate branch `fix/zjfs-ordered-data-flush-barrier-20261110` adds that pre-journal FLUSH, aborts/read-only on barrier failure, injects EIO into the first FLUSH in a RAM-disk runtime test, and verifies after remount that the uncommitted file is absent. A source-contract regression and required QEMU boot milestone are included. Candidate CI/QEMU is pending; this candidate is not part of main or the stable ISO.
 - Open gates remain: 600-second/four-vCPU scheduler soak; physical Lenovo G560 and device matrix; physical power-loss/recovery; USB/graphics/NIC certification; clean ACPI S5 shutdown. Overall estimate remains ~43%; no completion percentage increase.
+
+## 2026-11-10 — merged ZJFS ordered-data durability and torn-JSB recovery
+
+- PR #44 was squash-merged as `100c8e2cf4cdd049c4bf5565b5eebbc0f5284651`; current main compares identical to that merge commit.
+- Build #1854 (PR run `42751115805`, tested head `8ce02ea537489c7daea0537d6dc36e31e4364a13`) and Stage 1 Scheduler #275 (`42751115731`) passed. The Build job passed source regressions, native x86-64 build, reproducible release gate, kernel verification, boot certification, scheduler panic-diagnostics certification, two-boot storage persistence, production ISO generation, production boot smoke and artifact preservation.
+- The boot diagnostics ZIP was inspected. It records 3/3 normal QEMU boots with all 106 required milestones and no failure markers; four-vCPU topology and scheduler certification passed. The new ordered-data FLUSH-EIO self-test marker is present.
+- The eight-round crash/power-cut matrix passed. Round 2 explicitly exercised the torn journal-superblock fallback (`journal superblock invalid; checking descriptor/commit`) and recovered with fsck clean. All eight rounds report recovered/fsck clean.
+- AHCI/NVMe two-boot persistence passed: the /data counter advanced from 1 on boot 1 to 2 on boot 2; both runs emitted the persistence-check and Stage 3 completion markers. Production desktop/network smoke passed.
+- Candidate Build #1851 initially failed in crash round 2 because a torn journal-superblock write caused recovery to return `-SE_UCLEAN`. The descriptor/commit fallback was added; Build #1854 then passed the complete boot and storage gates. This failure and correction remain part of the evidence history.
+- The PR-event GitHub Release publication step was skipped as designed. The post-merge push-triggered main workflow/status for `100c8e2cf4cdd049c4bf5565b5eebbc0f5284651` is not exposed by the available commit-workflow/status query, so post-merge main CI is not independently confirmed. The last stable release snapshot documented in the repository remains `1a57d5c`; no stable ISO checksum for `100c8e2cf4cdd049c4bf5565b5eebbc0f5284651` was verified here.
+- Next P0: independently verify the post-merge main Build and stable/versioned ISO byte identity. Remaining engineering gates: 600-second/four-vCPU scheduler soak; physical Lenovo G560 and device matrix; physical power-loss/recovery; USB/graphics/NIC certification; clean ACPI S5 shutdown.
+- Overall completion estimate remains ~43%. No completion credit is assigned for CI or release-pipeline work.
+
