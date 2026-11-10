@@ -10,7 +10,7 @@ Never create a basic version merely to replace it later.
 ## Current state
 
 ### Current main and merged storage-durability work — 2026-11-10
-- Main HEAD is `100c8e2cf4cdd049c4bf5565b5eebbc0f5284651`; PR #44 is merged. ZJFS now flushes ordered data to stable media before journal metadata/commit records and aborts read-only if that barrier fails.
+- Code-bearing main merge commit is `100c8e2cf4cdd049c4bf5565b5eebbc0f5284651`; subsequent changes in this review are documentation-only; PR #44 is merged as `100c8e2cf4cdd049c4bf5565b5eebbc0f5284651`. ZJFS now flushes ordered data to stable media before journal metadata/commit records and aborts read-only if that barrier fails.
 - Torn journal-superblock recovery validates descriptor, commit record, target ranges and image CRC. A valid transaction is replayed; an incomplete/torn slot is discarded safely and sequence state is advanced.
 - Build #1854 / Stage 1 #275 passed on the tested PR tree. Evidence: 3/3 QEMU boots, 106 milestones, four-vCPU SMP certification, eight power-cut rounds (including a logged torn-JSB fallback), clean fsck after every round, AHCI/NVMe two-boot persistence, production ISO generation and production desktop/network smoke.
 - The first candidate Build #1851 exposed a torn-JSB recovery failure; the fallback correction was then validated by Build #1854. Do not erase this failed-run history.
