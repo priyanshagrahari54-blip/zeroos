@@ -1,6 +1,6 @@
 # ZEROOS — MASTER DOCUMENT INDEX
 Version: 3.0
-Updated: 2026-11-10 (main HEAD 100c8e2; PR #44 merged; Build #1854 and Stage 1 #275 passed on tested tree 8ce02ea; post-merge main CI and stable ISO for 100c8e2 remain unverified)
+Updated: 2026-11-10 (code-bearing main merge 100c8e2; PR #44 merged; Build #1854 and Stage 1 #275 passed on tested tree 8ce02ea; post-merge main CI and stable ISO for 100c8e2 remain unverified)
 
 This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md` remains the canonical consolidated product/architecture specification. Stage 6-10 execution is split into dedicated production master documents so an implementation agent can work one stage at a time without losing cross-cutting requirements.
 
@@ -358,7 +358,7 @@ Priority is still boot/release gate → kernel/userspace lifecycle correctness �
 
 ## 2026-11-10 — merged ZJFS ordered-data durability and torn-JSB recovery
 
-- PR #44 was squash-merged as `100c8e2cf4cdd049c4bf5565b5eebbc0f5284651`; current main compares identical to that merge commit.
+- PR #44 was squash-merged as `100c8e2cf4cdd049c4bf5565b5eebbc0f5284651`; the four follow-up commits update only the master documentation.
 - Build #1854 (PR run `42751115805`, tested head `8ce02ea537489c7daea0537d6dc36e31e4364a13`) and Stage 1 Scheduler #275 (`42751115731`) passed. The Build job passed source regressions, native x86-64 build, reproducible release gate, kernel verification, boot certification, scheduler panic-diagnostics certification, two-boot storage persistence, production ISO generation, production boot smoke and artifact preservation.
 - The boot diagnostics ZIP was inspected. It records 3/3 normal QEMU boots with all 106 required milestones and no failure markers; four-vCPU topology and scheduler certification passed. The new ordered-data FLUSH-EIO self-test marker is present.
 - The eight-round crash/power-cut matrix passed. Round 2 explicitly exercised the torn journal-superblock fallback (`journal superblock invalid; checking descriptor/commit`) and recovered with fsck clean. All eight rounds report recovered/fsck clean.
