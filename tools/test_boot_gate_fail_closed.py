@@ -169,6 +169,7 @@ sys.exit(0)
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("source tools/ci/boot_gate_failure.sh", workflow)
         self.assertIn("""trap 'zeroos_boot_gate_failure "$?"' ERR""", workflow)
+        self.assertIn("""trap 'zeroos_boot_gate_failure "$?" build-fault/serial.log' ERR""", workflow)
 
         with tempfile.TemporaryDirectory(prefix="zeroos-boot-trap-") as temp:
             build = Path(temp) / "build"
@@ -198,6 +199,24 @@ false
                 check=False,
             )
             self.assertEqual(preserved.returncode, 23)
+
+            fault_log = build / "fault-serial.log"
+            fault_log.write_text("synthetic failed-IPI serial tail\\n", encoding="utf-8")
+            fault_script = f'''
+set -e
+source "{BOOT_FAILURE_HELPER}"
+trap 'zeroos_boot_gate_failure "$?" "{fault_log}"' ERR
+false
+'''
+            fault = subprocess.run(
+                ["bash", "-c", fault_script],
+                cwd=temp,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(fault.returncode, 1, fault.stdout + fault.stderr)
+            self.assertIn("synthetic failed-IPI serial tail", fault.stderr)
 
 
     def test_ci_covers_the_shared_gate_and_does_not_ignore_qemu_exit(self):
