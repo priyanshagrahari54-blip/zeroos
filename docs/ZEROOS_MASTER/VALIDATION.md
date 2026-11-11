@@ -402,3 +402,36 @@ The release pipeline itself is no longer a P0 blocker for code snapshot `100c8e2
 - The `zeroos-bootable` release now contains `zeroos-100c8e2.iso` and stable `zeroos.iso`, each 12,374,016 bytes with identical SHA-256 `4628a75807bb9a074ce48eaf8e627997fd86b9c33c63201d66dacc785b498e80`. Release notes identify `100c8e2`, GRUB/El Torito legacy BIOS boot, and a live session; there is no disk installer. This closes the post-merge CI and stable-ISO P0 blockers for the current code-bearing main snapshot.
 - Candidate PR #46 (`fix/block-flush-inflight-barrier-20261110`) addresses a block-layer ordering defect: a dispatched FLUSH was removed from `flush_waiting`, allowing later requests to become eligible while it remained in-flight. Current PR head is `4b7e8a6215fd03da62faa99e0c473c7cbd46a48c`. Stage 1 Scheduler #301 passed on this exact head; Build #1880 (run `42754005097`) is pending, while the earlier pre-rebase Build #1872 (run `42753158241`) reached QEMU boot but has not produced a final result. The source regression passed on the earlier code-equivalent head before one additional source assertion was added; exact-current-head source/build/QEMU/storage/production validation remains pending. Do not merge until Build #1880 completes successfully.
 - Remaining release/engineering gates: 600-second/four-vCPU scheduler soak; physical Lenovo G560 boot and physical SATA/NVMe/NIC/USB/graphics matrix; physical power-loss/recovery; clean ACPI S5 shutdown. Existing broad PRs #26/#27/#14/#9/#8/#6/#4 remain heavily diverged and require selective rebase/review rather than blind merge. Overall estimate remains ~43%; no completion percentage increase for CI or documentation work.
+
+
+
+## 2026-11-11 — main-branch storage ordering and release validation
+
+| Check | Evidence | Result |
+|---|---|---|
+| Block FLUSH source regression | Build #1899 / #1900, exact head `8e69f8f` | PASS |
+| Block FLUSH runtime self-test | Required serial milestone in the 107-milestone boot set | PASS |
+| Storage persistence gate fail-closed regression | Build #1899 / #1900 | PASS |
+| Boot diagnostic trap regression | Build #1899 / #1900 | PASS |
+| Native x86-64 build | Main Build #1901, commit `1af592d` | PASS |
+| Reproducible local release gate | Main Build #1901 | PASS |
+| Kernel image verification | Main Build #1901 | PASS |
+| Repeated QEMU boot | Main Build #1901: 3/3, 107 milestones each | PASS |
+| SMP4 / NX-disabled / failed-IPI / panic diagnostics | Main Build #1901 | PASS |
+| AHCI + NVMe persistence | Main Build #1901: two-boot storage gate | PASS |
+| Production ISO build | Main Build #1901 | PASS |
+| Production desktop/network smoke | Main Build #1901 | PASS |
+| Main Stage 1 Scheduler | #322, exact commit `1af592d` | PASS |
+| Stable release publication | Main Build #1901 | PASS |
+
+Main Build: https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/42952878802  
+Main Stage 1: https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/42952878772  
+Candidate Build #1900: https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/42951257089  
+Candidate Build #1899: https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/42951248737  
+Merged PR #46: https://github.com/priyanshagrahari54-blip/zeroos/pull/46
+
+The stable `zeroos.iso` and versioned `zeroos-1af592d.iso` are both 12,374,016 bytes and match at SHA-256 `5df87ed020a9d5695a113ad75e163b4b85f8d086dd9a9c8ee89310dcec37f789`. Release notes identify code snapshot `1af592d`, legacy BIOS El Torito boot, and a live session (no disk installer).
+
+The ISO verifier continues to emit a generic one-warning summary; QEMU's three successful boot iterations are separate, direct evidence that the image boots in the configured emulator. Physical hardware compatibility remains unverified.
+
+Open P1/P2 validation: 600-second/four-vCPU scheduler soak; physical Lenovo G560, SATA/NVMe/NIC/USB/graphics matrix; physical power-loss/recovery; clean ACPI S5 shutdown. A separate code-review follow-up remains for duplicate block completion accounting in `block_complete()`; it is not included in PR #46.

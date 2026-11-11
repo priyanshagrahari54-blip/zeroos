@@ -396,3 +396,15 @@ The release pipeline itself is no longer a P0 blocker for code snapshot `100c8e2
 - The `zeroos-bootable` release now contains `zeroos-100c8e2.iso` and stable `zeroos.iso`, each 12,374,016 bytes with identical SHA-256 `4628a75807bb9a074ce48eaf8e627997fd86b9c33c63201d66dacc785b498e80`. Release notes identify `100c8e2`, GRUB/El Torito legacy BIOS boot, and a live session; there is no disk installer. This closes the post-merge CI and stable-ISO P0 blockers for the current code-bearing main snapshot.
 - Candidate PR #46 (`fix/block-flush-inflight-barrier-20261110`) addresses a block-layer ordering defect: a dispatched FLUSH was removed from `flush_waiting`, allowing later requests to become eligible while it remained in-flight. Current PR head is `4b7e8a6215fd03da62faa99e0c473c7cbd46a48c`. Stage 1 Scheduler #301 passed on this exact head; Build #1880 (run `42754005097`) is pending, while the earlier pre-rebase Build #1872 (run `42753158241`) reached QEMU boot but has not produced a final result. The source regression passed on the earlier code-equivalent head before one additional source assertion was added; exact-current-head source/build/QEMU/storage/production validation remains pending. Do not merge until Build #1880 completes successfully.
 - Remaining release/engineering gates: 600-second/four-vCPU scheduler soak; physical Lenovo G560 boot and physical SATA/NVMe/NIC/USB/graphics matrix; physical power-loss/recovery; clean ACPI S5 shutdown. Existing broad PRs #26/#27/#14/#9/#8/#6/#4 remain heavily diverged and require selective rebase/review rather than blind merge. Overall estimate remains ~43%; no completion percentage increase for CI or documentation work.
+
+
+
+## 2026-11-11 — latest verified code-bearing main snapshot
+
+- Code-bearing main: `1af592d300e648ffddb7e76f644d28d9156c34fb`; latest release verified by Main Build #1901.
+- Merged PR #46: in-flight block FLUSH sequence remains an ordering barrier until completion; runtime stalled-FLUSH regression is part of the required QEMU milestone set.
+- Main Build #1901 and Stage 1 #322 passed. Three QEMU boots reached 107/107 milestones each; SMP4, NX-disabled, failed-IPI, storage persistence (two boots), production ISO and production desktop/network smoke passed.
+- Stable and versioned ISO SHA-256: `5df87ed020a9d5695a113ad75e163b4b85f8d086dd9a9c8ee89310dcec37f789`; size 12,374,016 bytes each. Release is a legacy BIOS El Torito live image; no disk installer.
+- P0 release gate is closed for this snapshot. Physical hardware, 600-second scheduler soak, physical power-loss recovery and ACPI S5 remain unverified.
+- Next P1 review: duplicate block completion accounting race candidate in `kernel/storage/block.c:block_complete()`; needs membership guard and deterministic regression before closure.
+- Completion estimate unchanged at ~43%. Stage 0–10 and all product requirements remain in force.
