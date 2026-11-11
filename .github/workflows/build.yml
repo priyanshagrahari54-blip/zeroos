@@ -222,7 +222,8 @@ jobs:
 
           echo "===== ZEROOS failed-IPI recovery fault boot ====="
           rm -f build-fault/serial.log build-fault/debug.log build-fault/qemu.log
-          trap 'echo "fault-boot milestone failed; serial tail follows"; tail -c 6000 build-fault/serial.log | tr "\\r\\n" "  "; echo' ERR
+          source tools/ci/boot_gate_failure.sh
+          trap 'zeroos_boot_gate_failure "$?" build-fault/serial.log' ERR
           make BUILD=build-fault EXTRA_CFLAGS=-DZEROOS_TEST_SMP_FAILED_DISPATCH
           set +e
           timeout 45s qemu-system-x86_64 \
