@@ -53,6 +53,9 @@ jobs:
       - name: Verify ZJFS ordered-data writeback failure handling
         run: python3 tools/test_zjfs_ordered_writeback.py
 
+      - name: Verify storage persistence gate fails closed
+        run: python3 tools/test_storage_persistence_gate_fail_closed.py
+
       - name: Install build and QEMU tools
         run: |
           sudo apt-get update
@@ -301,7 +304,8 @@ jobs:
       - name: Storage persistence certification (q35 AHCI + NVMe, two boots)
         run: |
           set -e
-          trap 'echo "storage persistence gate failed; missing patterns + log ends:"; for p in "storage discovery: sata_disks=1 nvme_namespaces=1." "storage driver test sata0 destructive" "storage driver test nvme0n1 destructive" "vfs: mounted sata0p1" "storage persistence: /data boot counter" "storage persistence check passed" "storage userspace probe wrote" "storage Stage 3 certification complete." "ZEROOS PANIC:|FAILED"; do grep -qE "$p" build/serial-disk1.log 2>/dev/null || echo "MISSING boot1: $p"; grep -qE "$p" build/serial-disk2.log 2>/dev/null || echo "MISSING boot2: $p"; done; for f in build/serial-disk1.log build/serial-disk2.log; do if test -f "$f"; then echo "END of $f"; echo "::error title=$f log end::$(tail -c 1800 "$f" | tr "\r\n" "  ")"; fi; done' ERR
+          source tools/storage/persistence_gate_failure.sh
+          trap 'storage_persistence_gate_failure "$?"' ERR
           mkdir -p build/disks
           for d in sata nvme; do
             rm -f build/disks/$d.img
