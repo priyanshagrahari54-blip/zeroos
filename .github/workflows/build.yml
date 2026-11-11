@@ -95,8 +95,7 @@ jobs:
 
           echo "===== ZEROOS four-vCPU SMP certification ====="
           rm -f build/serial-smp4.log build/debug-smp4.log build/qemu-smp4.log
-          set +e
-          timeout 45s qemu-system-x86_64 \
+          if timeout 45s qemu-system-x86_64 \
             -smp 4 \
             -cdrom build/zeroos.iso \
             -serial file:build/serial-smp4.log \
@@ -106,9 +105,11 @@ jobs:
             -debugcon file:build/debug-smp4.log \
             -global isa-debugcon.iobase=0xe9 \
             -d int,guest_errors,cpu_reset \
-            -D build/qemu-smp4.log
-          qemu_status=$?
-          set -e
+            -D build/qemu-smp4.log; then
+            qemu_status=0
+          else
+            qemu_status=$?
+          fi
           if [ "$qemu_status" -ne 124 ]; then
             echo "four-vCPU QEMU exited unexpectedly (status=$qemu_status; expected timeout 124)" >&2
             tail -40 build/serial-smp4.log 2>/dev/null || true
@@ -167,8 +168,7 @@ jobs:
 
           echo "===== ZEROOS NX-disabled compatibility boot ====="
           rm -f build/serial-nx-off.log build/debug-nx-off.log build/qemu-nx-off.log
-          set +e
-          timeout 45s qemu-system-x86_64 \
+          if timeout 45s qemu-system-x86_64 \
             -cpu qemu64,-nx \
             -smp 2 \
             -cdrom build/zeroos.iso \
@@ -179,9 +179,11 @@ jobs:
             -debugcon file:build/debug-nx-off.log \
             -global isa-debugcon.iobase=0xe9 \
             -d int,guest_errors,cpu_reset \
-            -D build/qemu-nx-off.log
-          qemu_status=$?
-          set -e
+            -D build/qemu-nx-off.log; then
+            qemu_status=0
+          else
+            qemu_status=$?
+          fi
           if [ "$qemu_status" -ne 124 ]; then
             echo "NX-disabled QEMU exited unexpectedly (status=$qemu_status; expected timeout 124)" >&2
             tail -40 build/serial-nx-off.log 2>/dev/null || true
@@ -225,8 +227,7 @@ jobs:
           source tools/ci/boot_gate_failure.sh
           trap 'zeroos_boot_gate_failure "$?" build-fault/serial.log' ERR
           make BUILD=build-fault EXTRA_CFLAGS=-DZEROOS_TEST_SMP_FAILED_DISPATCH
-          set +e
-          timeout 45s qemu-system-x86_64 \
+          if timeout 45s qemu-system-x86_64 \
             -smp 2 \
             -cdrom build-fault/zeroos.iso \
             -serial file:build-fault/serial.log \
@@ -236,9 +237,11 @@ jobs:
             -debugcon file:build-fault/debug.log \
             -global isa-debugcon.iobase=0xe9 \
             -d int,guest_errors,cpu_reset \
-            -D build-fault/qemu.log
-          qemu_status=$?
-          set -e
+            -D build-fault/qemu.log; then
+            qemu_status=0
+          else
+            qemu_status=$?
+          fi
           if [ "$qemu_status" -ne 124 ]; then
             echo "failed-IPI QEMU exited unexpectedly (status=$qemu_status; expected timeout 124)" >&2
             tail -40 build-fault/serial.log 2>/dev/null || true
@@ -319,14 +322,15 @@ jobs:
           python3 tools/storage/zjfs.py --part 1 build/disks/sata.img put build/disks/hello.txt /hello.txt
           for boot in 1 2; do
             rm -f build/serial-disk$boot.log
-            set +e
-            timeout 45s qemu-system-x86_64 -machine q35 -smp 4 -m 256M \
+            if timeout 45s qemu-system-x86_64 -machine q35 -smp 4 -m 256M \
               -cdrom build/zeroos.iso -boot d \
               -drive file=build/disks/sata.img,if=none,id=d0,format=raw -device ide-hd,drive=d0,bus=ide.0 \
               -drive file=build/disks/nvme.img,if=none,id=n0,format=raw -device nvme,serial=zeroos1,drive=n0 \
-              -serial file:build/serial-disk$boot.log -display none -no-reboot -no-shutdown
-            qemu_status=$?
-            set -e
+              -serial file:build/serial-disk$boot.log -display none -no-reboot -no-shutdown; then
+              qemu_status=0
+            else
+              qemu_status=$?
+            fi
             if [ "$qemu_status" -ne 124 ]; then
               echo "storage persistence QEMU boot $boot exited unexpectedly (status=$qemu_status; expected timeout 124)" >&2
               tail -40 build/serial-disk$boot.log 2>/dev/null || true
