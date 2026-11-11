@@ -15,6 +15,8 @@ assert WORKFLOW.count("python3 tools/test_storage_persistence_gate_fail_closed.p
 helper_text = HELPER.read_text()
 assert "trap - ERR" in helper_text, "diagnostic handler must prevent recursive ERR traps"
 assert 'exit "$original_status"' in helper_text, "diagnostics must return the original failure"
+storage_step = WORKFLOW.split("Storage persistence certification", 1)[1].split("Build production release image", 1)[0]
+assert "if timeout 45s qemu-system-x86_64" in storage_step, "expected QEMU timeout must be handled in an if condition so ERR does not fire"
 assert "set +e" in helper_text, "diagnostics must not replace the original status"
 
 with tempfile.TemporaryDirectory() as temp:
