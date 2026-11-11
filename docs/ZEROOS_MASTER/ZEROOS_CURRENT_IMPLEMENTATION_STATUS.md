@@ -1,7 +1,7 @@
 # ZEROOS — CURRENT IMPLEMENTATION STATUS
 
 Updated: 2026-11-11
-Branch baseline: latest code-bearing main merge `1af592d300e648ffddb7e76f644d28d9156c34fb` (PR #46) passed post-merge Build #1901 and Stage 1 Scheduler #322. Main HEAD `af626f1e802f0c76bb87cb3f6e18392bf6c2c24a` is a documentation-only successor. Stable/versioned ISO SHA-256 both equal `5df87ed020a9d5695a113ad75e163b4b85f8d086dd9a9c8ee89310dcec37f789`. Candidate branch `fix/block-duplicate-completion-guard-20261111` adds an in-flight membership/state claim guard and deterministic duplicate-callback regression; exact candidate CI/QEMU validation is pending.
+Branch baseline: latest code-bearing main merge `1af592d300e648ffddb7e76f644d28d9156c34fb` (PR #46) passed post-merge Build #1901 and Stage 1 Scheduler #322. Main HEAD `af626f1e802f0c76bb87cb3f6e18392bf6c2c24a` is a documentation-only successor. Stable/versioned ISO SHA-256 both equal `5df87ed020a9d5695a113ad75e163b4b85f8d086dd9a9c8ee89310dcec37f789`. Candidate code commit `abac8c3c027416755102d44f2a5301c0be1372a9` adds the in-flight membership/state claim guard and deterministic duplicate-callback regression. Stage 1 Scheduler #325 (push) and #326 (PR) passed on this exact code SHA; Build #1904 (push) and #1905 (PR) remain pending with no job records, so QEMU/storage/production validation is not yet established.
 
 Status policy: **evidence-weighted estimate; never equate a source file, marker check, architecture document, or host test with a working end-user feature.**
 
@@ -22,6 +22,7 @@ ZEROOS is a real native x86-64 kernel/desktop-session project with an ISO build 
 - **Latest reviewed main:** HEAD `af626f1e802f0c76bb87cb3f6e18392bf6c2c24a` is documentation-only after code-bearing commit `1af592d300e648ffddb7e76f644d28d9156c34fb`. Main Build #1901 and Stage 1 Scheduler #322 passed on the code-bearing commit. Documentation-only commits do not increase implementation progress.
 - **PR #16:** merged on 2026-10-17 as `d6b58292`. Its branch CI reported success and included parallel-build dependency fixes, ISO validation/writer fixes, shared 91-milestone boot test, reproducibility checks, and local intent-parser foundations.
 - **Post-merge CI:** Main Build #1901 (run `42952878802`) and Stage 1 Scheduler #322 (run `42952878772`) passed for `1af592d`. Build #1901 reports 3/3 QEMU boots with 107/107 milestones each, SMP4, NX-disabled, failed-IPI, scheduler diagnostics, two-boot AHCI/NVMe persistence, production ISO, production desktop/network smoke, and stable-release publication.
+- **Candidate PR #47:** code SHA `abac8c3`; Stage 1 #325 and #326 passed. Full Build #1904/#1905 are pending without job records; no candidate QEMU or storage result is claimed.
 - **Physical hardware:** not certified by this status entry. QEMU is not proof of G560 Wi-Fi, GPU acceleration, fan control, Bluetooth, or sustained 1080p playback.
 - **Installer:** a standalone ZEROOS disk installer is not complete; the documented dual-boot path relies on host GRUB.
 - **Dynamic linking:** unsupported ELF dynamic/interpreter segments are rejected. A production dynamic linker is not implemented.

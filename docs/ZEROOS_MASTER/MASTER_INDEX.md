@@ -10,7 +10,7 @@ This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_
 - Code-bearing main commit `1af592d300e648ffddb7e76f644d28d9156c34fb` passed Main Build #1901 and Stage 1 Scheduler #322. Latest main HEAD `af626f1e802f0c76bb87cb3f6e18392bf6c2c24a` is documentation-only.
 - Main Build evidence: 3/3 QEMU boots, 107 milestones per boot, SMP4/NX-disabled/failed-IPI/scheduler diagnostics, two-boot AHCI/NVMe persistence, production ISO and production desktop/network smoke.
 - Stable and versioned ISO assets match at SHA-256 `5df87ed020a9d5695a113ad75e163b4b85f8d086dd9a9c8ee89310dcec37f789`; legacy BIOS El Torito live image, not an installer.
-- Next code review candidate: duplicate block completion in `kernel/storage/block.c:block_complete()`. Candidate branch adds in-flight membership validation, a `BLOCK_REQ_COMPLETING` claim state, deterministic runtime regression and CI source contract. Exact candidate validation is pending.
+- Candidate PR #47 code SHA `abac8c3c027416755102d44f2a5301c0be1372a9` adds in-flight membership validation, a `BLOCK_REQ_COMPLETING` claim state, deterministic runtime regression and CI source contract. Stage 1 #325/#326 passed; full Build #1904/#1905 are pending without jobs, so QEMU validation remains pending.
 - 600-second scheduler soak and physical G560/device/power-recovery certification remain open. Overall implementation estimate stays ~43%; no completion credit for CI/docs alone.
 
 
