@@ -1,8 +1,18 @@
 # ZEROOS — MASTER DOCUMENT INDEX
-Version: 3.1
-Updated: 2026-11-10 (code-bearing main commit 100c8e2; Build #1855 and Stage 1 #276 passed; stable/versioned ISO SHA-256 4628a75807bb9a074ce48eaf8e627997fd86b9c33c63201d66dacc785b498e80)
+Version: 3.2
+Updated: 2026-11-11 (code-bearing main commit 1af592d; Build #1901 and Stage 1 #322 passed; stable/versioned ISO SHA-256 5df87ed020a9d5695a113ad75e163b4b85f8d086dd9a9c8ee89310dcec37f789)
 
 This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md` remains the canonical consolidated product/architecture specification. Stage 6-10 execution is split into dedicated production master documents so an implementation agent can work one stage at a time without losing cross-cutting requirements.
+
+
+## Current main and next correctness candidate — 2026-11-11
+
+- Code-bearing main commit `1af592d300e648ffddb7e76f644d28d9156c34fb` passed Main Build #1901 and Stage 1 Scheduler #322. Latest main HEAD `af626f1e802f0c76bb87cb3f6e18392bf6c2c24a` is documentation-only.
+- Main Build evidence: 3/3 QEMU boots, 107 milestones per boot, SMP4/NX-disabled/failed-IPI/scheduler diagnostics, two-boot AHCI/NVMe persistence, production ISO and production desktop/network smoke.
+- Stable and versioned ISO assets match at SHA-256 `5df87ed020a9d5695a113ad75e163b4b85f8d086dd9a9c8ee89310dcec37f789`; legacy BIOS El Torito live image, not an installer.
+- Next code review candidate: duplicate block completion in `kernel/storage/block.c:block_complete()`. Candidate branch adds in-flight membership validation, a `BLOCK_REQ_COMPLETING` claim state, deterministic runtime regression and CI source contract. Exact candidate validation is pending.
+- 600-second scheduler soak and physical G560/device/power-recovery certification remain open. Overall implementation estimate stays ~43%; no completion credit for CI/docs alone.
+
 
 ## Source-of-truth hierarchy
 1. `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md` — canonical consolidated system/product specification.
@@ -66,7 +76,7 @@ When implementation changes a contract, update the closest subsystem document an
 
 
 ## Current implementation status
-The live percentage/evidence snapshot is maintained in `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md`. Current evidence-weighted estimate (2026-10-17) is ~43%: Stage 1 92%, Stage 2 84%, Stage 3 48%, Stage 4 43%, Stage 5 44%, Stage 6 22%, Stage 7 15%, Stage 8 13%, Stage 9 16%, Stage 10 10%. See `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md` for limitations and exact evidence policy. These are engineering estimates, not certification percentages. These are engineering estimates, not source-line percentages; documentation maturity is not counted as implementation.
+The live percentage/evidence snapshot is maintained in `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md`. The latest reviewed estimate remains ~43% (Stage 1 92%, Stage 2 84%, Stage 3 48%, Stage 4 43%, Stage 5 44%, Stage 6 22%, Stage 7 15%, Stage 8 13%, Stage 9 16%, Stage 10 10%). These are engineering estimates, not certification or source-line percentages; documentation maturity and CI pass counts do not increase implementation.
 
 ## Release pipeline status — 2026-10-24
 The main-only stable ISO publishing guard is under review on `fix/stable-iso-main-only-20261024`. The workflow regression test is `tools/test_release_publish_guard.py`. Candidate workflow #1429 and documentation-synchronized head workflow #1435 passed; post-merge `main` and stable release-asset verification remain pending. See `VALIDATION.md` and `ZEROOS_CURRENT_IMPLEMENTATION_STATUS.md`. This change does not certify additional OS functionality.

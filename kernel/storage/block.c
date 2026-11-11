@@ -274,6 +274,10 @@ static void block_finish_one(struct block_request *request) {
 static void block_account_locked(struct block_device *device,
                                  struct block_request *request) {
     uint32_t op=request->op;
+    if (op>=BLOCK_OP_COUNT) {
+        ++device->stats.invalid_ops;
+        return;
+    }
     uint64_t latency=block_now_ns()-request->submit_ns;
     ++device->stats.completed[op];
     device->stats.sectors[op]+=request->own_sectors;
@@ -356,8 +360,16 @@ void block_complete(struct block_request *request, int status) {
     struct block_request **cursor=&device->inflight;
     while (*cursor && *cursor!=request)
         cursor=&(*cursor)->next;
-    if (*cursor)
-        *cursor=request->next;
+    /* A duplicate completion can arrive after the first callback unlinked
+     * the request but before block_finalize_chain() publishes COMPLETE.
+     * DISPATCHED alone is therefore insufficient: claim only a real member
+     * of the in-flight list, and publish COMPLETING under the same lock. */
+    if (!*cursor || device->inflight_count==0) {
+        spin_unlock_irqrestore(&device->lock,flags);
+        return;
+    }
+    request->state=BLOCK_REQ_COMPLETING;
+    *cursor=request->next;
     request->next=0;
     --device->inflight_count;
     if (request->priority==BLOCK_PRIO_BACKGROUND && device->inflight_background)
@@ -770,7 +782,7 @@ void block_submit(struct block_device *device, struct block_request *request) {
     request->merged_next=0;
     request->submit_tick=timer_ticks();
     request->submit_ns=block_now_ns();
-    if (request->op>BLOCK_OP_FLUSH) {
+    if (request->op>=BLOCK_OP_COUNT) {
         error=-SE_INVAL;
     } else if (request->op!=BLOCK_OP_FLUSH) {
         if (bytes==0 || (bytes%root->sector_size)!=0)
@@ -801,7 +813,8 @@ void block_submit(struct block_device *device, struct block_request *request) {
         else if (root->state==BLOCK_STATE_FAILED)
             error=-SE_IO;
     }
-    ++root->stats.submitted[request->op<=BLOCK_OP_FLUSH ? request->op : 0];
+    if (request->op<BLOCK_OP_COUNT)
+        ++root->stats.submitted[request->op];
     if (error) {
         spin_unlock_irqrestore(&root->lock,flags);
         block_finalize_chain(root,request,error);

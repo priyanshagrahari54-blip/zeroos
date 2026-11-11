@@ -41,7 +41,8 @@
 enum block_op {
     BLOCK_OP_READ=0,
     BLOCK_OP_WRITE=1,
-    BLOCK_OP_FLUSH=2
+    BLOCK_OP_FLUSH=2,
+    BLOCK_OP_COUNT=3
 };
 
 enum block_priority {
@@ -71,7 +72,9 @@ enum block_request_state {
     BLOCK_REQ_ALLOCATED=1,
     BLOCK_REQ_QUEUED=2,
     BLOCK_REQ_DISPATCHED=3,
-    BLOCK_REQ_COMPLETE=4
+    BLOCK_REQ_COMPLETE=4,
+    /* Claimed under the device lock; duplicate IRQ/reset completions ignore it. */
+    BLOCK_REQ_COMPLETING=5
 };
 
 #define BLOCK_DEV_READ_ONLY (1U << 0)
@@ -168,12 +171,12 @@ struct block_fault {
 #define BLOCK_FAULT_POWER_CUT 4U    /* simulated power loss (ramdisk) */
 
 struct block_stats {
-    uint64_t submitted[3];
-    uint64_t completed[3];
-    uint64_t sectors[3];
-    uint64_t errors[3];
-    uint64_t latency_ns_total[3];
-    uint64_t latency_ns_max[3];
+    uint64_t submitted[BLOCK_OP_COUNT];
+    uint64_t completed[BLOCK_OP_COUNT];
+    uint64_t sectors[BLOCK_OP_COUNT];
+    uint64_t errors[BLOCK_OP_COUNT];
+    uint64_t latency_ns_total[BLOCK_OP_COUNT];
+    uint64_t latency_ns_max[BLOCK_OP_COUNT];
     uint64_t latency_hist[BLOCK_LAT_BUCKETS];   /* log2(us) buckets */
     uint64_t merges;
     uint64_t retries;
@@ -189,6 +192,7 @@ struct block_stats {
     uint64_t interrupts;
     uint64_t polls;
     uint64_t faults_injected;
+    uint64_t invalid_ops;                 /* rejected opcodes; never index per-op arrays */
 };
 
 struct block_device {

@@ -210,6 +210,34 @@ static int tb_barrier(struct block_device *disk, uint8_t *buffer) {
     return 0;
 }
 
+
+/* A stale driver callback may observe a request object after it has already
+ * been unlinked from the in-flight list. Recreate that state explicitly:
+ * state still says DISPATCHED, but the device no longer owns the request. */
+static int tb_duplicate_completion(struct block_device *disk, uint8_t *buffer) {
+    struct block_request *request=tb_async(disk,BLOCK_OP_READ,32,buffer,512,
+                                            BLOCK_PRIO_NORMAL);
+    struct block_stats before,after;
+    uint32_t inflight=0;
+
+    TB_CHECK(request!=0,"duplicate completion request allocated");
+    TB_CHECK(block_wait(request)==0,"first completion succeeds");
+    block_stats_snapshot(disk,&before,0,&inflight);
+    TB_CHECK(inflight==0,"first completion removed in-flight request");
+
+    request->state=BLOCK_REQ_DISPATCHED;
+    block_complete(request,0);
+    block_stats_snapshot(disk,&after,0,&inflight);
+    TB_CHECK(inflight==0 && block_idle(disk),
+             "stale duplicate does not underflow in-flight accounting");
+    TB_CHECK(after.completed[BLOCK_OP_READ]==before.completed[BLOCK_OP_READ] &&
+             after.errors[BLOCK_OP_READ]==before.errors[BLOCK_OP_READ],
+             "stale duplicate is not accounted twice");
+    block_request_free(request);
+    klog("ZEROOS: block duplicate completion ignored.\\n");
+    return 0;
+}
+
 static int tb_cancel(struct block_device *disk, uint8_t *buffer) {
     ramdisk_pause(disk,1);
     struct block_request *a=tb_async(disk,BLOCK_OP_READ,1,buffer,512,BLOCK_PRIO_NORMAL);
@@ -432,6 +460,7 @@ int storage_selftest_block(void) {
     TB_RUN(tb_cscan(hdd,b),"hdd-cscan");
     TB_RUN(tb_priority(disk,b),"priority-aging");
     TB_RUN(tb_barrier(disk,b),"flush-barrier");
+    TB_RUN(tb_duplicate_completion(disk,b),"duplicate-completion");
     TB_RUN(tb_cancel(disk,b),"cancel");
     TB_RUN(tb_pool(disk),"pool-backpressure");
     TB_RUN(tb_faults(disk,a,b),"eio-timeout-retry");
