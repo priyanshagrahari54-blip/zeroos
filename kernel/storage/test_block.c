@@ -149,23 +149,64 @@ static int tb_priority(struct block_device *disk, uint8_t *buffer) {
 /* A flush is a barrier: W1 completes before FLUSH, W2 waits for FLUSH. */
 static int tb_barrier(struct block_device *disk, uint8_t *buffer) {
     struct block_request *r[3];
-    uint32_t saved=disk->queue_depth;
+    struct block_fault fault;
+    struct ramdisk_info info;
+    uint32_t saved_depth=disk->queue_depth;
+    uint32_t saved_timeout=disk->timeout_ticks;
     disk->queue_depth=4;
+    disk->timeout_ticks=100000;
+
+    /* A pending barrier holds later work until all earlier I/O completes. */
     ramdisk_pause(disk,1);
     ramdisk_trace_reset(disk);
     r[0]=tb_async(disk,BLOCK_OP_WRITE,100,buffer,512,BLOCK_PRIO_NORMAL);
     r[1]=tb_async(disk,BLOCK_OP_FLUSH,0,0,0,BLOCK_PRIO_NORMAL);
     r[2]=tb_async(disk,BLOCK_OP_WRITE,200,buffer,512,BLOCK_PRIO_FOREGROUND);
-    struct ramdisk_info info;
     ramdisk_info(disk,&info);
     TB_CHECK(info.trace_count==1,"barrier holds later write");
     ramdisk_pause(disk,0);
     for (uint32_t i=0; i<3; ++i)
         TB_CHECK(r[i] && tb_finish(r[i])==0,"barrier requests complete");
-    disk->queue_depth=saved;
     ramdisk_info(disk,&info);
     TB_CHECK(info.trace_count==3 && info.trace[0]==100 && info.trace[1]==~0ULL &&
              info.trace[2]==200,"W1, FLUSH, W2 order");
+
+    /* Once dispatched, FLUSH is removed from flush_waiting but must remain
+     * the active sequence barrier until block_complete() retires it. A
+     * one-shot STALL leaves it in-flight long enough to inspect the queue. */
+    memset(&fault,0,sizeof(fault));
+    fault.mode=BLOCK_FAULT_STALL;
+    fault.op_mask=1U<<BLOCK_OP_FLUSH;
+    fault.remaining=1;
+    block_fault_set(disk,&fault);
+    ramdisk_pause(disk,1);
+    ramdisk_trace_reset(disk);
+    r[0]=tb_async(disk,BLOCK_OP_WRITE,300,buffer,512,BLOCK_PRIO_NORMAL);
+    r[1]=tb_async(disk,BLOCK_OP_FLUSH,0,0,0,BLOCK_PRIO_NORMAL);
+    r[2]=tb_async(disk,BLOCK_OP_WRITE,400,buffer,512,BLOCK_PRIO_FOREGROUND);
+    ramdisk_pause(disk,0);
+    ramdisk_info(disk,&info);
+    TB_CHECK(r[1] && r[1]->state==BLOCK_REQ_DISPATCHED,
+             "stalled flush remains in-flight");
+    TB_CHECK(r[2] && r[2]->state==BLOCK_REQ_QUEUED,
+             "post-flush write remains queued behind in-flight barrier");
+    TB_CHECK(info.trace_count==1 && info.trace[0]==300,
+             "post-flush write not submitted before flush completion");
+
+    block_fault_clear(disk);
+    /* The fault shim owns no hardware request; complete its in-flight slot
+     * explicitly to exercise the normal barrier-release path. */
+    block_complete(r[1],0);
+    for (uint32_t i=0; i<3; ++i)
+        TB_CHECK(r[i] && tb_finish(r[i])==0,"in-flight barrier requests complete");
+    ramdisk_info(disk,&info);
+    TB_CHECK(info.trace_count==2 && info.trace[0]==300 && info.trace[1]==400,
+             "post-flush write dispatches after flush completion");
+    TB_CHECK(block_idle(disk),"flush barrier test drains queue");
+    klog("ZEROOS: storage block in-flight flush barrier passed.");
+
+    disk->queue_depth=saved_depth;
+    disk->timeout_ticks=saved_timeout;
     return 0;
 }
 
