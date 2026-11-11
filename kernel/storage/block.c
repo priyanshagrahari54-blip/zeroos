@@ -274,10 +274,6 @@ static void block_finish_one(struct block_request *request) {
 static void block_account_locked(struct block_device *device,
                                  struct block_request *request) {
     uint32_t op=request->op;
-    if (op>=BLOCK_OP_COUNT) {
-        ++device->stats.invalid_ops;
-        return;
-    }
     uint64_t latency=block_now_ns()-request->submit_ns;
     ++device->stats.completed[op];
     device->stats.sectors[op]+=request->own_sectors;
@@ -782,7 +778,7 @@ void block_submit(struct block_device *device, struct block_request *request) {
     request->merged_next=0;
     request->submit_tick=timer_ticks();
     request->submit_ns=block_now_ns();
-    if (request->op>=BLOCK_OP_COUNT) {
+    if (request->op>BLOCK_OP_FLUSH) {
         error=-SE_INVAL;
     } else if (request->op!=BLOCK_OP_FLUSH) {
         if (bytes==0 || (bytes%root->sector_size)!=0)
@@ -813,8 +809,7 @@ void block_submit(struct block_device *device, struct block_request *request) {
         else if (root->state==BLOCK_STATE_FAILED)
             error=-SE_IO;
     }
-    if (request->op<BLOCK_OP_COUNT)
-        ++root->stats.submitted[request->op];
+    ++root->stats.submitted[request->op<=BLOCK_OP_FLUSH ? request->op : 0];
     if (error) {
         spin_unlock_irqrestore(&root->lock,flags);
         block_finalize_chain(root,request,error);

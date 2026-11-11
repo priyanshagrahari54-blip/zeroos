@@ -234,7 +234,7 @@ static int tb_duplicate_completion(struct block_device *disk, uint8_t *buffer) {
              after.errors[BLOCK_OP_READ]==before.errors[BLOCK_OP_READ],
              "stale duplicate is not accounted twice");
     block_request_free(request);
-    klog("ZEROOS: block duplicate completion ignored.\\n");
+    klog("ZEROOS: block duplicate completion ignored.\n");
     return 0;
 }
 
