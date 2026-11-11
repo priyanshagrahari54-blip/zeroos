@@ -170,6 +170,9 @@ sys.exit(0)
         self.assertIn("source tools/ci/boot_gate_failure.sh", workflow)
         self.assertIn("""trap 'zeroos_boot_gate_failure "$?"' ERR""", workflow)
         self.assertIn("""trap 'zeroos_boot_gate_failure "$?" build-fault/serial.log' ERR""", workflow)
+        timeout_lines = [line.strip() for line in workflow.splitlines() if "timeout 45s qemu-system-x86_64" in line]
+        self.assertEqual(len(timeout_lines), 4, timeout_lines)
+        self.assertTrue(all(line.startswith("if timeout") for line in timeout_lines), timeout_lines)
 
         with tempfile.TemporaryDirectory(prefix="zeroos-boot-trap-") as temp:
             build = Path(temp) / "build"
