@@ -1,6 +1,6 @@
 # ZEROOS — MASTER DOCUMENT INDEX
-Version: 3.4
-Updated: 2026-11-12 (main HEAD `52ef007`, code commit `2dac661`; Stage 1 #327 passed; main Build #1906 failed before QEMU on Ubuntu 26.04; PR #48 fixes compiler warnings but its 26.04 QEMU boot fails; Ubuntu 24.04 runner-pin candidate pending; stable ISO remains `1af592d`).
+Version: 3.5
+Updated: 2026-11-12 (main code `2dac661`; Build #1906/#1907 failed before QEMU; PR #48 pins Ubuntu 24.04; linker-map/ELF/ISO retention candidate pending full validation).
 
 This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md` remains the canonical consolidated product/architecture specification. Stage 6-10 execution is split into dedicated production master documents so an implementation agent can work one stage at a time without losing cross-cutting requirements.
 
@@ -15,15 +15,6 @@ This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_
 - 600-second scheduler soak and physical G560/device/power-recovery certification remain open. Overall estimate remains ~43%; CI and documentation do not count as feature completion.
 
 
-
-## Current main verification — runner recovery candidate, 2026-11-12
-
-- Main HEAD `52ef007547e06045bf1c07998d78f581de71779c` is documentation-only after code-bearing commit `2dac661e73655dfc5e6513bbb5a70b0f7791c8c9`. PR #47's block duplicate-completion guard is merged.
-- Main Stage 1 #327 passed. Main Build #1906 failed before QEMU at GCC's `-Werror=unterminated-string-initialization` in the RFC 8439 host test arrays on Ubuntu 26.04.
-- PR #48 corrects those test declarations. Its Ubuntu 26.04 Build #1908/#1909 runs passed compile/kernel-image steps but failed the first QEMU boot with #UD/#GP/triple fault at RIP `0x11a5db`; the failing ELF/linker map was not retained, so causality is unknown.
-- The PR #47 candidate Build #1905 passed on Ubuntu 24.04 with 3/3 QEMU boots, 108 milestones per boot, two-boot AHCI/NVMe persistence and production smoke. The relevant block/storage source and regression files are byte-identical to main `2dac661`.
-- Candidate PR #48 pins Build and Stage 1 workflows to Ubuntu 24.04 and adds `tools/test_ci_runner_image.py`. Full candidate validation is pending; do not infer that the pin resolves the boot failure until observed.
-- Stable release still identifies `1af592d`; it is not release evidence for `2dac661`. The 600-second scheduler soak and physical G560/device/recovery matrix remain open. Overall estimate stays ~43%; CI and docs do not count as feature completion.
 
 ## Historical snapshot — 2026-11-11 (superseded by 2026-11-12 evidence)
 
@@ -438,3 +429,12 @@ The release pipeline itself is no longer a P0 blocker for code snapshot `100c8e2
 - P0 release gate is closed for this snapshot. Physical hardware, 600-second scheduler soak, physical power-loss recovery and ACPI S5 remain unverified.
 - Next P1 review: duplicate block completion accounting race candidate in `kernel/storage/block.c:block_complete()`; needs membership guard and deterministic regression before closure.
 - Completion estimate unchanged at ~43%. Stage 0–10 and all product requirements remain in force.
+
+
+## Current engineering and release state — 2026-11-12
+
+- Main code commit `2dac661` includes PR #47's block duplicate-completion guard; main Stage 1 #327/#328 passed, while Build #1906/#1907 failed at `make check` on Ubuntu 26.04 before QEMU.
+- PR #48 current head `318faf3` pins Build and Stage 1 to Ubuntu 24.04 and fixes RFC 8439 host-test string lengths. The prior #1908/#1909 QEMU triple fault occurred on Ubuntu 26.04 before the pin; do not attribute it to the test-only change without a failing ELF/map.
+- Candidate diagnostic follow-up emits `zeroos.map` and preserves the exact ELF/map/ISO in always-uploaded boot and production artifacts, guarded by `tools/test_boot_image_artifacts.py`. Full CI for the pinned head remains unverified.
+- Stable release still identifies `1af592d`, not current code commit `2dac661`; P0 release freshness stays open until post-merge Build and ISO digest verification.
+- Preserve all Stage 0–10 and product requirements. Overall estimate remains ~43%; no completion credit for CI or diagnostic infrastructure.
