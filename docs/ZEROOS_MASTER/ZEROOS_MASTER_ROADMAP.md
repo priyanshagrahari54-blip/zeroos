@@ -10,7 +10,17 @@ Never create a basic version merely to replace it later.
 ## Current state
 
 
-### Current main and next block-layer correctness fix — 2026-11-11
+### Current engineering state — 2026-11-12
+
+- Main code commit `2dac661e73655dfc5e6513bbb5a70b0f7791c8c9` includes the merged block duplicate-completion guard (PR #47). Candidate Build #1904/#1905 validated that fix with 3/3 QEMU boots (108 milestones each), two-boot AHCI/NVMe persistence and production desktop/network smoke. Main Stage 1 #327/#328 passed.
+- Main Build #1906/#1907 failed in `make check` on GCC's `-Werror=unterminated-string-initialization` for two RFC 8439 test-vector arrays. PR #48 changes only those test declarations and passes the check/kernel-image steps, but both candidate Build #1908/#1909 fail at the first QEMU boot with an early #UD/#GP triple fault. Keep PR #48 open; do not accept its candidate as bootable.
+- The stable ISO still identifies `1af592d`; it does not yet certify `2dac661`. P0 release acceptance remains blocked until the exact main commit completes QEMU, storage persistence, production smoke and stable/versioned ISO digest comparison.
+- Next work order: (1) retain/symbolicate the failing candidate ELF and map at RIP `0x11a5db`; (2) fix the early boot failure without weakening milestones; (3) rerun full Build/QEMU/storage/production gates and publish a matching stable ISO; (4) complete the 600-second/four-vCPU scheduler soak; (5) physical G560 and device/power-recovery matrix; (6) process lifecycle and storage recovery hardening; (7) physical drivers/security; (8) native desktop; then browser/media/AI/compatibility.
+- PR #26/#27 and the broad runtime/desktop branches are heavily diverged from current main; selectively rebase and review, never merge wholesale. Preserve every Stage 0–10 and product requirement. Overall estimate remains ~43%; no percentage increase for CI or documentation.
+
+
+
+### Historical 2026-11-11 snapshot (superseded by 2026-11-12)
 - Code-bearing main commit `1af592d300e648ffddb7e76f644d28d9156c34fb` (PR #46) passed Main Build #1901 and Stage 1 Scheduler #322. Latest main HEAD `af626f1e802f0c76bb87cb3f6e18392bf6c2c24a` is a documentation-only successor.
 - Main Build #1901 verified native build/check, reproducible release gate, kernel image, 3/3 QEMU boots with 107 milestones each, SMP4, NX-disabled, failed-IPI recovery, scheduler diagnostics, two-boot AHCI/NVMe persistence, production ISO, production desktop/network smoke and release publication.
 - Stable/versioned `zeroos-1af592d.iso` and `zeroos.iso` are 12,374,016 bytes and match at SHA-256 `5df87ed020a9d5695a113ad75e163b4b85f8d086dd9a9c8ee89310dcec37f789`. This is a legacy BIOS El Torito live image; there is no disk installer.

@@ -1,11 +1,22 @@
 # ZEROOS — MASTER DOCUMENT INDEX
-Version: 3.2
-Updated: 2026-11-11 (code-bearing main commit 1af592d; Build #1901 and Stage 1 #322 passed; stable/versioned ISO SHA-256 5df87ed020a9d5695a113ad75e163b4b85f8d086dd9a9c8ee89310dcec37f789)
+Version: 3.3
+Updated: 2026-11-12 (main code commit `2dac661`; PR #47 merged; Stage 1 #327/#328 passed; main Build #1906/#1907 failed before QEMU; PR #48 candidate passes `make check` but fails early QEMU boot; stable ISO remains `1af592d`).
 
 This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md` remains the canonical consolidated product/architecture specification. Stage 6-10 execution is split into dedicated production master documents so an implementation agent can work one stage at a time without losing cross-cutting requirements.
 
 
-## Current main and next correctness candidate — 2026-11-11
+## Current main verification — 2026-11-12
+
+- Code-bearing main is `2dac661e73655dfc5e6513bbb5a70b0f7791c8c9` (merged PR #47). Duplicate block completion is now guarded by in-flight membership and a lock-protected `BLOCK_REQ_COMPLETING` state, with runtime/source regressions and a required boot milestone.
+- Candidate Build #1904/#1905 passed on the exact code-equivalent candidate tree: 3/3 QEMU boots, 108 milestones per boot, two-boot AHCI/NVMe persistence and production desktop/network smoke.
+- Main Stage 1 #327/#328 passed. Main Build #1906/#1907 failed `make check` because GCC now diagnoses two fixed-size RFC 8439 string initializers under `-Werror=unterminated-string-initialization`.
+- PR #48 fixes those test declarations and passes the reproducible check/kernel-image steps, but its Build #1908/#1909 fail first QEMU boot with #UD/#GP/triple fault at RIP `0x11a5db`; do not merge until the exact failing ELF is symbolicated and full QEMU/storage gates pass.
+- Stable release remains `zeroos-1af592d.iso` / `zeroos.iso` (12,374,016 bytes, SHA-256 `5df87ed020a9d5695a113ad75e163b4b85f8d086dd9a9c8ee89310dcec37f789`); it is not verified for `2dac661`. P0 release freshness is open.
+- 600-second scheduler soak and physical G560/device/power-recovery certification remain open. Overall estimate remains ~43%; CI and documentation do not count as feature completion.
+
+
+
+## Historical snapshot — 2026-11-11 (superseded by 2026-11-12 evidence)
 
 - Code-bearing main commit `1af592d300e648ffddb7e76f644d28d9156c34fb` passed Main Build #1901 and Stage 1 Scheduler #322. Latest main HEAD `af626f1e802f0c76bb87cb3f6e18392bf6c2c24a` is documentation-only.
 - Main Build evidence: 3/3 QEMU boots, 107 milestones per boot, SMP4/NX-disabled/failed-IPI/scheduler diagnostics, two-boot AHCI/NVMe persistence, production ISO and production desktop/network smoke.
