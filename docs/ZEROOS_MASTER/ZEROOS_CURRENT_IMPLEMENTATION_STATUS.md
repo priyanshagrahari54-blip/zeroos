@@ -534,3 +534,10 @@ The release pipeline itself is no longer a P0 blocker for code snapshot `100c8e2
 - No status entries or PR-triggered workflow run were returned for exact head `318faf3`; validation of the pinned runner is therefore still unverified. The artifact-retention follow-up must also pass the full Build/QEMU/storage/production gates before merge.
 - Stable release remains `zeroos-1af592d.iso` / `zeroos.iso`, SHA-256 `5df87ed020a9d5695a113ad75e163b4b85f8d086dd9a9c8ee89310dcec37f789`; it does not certify main code commit `2dac661`. P0 release freshness remains open.
 - Next action: complete the new pinned-runner Build, inspect its retained ELF/map if QEMU fails, and only then merge and publish after a fresh main Build and stable/versioned ISO byte comparison. The 600-second scheduler soak and physical G560/device/power-recovery matrix remain open. Overall estimate remains ~43%.
+
+
+## Candidate follow-up — exact code/test state
+
+- Code/test commit `e141602158927633f76216d7b85d9e885ba0586b` adds `-Map=$(BUILD)/zeroos.map`, preserves the exact certification/production ELF, linker map and ISO in always-uploaded artifacts, and adds `tools/test_boot_image_artifacts.py`.
+- Local Python syntax checks, runner-pin fixture regression, artifact-retention fixture regression, and GNU ld map-output smoke all passed. These are bounded local checks, not a full repository build or QEMU boot.
+- The exact commit's combined-status and PR-workflow lookup returned no entries. The pinned Ubuntu 24.04 Build/QEMU/storage/production result remains unverified; PR #48 is open and the branch is one commit behind main. No merge or release claim is made.
