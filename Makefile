@@ -18,7 +18,7 @@ AS := gcc
 CFLAGS := -m64 -mno-red-zone -mgeneral-regs-only -mcmodel=small -ffreestanding -fno-pic -fno-pie -fno-stack-protector -fno-builtin -nostdinc -Wall -Wextra -Werror -O2 -Iuserspace/include
 CFLAGS += $(EXTRA_CFLAGS)
 ASFLAGS := -m64 -ffreestanding -fno-pic -fno-pie -nostdlib
-LDFLAGS := -m elf_x86_64 -T kernel/linker.ld -nostdlib
+LDFLAGS := -m elf_x86_64 -T kernel/linker.ld -nostdlib -Map=$(BUILD)/zeroos.map
 
 .PHONY: all clean elf iso iso-test verify-iso verify-multiboot2 repro-check boot-test completion-matrix run run-test check storage-tools-check stage1-scheduler-cert stage2-userspace-cert stage3-storage-cert stage4-hardware-cert stage5-desktop-cert stage6-security-cert stage7-gpu-media-cert stage8-compat-cert stage9-ai-perf-cert stage10-certification-release kernel-simd-check userspace-abi-check userspace-runtime-check userspace-abi-consistency hardware-core-test desktop-check compat-check
 
