@@ -1138,3 +1138,10 @@ The release pipeline itself is no longer a P0 blocker for code snapshot `100c8e2
 - The candidate follow-up adds a per-build linker map and retains certification/production ELF, map and ISO in always-uploaded artifacts. This makes the next boot failure symbolication possible; it is not itself a kernel runtime fix.
 - **Immediate gate:** run the exact current pinned candidate through full Build, QEMU, storage persistence, production ISO and desktop/network smoke. If QEMU fails, symbolicate RIP against the retained ELF/map before changing kernel code. After candidate pass, require a fresh main Build and stable/versioned ISO digest equality before closing P0 release freshness.
 - Next engineering gates remain the 600-second/four-vCPU scheduler soak, physical Lenovo G560/device matrix, physical power-loss recovery, clean ACPI S5, then kernel/process lifecycle, storage recovery, drivers/security, native desktop, browser/media/AI/compatibility. Preserve every Stage 0–10 requirement; completion estimate remains ~43%.
+
+
+### Candidate follow-up — boot failure forensics
+
+- Added `-Map=$(BUILD)/zeroos.map` to the kernel link and included the exact certification/production ELF, map and ISO in always-uploaded artifacts. Added `tools/test_boot_image_artifacts.py` to guard the contract.
+- Local fixture regressions and a GNU ld map-output smoke test passed; the full repository Build/QEMU gates have not run for this candidate.
+- The exact PR #48 candidate still needs an Actions run on the pinned Ubuntu 24.04 runner. Until it passes repeated boot, storage persistence and production smoke, the current stable release remains the older `1af592d` snapshot and P0 release freshness stays open.
