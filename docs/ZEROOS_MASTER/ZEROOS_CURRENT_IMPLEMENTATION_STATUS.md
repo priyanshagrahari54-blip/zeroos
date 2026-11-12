@@ -1,16 +1,9 @@
 # ZEROOS — CURRENT IMPLEMENTATION STATUS
 
 Updated: 2026-11-12
-Branch baseline: current main HEAD `52ef007547e06045bf1c07998d78f581de71779c` is documentation-only after code-bearing commit `2dac661e73655dfc5e6513bbb5a70b0f7791c8c9` (PR #47). Main Stage 1 #327 passed, but Build #1906 failed before QEMU on `ubuntu-26.04` because GCC treats two RFC 8439 test-vector string initializers as `-Werror=unterminated-string-initialization`. PR #48 fixes those test declarations; its Build #1908/#1909 then failed first QEMU boot on `ubuntu-26.04` with #UD/#GP/triple fault at RIP `0x11a5db`. The failing ELF/link map was not retained, so causality is unproven. Build #1905 on `ubuntu-24.04` passed 3/3 QEMU boots (108 milestones each), AHCI/NVMe two-boot persistence and production smoke on a candidate with byte-identical block/storage regression files. A candidate explicit `ubuntu-24.04` runner pin is being validated. Stable ISO still identifies code snapshot `1af592d`.
+Branch baseline: code-bearing main commit `2dac661e73655dfc5e6513bbb5a70b0f7791c8c9` (PR #47) contains the duplicate block-completion guard. Main Stage 1 Scheduler #327/#328 passed, but main Build #1906/#1907 failed in `make check` because GCC treats two RFC 8439 test-vector string initializers as `-Werror=unterminated-string-initialization`. Candidate PR #48 makes that host test compile, but both candidate Build #1908/#1909 then failed the first QEMU boot with an early triple fault; PR #48 remains unmerged. Stable ISO still identifies code snapshot `1af592d`.
 
 Status policy: **evidence-weighted estimate; never equate a source file, marker check, architecture document, or host test with a working end-user feature.**
-
-## CI runner stabilization candidate — 2026-11-12
-
-- The Build workflow used `ubuntu-latest`. Build #1905 ran on Ubuntu 24.04 and passed the full QEMU/storage/production gates; Build #1906 and PR #48 Builds #1908/#1909 ran on Ubuntu 26.04. The 26.04 main run failed at GCC's new `-Werror=unterminated-string-initialization` diagnostics. After PR #48 corrected those test declarations, both 26.04 candidate runs reached QEMU but failed at the first boot with #UD/#GP/triple fault at RIP `0x11a5db`.
-- This establishes a runner-image correlation, not proof that Ubuntu 26.04 or the crypto test change caused the triple fault. The failing ELF and linker map were not retained; do not attribute the fault to the storage fix without symbolication.
-- Candidate PR #48 now pins the full Build and Stage 1 workflows to `ubuntu-24.04`, the last runner image with a complete 3/3 boot, 108-milestone, AHCI/NVMe persistence and production-smoke pass for the same block/storage source and regression files. `tools/test_ci_runner_image.py` asserts both explicit pins and CI ordering.
-- Candidate CI after the pin is pending. Do not claim the pin fixed the kernel boot until the full Build completes. Stable ISO remains `1af592d`; the current `2dac661` code snapshot is not yet release-verified.
 
 ## Historical evidence refresh — 2026-10-26 (superseded for current HEAD)
 
@@ -26,10 +19,10 @@ ZEROOS is a real native x86-64 kernel/desktop-session project with an ISO build 
 
 - **Working build path:** `make` / `make iso`, with the bootable ISO requiring a valid GRUB/El Torito toolchain.
 - **Full verification path:** `make check`; release/boot evidence: `tools/release.sh`.
-- **Latest reviewed main:** HEAD `52ef007547e06045bf1c07998d78f581de71779c` is documentation-only after code-bearing commit `2dac661e73655dfc5e6513bbb5a70b0f7791c8c9`. Stage 1 #327 passed; Build #1906 failed during `make check` before QEMU on the Ubuntu 26.04 runner. The last successful full main Build remains #1901 on the older `1af592d` code snapshot.
+- **Latest reviewed main:** HEAD `af626f1e802f0c76bb87cb3f6e18392bf6c2c24a` is documentation-only after code-bearing commit `1af592d300e648ffddb7e76f644d28d9156c34fb`. Main Build #1901 and Stage 1 Scheduler #322 passed on the code-bearing commit. Documentation-only commits do not increase implementation progress.
 - **PR #16:** merged on 2026-10-17 as `d6b58292`. Its branch CI reported success and included parallel-build dependency fixes, ISO validation/writer fixes, shared 91-milestone boot test, reproducibility checks, and local intent-parser foundations.
-- **Latest post-merge CI:** Main Stage 1 #327 (run `43144281205`) passed for `2dac661`. Main Build #1906 (run `43144281250`) failed in the host crypto test compile, before any QEMU boot. Build #1901 (run `42952878802`) remains the last successful full main Build for older code commit `1af592d`.
-- **Merged storage correction:** PR #47's duplicate-completion guard is in main at `2dac661`; the earlier code-equivalent candidate Build #1905 passed 3/3 QEMU boots (108 milestones each), storage persistence and production smoke on Ubuntu 24.04. Current main still requires its own successful post-merge Build.
+- **Post-merge CI:** Main Build #1901 (run `42952878802`) and Stage 1 Scheduler #322 (run `42952878772`) passed for `1af592d`. Build #1901 reports 3/3 QEMU boots with 107/107 milestones each, SMP4, NX-disabled, failed-IPI, scheduler diagnostics, two-boot AHCI/NVMe persistence, production ISO, production desktop/network smoke, and stable-release publication.
+- **Candidate PR #47:** code SHA `abac8c3`; Stage 1 #325 and #326 passed. Full Build #1904/#1905 are pending without job records; no candidate QEMU or storage result is claimed.
 - **Physical hardware:** not certified by this status entry. QEMU is not proof of G560 Wi-Fi, GPU acceleration, fan control, Bluetooth, or sustained 1080p playback.
 - **Installer:** a standalone ZEROOS disk installer is not complete; the documented dual-boot path relies on host GRUB.
 - **Dynamic linking:** unsupported ELF dynamic/interpreter segments are rejected. A production dynamic linker is not implemented.
@@ -67,7 +60,7 @@ Do not use `ZEROOS_ISO_ALLOW_UNBOOTABLE=1` as release evidence. It explicitly pe
 
 ## Immediate priority order
 
-**Current execution baseline:** code-bearing main `2dac661` includes the duplicate block-completion guard, but current main Build #1906 failed before QEMU on Ubuntu 26.04. Candidate PR #48 pins the full Build and Stage 1 workflows to the last fully passing Ubuntu 24.04 image; full candidate QEMU/storage/production validation is pending. The stable release still points to `1af592d`.
+**Current execution baseline:** code-bearing main `1af592d` is QEMU-booted and release-published. The current candidate is a narrowly scoped block-layer completion-race fix; its CI/QEMU result is pending. This run uses remote GitHub Actions for the repository build, not an unverified local build claim.
 
 1. **Block completion correctness:** verify that `block_complete()` claims a request only while it is present in `device->inflight`, publishes `BLOCK_REQ_COMPLETING` under the device lock, and cannot decrement in-flight accounting or signal completion twice.
 2. **Scheduler reliability:** complete the 600-second/four-vCPU soak with latency, fairness, CPU hot-offline and wakeup-race evidence.
@@ -530,3 +523,14 @@ The release pipeline itself is no longer a P0 blocker for code snapshot `100c8e2
 - Next concrete action: retain the failing `build/zeroos.elf` and linker map from PR #48's QEMU failure, symbolicate RIP `0x11a5db` against that exact ELF, and compare the early memory/GDT path and layout with successful Build #1905 before changing kernel code. Then rerun the full Build/QEMU/storage/production gates; only publish stable ISO after byte-for-byte comparison.
 - Other open gates: 600-second/four-vCPU scheduler soak; physical Lenovo G560, SATA/NVMe/NIC/USB/graphics matrix; physical power-loss recovery; clean ACPI S5. PR #26 is 6 ahead/101 behind, #27 1/100, #14 7/186, #9 4/293, #8 147/293, #6 19/392 and #4 10/392; selectively rebase/review rather than blind-merge.
 - Overall implementation estimate remains approximately 43%. No completion credit for documentation, CI infrastructure or test-only portability work.
+
+
+## 2026-11-12 — pinned-runner and boot-artifact diagnostic candidate
+
+- Main HEAD is `52ef007547e06045bf1c07998d78f581de71779c` (documentation-only) after code-bearing main commit `2dac661e73655dfc5e6513bbb5a70b0f7791c8c9`. PR #47's block duplicate-completion guard is merged. Main Stage 1 #327/#328 passed; Main Build #1906/#1907 failed at `make check` before QEMU on the Ubuntu 26.04 hosted runner because GCC promoted two RFC 8439 fixed-size string-initializer diagnostics to errors.
+- PR #48 fixes the host-test declarations using inferred array sizes, `sizeof(...)-1`, and compile-time 114/34-byte assertions. Its current head is `318faf3f16ef3e0f6c40f60365e6a28611feb1f8`; both Build and Stage 1 workflows are explicitly pinned to `ubuntu-24.04`, with `tools/test_ci_runner_image.py` enforcing the pin.
+- Earlier PR #48 Build #1908/#1909 runs were on Ubuntu 26.04, before the runner-pin commit. Build #1909 passed host checks and kernel-image verification but failed the first QEMU boot: serial stopped after the Multiboot2 range self-test; QEMU logged #UD at RIP `0x11a5db`, then #GP error `0x32`, then triple fault. The downloaded diagnostics artifact `13911377252` contains only timeout/debug/serial/QEMU logs; it has no failing ELF or linker map, so the RIP cannot yet be symbolicated.
+- Candidate follow-up now adds `-Map=$(BUILD)/zeroos.map` to the kernel link and retains the exact `zeroos.elf`, linker map, and ISO in failure-safe boot and production artifacts. `tools/test_boot_image_artifacts.py` guards this retention contract. This is diagnostic infrastructure; it does not claim to fix the observed triple fault.
+- No status entries or PR-triggered workflow run were returned for exact head `318faf3`; validation of the pinned runner is therefore still unverified. The artifact-retention follow-up must also pass the full Build/QEMU/storage/production gates before merge.
+- Stable release remains `zeroos-1af592d.iso` / `zeroos.iso`, SHA-256 `5df87ed020a9d5695a113ad75e163b4b85f8d086dd9a9c8ee89310dcec37f789`; it does not certify main code commit `2dac661`. P0 release freshness remains open.
+- Next action: complete the new pinned-runner Build, inspect its retained ELF/map if QEMU fails, and only then merge and publish after a fresh main Build and stable/versioned ISO byte comparison. The 600-second scheduler soak and physical G560/device/power-recovery matrix remain open. Overall estimate remains ~43%.
