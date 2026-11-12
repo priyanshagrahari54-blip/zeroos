@@ -1,5 +1,5 @@
 # ZEROOS — MASTER DOCUMENT INDEX
-Version: 3.5
+Version: 3.6
 Updated: 2026-11-12 (main code `2dac661`; Build #1906/#1907 failed before QEMU; PR #48 pins Ubuntu 24.04; linker-map/ELF/ISO retention candidate pending full validation).
 
 This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md` remains the canonical consolidated product/architecture specification. Stage 6-10 execution is split into dedicated production master documents so an implementation agent can work one stage at a time without losing cross-cutting requirements.
@@ -438,3 +438,10 @@ The release pipeline itself is no longer a P0 blocker for code snapshot `100c8e2
 - Candidate diagnostic follow-up emits `zeroos.map` and preserves the exact ELF/map/ISO in always-uploaded boot and production artifacts, guarded by `tools/test_boot_image_artifacts.py`. Full CI for the pinned head remains unverified.
 - Stable release still identifies `1af592d`, not current code commit `2dac661`; P0 release freshness stays open until post-merge Build and ISO digest verification.
 - Preserve all Stage 0–10 and product requirements. Overall estimate remains ~43%; no completion credit for CI or diagnostic infrastructure.
+
+
+## Candidate follow-up — 2026-11-12
+
+- Latest code/test change on PR #48 is `e141602158927633f76216d7b85d9e885ba0586b`: emit a per-build kernel linker map and retain exact ELF/map/ISO artifacts for failed certification and production boots.
+- The new artifact-retention regression and existing runner-pin regression pass bounded local fixture checks; GNU ld map-output smoke passes. Full native `make check`, QEMU, storage and production CI remain unverified for this candidate.
+- PR #48 remains open and one commit behind main. Do not merge or update the stable ISO until a complete pinned-runner Build and post-merge main Build pass.
