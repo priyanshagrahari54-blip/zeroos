@@ -8,7 +8,7 @@ makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
 workflow = (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
 
 assert re.search(
-    r"(?m)^LDFLAGS\\s*:=.*-Map=\\$\\(BUILD\\)/zeroos\\.map(?:\\s|$)",
+    r"(?m)^LDFLAGS\s*:=.*-Map=\$\(BUILD\)/zeroos\.map(?:\s|$)",
     makefile,
 ), "kernel link must emit BUILD/zeroos.map"
 
@@ -16,7 +16,7 @@ def step_block(name):
     marker = f"      - name: {name}"
     start = workflow.find(marker)
     assert start >= 0, f"missing workflow step: {name}"
-    end = workflow.find("\\n      - name:", start + len(marker))
+    end = workflow.find("\n      - name:", start + len(marker))
     return workflow[start:] if end < 0 else workflow[start:end]
 
 boot = step_block("Preserve boot diagnostics")
