@@ -1,14 +1,6 @@
 # ZEROOS — Validation and Support Matrix
 
-Updated: 2026-11-12. Current main HEAD is `52ef007547e06045bf1c07998d78f581de71779c` (docs-only) after code commit `2dac661e73655dfc5e6513bbb5a70b0f7791c8c9`, which contains PR #47's block duplicate-completion guard. Main Stage 1 #327 passed; Build #1906 failed before QEMU on Ubuntu 26.04 at GCC's `-Werror=unterminated-string-initialization`. PR #48 fixes the host test declarations but its Ubuntu 26.04 Build #1908/#1909 runs failed the first QEMU boot with #UD/#GP/triple fault at RIP `0x11a5db`. Candidate Ubuntu 24.04 runner pin is pending full validation. Stable ISO remains `1af592d`.
-
-## 2026-11-12 — hosted-runner drift and recovery candidate
-
-- Main Build #1906 (run `43144281250`) checked out `2dac661` on Ubuntu 26.04 and failed during `make check` at `tests/crypto_test.c:72` and `:101`: GCC emitted `-Werror=unterminated-string-initialization`. QEMU was not reached. Main Stage 1 #327 (run `43144281205`) passed.
-- PR #48 changes only the RFC 8439 test-vector declarations/length derivation to avoid the compiler warning. Its Build #1908/#1909 runs passed the host compile/check and kernel-image verification but both failed the first QEMU boot. Serial output stopped after `ZEROOS: Multiboot2 info range policy self-test passed.`; QEMU reported #UD, then #GP error `0x32`, then a triple fault at RIP `0x11a5db`. No failing ELF/linker map was retained, so the cause is not attributed to the test-only change.
-- Build #1905 (run `42956270709`) ran on Ubuntu 24.04 for the PR #47 candidate. It passed 3/3 QEMU boots with 108 milestones each, AHCI/NVMe two-boot persistence and production desktop/network smoke. The block/storage source and duplicate-completion regression files in that candidate are byte-identical to those in main commit `2dac661`.
-- Candidate PR #48 pins both `.github/workflows/build.yml` and `.github/workflows/stage1-scheduler.yml` to `ubuntu-24.04`, and adds `tools/test_ci_runner_image.py` to assert the explicit pins and pre-build CI invocation. This is an evidence-based reproducibility pin, not a claim of Ubuntu 26.04 compatibility.
-- **Pending:** candidate Build/QEMU/storage/production checks after the runner pin; then a successful push-triggered main Build and stable/versioned ISO digest verification for the current code snapshot. The live stable ISO still identifies `1af592d` (SHA-256 `5df87ed020a9d5695a113ad75e163b4b85f8d086dd9a9c8ee89310dcec37f789`).
+Updated: 2026-11-12. Code-bearing main commit `2dac661e73655dfc5e6513bbb5a70b0f7791c8c9` includes PR #47's duplicate block-completion guard. Stage 1 #327/#328 passed; Build #1906/#1907 failed in the reproducible `make check` gate on GCC string-initializer warnings. Candidate PR #48 clears that compiler gate but fails the first QEMU boot with a triple fault; stable ISO remains the older `1af592d` snapshot.
 
 ## Evidence classes
 
@@ -38,7 +30,7 @@ No stage is 100% complete until its hardening checklist has executable evidence 
 
 ## Release blockers
 
-1. Post-merge CI is green on the exact main SHA, using an explicitly pinned runner image.
+1. Post-merge CI is green on the exact main SHA.
 2. `make -j check` is green and deterministic.
 3. `tools/release.sh` completes with no boot-test skip.
 4. All required boot milestones pass over repeated SMP QEMU boots.
@@ -465,3 +457,15 @@ Open P1/P2 validation: 600-second/four-vCPU scheduler soak; physical Lenovo G560
 - Stable/versioned release assets remain `zeroos-1af592d.iso` and `zeroos.iso`, 12,374,016 bytes, SHA-256 `5df87ed020a9d5695a113ad75e163b4b85f8d086dd9a9c8ee89310dcec37f789`. They match each other but do **not** certify merged code commit `2dac661`. Stable-release freshness is an open P0 blocker.
 - Next action: retain the failing kernel ELF and linker map, symbolicate `0x11a5db`, compare early boot memory/GDT state with successful Build #1905, then require a full passing Build/QEMU/storage/production run before merge and stable publication.
 - 600-second/four-vCPU scheduler soak, physical G560/device matrix, physical power-loss recovery and ACPI S5 remain unverified. No overall completion increase; estimate remains ~43%.
+
+
+## 2026-11-12 — exact main and runner-candidate evidence
+
+- Main code commit: `2dac661e73655dfc5e6513bbb5a70b0f7791c8c9`; main documentation HEAD: `52ef007547e06045bf1c07998d78f581de71779c`.
+- Main Build #1906 (run `43144281250`) and #1907 (run `43144667493`) both failed at the reproducible `make check` step before kernel-image verification or QEMU. The failed step was `Run reproducible local release gate`; downstream QEMU, storage, production ISO and release steps were skipped. Stage 1 #327/#328 passed.
+- PR #48 crypto-test fix commit `1342d6f91a9a8b1869678aa0839ea868b16df05f` removed the GCC warning by using inferred-size arrays, `sizeof(...)-1` lengths and static length assertions. The current PR head `318faf3f16ef3e0f6c40f60365e6a28611feb1f8` additionally pins both CI workflows to Ubuntu 24.04.
+- The older PR #48 Build #1909 (run `43144788523`) passed the reproducible host check and kernel-image step, then failed the first QEMU boot. Artifact `13911377252` was inspected: it contains `timeout.log`, `debug.log`, `serial.log`, and `qemu.log`, but no `zeroos.elf` or linker map. QEMU records #UD at RIP `0x11a5db`, #GP error `0x32`, and triple fault. This run was before the current Ubuntu 24.04 pin; it is not evidence against the pinned head.
+- The current head's combined-status and PR-workflow lookup returned no entries. Treat exact-head CI as unverified, not passed.
+- New candidate change: kernel linking emits `$(BUILD)/zeroos.map`; failure-safe diagnostic artifacts retain the exact ELF, map and ISO for both certification and production images. New `tools/test_boot_image_artifacts.py` checks linker-map generation, artifact paths, always-upload behavior and CI ordering.
+- Local validation: `tools/test_ci_runner_image.py` passed against a local fixture reproducing the fetched Ubuntu 24.04 workflow declarations and ordering. GNU ld map-output smoke test and the full pinned-runner Build/QEMU/storage/production gates remain to be completed by CI.
+- Stable ISO remains the older `1af592d` image (SHA-256 `5df87ed020a9d5695a113ad75e163b4b85f8d086dd9a9c8ee89310dcec37f789`); it is not verified for `2dac661`. P0 release freshness is open.
