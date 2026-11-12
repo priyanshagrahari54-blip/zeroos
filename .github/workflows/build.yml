@@ -11,7 +11,8 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # Keep release build/QEMU on the last image with a complete boot and storage pass.
+    runs-on: ubuntu-24.04
     permissions:
       contents: write # publish the bootable image as a release asset
     steps:
@@ -58,6 +59,9 @@ jobs:
 
       - name: Verify storage persistence gate fails closed
         run: python3 tools/test_storage_persistence_gate_fail_closed.py
+
+      - name: Verify pinned CI runner images
+        run: python3 tools/test_ci_runner_image.py
 
       - name: Install build and QEMU tools
         run: |

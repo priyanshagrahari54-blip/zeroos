@@ -1,9 +1,16 @@
 # ZEROOS — CURRENT IMPLEMENTATION STATUS
 
-Updated: 2026-11-11
-Branch baseline: latest code-bearing main merge `1af592d300e648ffddb7e76f644d28d9156c34fb` (PR #46) passed post-merge Build #1901 and Stage 1 Scheduler #322. Main HEAD `af626f1e802f0c76bb87cb3f6e18392bf6c2c24a` is a documentation-only successor. Stable/versioned ISO SHA-256 both equal `5df87ed020a9d5695a113ad75e163b4b85f8d086dd9a9c8ee89310dcec37f789`. Candidate code commit `abac8c3c027416755102d44f2a5301c0be1372a9` adds the in-flight membership/state claim guard and deterministic duplicate-callback regression. Stage 1 Scheduler #325 (push) and #326 (PR) passed on this exact code SHA; Build #1904 (push) and #1905 (PR) remain pending with no job records, so QEMU/storage/production validation is not yet established.
+Updated: 2026-11-12
+Branch baseline: current main HEAD `52ef007547e06045bf1c07998d78f581de71779c` is documentation-only after code-bearing commit `2dac661e73655dfc5e6513bbb5a70b0f7791c8c9` (PR #47). Main Stage 1 #327 passed, but Build #1906 failed before QEMU on `ubuntu-26.04` because GCC treats two RFC 8439 test-vector string initializers as `-Werror=unterminated-string-initialization`. PR #48 fixes those test declarations; its Build #1908/#1909 then failed first QEMU boot on `ubuntu-26.04` with #UD/#GP/triple fault at RIP `0x11a5db`. The failing ELF/link map was not retained, so causality is unproven. Build #1905 on `ubuntu-24.04` passed 3/3 QEMU boots (108 milestones each), AHCI/NVMe two-boot persistence and production smoke on a candidate with byte-identical block/storage regression files. A candidate explicit `ubuntu-24.04` runner pin is being validated. Stable ISO still identifies code snapshot `1af592d`.
 
 Status policy: **evidence-weighted estimate; never equate a source file, marker check, architecture document, or host test with a working end-user feature.**
+
+## CI runner stabilization candidate — 2026-11-12
+
+- The Build workflow used `ubuntu-latest`. Build #1905 ran on Ubuntu 24.04 and passed the full QEMU/storage/production gates; Build #1906 and PR #48 Builds #1908/#1909 ran on Ubuntu 26.04. The 26.04 main run failed at GCC's new `-Werror=unterminated-string-initialization` diagnostics. After PR #48 corrected those test declarations, both 26.04 candidate runs reached QEMU but failed at the first boot with #UD/#GP/triple fault at RIP `0x11a5db`.
+- This establishes a runner-image correlation, not proof that Ubuntu 26.04 or the crypto test change caused the triple fault. The failing ELF and linker map were not retained; do not attribute the fault to the storage fix without symbolication.
+- Candidate PR #48 now pins the full Build and Stage 1 workflows to `ubuntu-24.04`, the last runner image with a complete 3/3 boot, 108-milestone, AHCI/NVMe persistence and production-smoke pass for the same block/storage source and regression files. `tools/test_ci_runner_image.py` asserts both explicit pins and CI ordering.
+- Candidate CI after the pin is pending. Do not claim the pin fixed the kernel boot until the full Build completes. Stable ISO remains `1af592d`; the current `2dac661` code snapshot is not yet release-verified.
 
 ## Historical evidence refresh — 2026-10-26 (superseded for current HEAD)
 
@@ -19,10 +26,10 @@ ZEROOS is a real native x86-64 kernel/desktop-session project with an ISO build 
 
 - **Working build path:** `make` / `make iso`, with the bootable ISO requiring a valid GRUB/El Torito toolchain.
 - **Full verification path:** `make check`; release/boot evidence: `tools/release.sh`.
-- **Latest reviewed main:** HEAD `af626f1e802f0c76bb87cb3f6e18392bf6c2c24a` is documentation-only after code-bearing commit `1af592d300e648ffddb7e76f644d28d9156c34fb`. Main Build #1901 and Stage 1 Scheduler #322 passed on the code-bearing commit. Documentation-only commits do not increase implementation progress.
+- **Latest reviewed main:** HEAD `52ef007547e06045bf1c07998d78f581de71779c` is documentation-only after code-bearing commit `2dac661e73655dfc5e6513bbb5a70b0f7791c8c9`. Stage 1 #327 passed; Build #1906 failed during `make check` before QEMU on the Ubuntu 26.04 runner. The last successful full main Build remains #1901 on the older `1af592d` code snapshot.
 - **PR #16:** merged on 2026-10-17 as `d6b58292`. Its branch CI reported success and included parallel-build dependency fixes, ISO validation/writer fixes, shared 91-milestone boot test, reproducibility checks, and local intent-parser foundations.
-- **Post-merge CI:** Main Build #1901 (run `42952878802`) and Stage 1 Scheduler #322 (run `42952878772`) passed for `1af592d`. Build #1901 reports 3/3 QEMU boots with 107/107 milestones each, SMP4, NX-disabled, failed-IPI, scheduler diagnostics, two-boot AHCI/NVMe persistence, production ISO, production desktop/network smoke, and stable-release publication.
-- **Candidate PR #47:** code SHA `abac8c3`; Stage 1 #325 and #326 passed. Full Build #1904/#1905 are pending without job records; no candidate QEMU or storage result is claimed.
+- **Latest post-merge CI:** Main Stage 1 #327 (run `43144281205`) passed for `2dac661`. Main Build #1906 (run `43144281250`) failed in the host crypto test compile, before any QEMU boot. Build #1901 (run `42952878802`) remains the last successful full main Build for older code commit `1af592d`.
+- **Merged storage correction:** PR #47's duplicate-completion guard is in main at `2dac661`; the earlier code-equivalent candidate Build #1905 passed 3/3 QEMU boots (108 milestones each), storage persistence and production smoke on Ubuntu 24.04. Current main still requires its own successful post-merge Build.
 - **Physical hardware:** not certified by this status entry. QEMU is not proof of G560 Wi-Fi, GPU acceleration, fan control, Bluetooth, or sustained 1080p playback.
 - **Installer:** a standalone ZEROOS disk installer is not complete; the documented dual-boot path relies on host GRUB.
 - **Dynamic linking:** unsupported ELF dynamic/interpreter segments are rejected. A production dynamic linker is not implemented.
@@ -60,7 +67,7 @@ Do not use `ZEROOS_ISO_ALLOW_UNBOOTABLE=1` as release evidence. It explicitly pe
 
 ## Immediate priority order
 
-**Current execution baseline:** code-bearing main `1af592d` is QEMU-booted and release-published. The current candidate is a narrowly scoped block-layer completion-race fix; its CI/QEMU result is pending. This run uses remote GitHub Actions for the repository build, not an unverified local build claim.
+**Current execution baseline:** code-bearing main `2dac661` includes the duplicate block-completion guard, but current main Build #1906 failed before QEMU on Ubuntu 26.04. Candidate PR #48 pins the full Build and Stage 1 workflows to the last fully passing Ubuntu 24.04 image; full candidate QEMU/storage/production validation is pending. The stable release still points to `1af592d`.
 
 1. **Block completion correctness:** verify that `block_complete()` claims a request only while it is present in `device->inflight`, publishes `BLOCK_REQ_COMPLETING` under the device lock, and cannot decrement in-flight accounting or signal completion twice.
 2. **Scheduler reliability:** complete the 600-second/four-vCPU soak with latency, fairness, CPU hot-offline and wakeup-race evidence.
@@ -510,3 +517,16 @@ The release pipeline itself is no longer a P0 blocker for code snapshot `100c8e2
 - P0 build/boot/release verification is closed for code-bearing snapshot `1af592d`. Remaining gates include the 600-second/four-vCPU scheduler soak, physical Lenovo G560 and device matrix, physical power-loss/recovery, and clean ACPI S5 shutdown.
 - Code-review follow-up (not yet fixed or runtime-reproduced): `block_complete()` checks `state == BLOCK_REQ_DISPATCHED` but decrements `inflight_count` even when the request is no longer found in `device->inflight`. A duplicate IRQ/reset completion in the unlink-to-finalize window may therefore decrement accounting twice. Add an in-flight membership guard and deterministic regression as a separate P1 fix; do not claim it is already fixed.
 - Overall completion estimate remains approximately 43%; no percentage increase for CI, release-pipeline or documentation work.
+
+
+
+## 2026-11-12 — duplicate block completion fix merged; release validation blocked
+
+- PR #47 merged as `2dac661e73655dfc5e6513bbb5a70b0f7791c8c9`. `kernel/storage/block.c:block_complete()` now requires actual in-flight-list membership, rejects a zero in-flight count, and claims `BLOCK_REQ_COMPLETING` while holding the device lock before unlink/accounting. The deterministic stale-callback runtime regression, source-contract regression, CI invocation and boot milestone are in main.
+- Exact candidate evidence before merge: Build #1904 (push) and #1905 (PR) passed on code SHA `abac8c3c027416755102d44f2a5301c0be1372a9`; Stage 1 #325/#326 passed. The Build completed native `make check`, kernel/ISO verification, 3/3 QEMU boots with 108/108 milestones each, SMP4/NX-disabled/failed-IPI/scheduler diagnostics, two-boot AHCI/NVMe persistence and production desktop/network smoke. The retained boot artifact includes the new duplicate-completion milestone; storage counters advanced 0→1→2 across the two boots.
+- Post-merge main Stage 1 #327 (run `43144281205`) and #328 (run `43144667521`) passed on `2dac661`. Main Build #1906 (run `43144281250`) and #1907 (run `43144667493`) both failed at the reproducible `make check` gate before kernel-image/QEMU/storage/release steps. Exact compiler diagnostics: `tests/crypto_test.c:72:5` and `tests/crypto_test.c:101:36`, `-Werror=unterminated-string-initialization`; the fixed-size byte arrays intentionally omitted the string terminator.
+- PR #48 (`1342d6f91a9a8b1869678aa0839ea868b16df05f`) changes only `tests/crypto_test.c`: inferred-size arrays, `sizeof(...)-1` lengths and compile-time 114/34-byte assertions. Its Build #1908 (push) and #1909 (PR) passed the reproducible `make check` gate and kernel-image verification, and Stage 1 #329/#330 passed; however, both full Builds failed QEMU boot iteration 1. The serial log stops after `ZEROOS: Multiboot2 info range policy self-test passed.`; 105/108 milestones are absent. QEMU reports #UD, then #GP error `0x32`, then a triple fault at RIP `0x11a5db`. This is observed on the candidate snapshot; causality from the test-only change is not established. Do not merge PR #48.
+- Stable release remains the older `zeroos-1af592d.iso` / `zeroos.iso`, both 12,374,016 bytes with SHA-256 `5df87ed020a9d5695a113ad75e163b4b85f8d086dd9a9c8ee89310dcec37f789`. It is not yet verified against `2dac661`; P0 stable-release freshness is OPEN.
+- Next concrete action: retain the failing `build/zeroos.elf` and linker map from PR #48's QEMU failure, symbolicate RIP `0x11a5db` against that exact ELF, and compare the early memory/GDT path and layout with successful Build #1905 before changing kernel code. Then rerun the full Build/QEMU/storage/production gates; only publish stable ISO after byte-for-byte comparison.
+- Other open gates: 600-second/four-vCPU scheduler soak; physical Lenovo G560, SATA/NVMe/NIC/USB/graphics matrix; physical power-loss recovery; clean ACPI S5. PR #26 is 6 ahead/101 behind, #27 1/100, #14 7/186, #9 4/293, #8 147/293, #6 19/392 and #4 10/392; selectively rebase/review rather than blind-merge.
+- Overall implementation estimate remains approximately 43%. No completion credit for documentation, CI infrastructure or test-only portability work.
