@@ -68,11 +68,13 @@ static void test_block(void) {
 }
 
 /* RFC 8439 2.4.2 — stream cipher, 114-byte plaintext */
-static const uint8_t sunscreen_pt[114] =
+static const uint8_t sunscreen_pt[] =
     "Ladies and Gentlemen of the class of '99: If I "
     "could offer you only one tip for the future, sunscreen would be it.";
+enum { SUNSCREEN_PT_LEN = sizeof(sunscreen_pt) - 1U };
+_Static_assert(SUNSCREEN_PT_LEN == 114U, "RFC 8439 plaintext length");
 
-static const uint8_t sunscreen_ct_24[114] = {
+static const uint8_t sunscreen_ct_24[SUNSCREEN_PT_LEN] = {
     0x6e,0x2e,0x35,0x9a,0x25,0x68,0xf9,0x80,0x41,0xba,0x07,0x28,0xdd,0x0d,0x69,0x81,
     0xe9,0x7e,0x7a,0xec,0x1d,0x43,0x60,0xc2,0x0a,0x27,0xaf,0xcc,0xfd,0x9f,0xae,0x0b,
     0xf9,0x1b,0x65,0xc5,0x52,0x47,0x33,0xab,0x8f,0x59,0x3d,0xab,0xcd,0x62,0xb3,0x57,
@@ -84,26 +86,28 @@ static const uint8_t sunscreen_ct_24[114] = {
 };
 
 static void test_cipher(void) {
-    uint8_t key[32], nonce[12], out[114], back[114];
+    uint8_t key[32], nonce[12], out[SUNSCREEN_PT_LEN], back[SUNSCREEN_PT_LEN];
 
     hex_fill(key, "000102030405060708090a0b0c0d0e0f"
                   "101112131415161718191a1b1c1d1e1f", 32);
     hex_fill(nonce, "000000000000004a00000000", 12);
-    zeroos_chacha20_xor(key, 1u, nonce, sunscreen_pt, out, 114);
-    expect(bytes_eq(out, sunscreen_ct_24, 114), "chacha20 cipher vector (2.4.2)");
-    zeroos_chacha20_xor(key, 1u, nonce, out, back, 114);
-    expect(bytes_eq(back, sunscreen_pt, 114), "chacha20 decrypt roundtrip");
+    zeroos_chacha20_xor(key, 1u, nonce, sunscreen_pt, out, SUNSCREEN_PT_LEN);
+    expect(bytes_eq(out, sunscreen_ct_24, SUNSCREEN_PT_LEN), "chacha20 cipher vector (2.4.2)");
+    zeroos_chacha20_xor(key, 1u, nonce, out, back, SUNSCREEN_PT_LEN);
+    expect(bytes_eq(back, sunscreen_pt, SUNSCREEN_PT_LEN), "chacha20 decrypt roundtrip");
 }
 
 /* RFC 8439 2.5.2 — Poly1305 MAC */
 static void test_poly1305(void) {
     uint8_t key[32], tag[16], want[16];
-    static const uint8_t msg[34] = "Cryptographic Forum Research Group";
+    static const uint8_t msg[] = "Cryptographic Forum Research Group";
+    enum { POLY1305_MSG_LEN = sizeof(msg) - 1U };
+    _Static_assert(POLY1305_MSG_LEN == 34U, "RFC 8439 Poly1305 message length");
 
     hex_fill(key, "85d6be7857556d337f4452fe42d506a8"
                   "0103808afb0db2fd4abff6af4149f51b", 32);
     hex_fill(want, "a8061dc1305136c6c22b8baf0c0127a9", 16);
-    zeroos_poly1305(key, msg, 34, tag);
+    zeroos_poly1305(key, msg, POLY1305_MSG_LEN, tag);
     expect(bytes_eq(tag, want, 16), "poly1305 vector (2.5.2)");
 
     /* Streaming split must equal one-shot. */
@@ -113,7 +117,7 @@ static void test_poly1305(void) {
         zeroos_poly1305_init(&ctx, key);
         zeroos_poly1305_update(&ctx, msg, 10);
         zeroos_poly1305_update(&ctx, msg + 10, 9);
-        zeroos_poly1305_update(&ctx, msg + 19, 15);
+        zeroos_poly1305_update(&ctx, msg + 19, POLY1305_MSG_LEN - 19U);
         zeroos_poly1305_final(&ctx, tag2);
         expect(bytes_eq(tag2, want, 16), "poly1305 streaming split");
     }
@@ -141,8 +145,8 @@ static void test_key_gen(void) {
 /* RFC 8439 2.8.2 — AEAD encrypt, decrypt, and negatives */
 static void test_aead(void) {
     uint8_t key[32], nonce[12], aad[12];
-    uint8_t ct[114], tag[16], want_ct[114], want_tag[16];
-    uint8_t pt[114], key2[32];
+    uint8_t ct[SUNSCREEN_PT_LEN], tag[16], want_ct[SUNSCREEN_PT_LEN], want_tag[16];
+    uint8_t pt[SUNSCREEN_PT_LEN], key2[32];
     uint32_t i;
 
     hex_fill(key, "808182838485868788898a8b8c8d8e8f"
@@ -156,67 +160,67 @@ static void test_aead(void) {
                       "92ddbd7f2d778b8c9803aee328091b58"
                       "fab324e4fad675945585808b4831d7bc"
                       "3ff4def08e4b7a9de576d26586cec64b"
-                      "6116", 114);
+                      "6116", SUNSCREEN_PT_LEN);
     hex_fill(want_tag, "1ae10b594f09e26a7e902ecbd0600691", 16);
 
-    expect(zeroos_aead_encrypt(key, nonce, aad, 12, sunscreen_pt, 114,
+    expect(zeroos_aead_encrypt(key, nonce, aad, 12, sunscreen_pt, SUNSCREEN_PT_LEN,
                                ct, tag) == ZCRYPTO_OK,
            "aead encrypt status");
-    expect(bytes_eq(ct, want_ct, 114), "aead ciphertext vector (2.8.2)");
+    expect(bytes_eq(ct, want_ct, SUNSCREEN_PT_LEN), "aead ciphertext vector (2.8.2)");
     expect(bytes_eq(tag, want_tag, 16), "aead tag vector (2.8.2)");
 
-    expect(zeroos_aead_decrypt(key, nonce, aad, 12, ct, 114, tag, pt) ==
+    expect(zeroos_aead_decrypt(key, nonce, aad, 12, ct, SUNSCREEN_PT_LEN, tag, pt) ==
                ZCRYPTO_OK,
            "aead decrypt status");
-    expect(bytes_eq(pt, sunscreen_pt, 114), "aead decrypt roundtrip");
+    expect(bytes_eq(pt, sunscreen_pt, SUNSCREEN_PT_LEN), "aead decrypt roundtrip");
 
     /* Wrong key must fail and zero the output. */
     for (i = 0; i < 32; i++)
         key2[i] = (uint8_t)(key[i] ^ 0xa5);
-    for (i = 0; i < 114; i++)
+    for (i = 0; i < SUNSCREEN_PT_LEN; i++)
         pt[i] = 0x5a;
-    expect(zeroos_aead_decrypt(key2, nonce, aad, 12, ct, 114, tag, pt) ==
+    expect(zeroos_aead_decrypt(key2, nonce, aad, 12, ct, SUNSCREEN_PT_LEN, tag, pt) ==
                ZCRYPTO_AUTHFAIL,
            "aead wrong key rejected");
-    expect(all_zero(pt, 114), "aead wrong key zeroes output");
+    expect(all_zero(pt, SUNSCREEN_PT_LEN), "aead wrong key zeroes output");
 
     /* Tampered tag. */
-    for (i = 0; i < 114; i++)
+    for (i = 0; i < SUNSCREEN_PT_LEN; i++)
         pt[i] = 0x5a;
     tag[0] ^= 1;
-    expect(zeroos_aead_decrypt(key, nonce, aad, 12, ct, 114, tag, pt) ==
+    expect(zeroos_aead_decrypt(key, nonce, aad, 12, ct, SUNSCREEN_PT_LEN, tag, pt) ==
                ZCRYPTO_AUTHFAIL,
            "aead tampered tag rejected");
-    expect(all_zero(pt, 114), "aead tampered tag zeroes output");
+    expect(all_zero(pt, SUNSCREEN_PT_LEN), "aead tampered tag zeroes output");
     tag[0] ^= 1;
 
     /* Tampered ciphertext. */
-    for (i = 0; i < 114; i++)
+    for (i = 0; i < SUNSCREEN_PT_LEN; i++)
         pt[i] = 0x5a;
     ct[40] ^= 0x80;
-    expect(zeroos_aead_decrypt(key, nonce, aad, 12, ct, 114, tag, pt) ==
+    expect(zeroos_aead_decrypt(key, nonce, aad, 12, ct, SUNSCREEN_PT_LEN, tag, pt) ==
                ZCRYPTO_AUTHFAIL,
            "aead tampered ciphertext rejected");
-    expect(all_zero(pt, 114), "aead tampered ciphertext zeroes output");
+    expect(all_zero(pt, SUNSCREEN_PT_LEN), "aead tampered ciphertext zeroes output");
     ct[40] ^= 0x80;
 
     /* Tampered AAD. */
-    for (i = 0; i < 114; i++)
+    for (i = 0; i < SUNSCREEN_PT_LEN; i++)
         pt[i] = 0x5a;
     aad[3] ^= 0x10;
-    expect(zeroos_aead_decrypt(key, nonce, aad, 12, ct, 114, tag, pt) ==
+    expect(zeroos_aead_decrypt(key, nonce, aad, 12, ct, SUNSCREEN_PT_LEN, tag, pt) ==
                ZCRYPTO_AUTHFAIL,
            "aead tampered aad rejected");
     aad[3] ^= 0x10;
 
     /* Argument guards. */
-    expect(zeroos_aead_encrypt(0, nonce, aad, 12, sunscreen_pt, 114, ct,
+    expect(zeroos_aead_encrypt(0, nonce, aad, 12, sunscreen_pt, SUNSCREEN_PT_LEN, ct,
                                tag) == ZCRYPTO_ERR,
            "aead encrypt null key rejected");
-    expect(zeroos_aead_decrypt(key, nonce, aad, 12, ct, 114, 0, pt) ==
+    expect(zeroos_aead_decrypt(key, nonce, aad, 12, ct, SUNSCREEN_PT_LEN, 0, pt) ==
                ZCRYPTO_ERR,
            "aead decrypt null tag rejected");
-    expect(zeroos_aead_encrypt(key, nonce, 0, 7, sunscreen_pt, 114, ct,
+    expect(zeroos_aead_encrypt(key, nonce, 0, 7, sunscreen_pt, SUNSCREEN_PT_LEN, ct,
                                tag) == ZCRYPTO_ERR,
            "aead encrypt null aad with length rejected");
 }
