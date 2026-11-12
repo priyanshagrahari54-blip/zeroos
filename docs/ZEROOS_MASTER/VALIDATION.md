@@ -469,3 +469,11 @@ Open P1/P2 validation: 600-second/four-vCPU scheduler soak; physical Lenovo G560
 - New candidate change: kernel linking emits `$(BUILD)/zeroos.map`; failure-safe diagnostic artifacts retain the exact ELF, map and ISO for both certification and production images. New `tools/test_boot_image_artifacts.py` checks linker-map generation, artifact paths, always-upload behavior and CI ordering.
 - Local validation: `tools/test_ci_runner_image.py` passed against a local fixture reproducing the fetched Ubuntu 24.04 workflow declarations and ordering. GNU ld map-output smoke test and the full pinned-runner Build/QEMU/storage/production gates remain to be completed by CI.
 - Stable ISO remains the older `1af592d` image (SHA-256 `5df87ed020a9d5695a113ad75e163b4b85f8d086dd9a9c8ee89310dcec37f789`); it is not verified for `2dac661`. P0 release freshness is open.
+
+
+## Candidate follow-up — local checks and remaining CI gate
+
+- Commit `e141602158927633f76216d7b85d9e885ba0586b` adds linker-map generation and failure-safe retention of `zeroos.elf`, `zeroos.map`, and `zeroos.iso` for certification and production artifacts, with `tools/test_boot_image_artifacts.py`.
+- Passed locally: `python3 -m py_compile` for both new regression scripts; runner-pin regression against a fixture matching the fetched workflow declarations; boot-artifact retention regression against the fetched workflow structure; GNU ld `-Map=` smoke test produced a non-empty ELF and map.
+- Not run locally: repository `make check`, QEMU, AHCI/NVMe persistence, production ISO, or desktop/network smoke. No workflow/status was returned for exact candidate commit `e141602`; require full Ubuntu 24.04 CI before merge.
+- PR #48 remains open, not mergeable in the current API snapshot, and one commit behind main. Stable release freshness for code commit `2dac661` remains open.
