@@ -11,12 +11,14 @@ Never create a basic version merely to replace it later.
 
 
 ### Current engineering state — 2026-11-12
-- Main HEAD is `52ef007547e06045bf1c07998d78f581de71779c` (docs-only) after code commit `2dac661e73655dfc5e6513bbb5a70b0f7791c8c9`, which includes the merged block duplicate-completion guard (PR #47). Main Stage 1 #327 passed; main Build #1906 failed before QEMU during the host crypto test compile on Ubuntu 26.04.
-- PR #48 fixes the RFC 8439 string-initializer warnings, but its Ubuntu 26.04 Build #1908/#1909 runs failed the first QEMU boot with #UD/#GP/triple fault at RIP `0x11a5db`. The failing ELF/linker map was not retained; the cause is unproven. Earlier PR #47 Build #1905 on Ubuntu 24.04 passed 3/3 QEMU boots (108 milestones each), two-boot AHCI/NVMe persistence and production desktop/network smoke; the relevant block/storage source and regression files match main `2dac661`.
-- Candidate PR #48 now pins Build and Stage 1 workflows to Ubuntu 24.04 and adds a regression test for explicit runner pins. Candidate full Build/QEMU/storage/production validation is pending; this pin is a reproducibility recovery, not proof of Ubuntu 26.04 support.
-- The stable ISO still identifies `1af592d`; it does not certify `2dac661`. P0 release acceptance remains blocked until the pinned candidate and then exact main commit complete QEMU, storage persistence, production smoke and stable/versioned ISO digest comparison.
-- Next work order: (1) finish pinned-runner candidate Build/QEMU/storage/production gates; (2) if 24.04 passes, merge and verify a post-merge main Build and matching stable ISO; (3) separately retain the Ubuntu 26.04 failing ELF/map and symbolicate RIP `0x11a5db` before reintroducing that runner; (4) complete the 600-second/four-vCPU scheduler soak; (5) physical G560 and device/power-recovery matrix; (6) process lifecycle and storage recovery hardening; (7) physical drivers/security; (8) native desktop; then browser/media/AI/compatibility.
+
+- Main code commit `2dac661e73655dfc5e6513bbb5a70b0f7791c8c9` includes the merged block duplicate-completion guard (PR #47). Candidate Build #1904/#1905 validated that fix with 3/3 QEMU boots (108 milestones each), two-boot AHCI/NVMe persistence and production desktop/network smoke. Main Stage 1 #327/#328 passed.
+- Main Build #1906/#1907 failed in `make check` on GCC's `-Werror=unterminated-string-initialization` for two RFC 8439 test-vector arrays. PR #48 changes only those test declarations and passes the check/kernel-image steps, but both candidate Build #1908/#1909 fail at the first QEMU boot with an early #UD/#GP triple fault. Keep PR #48 open; do not accept its candidate as bootable.
+- The stable ISO still identifies `1af592d`; it does not yet certify `2dac661`. P0 release acceptance remains blocked until the exact main commit completes QEMU, storage persistence, production smoke and stable/versioned ISO digest comparison.
+- Next work order: (1) retain/symbolicate the failing candidate ELF and map at RIP `0x11a5db`; (2) fix the early boot failure without weakening milestones; (3) rerun full Build/QEMU/storage/production gates and publish a matching stable ISO; (4) complete the 600-second/four-vCPU scheduler soak; (5) physical G560 and device/power-recovery matrix; (6) process lifecycle and storage recovery hardening; (7) physical drivers/security; (8) native desktop; then browser/media/AI/compatibility.
 - PR #26/#27 and the broad runtime/desktop branches are heavily diverged from current main; selectively rebase and review, never merge wholesale. Preserve every Stage 0–10 and product requirement. Overall estimate remains ~43%; no percentage increase for CI or documentation.
+
+
 
 ### Historical 2026-11-11 snapshot (superseded by 2026-11-12)
 - Code-bearing main commit `1af592d300e648ffddb7e76f644d28d9156c34fb` (PR #46) passed Main Build #1901 and Stage 1 Scheduler #322. Latest main HEAD `af626f1e802f0c76bb87cb3f6e18392bf6c2c24a` is a documentation-only successor.
@@ -1127,3 +1129,12 @@ The release pipeline itself is no longer a P0 blocker for code snapshot `100c8e2
 - Stable and versioned ISO assets for `1af592d` match exactly: 12,374,016 bytes, SHA-256 `5df87ed020a9d5695a113ad75e163b4b85f8d086dd9a9c8ee89310dcec37f789`. The release is a legacy BIOS El Torito live image, not an installer.
 - Next P1 engineering item: review/fix duplicate block completion accounting in `block_complete()` (static race candidate; no runtime regression yet). Continue the 600-second/four-vCPU scheduler soak and physical G560/device/power-recovery certification.
 - Preserve the complete Stage 0–10 roadmap and all product requirements. No completion percentage increase; estimate remains ~43%.
+
+
+### 2026-11-12 — build reproducibility and failure-image retention
+
+- Current main code commit `2dac661` includes the duplicate block-completion guard. Main Stage 1 passed; main Build #1906/#1907 failed in host `make check` on Ubuntu 26.04 before QEMU.
+- PR #48 fixes RFC 8439 host-test initializer warnings and pins both Build and Stage 1 workflows to Ubuntu 24.04. The earlier #1908/#1909 QEMU triple fault was on Ubuntu 26.04, before the pin; its artifact omitted the failing ELF and linker map.
+- The candidate follow-up adds a per-build linker map and retains certification/production ELF, map and ISO in always-uploaded artifacts. This makes the next boot failure symbolication possible; it is not itself a kernel runtime fix.
+- **Immediate gate:** run the exact current pinned candidate through full Build, QEMU, storage persistence, production ISO and desktop/network smoke. If QEMU fails, symbolicate RIP against the retained ELF/map before changing kernel code. After candidate pass, require a fresh main Build and stable/versioned ISO digest equality before closing P0 release freshness.
+- Next engineering gates remain the 600-second/four-vCPU scheduler soak, physical Lenovo G560/device matrix, physical power-loss recovery, clean ACPI S5, then kernel/process lifecycle, storage recovery, drivers/security, native desktop, browser/media/AI/compatibility. Preserve every Stage 0–10 requirement; completion estimate remains ~43%.
