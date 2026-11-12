@@ -9,6 +9,15 @@ Never create a basic version merely to replace it later.
 
 ## Current state
 
+
+### Current main and next block-layer correctness fix — 2026-11-11
+- Code-bearing main commit `1af592d300e648ffddb7e76f644d28d9156c34fb` (PR #46) passed Main Build #1901 and Stage 1 Scheduler #322. Latest main HEAD `af626f1e802f0c76bb87cb3f6e18392bf6c2c24a` is a documentation-only successor.
+- Main Build #1901 verified native build/check, reproducible release gate, kernel image, 3/3 QEMU boots with 107 milestones each, SMP4, NX-disabled, failed-IPI recovery, scheduler diagnostics, two-boot AHCI/NVMe persistence, production ISO, production desktop/network smoke and release publication.
+- Stable/versioned `zeroos-1af592d.iso` and `zeroos.iso` are 12,374,016 bytes and match at SHA-256 `5df87ed020a9d5695a113ad75e163b4b85f8d086dd9a9c8ee89310dcec37f789`. This is a legacy BIOS El Torito live image; there is no disk installer.
+- Candidate PR #47 code SHA `abac8c3c027416755102d44f2a5301c0be1372a9` addresses a duplicate completion race in `block_complete()`: verify the request is still in the in-flight list, guard the count, and publish `BLOCK_REQ_COMPLETING` while holding the device lock. Runtime and source-contract regressions plus a required boot milestone are added. Stage 1 #325/#326 passed; Build #1904/#1905 remain pending without jobs, so candidate QEMU/storage/production validation is not established.
+- Remaining gates: 600-second/four-vCPU scheduler soak; physical Lenovo G560/device matrix; physical power-loss/recovery; clean ACPI S5 shutdown; then broader desktop/browser/media/AI/compatibility work. Overall estimate remains ~43%.
+
+
 ### Current main and release acceptance — 2026-11-10
 - Code-bearing main merge commit is `100c8e2cf4cdd049c4bf5565b5eebbc0f5284651`; PR #44 is merged. ZJFS flushes ordered data to stable media before journal metadata/commit records and aborts read-only if that barrier fails. Torn journal-superblock recovery validates descriptor, commit record, target ranges and image CRC; valid transactions replay and incomplete slots are discarded safely.
 - Main Build #1855 and Stage 1 Scheduler #276 passed. Evidence includes 3/3 QEMU boots with 106 milestones, four-vCPU SMP certification, scheduler panic-diagnostics fault certification, eight power-cut rounds (including a logged torn-JSB fallback), clean fsck after every round, AHCI/NVMe two-boot persistence, production ISO generation and production desktop/network smoke.

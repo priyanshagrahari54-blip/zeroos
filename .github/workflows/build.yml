@@ -50,6 +50,9 @@ jobs:
       - name: Verify in-flight block flush barrier ordering
         run: python3 tools/test_block_flush_barrier.py
 
+      - name: Verify block duplicate-completion guard
+        run: python3 tools/test_block_duplicate_completion.py
+
       - name: Verify ZJFS ordered-data writeback failure handling
         run: python3 tools/test_zjfs_ordered_writeback.py
 

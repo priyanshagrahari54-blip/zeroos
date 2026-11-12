@@ -435,3 +435,13 @@ The stable `zeroos.iso` and versioned `zeroos-1af592d.iso` are both 12,374,016 b
 The ISO verifier continues to emit a generic one-warning summary; QEMU's three successful boot iterations are separate, direct evidence that the image boots in the configured emulator. Physical hardware compatibility remains unverified.
 
 Open P1/P2 validation: 600-second/four-vCPU scheduler soak; physical Lenovo G560, SATA/NVMe/NIC/USB/graphics matrix; physical power-loss/recovery; clean ACPI S5 shutdown. A separate code-review follow-up remains for duplicate block completion accounting in `block_complete()`; it is not included in PR #46.
+
+
+## 2026-11-11 — latest main verification and duplicate-completion candidate
+
+- Latest main HEAD is `af626f1e802f0c76bb87cb3f6e18392bf6c2c24a`; it is a documentation-only successor to code-bearing merge `1af592d300e648ffddb7e76f644d28d9156c34fb` (PR #46).
+- Main Build #1901 (run `42952878802`) and Stage 1 Scheduler #322 (run `42952878772`) completed successfully on `1af592d`. The Build log reports 3/3 QEMU boots with 107/107 milestones each, SMP4, NX-disabled, failed-IPI, scheduler diagnostics, two-boot AHCI/NVMe persistence, production ISO, production desktop/network smoke, and successful release publication.
+- The versioned `zeroos-1af592d.iso` and stable `zeroos.iso` are each 12,374,016 bytes and have identical SHA-256 `5df87ed020a9d5695a113ad75e163b4b85f8d086dd9a9c8ee89310dcec37f789`. Release notes identify `1af592d` and state legacy BIOS El Torito live session; no disk installer.
+- **New candidate:** `fix/block-duplicate-completion-guard-20261111` addresses a race in `block_complete()`: a second callback can observe `BLOCK_REQ_DISPATCHED` after the first callback has unlinked the request but before `block_finalize_chain()` publishes COMPLETE. The fix verifies list membership, guards the in-flight count, and claims `BLOCK_REQ_COMPLETING` under the device lock. A runtime regression recreates a stale DISPATCHED object after unlink and requires no second accounting or in-flight underflow; a Python source-contract regression and required boot milestone are added.
+- Stage 1 Scheduler #325 (push) and #326 (PR) passed on exact candidate code SHA `abac8c3c027416755102d44f2a5301c0be1372a9`. Candidate Build #1904 (push) and #1905 (PR) remain pending and expose no jobs yet. Therefore candidate native full Build, QEMU boot, storage persistence, production ISO and desktop smoke remain unverified. Do not merge or attribute the new milestone to main until the exact candidate Build passes.
+- Remaining independent P1/P2 gates: 600-second/four-vCPU scheduler soak; physical Lenovo G560 and SATA/NVMe/NIC/USB/graphics matrix; physical power-loss/recovery; clean ACPI S5 shutdown. Overall estimate remains ~43%.

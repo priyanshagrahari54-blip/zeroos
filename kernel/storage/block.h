@@ -71,7 +71,9 @@ enum block_request_state {
     BLOCK_REQ_ALLOCATED=1,
     BLOCK_REQ_QUEUED=2,
     BLOCK_REQ_DISPATCHED=3,
-    BLOCK_REQ_COMPLETE=4
+    BLOCK_REQ_COMPLETE=4,
+    /* Claimed under the device lock; duplicate IRQ/reset completions ignore it. */
+    BLOCK_REQ_COMPLETING=5
 };
 
 #define BLOCK_DEV_READ_ONLY (1U << 0)

@@ -356,8 +356,16 @@ void block_complete(struct block_request *request, int status) {
     struct block_request **cursor=&device->inflight;
     while (*cursor && *cursor!=request)
         cursor=&(*cursor)->next;
-    if (*cursor)
-        *cursor=request->next;
+    /* A duplicate completion can arrive after the first callback unlinked
+     * the request but before block_finalize_chain() publishes COMPLETE.
+     * DISPATCHED alone is therefore insufficient: claim only a real member
+     * of the in-flight list, and publish COMPLETING under the same lock. */
+    if (!*cursor || device->inflight_count==0) {
+        spin_unlock_irqrestore(&device->lock,flags);
+        return;
+    }
+    request->state=BLOCK_REQ_COMPLETING;
+    *cursor=request->next;
     request->next=0;
     --device->inflight_count;
     if (request->priority==BLOCK_PRIO_BACKGROUND && device->inflight_background)

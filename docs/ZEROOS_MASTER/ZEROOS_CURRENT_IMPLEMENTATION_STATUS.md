@@ -1,7 +1,7 @@
 # ZEROOS — CURRENT IMPLEMENTATION STATUS
 
-Updated: 2026-11-10
-Branch baseline: latest code-bearing main merge `100c8e2cf4cdd049c4bf5565b5eebbc0f5284651` passed post-merge Build #1855 and Stage 1 Scheduler #276; stable/versioned ISO SHA-256 both equal `4628a75807bb9a074ce48eaf8e627997fd86b9c33c63201d66dacc785b498e80`. Candidate PR #46 adds in-flight block FLUSH barrier serialization; Stage 1 #301 passed on current head, full Build #1880 is pending.
+Updated: 2026-11-11
+Branch baseline: latest code-bearing main merge `1af592d300e648ffddb7e76f644d28d9156c34fb` (PR #46) passed post-merge Build #1901 and Stage 1 Scheduler #322. Main HEAD `af626f1e802f0c76bb87cb3f6e18392bf6c2c24a` is a documentation-only successor. Stable/versioned ISO SHA-256 both equal `5df87ed020a9d5695a113ad75e163b4b85f8d086dd9a9c8ee89310dcec37f789`. Candidate code commit `abac8c3c027416755102d44f2a5301c0be1372a9` adds the in-flight membership/state claim guard and deterministic duplicate-callback regression. Stage 1 Scheduler #325 (push) and #326 (PR) passed on this exact code SHA; Build #1904 (push) and #1905 (PR) remain pending with no job records, so QEMU/storage/production validation is not yet established.
 
 Status policy: **evidence-weighted estimate; never equate a source file, marker check, architecture document, or host test with a working end-user feature.**
 
@@ -19,9 +19,10 @@ ZEROOS is a real native x86-64 kernel/desktop-session project with an ISO build 
 
 - **Working build path:** `make` / `make iso`, with the bootable ISO requiring a valid GRUB/El Torito toolchain.
 - **Full verification path:** `make check`; release/boot evidence: `tools/release.sh`.
-- **Latest baseline commit reviewed in this refresh:** `7c45183332f895ad778f08b98458f580b18a0067`; no current-head workflow/status result was returned, so its CI is unverified. The latest completed main run inspected is #40491492164 for the older `b1c848f` SHA. Documentation-only commits do not increase implementation progress.
+- **Latest reviewed main:** HEAD `af626f1e802f0c76bb87cb3f6e18392bf6c2c24a` is documentation-only after code-bearing commit `1af592d300e648ffddb7e76f644d28d9156c34fb`. Main Build #1901 and Stage 1 Scheduler #322 passed on the code-bearing commit. Documentation-only commits do not increase implementation progress.
 - **PR #16:** merged on 2026-10-17 as `d6b58292`. Its branch CI reported success and included parallel-build dependency fixes, ISO validation/writer fixes, shared 91-milestone boot test, reproducibility checks, and local intent-parser foundations.
-- **Post-merge CI:** workflow #40491492164 successfully built, boot-tested and published the ISO for `b1c848f`; current `main` (`7c451833`) has no returned check result. Do not attribute the older run to the current SHA.
+- **Post-merge CI:** Main Build #1901 (run `42952878802`) and Stage 1 Scheduler #322 (run `42952878772`) passed for `1af592d`. Build #1901 reports 3/3 QEMU boots with 107/107 milestones each, SMP4, NX-disabled, failed-IPI, scheduler diagnostics, two-boot AHCI/NVMe persistence, production ISO, production desktop/network smoke, and stable-release publication.
+- **Candidate PR #47:** code SHA `abac8c3`; Stage 1 #325 and #326 passed. Full Build #1904/#1905 are pending without job records; no candidate QEMU or storage result is claimed.
 - **Physical hardware:** not certified by this status entry. QEMU is not proof of G560 Wi-Fi, GPU acceleration, fan control, Bluetooth, or sustained 1080p playback.
 - **Installer:** a standalone ZEROOS disk installer is not complete; the documented dual-boot path relies on host GRUB.
 - **Dynamic linking:** unsupported ELF dynamic/interpreter segments are rejected. A production dynamic linker is not implemented.
@@ -59,20 +60,19 @@ Do not use `ZEROOS_ISO_ALLOW_UNBOOTABLE=1` as release evidence. It explicitly pe
 
 ## Immediate priority order
 
-**Execution directive:** `MASTER_IMPLEMENTATION_PROMPT` now explicitly requires implementation across stages 0–10 and every documented feature, with build/boot proof first. The directive itself is not implementation evidence. This session did not run a local build because the connected GitHub interface exposes repository read/write and CI status queries, not a checked-out shell/runner; no test is claimed as run here.
+**Current execution baseline:** code-bearing main `1af592d` is QEMU-booted and release-published. The current candidate is a narrowly scoped block-layer completion-race fix; its CI/QEMU result is pending. This run uses remote GitHub Actions for the repository build, not an unverified local build claim.
 
-1. **Release truth / build integrity:** verify post-merge CI for `d6b5829`; fix every failure; ensure `make -j check` and `tools/release.sh` agree.
-2. **Boot stability:** preserve all required boot milestones; run repeated SMP QEMU boots; capture serial/debug/QEMU logs on failure.
-3. **Stage 2 lifecycle:** process/thread creation rollback, exit/wait/reap, ELF load failures, user-copy boundaries, timeout/wakeup races and resource-leak regression tests.
-4. **Storage integrity:** repeated boot/persistence, crash-consistency, block fault injection, fsck/rollback, ownership and cleanup.
-5. **Real hardware/driver coverage:** PCI/ACPI/DMA/IRQ correctness, input/display/audio/network and safe unsupported-device fallback.
-6. **Security/recovery:** capability checks at real boundaries, signed artifacts, sandbox negative tests, independently bootable recovery and transactional restore.
-7. **Usable desktop/apps:** native launcher/files/terminal/settings first; real UI input, error states, session recovery, accessibility and event-driven zero-render idle.
-8. **Browser/media:** integrate mature licensed components where compatible; hardware codec detection, A/V sync, browser isolation and sustained playback measurement.
-9. **ZERO AI:** broker → scoped tools → local/remote backend adapter → user consent/audit/cancel/rollback; no unrestricted shell/kernel privileges.
-10. **Windows/Android runtimes:** only after ABI, loader, graphics/audio, permissions and workload tests are genuinely implemented.
-11. **Performance and release:** measure boot, idle RAM/CPU, disk I/O, app launch/switch, thermal, security, long-duration soak and physical G560 behavior.
-12. **Docs and percentages:** update status, validation, roadmap and relevant subsystem contract in the same batch as code changes.
+1. **Block completion correctness:** verify that `block_complete()` claims a request only while it is present in `device->inflight`, publishes `BLOCK_REQ_COMPLETING` under the device lock, and cannot decrement in-flight accounting or signal completion twice.
+2. **Scheduler reliability:** complete the 600-second/four-vCPU soak with latency, fairness, CPU hot-offline and wakeup-race evidence.
+3. **Process lifecycle:** failure rollback for exec/ELF/stack/thread creation; exit/wait/reap races; exact address-space and process-slot accounting.
+4. **Storage integrity:** continue crash/power-cut and fsck recovery testing, FLUSH ordering, writeback error propagation and physical-device validation.
+5. **Drivers and security:** physical PCI/ACPI/DMA/IRQ, NIC, USB, graphics, storage and recovery paths; privilege and fault isolation.
+6. **Usable native desktop:** real input/display failure recovery, launcher/files/terminal/settings, accessibility and event-driven zero-render idle.
+7. **Browser/media:** compatible licensed components, hardware codec paths, browser isolation and sustained playback measurements.
+8. **ZERO AI:** permission-brokered tools, scoped consent, cancellation, audit and rollback before broad automation.
+9. **Windows/Android compatibility:** only after ABI, loader, graphics/audio, permission and workload tests are operational.
+10. **Performance/release:** measure boot, idle RAM/CPU, storage I/O, thermal behavior, recovery and physical G560 behavior.
+11. **Documentation:** update status, validation, index, roadmap and subsystem contracts with each evidence-changing batch; keep estimates unchanged unless feature behavior is verified.
 
 ## Evidence rules
 
