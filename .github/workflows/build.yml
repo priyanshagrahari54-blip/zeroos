@@ -42,6 +42,9 @@ jobs:
       - name: Verify thread creation rejects invalid process owners
         run: python3 tools/test_thread_create_invalid_owner.py
 
+      - name: Verify process thread pointer provenance
+        run: python3 tools/test_process_thread_pointer_validation.py
+
       - name: Verify process user-copy mapping stability
         run: python3 tools/test_process_user_copy_atomic.py
 

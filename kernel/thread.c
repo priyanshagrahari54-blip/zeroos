@@ -39,6 +39,15 @@ static int thread_create_failure(const char *stage,
 static struct thread threads[ZEROOS_MAX_THREADS];
 static struct spinlock thread_lock;
 
+int thread_pointer_valid(const struct thread *thread) {
+    uintptr_t address=(uintptr_t)thread;
+    uintptr_t base=(uintptr_t)&threads[0];
+    uintptr_t end=(uintptr_t)&threads[ZEROOS_MAX_THREADS];
+
+    return address>=base && address<end &&
+           ((address-base)%sizeof(threads[0]))==0;
+}
+
 static uint64_t thread_make_id(uint32_t slot, uint32_t generation) {
     return ((uint64_t)generation << ZEROOS_THREAD_SLOT_BITS) |
            ((uint64_t)slot + 1ULL);
