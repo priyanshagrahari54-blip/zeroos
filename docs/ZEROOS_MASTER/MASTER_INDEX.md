@@ -1,6 +1,6 @@
 # ZEROOS — MASTER DOCUMENT INDEX
-Version: 3.8
-Updated: 2026-11-13 (PR #48 merged as `b37b954`; Stage 1 #336 passed; main Build #1915 has passed host checks and is running QEMU; stable release still points to `1af592d` pending post-merge publication).
+Version: 3.9
+Updated: 2026-11-13 (PR #48 merged as `b37b954`; main Build #1915 and Stage 1 #336 passed; 3/3 QEMU boots with 108 milestones each; storage and production smoke passed; stable/versioned ISO SHA-256 verified as `cb544ebf…`).
 
 This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md` remains the canonical consolidated product/architecture specification. Stage 6-10 execution is split into dedicated production master documents so an implementation agent can work one stage at a time without losing cross-cutting requirements.
 
@@ -471,3 +471,16 @@ The release pipeline itself is no longer a P0 blocker for code snapshot `100c8e2
 - The stable release currently still identifies `1af592d`, with versioned and stable ISO assets both 12,374,016 bytes and SHA-256 `5df87ed020a9d5695a113ad75e163b4b85f8d086dd9a9c8ee89310dcec37f789`. It does not yet certify `b37b954`. The main Build must publish the tested image, then the versioned/stable assets must be downloaded and compared by SHA-256.
 - The ISO verifier prints a generic one-warning message (`THIS IMAGE WILL NOT BOOT`); the independent QEMU evidence above is the boot acceptance signal. The G560 report in the candidate artifact explicitly says its performance/thermal values are declared targets, not measured observations, and that no physical boot occurred. Lenovo G560 hardware support is therefore still uncertified.
 - Remaining engineering gates: 600-second/four-vCPU scheduler soak; physical Lenovo G560 and SATA/NVMe/NIC/USB/graphics matrix; physical power-loss recovery; clean ACPI S5 shutdown. Overall estimate remains ~43%; no completion credit for CI or documentation.
+
+
+## 2026-11-13 — post-merge main Build and stable ISO verified
+
+- PR #48 is merged as code-bearing main commit `b37b9542da719cc8dda30d5e08728b73602fe021`. Main Stage 1 Scheduler #336 (run `43355195594`) and main Build #1915 (run `43355195504`) both completed successfully on that exact code commit.
+- Build #1915 passed all source regressions, native x86-64 build, reproducible `make check`, Multiboot2/kernel-image verification, QEMU boot certification, scheduler panic diagnostics, AHCI/NVMe two-boot persistence, production ISO generation, production desktop/network smoke, diagnostic/artifact preservation and GitHub Release publication.
+- Main QEMU boot log reports 3/3 iterations passing with all 108 required milestones per iteration. SMP4 reported `discovered=4 online=4` and scheduler certification passed. NX-disabled and failed-IPI recovery steps passed. Retained serial logs contain no panic or triple-fault marker.
+- AHCI/NVMe persistence logs show `/data` counter 1 (previous 0) on boot 1 and 2 (previous 1) on boot 2; clean-unmount/CLEAN-superblock/remount checks passed on both. Production serial log contains `interactive desktop session ready` and RTL8139 attachment. This is QEMU evidence, not physical NIC or display certification.
+- The main Build ran on `b37b954` while main advanced to documentation-only commit `7dd512d`. The release freshness guard fetched the newer main tip, verified that the difference was documentation-only, and explicitly published the boot-tested code snapshot `b37b954`. This directly validates the docs-only freshness exception.
+- The release workflow downloaded the newly uploaded stable alias and byte-compared it with `build-production/zeroos.iso`; it reported `stable release ISO matches the boot-tested production ISO`. The downloaded Build #1915 production artifact was independently hashed and matches the GitHub Release API digests.
+- Versioned asset `zeroos-b37b954.iso` and stable asset `zeroos.iso` are each 12,374,016 bytes and have identical SHA-256 `cb544ebfe3d91fb50d594aa6c8b81db32f8e24e416f7e71cb72ee596f54516ad`. Release notes identify `b37b954`, GRUB/El Torito legacy BIOS boot, and a live session; there is no disk installer.
+- The ISO verifier still emits a generic one-warning string (`THIS IMAGE WILL NOT BOOT`); the three successful guest QEMU iterations are the direct boot evidence. The G560 certification report in the Build artifact says its performance/thermal values are declared targets, not measured observations, and that no physical boot occurred. Physical Lenovo G560 certification remains open.
+- P0 build/boot/post-merge CI/stable-release freshness is closed for code snapshot `b37b954`. Remaining engineering gates: 600-second/four-vCPU scheduler soak; physical G560 and SATA/NVMe/NIC/USB/graphics matrix; physical power-loss/recovery; clean ACPI S5 shutdown; standalone disk installer. Overall estimate remains ~43%; no completion credit for CI or documentation.
