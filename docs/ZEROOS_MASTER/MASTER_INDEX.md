@@ -1,18 +1,17 @@
 # ZEROOS — MASTER DOCUMENT INDEX
-Version: 4.0
-Updated: 2026-11-13 (main code snapshot `b37b954` verified by Build #1915 and Stage 1 #336; 3/3 QEMU boots, storage persistence, production smoke and matching stable/versioned ISO SHA-256 `cb544ebf…`).
+Version: 4.1
+Updated: 2026-11-13 (PR #49 merged as `7b73f7a`; candidate Build #1916/#1917 and Stage 1 #337/#338 passed; post-merge Stage 1 #339 passed; main Build #1918 pending).
 
 This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md` remains the canonical consolidated product/architecture specification. Stage 6-10 execution is split into dedicated production master documents so an implementation agent can work one stage at a time without losing cross-cutting requirements.
 
 ## Current main verification — 2026-11-13
 
-- Latest main HEAD `d0ff861` is documentation-only after code-bearing commit `b37b954` (PR #48 merged).
-- Main Build #1915 and Stage 1 Scheduler #336 passed. Build #1915 reports 3/3 QEMU boots with 108/108 milestones per boot, SMP4, NX-disabled, failed-IPI recovery, scheduler panic diagnostics, AHCI/NVMe two-boot persistence, production ISO and desktop/network smoke.
-- Stable `zeroos.iso` and versioned `zeroos-b37b954.iso` are both 12,374,016 bytes with matching SHA-256 `cb544ebfe3d91fb50d594aa6c8b81db32f8e24e416f7e71cb72ee596f54516ad`. Release notes identify `b37b954`; the image is legacy BIOS El Torito live media, not a disk installer.
-- P0 build/boot/release freshness is closed for `b37b954`. Physical G560/device certification, 600-second/four-vCPU soak, physical power-loss recovery, ACPI S5 and installer remain open.
-- Candidate `fix/thread-create-invalid-owner-diagnostic-20261113` tests safe rejection of invalid process owners passed to kernel/user thread creation. It is not merged; exact-head Build/QEMU validation is pending.
-
-
+- Main code commit `7b73f7a31672531fdd87e76a818164777e8e24e6` is PR #49's squash merge. The merge tree matches tested PR head `908d135`.
+- Candidate Build #1916/#1917 and Stage 1 #337/#338 passed on that exact tree. Post-merge Stage 1 #339 passed; post-merge main Build #1918 is still running.
+- Candidate QEMU: 3/3 boots, 109/109 required milestones each; SMP4, NX-disabled, failed-IPI recovery and scheduler panic diagnostics passed. Candidate q35 AHCI/NVMe two-boot persistence and production desktop/network smoke passed.
+- PR #49 hardens thread-creation rejection diagnostics against invalid process-owner pointers; both kernel and user thread creation paths have a guest negative probe, sentinel TID checks and a required boot milestone.
+- The stable release still points to `b37b954` at this moment. Do not mark `7b73f7a` release-published until Build #1918 verifies the new versioned asset and stable alias.
+- Open major gates: 600-second/four-vCPU scheduler soak; physical G560/device matrix; physical power-loss recovery; ACPI S5; standalone disk installer; native desktop hardware integration; then browser/media/AI/compatibility.
 
 ## Historical snapshot — 2026-11-12 (superseded by 2026-11-13)
 

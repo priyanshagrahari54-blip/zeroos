@@ -4,10 +4,12 @@ Updated: 2026-11-13. Latest main HEAD `d0ff861c92da0208dfe6cff04f4bf23b01932cbe`
 
 ## Current main acceptance — 2026-11-13
 
-- Main code snapshot `b37b954`: Build #1915 and Stage 1 #336 passed. The full Build's QEMU gate completed 3/3 sequential boots with 108/108 required serial milestones per boot; SMP4, NX-disabled, failed-IPI recovery and scheduler panic diagnostics also passed.
-- Storage gate passed two q35 AHCI/NVMe persistence boots. Production ISO and desktop/network smoke passed. The release's `zeroos-b37b954.iso` and `zeroos.iso` assets have equal size (12,374,016 bytes) and equal SHA-256 `cb544ebfe3d91fb50d594aa6c8b81db32f8e24e416f7e71cb72ee596f54516ad`.
-- P0 boot/release freshness is closed for `b37b954`; physical G560/device, long-soak, physical power-loss, ACPI S5 and installer gates remain open.
-- Candidate `fix/thread-create-invalid-owner-diagnostic-20261113` adds a thread-creation invalid-owner rejection probe and source regression. Its full Build/QEMU result is pending; do not mark the candidate verified or merge before exact-head CI completes.
+- Main code commit `7b73f7a` is the squash merge of PR #49. The merge tree is identical to the tested PR head `908d135`.
+- Exact candidate Build #1916 and #1917 passed. Stage 1 Scheduler #337 and #338 passed. The new invalid-thread-owner regression ran 3/3 Python tests successfully.
+- Candidate full Build: clean `make check`; native x86-64 build; kernel/ISO verification; 3/3 sequential QEMU boots with 109/109 milestones each; SMP4; NX-disabled; failed-IPI recovery; scheduler panic diagnostics; q35 AHCI/NVMe two-boot persistence; production ISO and desktop/network smoke all passed.
+- Post-merge main Stage 1 #339 passed. Main Build #1918 is still in progress at QEMU boot validation; do not yet mark post-merge main Build or release publication complete.
+- Stable release still identifies `b37b954` at this point (12,374,016 bytes; SHA-256 `cb544ebfe3d91fb50d594aa6c8b81db32f8e24e416f7e71cb72ee596f54516ad`). Publication of the `7b73f7a` image and stable/versioned byte equality remain pending Build #1918.
+- The merged fix makes thread-creation failure diagnostics safe for rejected owner pointers and adds a boot-time probe for kernel/user thread creation. This is lifecycle hardening, not a new user-facing subsystem.
 
 ## Evidence classes
 
@@ -24,12 +26,12 @@ Updated: 2026-11-13. Latest main HEAD `d0ff861c92da0208dfe6cff04f4bf23b01932cbe`
 
 ## Current release status
 
-- ZEROOS has a native x86-64 kernel, Ring-3 session path, build targets, host tests and QEMU boot-test infrastructure.
-- PR #16 was merged as `d6b58292df7e00b4b2f15ba22f3a0405035ee549`; its PR workflow passed before merge. Post-merge `main` CI must be checked separately.
-- The release gate is `tools/release.sh`; it requires GCC/binutils, GRUB/xorriso and QEMU, runs `make check`, reproducibility checks, ISO structure checks and boot milestones.
-- An ISO built with `ZEROOS_ISO_ALLOW_UNBOOTABLE=1`, or a run with `--skip-boot-test`, is not a boot-certified release.
-- Physical Lenovo G560 certification is pending. Hardware-dependent claims (Wi-Fi, GPU acceleration, fan control, Bluetooth and sustained 1080p) must remain conditional until measured.
-- Standalone disk installation, full dynamic linking, production browser/media stacks, Windows and Android runtime compatibility, and a complete ZERO AI tool/backend execution stack remain incomplete.
+- Main code tree `7b73f7a` has passed exact candidate Build #1916/#1917 and Stage 1 #337/#338; post-merge Stage 1 #339 passed. Post-merge main Build #1918 is still in progress.
+- The stable GitHub release has not yet been refreshed from `b37b954` to `7b73f7a`. Do not claim the new stable ISO is published until Build #1918 completes the release upload and byte comparison.
+- Candidate QEMU evidence is 3/3 boots with 109/109 milestones each, plus SMP4, NX-disabled, failed-IPI recovery and scheduler panic diagnostics. This is QEMU evidence, not physical-hardware certification.
+- Candidate storage gate passed two q35 AHCI/NVMe boots, including the persistent counter and host-side ZJFS checks. Physical power-loss/recovery is still pending.
+- Physical Lenovo G560 certification remains pending. Hardware-dependent Wi-Fi, GPU acceleration, fan control, Bluetooth and sustained media claims remain conditional.
+- Standalone disk installation, full dynamic linking, production browser/media stacks, Windows/Android runtime compatibility and a complete ZERO AI tool/backend execution stack remain incomplete.
 
 ## Stage completion rule
 
@@ -37,14 +39,15 @@ No stage is 100% complete until its hardening checklist has executable evidence 
 
 ## Release blockers
 
-1. Post-merge CI is green on the exact main SHA.
-2. `make -j check` is green and deterministic.
-3. `tools/release.sh` completes with no boot-test skip.
-4. All required boot milestones pass over repeated SMP QEMU boots.
-5. Storage persistence and recovery survive repeated guest boots and injected failures.
-6. Security, package trust, update rollback and independent recovery have negative/fault evidence.
-7. The physical hardware support matrix and performance/soak results are published.
-8. Unsupported features and installation limits are explicit in release notes.
+1. **Post-merge main CI:** Stage 1 #339 PASS; Build #1918 IN PROGRESS. Exact candidate Build #1916/#1917 passed.
+2. **Clean `make check`:** PASS on the exact merge tree in candidate Build #1916/#1917; post-merge Build #1918 still running.
+3. **Release gate / ISO publication:** Candidate production ISO passed; main release publication for `7b73f7a` pending Build #1918.
+4. **Repeated SMP QEMU:** Candidate 3/3 boots, 109/109 milestones each, SMP4, NX-disabled and failed-IPI recovery PASS; post-merge Build #1918 pending.
+5. **Storage:** Candidate two-boot AHCI/NVMe persistence PASS; physical power-loss/crash recovery still open.
+6. **Security/recovery:** Signed package/update trust, rollback and independent recovery boot still require subsystem-specific negative/fault evidence.
+7. **Physical hardware and soak:** G560/device matrix and 600-second/four-vCPU scheduler soak remain open.
+8. **Installation/unsupported features:** Release notes must continue to state that the ISO is a legacy BIOS live session with no disk installer; unsupported features must remain explicit.
+
 
 ## 2026-10-24 — Stable bootable-release publishing guard
 - Baseline reviewed: `main` commit `4eb68e4fbfeb02d51fc114f82a05ac641e1acd56`; the workflow allowed release publication on any push.
