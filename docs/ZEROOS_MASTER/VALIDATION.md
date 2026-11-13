@@ -1,6 +1,13 @@
 # ZEROOS — Validation and Support Matrix
 
-Updated: 2026-11-12. Code-bearing main commit `2dac661e73655dfc5e6513bbb5a70b0f7791c8c9` includes PR #47's duplicate block-completion guard. Stage 1 #327/#328 passed; Build #1906/#1907 failed in the reproducible `make check` gate on GCC string-initializer warnings. Candidate PR #48 clears that compiler gate but fails the first QEMU boot with a triple fault; stable ISO remains the older `1af592d` snapshot.
+Updated: 2026-11-13. Latest main HEAD `d0ff861c92da0208dfe6cff04f4bf23b01932cbe` is documentation-only after code-bearing commit `b37b9542da719cc8dda30d5e08728b73602fe021` (PR #48 merged). Main Build #1915 and Stage 1 Scheduler #336 passed. Build #1915 verified 3/3 QEMU boots with 108/108 milestones each, SMP4/NX-disabled/failed-IPI/scheduler diagnostics, two-boot AHCI/NVMe persistence, production desktop/network smoke and release publication. Stable/versioned ISO assets both measure 12,374,016 bytes and report SHA-256 `cb544ebfe3d91fb50d594aa6c8b81db32f8e24e416f7e71cb72ee596f54516ad`.
+
+## Current main acceptance — 2026-11-13
+
+- Main code snapshot `b37b954`: Build #1915 and Stage 1 #336 passed. The full Build's QEMU gate completed 3/3 sequential boots with 108/108 required serial milestones per boot; SMP4, NX-disabled, failed-IPI recovery and scheduler panic diagnostics also passed.
+- Storage gate passed two q35 AHCI/NVMe persistence boots. Production ISO and desktop/network smoke passed. The release's `zeroos-b37b954.iso` and `zeroos.iso` assets have equal size (12,374,016 bytes) and equal SHA-256 `cb544ebfe3d91fb50d594aa6c8b81db32f8e24e416f7e71cb72ee596f54516ad`.
+- P0 boot/release freshness is closed for `b37b954`; physical G560/device, long-soak, physical power-loss, ACPI S5 and installer gates remain open.
+- Candidate `fix/thread-create-invalid-owner-diagnostic-20261113` adds a thread-creation invalid-owner rejection probe and source regression. Its full Build/QEMU result is pending; do not mark the candidate verified or merge before exact-head CI completes.
 
 ## Evidence classes
 
