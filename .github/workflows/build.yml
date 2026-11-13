@@ -11,7 +11,8 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # Keep release build/QEMU on the last image with a complete boot and storage pass.
+    runs-on: ubuntu-24.04
     permissions:
       contents: write # publish the bootable image as a release asset
     steps:
@@ -58,6 +59,11 @@ jobs:
 
       - name: Verify storage persistence gate fails closed
         run: python3 tools/test_storage_persistence_gate_fail_closed.py
+
+      - name: Verify pinned CI runner images
+        run: python3 tools/test_ci_runner_image.py
+      - name: Verify kernel boot artifact retention
+        run: python3 tools/test_boot_image_artifacts.py
 
       - name: Install build and QEMU tools
         run: |
@@ -392,6 +398,9 @@ jobs:
         with:
           name: zeroos-production-boot-diagnostics
           path: |
+            build-production/zeroos.elf
+            build-production/zeroos.map
+            build-production/zeroos.iso
             build-production/serial.log
             build-production/qemu.log
             build-production/debug.log
@@ -405,6 +414,7 @@ jobs:
           path: |
             build-production/zeroos.iso
             build-production/zeroos.elf
+            build-production/zeroos.map
             build/g560_certification_report.json
             build-production/serial.log
             build-production/qemu.log
@@ -644,6 +654,9 @@ jobs:
           name: zeroos-boot-diagnostics
           if-no-files-found: ignore
           path: |
+            build/zeroos.elf
+            build/zeroos.map
+            build/zeroos.iso
             build/serial.log
             build/timeout.log
             build/debug.log

@@ -14,7 +14,8 @@ concurrency:
 
 jobs:
   stage1-scheduler:
-    runs-on: ubuntu-latest
+    # Keep scheduler certification on the same verified compiler/binutils baseline.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4

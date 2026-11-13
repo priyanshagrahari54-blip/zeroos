@@ -1129,3 +1129,33 @@ The release pipeline itself is no longer a P0 blocker for code snapshot `100c8e2
 - Stable and versioned ISO assets for `1af592d` match exactly: 12,374,016 bytes, SHA-256 `5df87ed020a9d5695a113ad75e163b4b85f8d086dd9a9c8ee89310dcec37f789`. The release is a legacy BIOS El Torito live image, not an installer.
 - Next P1 engineering item: review/fix duplicate block completion accounting in `block_complete()` (static race candidate; no runtime regression yet). Continue the 600-second/four-vCPU scheduler soak and physical G560/device/power-recovery certification.
 - Preserve the complete Stage 0–10 roadmap and all product requirements. No completion percentage increase; estimate remains ~43%.
+
+
+### 2026-11-12 — build reproducibility and failure-image retention
+
+- Current main code commit `2dac661` includes the duplicate block-completion guard. Main Stage 1 passed; main Build #1906/#1907 failed in host `make check` on Ubuntu 26.04 before QEMU.
+- PR #48 fixes RFC 8439 host-test initializer warnings and pins both Build and Stage 1 workflows to Ubuntu 24.04. The earlier #1908/#1909 QEMU triple fault was on Ubuntu 26.04, before the pin; its artifact omitted the failing ELF and linker map.
+- The candidate follow-up adds a per-build linker map and retains certification/production ELF, map and ISO in always-uploaded artifacts. This makes the next boot failure symbolication possible; it is not itself a kernel runtime fix.
+- **Immediate gate:** run the exact current pinned candidate through full Build, QEMU, storage persistence, production ISO and desktop/network smoke. If QEMU fails, symbolicate RIP against the retained ELF/map before changing kernel code. After candidate pass, require a fresh main Build and stable/versioned ISO digest equality before closing P0 release freshness.
+- Next engineering gates remain the 600-second/four-vCPU scheduler soak, physical Lenovo G560/device matrix, physical power-loss recovery, clean ACPI S5, then kernel/process lifecycle, storage recovery, drivers/security, native desktop, browser/media/AI/compatibility. Preserve every Stage 0–10 requirement; completion estimate remains ~43%.
+
+
+### Candidate follow-up — boot failure forensics
+
+- Added `-Map=$(BUILD)/zeroos.map` to the kernel link and included the exact certification/production ELF, map and ISO in always-uploaded artifacts. Added `tools/test_boot_image_artifacts.py` to guard the contract.
+- Local fixture regressions and a GNU ld map-output smoke test passed; the full repository Build/QEMU gates have not run for this candidate.
+- The exact PR #48 candidate still needs an Actions run on the pinned Ubuntu 24.04 runner. Until it passes repeated boot, storage persistence and production smoke, the current stable release remains the older `1af592d` snapshot and P0 release freshness stays open.
+
+
+## 2026-11-13 — pinned-runner candidate full Build evidence
+
+- Main HEAD remains `52ef007547e06045bf1c07998d78f581de71779c`; code-bearing main commit is `2dac661e73655dfc5e6513bbb5a70b0f7791c8c9`. Main Stage 1 #327/#328 passed, but main Build #1906/#1907 failed at the host `make check` gate on the Ubuntu 26.04 hosted image before QEMU.
+- PR #48 code/test commit `e141602158927633f76216d7b85d9e885ba0586b` was validated by Build #1912 (run `43151270438`, push event) and Stage 1 Scheduler #333 (run `43151270516`). Both completed successfully on the candidate branch pinned to Ubuntu 24.04.
+- Build #1912 passed the runner-image, boot-artifact-retention, crypto-vector, block, process, scheduler, storage and boot-gate regressions; native x86-64 build; reproducible `make check`; Multiboot2 verification; QEMU boot gate; scheduler fault diagnostics; AHCI/NVMe two-boot persistence; production ISO generation; and production desktop/network smoke.
+- The QEMU log explicitly reports 3/3 boots passing with all 108 required milestones on each iteration. The four-vCPU certification log contains the required 4/4 CPU-online, remote TLB, scheduler, affinity/offline and service lifecycle assertions. NX-disabled and failed-IPI recovery steps completed successfully.
+- The retained storage logs show SATA/AHCI and NVMe discovery, destructive QEMU device probes, ZJFS mounts and persistence counters 1 (previous 0) then 2 (previous 1), with the persistence check passing on both boots. The production smoke step passed its desktop-session and RTL8139 attachment assertions.
+- Build #1912 artifacts were downloaded and inspected. `zeroos.elf` (499,312 bytes), `zeroos.map` (117,818 bytes), `zeroos.iso` (12,374,016 bytes), serial/timeout/debug/QEMU logs, SMP4/NX logs and both storage-boot logs are present. The timeout log contains the actual TERM deadline marker. This is candidate evidence, not post-merge main evidence.
+- The GitHub Release publication step was skipped on the branch push by design. The current stable release still contains `zeroos-1af592d.iso` and `zeroos.iso`, both 12,374,016 bytes with SHA-256 `5df87ed020a9d5695a113ad75e163b4b85f8d086dd9a9c8ee89310dcec37f789`; that image does not certify code-bearing main commit `2dac661`.
+- The PR documentation tip `049ee9909706df5cbd3ba2a9ae8e5a467bb0e6b3` is a documentation-only successor to the Build-tested code commit `e141602`. It was one documentation commit behind main before synchronization. The branch has not been merged; require a full Build on the synchronized exact head, then a post-merge main Build and stable/versioned ISO digest equality before closing P0 release freshness.
+- The ISO verifier continues to print a generic one-warning summary (`THIS IMAGE WILL NOT BOOT`); do not use that warning as a substitute for guest evidence. The separate QEMU test passed all three iterations. Physical G560 and device compatibility remain unverified.
+- Remaining gates: 600-second/four-vCPU scheduler soak; physical Lenovo G560, SATA/NVMe/NIC/USB/graphics matrix; physical power-loss recovery; clean ACPI S5 shutdown. Overall estimate remains ~43%; no completion credit for CI or documentation.
