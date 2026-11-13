@@ -26,8 +26,8 @@ static int thread_create_failure(const char *stage,
                                  const struct process *process) {
     serial_write_public("ZEROOS: kernel thread creation rejected at ");
     serial_write_public(stage);
-    serial_write_public(" (pid=");
-    thread_write_u64(process ? process->pid : 0);
+    serial_write_public(" (process_ptr=");
+    thread_write_u64((uint64_t)(uintptr_t)process);
     serial_write_public(").\n");
     return -1;
 }

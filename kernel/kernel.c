@@ -408,6 +408,22 @@ static void process_thread_probe_monitor_step(void) {
         }
         serial_write_public("ZEROOS: invalid process API pointers rejected.\n");
 
+        {
+            struct process *invalid_owner=(struct process *)(uintptr_t)1;
+            thread_id_t rejected_kernel_tid=0xfeedULL;
+            thread_id_t rejected_user_tid=0xbeefULL;
+
+            if (thread_create_kernel(invalid_owner,
+                                     process_thread_probe_child_entry,0,
+                                     &rejected_kernel_tid)==0 ||
+                rejected_kernel_tid!=0xfeedULL ||
+                thread_create_user(invalid_owner,0,0,
+                                   &rejected_user_tid)==0 ||
+                rejected_user_tid!=0xbeefULL)
+                process_thread_probe_fail("invalid thread owner pointer was accepted");
+        }
+        serial_write_public("ZEROOS: invalid thread owner pointer rejected.\n");
+
         if (process_create(0,&process_probe_parent_pid)!=0)
             process_thread_probe_fail("process/thread parent creation failed");
         process_probe_parent=process_lookup(process_probe_parent_pid);

@@ -1,9 +1,19 @@
 # ZEROOS — CURRENT IMPLEMENTATION STATUS
 
-Updated: 2026-11-12
-Branch baseline: code-bearing main commit `2dac661e73655dfc5e6513bbb5a70b0f7791c8c9` (PR #47) contains the duplicate block-completion guard. Main Stage 1 Scheduler #327/#328 passed, but main Build #1906/#1907 failed in `make check` because GCC treats two RFC 8439 test-vector string initializers as `-Werror=unterminated-string-initialization`. Candidate PR #48 makes that host test compile, but both candidate Build #1908/#1909 then failed the first QEMU boot with an early triple fault; PR #48 remains unmerged. Stable ISO still identifies code snapshot `1af592d`.
+Updated: 2026-11-13
+Branch baseline: latest main HEAD `d0ff861c92da0208dfe6cff04f4bf23b01932cbe` is documentation-only after code-bearing main commit `b37b9542da719cc8dda30d5e08728b73602fe021` (PR #48 merged). Main Build #1915 and Stage 1 Scheduler #336 passed; 3/3 QEMU boots reached 108/108 milestones each, storage two-boot persistence and production desktop/network smoke passed, and stable/versioned ISO assets match at SHA-256 `cb544ebf…`.
 
 Status policy: **evidence-weighted estimate; never equate a source file, marker check, architecture document, or host test with a working end-user feature.**
+
+## Latest verified main — 2026-11-13
+
+- Latest main HEAD is `d0ff861c92da0208dfe6cff04f4bf23b01932cbe`; its two commits after the tested code snapshot are documentation-only. The latest code-bearing main commit is `b37b9542da719cc8dda30d5e08728b73602fe021` (PR #48 merged).
+- Main ZEROOS Build #1915 (run `43355195504`) and Stage 1 Scheduler #336 (run `43355195594`) both completed successfully on `b37b954`. Build #1915 passed the source regressions, native build, clean reproducible `make check`, kernel/ISO verification, three sequential QEMU boots (108/108 milestones each), SMP4, NX-disabled, failed-IPI recovery, scheduler panic diagnostics, two-boot AHCI/NVMe persistence, production ISO, production desktop/network smoke, diagnostic retention, and stable release publication.
+- The release contains `zeroos-b37b954.iso` and `zeroos.iso`, each 12,374,016 bytes with identical GitHub asset SHA-256 `cb544ebfe3d91fb50d594aa6c8b81db32f8e24e416f7e71cb72ee596f54516ad`. Release notes identify `b37b954` and describe a legacy BIOS El Torito live session; there is no disk installer.
+- P0 build/boot/post-merge CI/stable-release freshness is closed for code snapshot `b37b954`. This does not certify physical Lenovo G560 hardware.
+- New candidate `fix/thread-create-invalid-owner-diagnostic-20261113` addresses a process/thread lifecycle rejection-path fault: `thread_create_failure()` previously dereferenced `process->pid` after the process API had rejected an invalid owner pointer. The diagnostic now prints the pointer value without dereferencing it. A boot-time negative probe exercises both kernel-thread and user-thread creation with owner address `1` and verifies output TID sentinels remain unchanged. Source regression and required boot milestone are added. Candidate Build/QEMU validation is pending; this fix is not merged or counted as verified.
+- Remaining gates: 600-second/four-vCPU scheduler soak; physical G560 boot and SATA/NVMe/NIC/USB/graphics matrix; physical power-loss/recovery; clean ACPI S5 shutdown; standalone disk installer; then native desktop expansion and browser/media/AI/compatibility work. Overall estimate remains ~43%; CI and documentation do not increase feature completion.
+
 
 ## Historical evidence refresh — 2026-10-26 (superseded for current HEAD)
 

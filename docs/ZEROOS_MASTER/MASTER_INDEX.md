@@ -1,11 +1,20 @@
 # ZEROOS — MASTER DOCUMENT INDEX
-Version: 3.9
-Updated: 2026-11-13 (PR #48 merged as `b37b954`; main Build #1915 and Stage 1 #336 passed; 3/3 QEMU boots with 108 milestones each; storage and production smoke passed; stable/versioned ISO SHA-256 verified as `cb544ebf…`).
+Version: 4.0
+Updated: 2026-11-13 (main code snapshot `b37b954` verified by Build #1915 and Stage 1 #336; 3/3 QEMU boots, storage persistence, production smoke and matching stable/versioned ISO SHA-256 `cb544ebf…`).
 
 This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md` remains the canonical consolidated product/architecture specification. Stage 6-10 execution is split into dedicated production master documents so an implementation agent can work one stage at a time without losing cross-cutting requirements.
 
+## Current main verification — 2026-11-13
 
-## Current main verification — 2026-11-12
+- Latest main HEAD `d0ff861` is documentation-only after code-bearing commit `b37b954` (PR #48 merged).
+- Main Build #1915 and Stage 1 Scheduler #336 passed. Build #1915 reports 3/3 QEMU boots with 108/108 milestones per boot, SMP4, NX-disabled, failed-IPI recovery, scheduler panic diagnostics, AHCI/NVMe two-boot persistence, production ISO and desktop/network smoke.
+- Stable `zeroos.iso` and versioned `zeroos-b37b954.iso` are both 12,374,016 bytes with matching SHA-256 `cb544ebfe3d91fb50d594aa6c8b81db32f8e24e416f7e71cb72ee596f54516ad`. Release notes identify `b37b954`; the image is legacy BIOS El Torito live media, not a disk installer.
+- P0 build/boot/release freshness is closed for `b37b954`. Physical G560/device certification, 600-second/four-vCPU soak, physical power-loss recovery, ACPI S5 and installer remain open.
+- Candidate `fix/thread-create-invalid-owner-diagnostic-20261113` tests safe rejection of invalid process owners passed to kernel/user thread creation. It is not merged; exact-head Build/QEMU validation is pending.
+
+
+
+## Historical snapshot — 2026-11-12 (superseded by 2026-11-13)
 
 - Code-bearing main is `2dac661e73655dfc5e6513bbb5a70b0f7791c8c9` (merged PR #47). Duplicate block completion is now guarded by in-flight membership and a lock-protected `BLOCK_REQ_COMPLETING` state, with runtime/source regressions and a required boot milestone.
 - Candidate Build #1904/#1905 passed on the exact code-equivalent candidate tree: 3/3 QEMU boots, 108 milestones per boot, two-boot AHCI/NVMe persistence and production desktop/network smoke.
