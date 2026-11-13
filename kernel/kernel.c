@@ -431,6 +431,24 @@ static void process_thread_probe_monitor_step(void) {
             process_probe_parent->state!=PROCESS_NEW)
             process_thread_probe_fail("process lookup/state validation failed");
 
+        {
+            struct thread *invalid_thread=(struct thread *)(uintptr_t)1;
+            struct process *unchanged_owner=(struct process *)(uintptr_t)0xfeedULL;
+
+            if (process_thread_reserve(process_probe_parent)!=0 ||
+                process_thread_attach(process_probe_parent,invalid_thread)!=-1 ||
+                process_thread_unreserve(process_probe_parent)!=0 ||
+                process_thread_started(invalid_thread)!=-1 ||
+                process_thread_exited(invalid_thread,0)!=-1 ||
+                process_thread_detach(invalid_thread)!=-1 ||
+                process_thread_reap_begin(invalid_thread,&unchanged_owner)!=-1 ||
+                unchanged_owner!=(struct process *)(uintptr_t)0xfeedULL ||
+                process_thread_count(process_probe_parent)!=0 ||
+                process_live_thread_count(process_probe_parent)!=0)
+                process_thread_probe_fail("invalid thread object pointer was accepted");
+        }
+        serial_write_public("ZEROOS: invalid thread object pointers rejected.\n");
+
         if (process_set_limits(process_probe_parent,4,2,1024)!=0) {
             process_thread_probe_fail("process resource-limit setup failed");
         }

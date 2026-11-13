@@ -43,6 +43,8 @@ struct thread {
 int thread_system_init(void);
 
 struct thread *thread_current(void);
+/* Validate table provenance before a caller dereferences a thread pointer. */
+int thread_pointer_valid(const struct thread *thread);
 struct thread *thread_lookup(thread_id_t tid);
 int thread_is_user(const struct thread *thread);
 struct vmm_space *thread_address_space(const struct thread *thread);

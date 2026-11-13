@@ -355,7 +355,7 @@ int process_thread_unreserve(struct process *process) {
 int process_thread_attach(struct process *process, struct thread *thread) {
     uint64_t flags=spin_lock_irqsave(&process_lock);
 
-    if (!process_pointer_valid(process) || !thread ||
+    if (!process_pointer_valid(process) || !thread_pointer_valid(thread) ||
         process_lookup_locked(process->pid)!=process ||
         process->state==PROCESS_ZOMBIE ||
         process->creating_threads==0) {
@@ -379,9 +379,11 @@ int process_thread_started(struct thread *thread) {
     struct process *process;
     uint64_t flags;
 
-    if (!thread || !thread->process)
+    if (!thread_pointer_valid(thread))
         return -1;
     process=thread->process;
+    if (!process_pointer_valid(process))
+        return -1;
     flags=spin_lock_irqsave(&process_lock);
 
     if (process_lookup_locked(process->pid)!=process ||
@@ -402,9 +404,11 @@ int process_thread_exited(struct thread *thread, uint64_t exit_status) {
     struct process *parent_to_wake=0;
     uint64_t flags;
 
-    if (!thread || !thread->process)
+    if (!thread_pointer_valid(thread))
         return -1;
     process=thread->process;
+    if (!process_pointer_valid(process))
+        return -1;
     flags=spin_lock_irqsave(&process_lock);
 
     if (process_lookup_locked(process->pid)!=process ||
@@ -437,9 +441,11 @@ int process_thread_detach(struct thread *thread) {
     struct thread **cursor;
     uint64_t flags;
 
-    if (!thread || !thread->process)
+    if (!thread_pointer_valid(thread))
         return -1;
     process=thread->process;
+    if (!process_pointer_valid(process))
+        return -1;
     flags=spin_lock_irqsave(&process_lock);
 
     if (process_lookup_locked(process->pid)!=process) {
@@ -470,9 +476,11 @@ int process_thread_reap_begin(struct thread *thread,
     struct thread **cursor;
     uint64_t flags;
 
-    if (!thread || !thread->process)
+    if (!thread_pointer_valid(thread))
         return -1;
     process=thread->process;
+    if (!process_pointer_valid(process))
+        return -1;
     flags=spin_lock_irqsave(&process_lock);
     if (process_lookup_locked(process->pid)!=process ||
         thread->state!=THREAD_ZOMBIE ||
