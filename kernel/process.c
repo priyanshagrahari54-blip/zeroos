@@ -388,10 +388,10 @@ int process_thread_attach(struct process *process, struct thread *thread) {
      */
     if (!process_pointer_valid(process) || !thread_pointer_valid(thread) ||
         process_lookup_locked(process->pid)!=process ||
-        process->state==PROCESS_ZOMBIE ||
-        process->creating_threads==0 ||
         process_thread_link_locked(process,thread,0)!=0 ||
-        !thread_attachable_to_process(thread,process)) {
+        !thread_attachable_to_process(thread,process) ||
+        process->state==PROCESS_ZOMBIE ||
+        process->creating_threads==0) {
         spin_unlock_irqrestore(&process_lock,flags);
         return -1;
     }
