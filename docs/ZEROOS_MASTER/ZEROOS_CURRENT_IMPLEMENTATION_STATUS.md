@@ -1,16 +1,16 @@
 # ZEROOS — CURRENT IMPLEMENTATION STATUS
 
 Updated: 2026-11-14
-Branch baseline: latest main HEAD `129707fa0c1f1d92ac8d2e972d09f0254437f9b7` (PR #50 thread-pointer provenance hardening is present). The latest verified full main Build is #1918 and Stage 1 Scheduler #339, both on the preceding code-bearing commit `7b73f7a`; exact-head CI for `129707f` is not available from the workflow-run lookup in this review.
+Branch baseline: latest main HEAD `129707fa0c1f1d92ac8d2e972d09f0254437f9b7`. PR #50 is merged. The latest main code tree has successful full PR validation through PR #50 head `c536f785b89c5ebcfb7f2d80352cb8c20fd0e18e`; all seven changed code/workflow/test blobs were independently compared and are identical between that PR head and main HEAD.
 
 ## Latest main and release evidence — 2026-11-14
 
-- `main` resolves to `129707fa0c1f1d92ac8d2e972d09f0254437f9b7`. Its tree contains PR #50's `thread_pointer_valid()` checks and invalid-thread-pointer guest probe. The current master documents had not yet been synchronized to this main tip at review time.
-- Main Build #1918 (run `43358774793`) completed successfully on code commit `7b73f7a`, not `129707f`. Its job steps passed native build, reproducible release gate, kernel-image verification, 3/3 sequential QEMU boots with **109/109 milestones per boot**, SMP4, NX-disabled, failed-IPI recovery, scheduler panic diagnostics, q35 AHCI/NVMe two-boot persistence, production ISO, desktop/network smoke and release publication.
-- Main Stage 1 Scheduler #339 (run `43358774780`) passed on the same preceding code commit `7b73f7a`.
-- Build #1918 log confirms the stable release alias matched its boot-tested production ISO at SHA-256 `e78d8f4c2d74c9a356cbdfc04497636792543963bebcd7477a1e2ab06b1fb789`. This release evidence is for `7b73f7a`; it does not establish that newer `129707f` is booted or published.
-- PR #50's pointer-provenance change is present on main: process lifecycle APIs reject pointers outside the static thread table and validate the owning process before dereferencing it. Exact-head Build/QEMU status and a release ISO for `129707f` remain unverified in this review.
-- Candidate `fix/process-thread-attach-ownership-20261114` hardens process-thread attachment: reject foreign-owner and duplicate list links, require a staged NEW thread owned by the target process, bound/validate process-list walks, and add a required guest negative probe plus source regression. Candidate CI/QEMU is pending.
+- Main HEAD: `129707fa0c1f1d92ac8d2e972d09f0254437f9b7` (PR #50 merge). PR #50 head: `c536f785b89c5ebcfb7f2d80352cb8c20fd0e18e`.
+- Build #1920 (run `43360750832`) passed on PR #50 head. The job completed source regressions, native x86-64 build, reproducible `make check`, kernel-image verification, **3/3 sequential QEMU boots with 110/110 milestones per boot**, SMP4, NX-disabled, failed-IPI recovery, scheduler panic diagnostics, AHCI/NVMe two-boot persistence, production ISO generation and production desktop/network smoke.
+- Stage 1 Scheduler #341 (run `43360750870`) passed on the same PR #50 head.
+- The seven code/workflow/test blobs changed by PR #50 (`kernel/kernel.c`, `kernel/process.c`, `kernel/thread.c`, `kernel/thread.h`, `tools/boot_milestones.txt`, `.github/workflows/build.yml`, and the pointer-provenance regression) have identical blob SHAs on main `129707f` and PR head `c536f78`. This establishes that Build #1920 tested the same code tree now present on main, even though it was a PR event.
+- Build #1920's release-publication step was skipped because it was a PR run. The last verified stable ISO publication remains Build #1918 for code commit `7b73f7a`, SHA-256 `e78d8f4c2d74c9a356cbdfc04497636792543963bebcd7477a1e2ab06b1fb789`. Post-merge main release publication and current stable/versioned ISO equality for `129707f` remain unverified.
+- Candidate `fix/process-thread-attach-ownership-20261114` hardens process-thread attachment: require a staged NEW thread with matching table identity/owner/task; reject foreign-owner and duplicate links before consuming reservations or counters; bound and validate process-list walks; add a required guest negative probe and source regression. Candidate Build/QEMU is pending.
 - Remaining gates: 600-second/four-vCPU scheduler soak; physical G560 boot and SATA/NVMe/NIC/USB/graphics matrix; physical power-loss/recovery; clean ACPI S5 shutdown; standalone disk installer; then native desktop expansion and browser/media/AI/compatibility. Overall estimate remains ~43%; CI and documentation do not increase feature completion.
 
 ## Historical evidence refresh — 2026-10-26 (superseded for current HEAD)
