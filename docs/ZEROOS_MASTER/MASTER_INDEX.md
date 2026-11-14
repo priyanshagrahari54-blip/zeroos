@@ -1,17 +1,16 @@
 # ZEROOS — MASTER DOCUMENT INDEX
-Version: 4.1
-Updated: 2026-11-13 (PR #49 merged as `7b73f7a`; candidate Build #1916/#1917 and Stage 1 #337/#338 passed; post-merge Stage 1 #339 passed; main Build #1918 pending).
+Version: 4.2
+Updated: 2026-11-14 (main HEAD `129707f`, PR #50 present; last verified main Build #1918 / Stage 1 #339 are for `7b73f7a`; current-head release freshness open).
 
 This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md` remains the canonical consolidated product/architecture specification. Stage 6-10 execution is split into dedicated production master documents so an implementation agent can work one stage at a time without losing cross-cutting requirements.
 
-## Current main verification — 2026-11-13
+## Current main verification — 2026-11-14
 
-- Main code commit `7b73f7a31672531fdd87e76a818164777e8e24e6` is PR #49's squash merge. The merge tree matches tested PR head `908d135`.
-- Candidate Build #1916/#1917 and Stage 1 #337/#338 passed on that exact tree. Post-merge Stage 1 #339 passed; post-merge main Build #1918 is still running.
-- Candidate QEMU: 3/3 boots, 109/109 required milestones each; SMP4, NX-disabled, failed-IPI recovery and scheduler panic diagnostics passed. Candidate q35 AHCI/NVMe two-boot persistence and production desktop/network smoke passed.
-- PR #49 hardens thread-creation rejection diagnostics against invalid process-owner pointers; both kernel and user thread creation paths have a guest negative probe, sentinel TID checks and a required boot milestone.
-- The stable release still points to `b37b954` at this moment. Do not mark `7b73f7a` release-published until Build #1918 verifies the new versioned asset and stable alias.
-- Open major gates: 600-second/four-vCPU scheduler soak; physical G560/device matrix; physical power-loss recovery; ACPI S5; standalone disk installer; native desktop hardware integration; then browser/media/AI/compatibility.
+- Latest main HEAD is `129707fa0c1f1d92ac8d2e972d09f0254437f9b7`; PR #50's thread-table pointer provenance fix is present.
+- Main Build #1918 and Stage 1 Scheduler #339 passed on the preceding code-bearing commit `7b73f7a`, not latest `129707f`. Build #1918 verified 3/3 QEMU boots with 109/109 milestones each, SMP4, NX-disabled, failed-IPI recovery, scheduler panic diagnostics, two-boot AHCI/NVMe persistence and production desktop/network smoke.
+- Stable/versioned ISO verification passed for `7b73f7a` at SHA-256 `e78d8f4c2d74c9a356cbdfc04497636792543963bebcd7477a1e2ab06b1fb789`. Current-head release publication remains unverified.
+- Candidate `fix/process-thread-attach-ownership-20261114` adds process-thread attachment ownership validation, bounded process-list traversal, a guest negative probe and source regression. Full candidate Build/QEMU validation is pending.
+- Open gates: current-head build/release verification; 600-second/four-vCPU scheduler soak; physical G560/device and power-recovery matrix; ACPI S5; standalone installer; native desktop hardware integration; then browser/media/AI/compatibility. Overall estimate remains ~43%; CI and documentation do not count as feature completion.
 
 ## Historical snapshot — 2026-11-12 (superseded by 2026-11-13)
 
