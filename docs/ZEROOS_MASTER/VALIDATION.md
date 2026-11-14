@@ -1,13 +1,13 @@
 # ZEROOS — Validation and Support Matrix
 
-Updated: 2026-11-14. Latest main HEAD is `129707fa0c1f1d92ac8d2e972d09f0254437f9b7`. Main Build #1918 and Stage 1 Scheduler #339 passed on the preceding code-bearing commit `7b73f7a`; exact-head CI for `129707f` is unverified in this review. Build #1918 verified 3/3 QEMU boots with 109/109 milestones each, SMP4/NX-disabled/failed-IPI/scheduler diagnostics, two-boot AHCI/NVMe persistence, production desktop/network smoke and release publication. The stable ISO matched that production image at SHA-256 `e78d8f4c2d74c9a356cbdfc04497636792543963bebcd7477a1e2ab06b1fb789`; that artifact identifies `7b73f7a`, not current main `129707f`.
+Updated: 2026-11-14. Latest main HEAD `129707fa0c1f1d92ac8d2e972d09f0254437f9b7` contains the PR #50 code tree. PR #50 head `c536f785b89c5ebcfb7f2d80352cb8c20fd0e18e` passed Build #1920 (run `43360750832`) and Stage 1 Scheduler #341 (run `43360750870`); seven changed code/workflow/test blobs were verified identical between PR head and main. Build #1920 verified 3/3 QEMU boots with 110/110 milestones per boot, SMP4, NX-disabled, failed-IPI recovery, scheduler panic diagnostics, AHCI/NVMe two-boot persistence, production ISO generation and production desktop/network smoke. Its release-publication step was skipped for the PR event.
 
 ## Current main acceptance — 2026-11-14
 
-- Main HEAD `129707fa0c1f1d92ac8d2e972d09f0254437f9b7` contains PR #50's static thread-table pointer provenance validation. Main Build #1918 (run `43358774793`) and Stage 1 Scheduler #339 (run `43358774780`) are successful but checked out the preceding code commit `7b73f7a`; they are not exact-head evidence for `129707f`.
-- Build #1918 completed native x86-64 build, reproducible `make check`, kernel/ISO verification, 3/3 sequential QEMU boots with 109/109 milestones, SMP4, NX-disabled, failed-IPI recovery, scheduler panic diagnostics, AHCI/NVMe two-boot persistence, production ISO, desktop/network smoke and stable release byte comparison.
-- Stable release SHA-256 `e78d8f4c2d74c9a356cbdfc04497636792543963bebcd7477a1e2ab06b1fb789` is verified for the `7b73f7a` production image only. Current-head `129707f` publication remains open.
-- Candidate `fix/process-thread-attach-ownership-20261114` adds bounded process-thread list validation and rejects cross-process/duplicate thread attachment before consuming reservations or changing counters. It adds a guest negative probe, required milestone and source regression. No candidate Build/QEMU result is claimed yet.
+- Main HEAD `129707fa0c1f1d92ac8d2e972d09f0254437f9b7` is the PR #50 merge. The PR head `c536f785b89c5ebcfb7f2d80352cb8c20fd0e18e` has successful full Build #1920 and Stage 1 #341. The seven PR #50 changed code/workflow/test blobs were independently compared and match main, so the tested code tree is the code tree currently on main.
+- Build #1920 completed native x86-64 compilation, reproducible `make check`, kernel/ISO verification, 3/3 sequential QEMU boots with 110/110 milestones, SMP4, NX-disabled, failed-IPI recovery, scheduler panic diagnostics, AHCI/NVMe two-boot persistence, production ISO generation and desktop/network smoke.
+- Build #1920 was a PR event and skipped GitHub Release publication. The last verified stable ISO remains the Build #1918 artifact for `7b73f7a`, SHA-256 `e78d8f4c2d74c9a356cbdfc04497636792543963bebcd7477a1e2ab06b1fb789`. Post-merge main publication and current stable/versioned byte equality for `129707f` are not verified.
+- Candidate `fix/process-thread-attach-ownership-20261114` adds bounded process-thread list validation and rejects cross-process/duplicate thread attachment before consuming reservations or changing counters. It adds a guest negative probe, required milestone and source regression. Candidate Build/QEMU is not yet verified.
 
 
 ## Evidence classes
@@ -25,8 +25,9 @@ Updated: 2026-11-14. Latest main HEAD is `129707fa0c1f1d92ac8d2e972d09f0254437f9
 
 ## Current release status
 
-- Last verified main release snapshot: `7b73f7a`, Build #1918. Stable/versioned image verification succeeded for that snapshot at SHA-256 `e78d8f4c2d74c9a356cbdfc04497636792543963bebcd7477a1e2ab06b1fb789`.
-- Current main HEAD is `129707fa0c1f1d92ac8d2e972d09f0254437f9b7`. Exact-head Build/QEMU and release publication are not verified by the workflow-run data available in this review. Do not describe the `7b73f7a` ISO as current-head certified.
+- Latest code tree on main `129707f` is QEMU-validated through PR #50 Build #1920; PR #50 Stage 1 #341 also passed. Build #1920 did not publish a GitHub Release because it was a PR event.
+- Last independently verified stable release publication: Build #1918 for `7b73f7a`, SHA-256 `e78d8f4c2d74c9a356cbdfc04497636792543963bebcd7477a1e2ab06b1fb789`.
+- The post-merge main Build/release result for `129707f` and the current stable/versioned ISO SHA equality are not verified. Do not label the `7b73f7a` asset as current-head certified.
 - Physical Lenovo G560 certification remains pending. QEMU evidence does not certify physical Wi-Fi, GPU acceleration, fan control, Bluetooth, USB or sustained media workloads.
 - Standalone disk installation, full dynamic linking, production browser/media stacks, Windows/Android runtime compatibility and a complete ZERO AI tool/backend execution stack remain incomplete.
 
@@ -37,7 +38,7 @@ No stage is 100% complete until its hardening checklist has executable evidence 
 
 ## Release blockers
 
-1. **P0 — current-head release freshness:** latest main `129707f` is newer than the last verified release snapshot `7b73f7a`; exact-head Build/QEMU and stable/versioned ISO byte equality are not verified.
+1. **P0 — post-merge release freshness:** main code tree `129707f` has passing PR Build/QEMU evidence, but Build #1920 skipped release publication; verify the post-merge main Build and stable/versioned ISO byte equality for this exact tree.
 2. **P0 — candidate attachment fix:** `fix/process-thread-attach-ownership-20261114` needs exact PR-head Build, clean `make check`, the required guest milestone and repeated QEMU/storage/production gates before merge.
 3. **P1 — scheduler:** 600-second/four-vCPU soak with latency, fairness, hot-offline and wakeup-race evidence.
 4. **P1 — physical hardware/recovery:** G560 boot/device matrix and physical power-loss/recovery.
