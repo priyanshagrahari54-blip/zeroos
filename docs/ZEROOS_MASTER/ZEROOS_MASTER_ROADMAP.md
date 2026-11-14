@@ -10,14 +10,15 @@ Never create a basic version merely to replace it later.
 ## Current state
 
 
-### Current engineering state — 2026-11-13
+### Current engineering state — 2026-11-14
 
-- PR #49 merged to main as `7b73f7a31672531fdd87e76a818164777e8e24e6`. Its Git tree is identical to the fully tested candidate tree `908d135`.
-- Candidate Build #1916/#1917 and Stage 1 #337/#338 passed. The exact code tree passed clean `make check`, 3/3 QEMU boots with 109/109 milestones, SMP4, NX-disabled, failed-IPI recovery, scheduler panic diagnostics, two-boot AHCI/NVMe persistence and production desktop/network smoke. Post-merge Stage 1 #339 passed; main Build #1918 is still in progress.
-- Merged kernel fix: thread-creation failure diagnostics no longer dereference a rejected process pointer. Kernel and user thread creation invalid-owner probes verify rejection and unchanged TID outputs.
-- The stable release still identifies older code snapshot `b37b954`; main Build #1918 must publish and byte-verify the `7b73f7a` versioned ISO and stable alias before P0 release freshness is closed.
-- Next work order: (1) complete post-merge Build #1918 and stable ISO verification; (2) 600-second/four-vCPU scheduler soak; (3) physical G560 boot and SATA/NVMe/NIC/USB/graphics matrix; (4) physical power-loss/recovery and ACPI S5; (5) standalone installer/recovery; (6) further process lifecycle/storage hardening; (7) physical drivers/security; (8) usable native desktop hardware integration; then browser/media/AI/compatibility.
-- PR #26/#27 and broad runtime/desktop branches remain divergent; selectively rebase and review, never merge wholesale. Preserve every Stage 0–10 and product requirement. Overall estimate remains ~43%; no percentage increase for CI or documentation.
+- Latest main HEAD is `129707fa0c1f1d92ac8d2e972d09f0254437f9b7`; PR #50's thread-pointer provenance checks are present.
+- PR #50 head `c536f785b89c5ebcfb7f2d80352cb8c20fd0e18e` passed Build #1920 and Stage 1 Scheduler #341. Seven changed code/workflow/test blobs were verified identical between the PR head and main, so the candidate Build exercised the current main code tree.
+- Build #1920 verified native build/check, kernel/ISO verification, 3/3 QEMU boots with 110/110 milestones each, SMP4, NX-disabled, failed-IPI recovery, scheduler panic diagnostics, AHCI/NVMe two-boot persistence, production ISO generation and production desktop/network smoke.
+- Build #1920 skipped release publication because it was a PR event. The last verified stable ISO is for `7b73f7a`, SHA-256 `e78d8f4c2d74c9a356cbdfc04497636792543963bebcd7477a1e2ab06b1fb789`; post-merge release publication and current stable/versioned byte equality for `129707f` remain open.
+- Candidate `fix/process-thread-attach-ownership-20261114` hardens process-thread attachment: validate staged NEW thread table identity and owner under `thread_lock`; reject foreign-owner and duplicate list attachment before consuming reservations/counters; bound and validate process-thread list walks; add a guest negative probe and source regression. Candidate CI/QEMU is pending.
+- Next work order: (1) verify post-merge stable ISO publication for current main; (2) complete candidate attachment Build/QEMU/storage gates before merge; (3) 600-second/four-vCPU scheduler soak; (4) physical G560 boot and SATA/NVMe/NIC/USB/graphics matrix; (5) physical power-loss/recovery and ACPI S5; (6) standalone installer/recovery; (7) further kernel/process lifecycle and storage hardening; (8) physical drivers/security; (9) usable native desktop hardware integration; then browser/media/AI/compatibility.
+- Preserve every Stage 0–10 and product requirement. Overall estimate remains ~43%; no percentage increase for CI or documentation.
 
 ### Historical engineering state — 2026-11-12 (superseded by 2026-11-13)
 - Code-bearing main commit `1af592d300e648ffddb7e76f644d28d9156c34fb` (PR #46) passed Main Build #1901 and Stage 1 Scheduler #322. Latest main HEAD `af626f1e802f0c76bb87cb3f6e18392bf6c2c24a` is a documentation-only successor.

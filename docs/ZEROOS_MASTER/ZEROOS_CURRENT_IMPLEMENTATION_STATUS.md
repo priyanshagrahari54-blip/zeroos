@@ -1,20 +1,17 @@
 # ZEROOS — CURRENT IMPLEMENTATION STATUS
 
-Updated: 2026-11-13
-Branch baseline: main code-bearing commit `7b73f7a31672531fdd87e76a818164777e8e24e6` (PR #49 merged); candidate Build #1916/#1917 and Stage 1 #337/#338 passed, while post-merge Stage 1 #339 passed and main Build #1918 remains in progress. Stable release still points to `b37b954` until #1918 publishes the new code snapshot.
+Updated: 2026-11-14
+Branch baseline: latest main HEAD `129707fa0c1f1d92ac8d2e972d09f0254437f9b7`. PR #50 is merged. The latest main code tree has successful full PR validation through PR #50 head `c536f785b89c5ebcfb7f2d80352cb8c20fd0e18e`; all seven changed code/workflow/test blobs were independently compared and are identical between that PR head and main HEAD.
 
-Status policy: **evidence-weighted estimate; never equate a source file, marker check, architecture document, or host test with a working end-user feature.**
+## Latest main and release evidence — 2026-11-14
 
-## Latest main and candidate evidence — 2026-11-13
-
-- Main code-bearing commit is `7b73f7a31672531fdd87e76a818164777e8e24e6`, produced by merged PR #49. The merge commit has the same Git tree as the fully tested PR head `908d1350b8979c1422d8220931b04f76d707d805`; the executable source tree did not change during squash merge.
-- Candidate Build #1916 (push, run `43357554780`) and Build #1917 (PR, run `43357616126`) both passed on the exact tested code tree. Stage 1 Scheduler #337/#338 (runs `43357554661` / `43357616051`) both passed. The new `tools/test_thread_create_invalid_owner.py` ran 3 tests and passed.
-- Candidate Build #1916 passed clean `make check`, kernel/ISO verification, 3/3 sequential QEMU boots with **109/109 milestones per boot**, SMP4, NX-disabled, failed-IPI recovery, scheduler panic diagnostics, two-boot q35 AHCI/NVMe persistence, production ISO build and production desktop/network smoke. The new invalid-owner marker is part of the required 109-milestone list.
-- Post-merge main Stage 1 Scheduler #339 (run `43358774780`) passed. Post-merge main Build #1918 (run `43358774793`) is still in progress at the QEMU boot gate; its result is not yet claimed.
-- At the time of this update, the published stable release still identifies the older `b37b954` snapshot. Its `zeroos.iso` asset is 12,374,016 bytes with SHA-256 `cb544ebfe3d91fb50d594aa6c8b81db32f8e24e416f7e71cb72ee596f54516ad`. The new `7b73f7a` image is not yet published; release freshness remains pending Build #1918.
-- Merged kernel fix: `thread_create_failure()` no longer dereferences `process->pid` after an invalid owner pointer is rejected. It prints the opaque pointer value; the boot-time probe exercises both `thread_create_kernel()` and `thread_create_user()` with owner address `1`, verifies sentinel TID outputs remain unchanged, and emits a required milestone. This is a narrow process/thread lifecycle rejection-path hardening change, not new feature breadth.
+- Main HEAD: `129707fa0c1f1d92ac8d2e972d09f0254437f9b7` (PR #50 merge). PR #50 head: `c536f785b89c5ebcfb7f2d80352cb8c20fd0e18e`.
+- Build #1920 (run `43360750832`) passed on PR #50 head. The job completed source regressions, native x86-64 build, reproducible `make check`, kernel-image verification, **3/3 sequential QEMU boots with 110/110 milestones per boot**, SMP4, NX-disabled, failed-IPI recovery, scheduler panic diagnostics, AHCI/NVMe two-boot persistence, production ISO generation and production desktop/network smoke.
+- Stage 1 Scheduler #341 (run `43360750870`) passed on the same PR #50 head.
+- The seven code/workflow/test blobs changed by PR #50 (`kernel/kernel.c`, `kernel/process.c`, `kernel/thread.c`, `kernel/thread.h`, `tools/boot_milestones.txt`, `.github/workflows/build.yml`, and the pointer-provenance regression) have identical blob SHAs on main `129707f` and PR head `c536f78`. This establishes that Build #1920 tested the same code tree now present on main, even though it was a PR event.
+- Build #1920's release-publication step was skipped because it was a PR run. The last verified stable ISO publication remains Build #1918 for code commit `7b73f7a`, SHA-256 `e78d8f4c2d74c9a356cbdfc04497636792543963bebcd7477a1e2ab06b1fb789`. Post-merge main release publication and current stable/versioned ISO equality for `129707f` remain unverified.
+- Candidate `fix/process-thread-attach-ownership-20261114` hardens process-thread attachment: require a staged NEW thread with matching table identity/owner/task; reject foreign-owner and duplicate links before consuming reservations or counters; bound and validate process-list walks; add a required guest negative probe and source regression. Candidate Build/QEMU is pending.
 - Remaining gates: 600-second/four-vCPU scheduler soak; physical G560 boot and SATA/NVMe/NIC/USB/graphics matrix; physical power-loss/recovery; clean ACPI S5 shutdown; standalone disk installer; then native desktop expansion and browser/media/AI/compatibility. Overall estimate remains ~43%; CI and documentation do not increase feature completion.
-
 
 ## Historical evidence refresh — 2026-10-26 (superseded for current HEAD)
 

@@ -7,6 +7,7 @@
 #include "storage/fsyscall.h"
 
 #define ZEROOS_MAX_PROCESSES 16U
+#define ZEROOS_PROCESS_THREAD_WALK_LIMIT 32U
 #define ZEROOS_PROCESS_SLOT_BITS 16U
 #define ZEROOS_PROCESS_SLOT_MASK ((1ULL << ZEROOS_PROCESS_SLOT_BITS) - 1ULL)
 
@@ -59,6 +60,30 @@ static struct process *process_lookup_locked(process_id_t pid) {
         return 0;
 
     return &processes[slot];
+}
+
+static int process_thread_link_locked(struct process *process,
+                                      struct thread *thread,
+                                      struct thread ***link_out) {
+    struct thread **cursor=&process->first_thread;
+    uint32_t visited=0;
+
+    while (*cursor && visited<ZEROOS_PROCESS_THREAD_WALK_LIMIT) {
+        struct thread *current=*cursor;
+        if (!thread_pointer_valid(current))
+            return -1;
+        if (current==thread) {
+            if (current->process!=process)
+                return -1;
+            if (link_out)
+                *link_out=cursor;
+            return 1;
+        }
+        cursor=&current->next_in_process;
+        ++visited;
+    }
+    /* A non-NULL cursor after the bound means a cycle or overlong list. */
+    return *cursor ? -1 : 0;
 }
 
 static void process_reset_locked(struct process *process) {
@@ -355,8 +380,16 @@ int process_thread_unreserve(struct process *process) {
 int process_thread_attach(struct process *process, struct thread *thread) {
     uint64_t flags=spin_lock_irqsave(&process_lock);
 
+    /*
+     * Lock order is process_lock -> thread_lock. Thread allocation and reap
+     * paths release thread_lock before entering process lifecycle APIs.
+     * Reject foreign, uninitialized, already-linked, or corrupt-list objects
+     * before consuming the process reservation or changing any counters.
+     */
     if (!process_pointer_valid(process) || !thread_pointer_valid(thread) ||
         process_lookup_locked(process->pid)!=process ||
+        process_thread_link_locked(process,thread,0)!=0 ||
+        !thread_attachable_to_process(thread,process) ||
         process->state==PROCESS_ZOMBIE ||
         process->creating_threads==0) {
         spin_unlock_irqrestore(&process_lock,flags);
@@ -387,6 +420,7 @@ int process_thread_started(struct thread *thread) {
     flags=spin_lock_irqsave(&process_lock);
 
     if (process_lookup_locked(process->pid)!=process ||
+        process_thread_link_locked(process,thread,0)!=1 ||
         thread->state==THREAD_ZOMBIE || thread->state==THREAD_UNUSED) {
         spin_unlock_irqrestore(&process_lock,flags);
         return -1;
@@ -412,6 +446,7 @@ int process_thread_exited(struct thread *thread, uint64_t exit_status) {
     flags=spin_lock_irqsave(&process_lock);
 
     if (process_lookup_locked(process->pid)!=process ||
+        process_thread_link_locked(process,thread,0)!=1 ||
         thread->state==THREAD_UNUSED ||
         thread->state==THREAD_ZOMBIE) {
         spin_unlock_irqrestore(&process_lock,flags);
@@ -453,10 +488,7 @@ int process_thread_detach(struct thread *thread) {
         return -1;
     }
 
-    cursor=&process->first_thread;
-    while (*cursor && *cursor!=thread)
-        cursor=&(*cursor)->next_in_process;
-    if (*cursor!=thread) {
+    if (process_thread_link_locked(process,thread,&cursor)!=1) {
         spin_unlock_irqrestore(&process_lock,flags);
         return -1;
     }
@@ -489,10 +521,7 @@ int process_thread_reap_begin(struct thread *thread,
         return -1;
     }
 
-    cursor=&process->first_thread;
-    while (*cursor && *cursor!=thread)
-        cursor=&(*cursor)->next_in_process;
-    if (*cursor!=thread) {
+    if (process_thread_link_locked(process,thread,&cursor)!=1) {
         spin_unlock_irqrestore(&process_lock,flags);
         return -1;
     }
