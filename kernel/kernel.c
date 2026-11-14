@@ -502,6 +502,34 @@ static void process_thread_probe_monitor_step(void) {
             process_probe_parent->pid==process_probe_child->pid)
             process_thread_probe_fail("PID/TID uniqueness validation failed");
 
+        {
+            uint64_t parent_threads=process_thread_count(process_probe_parent);
+            uint64_t parent_live=process_live_thread_count(process_probe_parent);
+            uint64_t child_threads=process_thread_count(process_probe_child);
+            uint64_t child_live=process_live_thread_count(process_probe_child);
+
+            if (process_thread_reserve(process_probe_child)!=0)
+                process_thread_probe_fail("foreign-thread attach reservation failed");
+            if (process_thread_attach(process_probe_child,thread_probe_parent)==0)
+                process_thread_probe_fail("cross-process thread attachment was accepted");
+            if (process_thread_unreserve(process_probe_child)!=0)
+                process_thread_probe_fail("foreign-thread attach reservation leaked");
+
+            if (process_thread_reserve(process_probe_parent)!=0)
+                process_thread_probe_fail("duplicate-thread attach reservation failed");
+            if (process_thread_attach(process_probe_parent,thread_probe_parent)==0)
+                process_thread_probe_fail("duplicate thread attachment was accepted");
+            if (process_thread_unreserve(process_probe_parent)!=0)
+                process_thread_probe_fail("duplicate-thread attach reservation leaked");
+
+            if (process_thread_count(process_probe_parent)!=parent_threads ||
+                process_live_thread_count(process_probe_parent)!=parent_live ||
+                process_thread_count(process_probe_child)!=child_threads ||
+                process_live_thread_count(process_probe_child)!=child_live)
+                process_thread_probe_fail("rejected thread attachment changed process accounting");
+        }
+        serial_write_public("ZEROOS: cross-process and duplicate thread attachment rejected.\n");
+
         /*
          * Both processes own dedicated address-space roots. They should start
          * with no user mapping at the same virtual address.
