@@ -522,3 +522,8 @@ Open P1/P2 validation: 600-second/four-vCPU scheduler soak; physical Lenovo G560
 - Versioned asset `zeroos-b37b954.iso` and stable asset `zeroos.iso` are each 12,374,016 bytes and have identical SHA-256 `cb544ebfe3d91fb50d594aa6c8b81db32f8e24e416f7e71cb72ee596f54516ad`. Release notes identify `b37b954`, GRUB/El Torito legacy BIOS boot, and a live session; there is no disk installer.
 - The ISO verifier still emits a generic one-warning string (`THIS IMAGE WILL NOT BOOT`); the three successful guest QEMU iterations are the direct boot evidence. The G560 certification report in the Build artifact says its performance/thermal values are declared targets, not measured observations, and that no physical boot occurred. Physical Lenovo G560 certification remains open.
 - P0 build/boot/post-merge CI/stable-release freshness is closed for code snapshot `b37b954`. Remaining engineering gates: 600-second/four-vCPU scheduler soak; physical G560 and SATA/NVMe/NIC/USB/graphics matrix; physical power-loss/recovery; clean ACPI S5 shutdown; standalone disk installer. Overall estimate remains ~43%; no completion credit for CI or documentation.
+
+
+## PR #51 candidate tracking — 2026-11-14
+- Candidate branch `fix/process-thread-attach-ownership-20261114` was opened from main HEAD `129707fa0c1f1d92ac8d2e972d09f0254437f9b7`. Initial code/test commit: `32675ddf50189e42cd513ba7cbd9dcfdbb684bf3`.
+- Exact candidate Build/QEMU/storage/production workflows are not yet visible in the current workflow-run lookup. Do not merge until the final PR head has a complete successful Build and Stage 1 result.
