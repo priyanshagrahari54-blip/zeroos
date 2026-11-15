@@ -332,6 +332,7 @@ static thread_id_t thread_probe_child_tid;
 static thread_id_t thread_probe_reuse_tid;
 
 static struct atomic_u64 process_thread_probe_allow_parent_exit;
+static struct atomic_u64 process_thread_probe_allow_child_exit;
 
 static void scheduler_tss_stack_self_check(void);
 
@@ -344,6 +345,8 @@ static void process_thread_probe_parent_entry(void *argument) {
 
 static void process_thread_probe_child_entry(void *argument) {
     (void)argument;
+    while (atomic_u64_load(&process_thread_probe_allow_child_exit)==0)
+        scheduler_yield();
     atomic_u64_store(&process_thread_probe_child_ran,1);
 }
 
@@ -361,6 +364,7 @@ static void process_thread_probe_monitor_step(void) {
     uint64_t phase=atomic_u64_load(&process_thread_probe_phase);
 
     if (phase==0) {
+        atomic_u64_store(&process_thread_probe_allow_child_exit,0);
         process_id_t rejected_parent_pid=0xfeedULL;
         if (process_create((struct process *)(uintptr_t)1,
                            &rejected_parent_pid)==0 ||
@@ -527,6 +531,12 @@ static void process_thread_probe_monitor_step(void) {
                 process_thread_count(process_probe_child)!=child_threads ||
                 process_live_thread_count(process_probe_child)!=child_live)
                 process_thread_probe_fail("rejected thread attachment changed process accounting");
+
+            /* The child entry normally exits immediately. Hold it until this
+             * accounting snapshot is complete so SMP scheduling cannot make
+             * a legitimate live_thread_count decrement look like a failed
+             * rejected-attachment invariant. */
+            atomic_u64_store(&process_thread_probe_allow_child_exit,1);
         }
         serial_write_public("ZEROOS: cross-process and duplicate thread attachment rejected.\n");
 

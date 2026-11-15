@@ -124,6 +124,27 @@ class ProcessThreadAttachmentTests(unittest.TestCase):
         self.assertIn(MARKER, body)
         self.assertIn(MARKER, MILESTONES)
 
+    def test_guest_accounting_probe_holds_child_until_snapshot_finishes(self):
+        child = function_body(KERNEL, "static void process_thread_probe_child_entry(")
+        monitor = function_body(KERNEL, "static void process_thread_probe_monitor_step(")
+        compact_child = "".join(child.split())
+        self.assertIn(
+            "while(atomic_u64_load(&process_thread_probe_allow_child_exit)==0)",
+            compact_child,
+        )
+        self.assertIn("scheduler_yield()", compact_child)
+        self.assertLess(
+            compact_child.index("while(atomic_u64_load(&process_thread_probe_allow_child_exit)==0)"),
+            compact_child.index("atomic_u64_store(&process_thread_probe_child_ran,1)"),
+        )
+        self.assertIn(
+            "atomic_u64_store(&process_thread_probe_allow_child_exit,0)",
+            monitor,
+        )
+        snapshot = monitor.index("process_thread_count(process_probe_parent)!=parent_threads")
+        release = monitor.index("atomic_u64_store(&process_thread_probe_allow_child_exit,1)")
+        self.assertLess(snapshot, release)
+
     def test_ci_invokes_regression_exactly_once_before_toolchain_install(self):
         invocation = "python3 tools/test_process_thread_attachment.py"
         self.assertEqual(WORKFLOW.count(invocation), 1)

@@ -1,17 +1,17 @@
 # ZEROOS — MASTER DOCUMENT INDEX
-Version: 4.3
-Updated: 2026-11-14 (main HEAD `129707f`; PR #50 code tree passed Build #1920 / Stage 1 #341 on an identical PR-head tree; post-merge release publication unverified).
+Version: 4.4
+Updated: 2026-11-15 (main Build #1921 / Stage 1 #342 passed; current stable and versioned ISO assets match; PR #51 SMP4 guest-probe race is being corrected).
 
 This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md` remains the canonical consolidated product/architecture specification. Stage 6-10 execution is split into dedicated production master documents so an implementation agent can work one stage at a time without losing cross-cutting requirements.
 
-## Current main verification — 2026-11-14
+## Current main verification — 2026-11-15
 
-- Latest main HEAD is `129707fa0c1f1d92ac8d2e972d09f0254437f9b7`; PR #50's thread-table pointer provenance fix is present.
-- PR #50 head `c536f785b89c5ebcfb7f2d80352cb8c20fd0e18e` passed Build #1920 and Stage 1 Scheduler #341. Seven changed code/workflow/test blobs were verified identical between the PR head and main, so the Build tested the current main code tree.
-- Build #1920 verified native build/check, kernel/ISO verification, 3/3 QEMU boots with 110/110 milestones each, SMP4, NX-disabled, failed-IPI recovery, scheduler panic diagnostics, two-boot AHCI/NVMe persistence, production ISO generation and production desktop/network smoke.
-- Build #1920 skipped release publication because it was a PR event. Last verified stable ISO SHA-256 `e78d8f4c2d74c9a356cbdfc04497636792543963bebcd7477a1e2ab06b1fb789` is for `7b73f7a`; post-merge main release publication and current stable/versioned SHA equality remain unverified.
-- Candidate `fix/process-thread-attach-ownership-20261114` adds process-thread attachment ownership validation, bounded process-list traversal, a guest negative probe and source regression. Full candidate Build/QEMU validation is pending.
-- Open gates: current-main stable release verification; PR #51 full Build/QEMU; 600-second/four-vCPU scheduler soak; physical G560/device and power-recovery matrix; ACPI S5; standalone installer; native desktop hardware integration; then browser/media/AI/compatibility. Overall estimate remains ~43%; CI and documentation do not count as feature completion.
+- Main HEAD `129707fa0c1f1d92ac8d2e972d09f0254437f9b7` passed post-merge Build #1921 (run `43361846583`) and Stage 1 Scheduler #342 (run `43361846537`).
+- Build #1921 verified native x86-64 build/check, 3/3 QEMU boots with 110/110 milestones each, SMP4, NX-disabled, failed-IPI recovery, scheduler panic diagnostics, AHCI/NVMe two-boot persistence, production ISO and desktop/network smoke.
+- The current release assets `zeroos-129707f.iso` and `zeroos.iso` are both 12,378,112 bytes and match at SHA-256 `cfd4f2c57962fd139699445a1a28ce29120ac58b84019f70b747dcf1c6fdff38`; Build #1921 downloaded and byte-compared the stable alias to the boot-tested production image.
+- The verifier's generic `THIS IMAGE WILL NOT BOOT` warning remains inconsistent with the direct successful QEMU evidence; preserve it as a diagnostic issue, not as a QEMU failure.
+- PR #51 process/thread attachment candidate head `fcb3fed` passed Stage 1 #348/#349 but failed Build #1927/#1928 during SMP4. The guest probe's child thread could exit during the accounting snapshot. A follow-up now gates child exit until after the snapshot and adds a source regression; exact-head full Build/QEMU remains pending.
+- Open gates: corrected PR #51 full Build/QEMU/storage/production validation; 600-second/four-vCPU scheduler soak; physical G560/device and power-recovery matrix; ACPI S5; standalone installer; native desktop hardware integration; then browser/media/AI/compatibility. Overall estimate remains ~43%; CI and documentation do not count as feature completion.
 
 ## Historical snapshot — 2026-11-12 (superseded by 2026-11-13)
 

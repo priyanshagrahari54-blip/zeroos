@@ -1,14 +1,16 @@
 # ZEROOS — Validation and Support Matrix
 
-Updated: 2026-11-14. Latest main HEAD `129707fa0c1f1d92ac8d2e972d09f0254437f9b7` contains the PR #50 code tree. PR #50 head `c536f785b89c5ebcfb7f2d80352cb8c20fd0e18e` passed Build #1920 (run `43360750832`) and Stage 1 Scheduler #341 (run `43360750870`); seven changed code/workflow/test blobs were verified identical between PR head and main. Build #1920 verified 3/3 QEMU boots with 110/110 milestones per boot, SMP4, NX-disabled, failed-IPI recovery, scheduler panic diagnostics, AHCI/NVMe two-boot persistence, production ISO generation and production desktop/network smoke. Its release-publication step was skipped for the PR event.
+Updated: 2026-11-15. Latest main HEAD `129707fa0c1f1d92ac8d2e972d09f0254437f9b7` contains the PR #50 code tree. PR #50 head `c536f785b89c5ebcfb7f2d80352cb8c20fd0e18e` passed Build #1920 (run `43360750832`) and Stage 1 Scheduler #341 (run `43360750870`); seven changed code/workflow/test blobs were verified identical between PR head and main. Build #1920 verified 3/3 QEMU boots with 110/110 milestones per boot, SMP4, NX-disabled, failed-IPI recovery, scheduler panic diagnostics, AHCI/NVMe two-boot persistence, production ISO generation and production desktop/network smoke. Its release-publication step was skipped for the PR event.
 
-## Current main acceptance — 2026-11-14
+## Current main acceptance — 2026-11-15
 
-- Main HEAD `129707fa0c1f1d92ac8d2e972d09f0254437f9b7` is the PR #50 merge. The PR head `c536f785b89c5ebcfb7f2d80352cb8c20fd0e18e` has successful full Build #1920 and Stage 1 #341. The seven PR #50 changed code/workflow/test blobs were independently compared and match main, so the tested code tree is the code tree currently on main.
-- Build #1920 completed native x86-64 compilation, reproducible `make check`, kernel/ISO verification, 3/3 sequential QEMU boots with 110/110 milestones, SMP4, NX-disabled, failed-IPI recovery, scheduler panic diagnostics, AHCI/NVMe two-boot persistence, production ISO generation and desktop/network smoke.
-- Build #1920 was a PR event and skipped GitHub Release publication. The last verified stable ISO remains the Build #1918 artifact for `7b73f7a`, SHA-256 `e78d8f4c2d74c9a356cbdfc04497636792543963bebcd7477a1e2ab06b1fb789`. Post-merge main publication and current stable/versioned byte equality for `129707f` are not verified.
-- Candidate `fix/process-thread-attach-ownership-20261114` adds bounded process-thread list validation and rejects cross-process/duplicate thread attachment before consuming reservations or changing counters. It adds a guest negative probe, required milestone and source regression. Candidate Build/QEMU is not yet verified.
-
+- Main HEAD `129707fa0c1f1d92ac8d2e972d09f0254437f9b7` passed post-merge Build #1921 (run `43361846583`) and Stage 1 Scheduler #342 (run `43361846537`).
+- Build #1921 passed source regressions, native x86-64 compilation, reproducible `make check`, kernel-image verification, 3/3 sequential QEMU boots with 110/110 milestones per boot, SMP4, NX-disabled, failed-IPI recovery, scheduler panic diagnostics, AHCI/NVMe two-boot persistence, production ISO generation and production desktop/network smoke.
+- Retained storage serial logs show the `/data` counter incrementing from 0 to 1 and 1 to 2 across separate boots; clean-unmount/CLEAN-superblock/remount and the storage crash-consistency self-test passed. Production QEMU serial shows the interactive desktop session and RTL8139 networking path.
+- Build #1921 published the current-main release and explicitly compared the downloaded stable `zeroos.iso` against the boot-tested production ISO. Stable `zeroos.iso` and versioned `zeroos-129707f.iso` are each 12,378,112 bytes and have matching SHA-256 `cfd4f2c57962fd139699445a1a28ce29120ac58b84019f70b747dcf1c6fdff38`.
+- ISO verifier caveat: `verify_iso.py` prints a generic `THIS IMAGE WILL NOT BOOT` warning despite the same Build's successful 3/3 QEMU boots. The QEMU logs are the direct execution evidence; the verifier wording remains an open diagnostic-quality issue.
+- PR #51 candidate head `fcb3fedeb1916698c123df3b36c57c26b4711d93` passed Stage 1 Scheduler #348/#349, but Build #1927/#1928 failed during SMP4. Its retained `serial-smp4.log` reports `ZEROOS PANIC: rejected thread attachment changed process accounting`; the first 2-vCPU serial log reached the attachment-rejection milestone.
+- The candidate failure is a test-harness race, not evidence that a rejected attach changed the production accounting: the child probe thread could exit and legitimately decrement `live_thread_count` while the monitor compared before/after values. The follow-up holds that child until the accounting check finishes and adds a source regression for the gate ordering. This follow-up has not yet passed full CI/QEMU and is not mergeable on current evidence.
 
 ## Evidence classes
 
@@ -25,12 +27,13 @@ Updated: 2026-11-14. Latest main HEAD `129707fa0c1f1d92ac8d2e972d09f0254437f9b7`
 
 ## Current release status
 
-- Latest code tree on main `129707f` is QEMU-validated through PR #50 Build #1920; PR #50 Stage 1 #341 also passed. Build #1920 did not publish a GitHub Release because it was a PR event.
-- Last independently verified stable release publication: Build #1918 for `7b73f7a`, SHA-256 `e78d8f4c2d74c9a356cbdfc04497636792543963bebcd7477a1e2ab06b1fb789`.
-- The post-merge main Build/release result for `129707f` and the current stable/versioned ISO SHA equality are not verified. Do not label the `7b73f7a` asset as current-head certified.
-- Physical Lenovo G560 certification remains pending. QEMU evidence does not certify physical Wi-Fi, GPU acceleration, fan control, Bluetooth, USB or sustained media workloads.
+- Current main code snapshot `129707f` has post-merge Build #1921 and Stage 1 Scheduler #342 passing. Build #1921 completed release publication after native build/check, 3/3 QEMU boots, SMP4/NX-disabled/failed-IPI, storage persistence and production desktop/network smoke.
+- Stable `zeroos.iso` and versioned `zeroos-129707f.iso` assets both measure 12,378,112 bytes and share SHA-256 `cfd4f2c57962fd139699445a1a28ce29120ac58b84019f70b747dcf1c6fdff38`. The Build log explicitly states that the downloaded stable alias matches the boot-tested production ISO.
+- The image is a GRUB/El Torito legacy BIOS live ISO. It is not a standalone disk installer and does not certify UEFI installation or physical G560 compatibility.
+- The ISO verifier's generic `THIS IMAGE WILL NOT BOOT` warning remains inconsistent with the successful QEMU evidence and should be corrected or explained; do not suppress the warning without a targeted verifier regression.
+- PR #51 is a separate, unmerged process/thread lifecycle candidate. Its current pre-fix head failed SMP4 because the guest accounting probe allowed the child thread to exit during the comparison. The new test synchronization follow-up needs exact-head Build/QEMU/storage/production validation before merge.
+- Physical Lenovo G560 certification remains pending. QEMU evidence does not certify physical Wi-Fi, GPU acceleration, fan control, Bluetooth, USB, thermal behavior or sustained media workloads.
 - Standalone disk installation, full dynamic linking, production browser/media stacks, Windows/Android runtime compatibility and a complete ZERO AI tool/backend execution stack remain incomplete.
-
 
 ## Stage completion rule
 
@@ -38,11 +41,13 @@ No stage is 100% complete until its hardening checklist has executable evidence 
 
 ## Release blockers
 
-1. **P0 — post-merge release freshness:** main code tree `129707f` has passing PR Build/QEMU evidence, but Build #1920 skipped release publication; verify the post-merge main Build and stable/versioned ISO byte equality for this exact tree.
-2. **P0 — candidate attachment fix:** `fix/process-thread-attach-ownership-20261114` needs exact PR-head Build, clean `make check`, the required guest milestone and repeated QEMU/storage/production gates before merge.
-3. **P1 — scheduler:** 600-second/four-vCPU soak with latency, fairness, hot-offline and wakeup-race evidence.
-4. **P1 — physical hardware/recovery:** G560 boot/device matrix and physical power-loss/recovery.
-5. **P1 — power/install:** clean ACPI S5 and standalone disk installer/recovery path.
+1. **P0 — PR #51 candidate gate:** corrected exact head must pass the full Build, including the SMP4 guest negative probe, before merge. The previous head failed with a race in the test's live-thread accounting snapshot.
+2. **P1 — scheduler:** 600-second/four-vCPU soak with latency, fairness, hot-offline and wakeup-race evidence.
+3. **P1 — physical hardware/recovery:** G560 boot/device matrix and physical power-loss/recovery.
+4. **P1 — power/install:** clean ACPI S5 and standalone disk installer/recovery path.
+5. **P2 — ISO verifier diagnostics:** explain or correct the generic non-bootable warning while preserving QEMU as the direct boot evidence.
+6. **P2 — native desktop hardware:** physical display/input integration and application validation.
+7. **P3 — product expansion:** browser, media, AI and compatibility after kernel/storage/driver acceptance.
 6. **P2 — product expansion:** native desktop hardware integration first; browser/media/AI/compatibility only after kernel, storage and driver gates.
 7. Unsupported features and the legacy BIOS live-session/no-installer limitation must remain explicit in release notes.
 
