@@ -74,6 +74,9 @@ jobs:
       - name: Verify kernel boot artifact retention
         run: python3 tools/test_boot_image_artifacts.py
 
+      - name: Verify ISO verifier warning classification
+        run: python3 tools/test_verify_iso_summary.py
+
       - name: Install build and QEMU tools
         run: |
           sudo apt-get update
