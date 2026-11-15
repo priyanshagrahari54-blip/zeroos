@@ -45,6 +45,9 @@ jobs:
       - name: Verify process thread pointer provenance
         run: python3 tools/test_process_thread_pointer_validation.py
 
+      - name: Verify process thread attachment ownership
+        run: python3 tools/test_process_thread_attachment.py
+
       - name: Verify process user-copy mapping stability
         run: python3 tools/test_process_user_copy_atomic.py
 

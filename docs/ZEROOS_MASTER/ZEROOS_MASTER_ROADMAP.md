@@ -10,14 +10,19 @@ Never create a basic version merely to replace it later.
 ## Current state
 
 
-### Current engineering state — 2026-11-13
+### Current engineering state — 2026-11-15
 
-- PR #49 merged to main as `7b73f7a31672531fdd87e76a818164777e8e24e6`. Its Git tree is identical to the fully tested candidate tree `908d135`.
-- Candidate Build #1916/#1917 and Stage 1 #337/#338 passed. The exact code tree passed clean `make check`, 3/3 QEMU boots with 109/109 milestones, SMP4, NX-disabled, failed-IPI recovery, scheduler panic diagnostics, two-boot AHCI/NVMe persistence and production desktop/network smoke. Post-merge Stage 1 #339 passed; main Build #1918 is still in progress.
-- Merged kernel fix: thread-creation failure diagnostics no longer dereference a rejected process pointer. Kernel and user thread creation invalid-owner probes verify rejection and unchanged TID outputs.
-- The stable release still identifies older code snapshot `b37b954`; main Build #1918 must publish and byte-verify the `7b73f7a` versioned ISO and stable alias before P0 release freshness is closed.
-- Next work order: (1) complete post-merge Build #1918 and stable ISO verification; (2) 600-second/four-vCPU scheduler soak; (3) physical G560 boot and SATA/NVMe/NIC/USB/graphics matrix; (4) physical power-loss/recovery and ACPI S5; (5) standalone installer/recovery; (6) further process lifecycle/storage hardening; (7) physical drivers/security; (8) usable native desktop hardware integration; then browser/media/AI/compatibility.
-- PR #26/#27 and broad runtime/desktop branches remain divergent; selectively rebase and review, never merge wholesale. Preserve every Stage 0–10 and product requirement. Overall estimate remains ~43%; no percentage increase for CI or documentation.
+- Main HEAD `129707fa0c1f1d92ac8d2e972d09f0254437f9b7` passed post-merge Build #1921 and Stage 1 Scheduler #342. Build #1921 passed native x86-64 build/check, 3/3 QEMU boots with 110/110 milestones, SMP4, NX-disabled, failed-IPI recovery, scheduler diagnostics, AHCI/NVMe two-boot persistence, production ISO and desktop/network smoke.
+- Current stable `zeroos.iso` and versioned `zeroos-129707f.iso` assets match the Build #1921 production image at SHA-256 `cfd4f2c57962fd139699445a1a28ce29120ac58b84019f70b747dcf1c6fdff38`. Main build/boot/release freshness is closed for code snapshot `129707f`.
+- PR #51's prior candidate head `fcb3fed` passed Stage 1 #348/#349 but failed full Build #1927/#1928 during SMP4. The child probe thread exited while the test compared process live-thread counts, creating a nondeterministic false failure. The follow-up holds the child until the accounting assertion completes and adds a regression that enforces the gate ordering. Do not merge until the corrected exact head passes all QEMU variants, storage and production gates.
+- Next work order: (1) complete corrected PR #51 Build/QEMU and merge only on full pass; (2) 600-second/four-vCPU scheduler soak; (3) physical G560 boot and SATA/NVMe/NIC/USB/graphics matrix; (4) physical power-loss/recovery and ACPI S5; (5) standalone installer/recovery; (6) physical desktop display/input; (7) browser/media/AI/compatibility.
+- Preserve every Stage 0–10 and all product requirements. Overall estimate remains ~43%; no percentage increase for CI or documentation.
+- Separate diagnostic follow-up: investigate why `verify_iso.py` emits `THIS IMAGE WILL NOT BOOT` even though Build #1921's production ISO boots successfully in all three QEMU iterations. Do not weaken either check.
+
+### Historical engineering state — 2026-11-14 (superseded by 2026-11-15)
+
+- Main HEAD `129707f`; PR #50 code tree passed Build #1920 / Stage 1 #341. Candidate PR #51 added bounded process-thread attachment ownership checks; full Build was not yet verified at that point.
+- The 2026-11-15 main Build #1921 and release evidence above supersedes the 2026-11-14 release-freshness note.
 
 ### Historical engineering state — 2026-11-12 (superseded by 2026-11-13)
 - Code-bearing main commit `1af592d300e648ffddb7e76f644d28d9156c34fb` (PR #46) passed Main Build #1901 and Stage 1 Scheduler #322. Latest main HEAD `af626f1e802f0c76bb87cb3f6e18392bf6c2c24a` is a documentation-only successor.

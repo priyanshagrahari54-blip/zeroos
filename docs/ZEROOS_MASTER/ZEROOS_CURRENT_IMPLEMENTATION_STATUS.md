@@ -1,20 +1,20 @@
 # ZEROOS — CURRENT IMPLEMENTATION STATUS
 
-Updated: 2026-11-13
-Branch baseline: main code-bearing commit `7b73f7a31672531fdd87e76a818164777e8e24e6` (PR #49 merged); candidate Build #1916/#1917 and Stage 1 #337/#338 passed, while post-merge Stage 1 #339 passed and main Build #1918 remains in progress. Stable release still points to `b37b954` until #1918 publishes the new code snapshot.
+Updated: 2026-11-15
+Branch baseline: main HEAD `129707fa0c1f1d92ac8d2e972d09f0254437f9b7`; post-merge Build #1921 and Stage 1 Scheduler #342 passed. The stable and versioned release assets now match the Build #1921 production ISO at SHA-256 `cfd4f2c57962fd139699445a1a28ce29120ac58b84019f70b747dcf1c6fdff38`.
 
-Status policy: **evidence-weighted estimate; never equate a source file, marker check, architecture document, or host test with a working end-user feature.**
+## Latest main and release evidence — 2026-11-15
 
-## Latest main and candidate evidence — 2026-11-13
-
-- Main code-bearing commit is `7b73f7a31672531fdd87e76a818164777e8e24e6`, produced by merged PR #49. The merge commit has the same Git tree as the fully tested PR head `908d1350b8979c1422d8220931b04f76d707d805`; the executable source tree did not change during squash merge.
-- Candidate Build #1916 (push, run `43357554780`) and Build #1917 (PR, run `43357616126`) both passed on the exact tested code tree. Stage 1 Scheduler #337/#338 (runs `43357554661` / `43357616051`) both passed. The new `tools/test_thread_create_invalid_owner.py` ran 3 tests and passed.
-- Candidate Build #1916 passed clean `make check`, kernel/ISO verification, 3/3 sequential QEMU boots with **109/109 milestones per boot**, SMP4, NX-disabled, failed-IPI recovery, scheduler panic diagnostics, two-boot q35 AHCI/NVMe persistence, production ISO build and production desktop/network smoke. The new invalid-owner marker is part of the required 109-milestone list.
-- Post-merge main Stage 1 Scheduler #339 (run `43358774780`) passed. Post-merge main Build #1918 (run `43358774793`) is still in progress at the QEMU boot gate; its result is not yet claimed.
-- At the time of this update, the published stable release still identifies the older `b37b954` snapshot. Its `zeroos.iso` asset is 12,374,016 bytes with SHA-256 `cb544ebfe3d91fb50d594aa6c8b81db32f8e24e416f7e71cb72ee596f54516ad`. The new `7b73f7a` image is not yet published; release freshness remains pending Build #1918.
-- Merged kernel fix: `thread_create_failure()` no longer dereferences `process->pid` after an invalid owner pointer is rejected. It prints the opaque pointer value; the boot-time probe exercises both `thread_create_kernel()` and `thread_create_user()` with owner address `1`, verifies sentinel TID outputs remain unchanged, and emits a required milestone. This is a narrow process/thread lifecycle rejection-path hardening change, not new feature breadth.
-- Remaining gates: 600-second/four-vCPU scheduler soak; physical G560 boot and SATA/NVMe/NIC/USB/graphics matrix; physical power-loss/recovery; clean ACPI S5 shutdown; standalone disk installer; then native desktop expansion and browser/media/AI/compatibility. Overall estimate remains ~43%; CI and documentation do not increase feature completion.
-
+- Main HEAD remains `129707fa0c1f1d92ac8d2e972d09f0254437f9b7` (PR #50 merge).
+- Post-merge main Build #1921 (run `43361846583`) and Stage 1 Scheduler #342 (run `43361846537`) both completed successfully on that exact main SHA.
+- Build #1921 passed the source-regression suite, native x86-64 build, reproducible `make check`, kernel-image verification, **3/3 sequential QEMU boots with 110/110 milestones per boot**, SMP4, NX-disabled, failed-IPI recovery, scheduler panic-diagnostics certification, AHCI/NVMe two-boot persistence, production ISO generation, production desktop/network smoke, and release publication.
+- The Build log reports `boot_test: PASS - 3/3 boots reached every milestone`. The storage artifact records `/data` counter 1 (previous 0) and 2 (previous 1), successful clean-unmount/CLEAN-superblock/remount checks, and the storage crash-consistency self-test. Production serial output includes the interactive desktop session and RTL8139/QEMU networking path.
+- The stable asset `zeroos.iso` and versioned asset `zeroos-129707f.iso` are both 12,378,112 bytes and have the same GitHub Release API SHA-256 digest: `cfd4f2c57962fd139699445a1a28ce29120ac58b84019f70b747dcf1c6fdff38`. Build #1921 explicitly downloaded the stable alias and byte-compared it with the boot-tested production ISO. This closes current-main QEMU release freshness for `129707f`.
+- The ISO structure verifier still emits its generic warning text `THIS IMAGE WILL NOT BOOT`; the same Build's three successful QEMU boots are direct guest execution evidence. Keep the warning visible and investigate its diagnostic wording separately rather than overriding the QEMU result.
+- PR #51 candidate head before this update was `fcb3fedeb1916698c123df3b36c57c26b4711d93`. Stage 1 Scheduler #348/#349 passed, but Build #1927 (push) and #1928 (PR) failed in the Boot test after the 2-vCPU iterations, during the four-vCPU SMP boot. The retained `serial-smp4.log` records `ZEROOS PANIC: rejected thread attachment changed process accounting`; the same log does not reach the new attachment milestone.
+- Root cause isolated in the guest regression: the child probe thread exits immediately, so on SMP4 it can legitimately decrement `live_thread_count` between the test's before/after snapshots. That unrelated exit was misclassified as a mutation by the rejected-attachment test. The candidate correction now holds the child thread in `scheduler_yield()` until the accounting snapshot completes, then releases it. Production process/thread lifecycle code is unchanged by this follow-up; the corrected test still requires a fresh full Build/QEMU result.
+- Current candidate follow-up adds a source regression that requires the child-exit gate to remain closed through the accounting comparison. Do not merge PR #51 until its new exact head passes Build, all QEMU variants, storage and production smoke.
+- Remaining gates: 600-second/four-vCPU scheduler soak; physical G560 boot and SATA/NVMe/NIC/USB/graphics matrix; physical power-loss/recovery; clean ACPI S5 shutdown; standalone disk installer; physical desktop hardware integration; then browser/media/AI/compatibility. Overall estimate remains ~43%; CI and documentation do not increase feature completion.
 
 ## Historical evidence refresh — 2026-10-26 (superseded for current HEAD)
 
@@ -30,9 +30,9 @@ ZEROOS is a real native x86-64 kernel/desktop-session project with an ISO build 
 
 - **Working build path:** `make` / `make iso`, with the bootable ISO requiring a valid GRUB/El Torito toolchain.
 - **Full verification path:** `make check`; release/boot evidence: `tools/release.sh`.
-- **Latest main:** code-bearing commit `7b73f7a` (PR #49 merged); candidate Build #1916/#1917 and Stage 1 #337/#338 passed on the identical tree. Post-merge Stage 1 #339 passed; main Build #1918 is still running. Stable release freshness for `7b73f7a` is pending.
+- **Latest main:** code-bearing commit `129707f` (PR #50 merged); main Build #1921 and Stage 1 #342 passed on the exact main SHA. Stable/versioned ISO assets match the Build #1921 production image at SHA-256 `cfd4f2c57962fd139699445a1a28ce29120ac58b84019f70b747dcf1c6fdff38`.
 - **PR #16:** merged on 2026-10-17 as `d6b58292`. Its branch CI reported success and included parallel-build dependency fixes, ISO validation/writer fixes, shared 91-milestone boot test, reproducibility checks, and local intent-parser foundations.
-- **Post-merge CI:** Stage 1 #339 passed on `7b73f7a`; main Build #1918 is in progress. The exact same Git tree passed candidate Build #1916/#1917: 3/3 QEMU boots with 109/109 milestones each, SMP4, NX-disabled, failed-IPI, scheduler diagnostics, two-boot AHCI/NVMe persistence, production ISO and desktop/network smoke. Main release publication remains pending.
+- **Post-merge CI:** Build #1921 and Stage 1 #342 passed on main `129707f`; 3/3 QEMU boots reached 110/110 milestones each, with SMP4, NX-disabled, failed-IPI, scheduler diagnostics, two-boot AHCI/NVMe persistence, production ISO, desktop/network smoke and stable-alias byte comparison.
 - **Merged PR #49:** `thread_create_failure()` now avoids dereferencing an invalid process owner while reporting thread-creation rejection. Both kernel/user invalid-owner paths are exercised by a boot-time negative probe; source regression passed 3/3 tests. Full candidate QEMU/storage/production gates passed on the exact merge tree.
 - **Physical hardware:** not certified by this status entry. QEMU is not proof of G560 Wi-Fi, GPU acceleration, fan control, Bluetooth, or sustained 1080p playback.
 - **Installer:** a standalone ZEROOS disk installer is not complete; the documented dual-boot path relies on host GRUB.

@@ -53,6 +53,7 @@ ZEROOS: invalid process parent pointer rejected.
 ZEROOS: invalid process API pointers rejected.
 ZEROOS: invalid thread owner pointer rejected.
 ZEROOS: invalid thread object pointers rejected.
+ZEROOS: cross-process and duplicate thread attachment rejected.
 ZEROOS: process/thread object model self-test passed.
 ZEROOS: process address-space ownership self-test passed.
 ZEROOS: process user-copy mapping stability self-test passed.

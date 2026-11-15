@@ -332,6 +332,7 @@ static thread_id_t thread_probe_child_tid;
 static thread_id_t thread_probe_reuse_tid;
 
 static struct atomic_u64 process_thread_probe_allow_parent_exit;
+static struct atomic_u64 process_thread_probe_allow_child_exit;
 
 static void scheduler_tss_stack_self_check(void);
 
@@ -344,6 +345,8 @@ static void process_thread_probe_parent_entry(void *argument) {
 
 static void process_thread_probe_child_entry(void *argument) {
     (void)argument;
+    while (atomic_u64_load(&process_thread_probe_allow_child_exit)==0)
+        scheduler_yield();
     atomic_u64_store(&process_thread_probe_child_ran,1);
 }
 
@@ -361,6 +364,7 @@ static void process_thread_probe_monitor_step(void) {
     uint64_t phase=atomic_u64_load(&process_thread_probe_phase);
 
     if (phase==0) {
+        atomic_u64_store(&process_thread_probe_allow_child_exit,0);
         process_id_t rejected_parent_pid=0xfeedULL;
         if (process_create((struct process *)(uintptr_t)1,
                            &rejected_parent_pid)==0 ||
@@ -501,6 +505,40 @@ static void process_thread_probe_monitor_step(void) {
         if (thread_probe_parent->tid==thread_probe_child->tid ||
             process_probe_parent->pid==process_probe_child->pid)
             process_thread_probe_fail("PID/TID uniqueness validation failed");
+
+        {
+            uint64_t parent_threads=process_thread_count(process_probe_parent);
+            uint64_t parent_live=process_live_thread_count(process_probe_parent);
+            uint64_t child_threads=process_thread_count(process_probe_child);
+            uint64_t child_live=process_live_thread_count(process_probe_child);
+
+            if (process_thread_reserve(process_probe_child)!=0)
+                process_thread_probe_fail("foreign-thread attach reservation failed");
+            if (process_thread_attach(process_probe_child,thread_probe_parent)==0)
+                process_thread_probe_fail("cross-process thread attachment was accepted");
+            if (process_thread_unreserve(process_probe_child)!=0)
+                process_thread_probe_fail("foreign-thread attach reservation leaked");
+
+            if (process_thread_reserve(process_probe_parent)!=0)
+                process_thread_probe_fail("duplicate-thread attach reservation failed");
+            if (process_thread_attach(process_probe_parent,thread_probe_parent)==0)
+                process_thread_probe_fail("duplicate thread attachment was accepted");
+            if (process_thread_unreserve(process_probe_parent)!=0)
+                process_thread_probe_fail("duplicate-thread attach reservation leaked");
+
+            if (process_thread_count(process_probe_parent)!=parent_threads ||
+                process_live_thread_count(process_probe_parent)!=parent_live ||
+                process_thread_count(process_probe_child)!=child_threads ||
+                process_live_thread_count(process_probe_child)!=child_live)
+                process_thread_probe_fail("rejected thread attachment changed process accounting");
+
+            /* The child entry normally exits immediately. Hold it until this
+             * accounting snapshot is complete so SMP scheduling cannot make
+             * a legitimate live_thread_count decrement look like a failed
+             * rejected-attachment invariant. */
+            atomic_u64_store(&process_thread_probe_allow_child_exit,1);
+        }
+        serial_write_public("ZEROOS: cross-process and duplicate thread attachment rejected.\n");
 
         /*
          * Both processes own dedicated address-space roots. They should start

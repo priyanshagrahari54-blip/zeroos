@@ -38,6 +38,7 @@ static int thread_create_failure(const char *stage,
 
 static struct thread threads[ZEROOS_MAX_THREADS];
 static struct spinlock thread_lock;
+static struct thread *thread_lookup_locked(thread_id_t tid);
 
 int thread_pointer_valid(const struct thread *thread) {
     uintptr_t address=(uintptr_t)thread;
@@ -46,6 +47,24 @@ int thread_pointer_valid(const struct thread *thread) {
 
     return address>=base && address<end &&
            ((address-base)%sizeof(threads[0]))==0;
+}
+
+int thread_attachable_to_process(const struct thread *thread,
+                                 const struct process *process) {
+    uint64_t flags;
+    int attachable=0;
+
+    if (!thread_pointer_valid(thread) || !process)
+        return 0;
+
+    flags=spin_lock_irqsave(&thread_lock);
+    if (thread_lookup_locked(thread->tid)==thread &&
+        thread->state==THREAD_NEW &&
+        thread->process==process &&
+        thread->scheduler_task_id!=0)
+        attachable=1;
+    spin_unlock_irqrestore(&thread_lock,flags);
+    return attachable;
 }
 
 static uint64_t thread_make_id(uint32_t slot, uint32_t generation) {
