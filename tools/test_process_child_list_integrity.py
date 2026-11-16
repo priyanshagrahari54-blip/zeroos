@@ -39,7 +39,7 @@ class ProcessChildListIntegrityTests(unittest.TestCase):
             "struct process *process_find_child(",
             "int process_child_wait_prepare(",
         )
-        self.assertIn("process_child_link_locked(parent,pid,pid==0,0,&match,0)", body)
+        self.assertIn("process_child_link_locked(parent,pid,pid==0,0,0,&match,0)", body)
         self.assertNotIn("for (child=parent->first_child", body)
         self.assertNotIn("while (child)", body)
 
@@ -49,7 +49,7 @@ class ProcessChildListIntegrityTests(unittest.TestCase):
             "int process_child_wait_prepare(",
             "int process_thread_reserve(",
         )
-        self.assertIn("process_child_link_locked(parent,pid,0,0,&child,0)", body)
+        self.assertIn("process_child_link_locked(parent,pid,0,0,0,&child,0)", body)
         self.assertNotIn("while (child)", body)
 
     def test_create_validates_existing_parent_chain_before_insert(self):
@@ -58,7 +58,7 @@ class ProcessChildListIntegrityTests(unittest.TestCase):
             "int process_create(",
             "struct process *process_lookup(",
         )
-        self.assertIn("process_child_link_locked(parent,0,0,0,0,0)<0", body)
+        self.assertIn("process_child_link_locked(parent,0,0,0,0,0,0)<0", body)
 
     def test_reap_and_abort_preflight_before_irreversible_teardown(self):
         for signature, next_signature in (
