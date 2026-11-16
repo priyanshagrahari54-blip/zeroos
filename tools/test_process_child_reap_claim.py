@@ -113,6 +113,22 @@ class ProcessChildReapClaimTests(unittest.TestCase):
         )
         self.assertIn("uint32_t reap_claimed;", HEADER)
 
+    def test_claimed_reaper_bounds_and_validates_thread_walk(self):
+        pending = function_body(
+            SYSCALL,
+            "static int syscall_child_final_thread_transition_pending(",
+            "static int syscall_reap_claimed_child(",
+        )
+        self.assertIn("visited<ZEROOS_PROCESS_DEFAULT_MAX_THREADS", pending)
+        self.assertIn("thread_pointer_valid(thread)", pending)
+        reaper = function_body(
+            SYSCALL,
+            "static int syscall_reap_claimed_child(",
+            "static void syscall_create_channel(",
+        )
+        self.assertIn("visited<ZEROOS_PROCESS_DEFAULT_MAX_THREADS", reaper)
+        self.assertIn("thread_pointer_valid(thread)", reaper)
+
     def test_ci_runs_regression_before_build_tools(self):
         step = (
             "      - name: Verify process child reap ownership\n"

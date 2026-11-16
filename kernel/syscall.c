@@ -80,13 +80,23 @@ static void syscall_write(struct interrupt_frame *frame) {
 
 static int syscall_child_final_thread_transition_pending(
     const struct process *child) {
+    const struct thread *thread;
+    uint64_t visited=0;
+
     if (!child || child->live_thread_count || child->creating_threads ||
         child->first_child || !child->first_thread)
         return 0;
-    for (const struct thread *thread=child->first_thread; thread;
-         thread=thread->next_in_process)
+    thread=child->first_thread;
+    while (thread && visited<ZEROOS_PROCESS_DEFAULT_MAX_THREADS) {
+        if (!thread_pointer_valid(thread))
+            return 0;
         if (thread->state!=THREAD_ZOMBIE)
             return 1;
+        thread=thread->next_in_process;
+        ++visited;
+    }
+    /* A cycle, invalid tail, or accounting mismatch is corruption, not a
+     * reason to sleep forever waiting for a thread transition. */
     return 0;
 }
 
@@ -104,10 +114,18 @@ static int syscall_reap_claimed_child(struct process *parent,
     if (child->first_child || child->creating_threads ||
         child->live_thread_count!=0)
         return -ZEROOS_EBUSY;
-    while (child->first_thread) {
-        struct thread *thread=child->first_thread;
-        if (thread->state!=THREAD_ZOMBIE ||
-            thread_reap(thread,&status)!=0)
+    {
+        uint64_t visited=0;
+        while (child->first_thread &&
+               visited<ZEROOS_PROCESS_DEFAULT_MAX_THREADS) {
+            struct thread *thread=child->first_thread;
+            if (!thread_pointer_valid(thread) ||
+                thread->state!=THREAD_ZOMBIE ||
+                thread_reap(thread,&status)!=0)
+                return -ZEROOS_EBUSY;
+            ++visited;
+        }
+        if (child->first_thread)
             return -ZEROOS_EBUSY;
     }
     if (vmm_activate_kernel()!=0)
