@@ -690,22 +690,43 @@ static void process_thread_probe_monitor_step(void) {
 
         uint64_t parent_status=0xffffffffULL;
         uint64_t child_status=0xffffffffULL;
+        struct process *claimed_child=0;
+        struct process *duplicate_child=0;
+
+        if (process_child_reap_claim(process_probe_parent,
+                                     process_probe_child_pid,
+                                     &claimed_child)!=1 ||
+            claimed_child!=process_probe_child ||
+            process_child_reap_claim(process_probe_parent,
+                                     process_probe_child_pid,
+                                     &duplicate_child)!=0 ||
+            duplicate_child!=0)
+            process_thread_probe_fail("child reap claim was not exclusive");
 
         if (thread_reap(thread_probe_child,&child_status)!=0 ||
             child_status!=0)
             process_thread_probe_fail("child thread reap failed");
         if (process_thread_count(process_probe_child)!=0)
             process_thread_probe_fail("child thread count did not reach zero");
-        if (process_reap(process_probe_child,&child_status)!=0 ||
+        if (process_reap_cancel(claimed_child)!=0 ||
+            process_reap(process_probe_child,&child_status)==0)
+            process_thread_probe_fail("unclaimed process reap was accepted or claim cancellation failed");
+        if (process_child_reap_claim(process_probe_parent,
+                                     process_probe_child_pid,
+                                     &claimed_child)!=1 ||
+            claimed_child!=process_probe_child ||
+            process_reap(process_probe_child,&child_status)!=0 ||
             child_status!=0)
-            process_thread_probe_fail("child process reap failed");
+            process_thread_probe_fail("claimed child process reap failed");
+        serial_write_public("ZEROOS: child process reap claim is exclusive and cancellable.\n");
         if (process_child_count(process_probe_parent)!=0 ||
             process_lookup(process_probe_child_pid)!=0)
             process_thread_probe_fail("child process unlink/stale PID validation failed");
 
-        if (thread_reap(thread_probe_parent,&parent_status)!=0 ||
+        if (process_reap_claim(process_probe_parent)!=0 ||
+            thread_reap(thread_probe_parent,&parent_status)!=0 ||
             parent_status!=0)
-            process_thread_probe_fail("parent thread reap failed");
+            process_thread_probe_fail("parent process/thread reap claim failed");
         if (process_thread_count(process_probe_parent)!=0)
             process_thread_probe_fail("parent thread count did not reach zero");
         if (process_reap(process_probe_parent,&parent_status)!=0 ||

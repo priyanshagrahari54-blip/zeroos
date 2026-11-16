@@ -64,6 +64,20 @@ A parent owns the child relationship until the child process is reaped.
 Reaping removes the child from the parent's list and decrements the parent's
 child count.
 
+Concurrent waiters use an exclusive child-reap claim. The claim is acquired
+under `process_lock` only after the parent/child chain, generation-tagged PID,
+zombie state, and zero lifetime references are validated. A second waiter
+cannot claim the same zombie or detach its thread list concurrently. A waiter
+that cannot claim an existing child publishes itself on the parent's child
+wait queue; cancellation and successful unlink both wake those waiters.
+A PID-zero wait scans for any unclaimed zombie child rather than assuming the
+first linked child is the only candidate.
+
+The legacy `process_find_child()` result is a borrowed diagnostic pointer,
+not a lifetime pin. It must not be retained across concurrent wait/reap
+operations. Destructive callers use `process_child_reap_claim()` and release
+an unsuccessful claim with `process_reap_cancel()`.
+
 The current implementation does not yet implement orphan adoption, process
 groups, sessions, or signals.
 
