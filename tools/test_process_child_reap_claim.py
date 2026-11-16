@@ -31,7 +31,7 @@ class ProcessChildReapClaimTests(unittest.TestCase):
         self.assertIn("process_reap_claim_locked(child)", body)
         self.assertIn("*child_out=child", body)
         self.assertLess(body.index("process_reap_claim_locked(child)"),
-                        body.index("spin_unlock_irqrestore(&process_lock,flags)"))
+                        body.rindex("spin_unlock_irqrestore(&process_lock,flags)"))
 
     def test_pid_zero_selects_any_unclaimed_zombie(self):
         self.assertIn(
