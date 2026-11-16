@@ -62,6 +62,97 @@ static struct process *process_lookup_locked(process_id_t pid) {
     return &processes[slot];
 }
 
+/* Validate the complete child/sibling chain while process_lock is held.
+ * Every node is provenance-checked before any field dereference. The walk is
+ * bounded by the fixed process table and the stored child_count must agree
+ * with the actual chain. Returns -1 for corruption, 0 for no match, 1 found. */
+static int process_child_link_locked(struct process *parent,
+                                     process_id_t pid,
+                                     int zombie_only,
+                                     struct process *target,
+                                     struct process **child_out,
+                                     struct process ***link_out) {
+    struct process **cursor;
+    struct process *match=0;
+    struct process **match_link=0;
+    uint32_t visited=0;
+
+    if (!process_pointer_valid(parent) ||
+        process_lookup_locked(parent->pid)!=parent)
+        return -1;
+
+    cursor=&parent->first_child;
+    while (*cursor && visited<ZEROOS_MAX_PROCESSES) {
+        struct process *child=*cursor;
+
+        if (!process_pointer_valid(child))
+            return -1;
+        if (child==parent || process_lookup_locked(child->pid)!=child ||
+            child->parent!=parent)
+            return -1;
+
+        if (!match) {
+            if (target) {
+                if (child==target) {
+                    match=child;
+                    match_link=cursor;
+                }
+            } else if ((pid==0 || child->pid==pid) &&
+                       (!zombie_only || child->state==PROCESS_ZOMBIE)) {
+                match=child;
+                match_link=cursor;
+            }
+        }
+
+        cursor=&child->next_sibling;
+        ++visited;
+    }
+
+    /* A non-NULL cursor is a cycle or an overlong chain. A count mismatch is
+     * also corruption; callers must not continue with a partial child list. */
+    if (*cursor || visited!=parent->child_count)
+        return -1;
+
+    if (child_out)
+        *child_out=match;
+    if (link_out)
+        *link_out=match_link;
+    return match ? 1 : 0;
+}
+
+/* Preflight parent unlink before any irreversible revoke/address-space work.
+ * The returned link remains stable while process_lock is held. */
+static int process_child_unlink_preflight_locked(struct process *process,
+                                                 struct process **parent_out,
+                                                 struct process ***link_out) {
+    struct process *parent;
+    struct process *found=0;
+    struct process **link=0;
+
+    if (parent_out)
+        *parent_out=0;
+    if (link_out)
+        *link_out=0;
+    if (!process_pointer_valid(process) ||
+        process_lookup_locked(process->pid)!=process)
+        return -1;
+
+    parent=process->parent;
+    if (!parent)
+        return 0;
+    if (!process_pointer_valid(parent) ||
+        process_lookup_locked(parent->pid)!=parent ||
+        process_child_link_locked(parent,0,0,process,&found,&link)!=1 ||
+        found!=process || !link || *link!=process)
+        return -1;
+
+    if (parent_out)
+        *parent_out=parent;
+    if (link_out)
+        *link_out=link;
+    return 0;
+}
+
 static int process_thread_link_locked(struct process *process,
                                       struct thread *thread,
                                       struct thread ***link_out) {
@@ -154,7 +245,8 @@ int process_create(struct process *parent, process_id_t *pid_out) {
                    parent->state==PROCESS_UNUSED ||
                    parent->state==PROCESS_ZOMBIE ||
                    process_lookup_locked(parent->pid)!=parent ||
-                   parent->child_count>=parent->max_children)) {
+                   parent->child_count>=parent->max_children ||
+                   process_child_link_locked(parent,0,0,0,0,0)<0)) {
         spin_unlock_irqrestore(&process_lock,flags);
         return -1;
     }
@@ -272,7 +364,6 @@ int process_release_live(struct process *process) {
 
 struct process *process_find_child(struct process *parent, process_id_t pid) {
     uint64_t flags;
-    struct process *child;
     struct process *match=0;
 
     if (!process_pointer_valid(parent))
@@ -283,21 +374,15 @@ struct process *process_find_child(struct process *parent, process_id_t pid) {
         spin_unlock_irqrestore(&process_lock,flags);
         return 0;
     }
-    for (child=parent->first_child; child; child=child->next_sibling) {
-        if (pid!=0 && child->pid!=pid)
-            continue;
-        if (pid==0 && child->state!=PROCESS_ZOMBIE)
-            continue;
-        match=child;
-        break;
-    }
+    if (process_child_link_locked(parent,pid,pid==0,0,&match,0)!=1)
+        match=0;
     spin_unlock_irqrestore(&process_lock,flags);
     return match;
 }
 
 int process_child_wait_prepare(struct process *parent, process_id_t pid,
                                uint64_t *flags_out) {
-    struct process *child;
+    struct process *child=0;
     uint64_t process_flags;
     uint64_t wait_flags;
 
@@ -309,13 +394,7 @@ int process_child_wait_prepare(struct process *parent, process_id_t pid,
         spin_unlock_irqrestore(&process_lock,process_flags);
         return -ZEROOS_ECHILD;
     }
-    child=parent->first_child;
-    while (child) {
-        if ((pid==0 || child->pid==pid) && child->state!=PROCESS_UNUSED)
-            break;
-        child=child->next_sibling;
-    }
-    if (!child) {
+    if (process_child_link_locked(parent,pid,0,0,&child,0)!=1) {
         spin_unlock_irqrestore(&process_lock,process_flags);
         return -ZEROOS_ECHILD;
     }
@@ -553,7 +632,8 @@ int process_thread_reap_finish(struct process *process) {
 
 int process_reap(struct process *process, uint64_t *exit_status_out) {
     uint64_t flags;
-    struct process *parent;
+    struct process *parent=0;
+    struct process **parent_link=0;
 
     if (!process_pointer_valid(process)) return -1;
     flags=spin_lock_irqsave(&process_lock);
@@ -567,7 +647,9 @@ int process_reap(struct process *process, uint64_t *exit_status_out) {
         process->lifetime_refs!=0 ||
         process->first_child!=0 ||
         process->resident_pages!=
-            vmm_space_mapped_pages(&process->address_space)) {
+            vmm_space_mapped_pages(&process->address_space) ||
+        process_child_unlink_preflight_locked(process,&parent,
+                                               &parent_link)!=0) {
         spin_unlock_irqrestore(&process_lock,flags);
         return -1;
     }
@@ -577,39 +659,22 @@ int process_reap(struct process *process, uint64_t *exit_status_out) {
     process_id_t exited_pid=process->pid;
     uint32_t exited_generation=process->generation;
 
-    /* IPC and shared-memory capability references are revoked before the
-     * process object is reset. Both revoke paths only take their subsystem
-     * lock and clean tracked mappings before the private root is destroyed,
-     * so no stale owner pointer or shared physical-page reference survives
-     * process reuse. */
+    /* Validate and retain the parent-list link before irreversible revoke or
+     * address-space teardown. process_lock keeps that link stable until the
+     * child is unlinked and reset. */
     if (ipc_process_revoke(process)<0 ||
         shmem_process_revoke(process)<0) {
         spin_unlock_irqrestore(&process_lock,flags);
         return -1;
     }
 
-    parent=process->parent;
-
-    /*
-     * The process lock intentionally excludes only process-table mutations.
-     * Refuse to publish the reap until the private root has been destroyed;
-     * an active root must first be switched away with vmm_activate_kernel().
-     * This prevents a failed address-space teardown from silently losing the
-     * root and leaking all of its page-table pages.
-     */
     if (vmm_space_destroy(&process->address_space)!=0) {
         spin_unlock_irqrestore(&process_lock,flags);
         return -1;
     }
     if (parent) {
-        struct process **cursor=&parent->first_child;
-        while (*cursor && *cursor!=process)
-            cursor=&(*cursor)->next_sibling;
-        if (*cursor==process) {
-            *cursor=process->next_sibling;
-            if (parent->child_count)
-                --parent->child_count;
-        }
+        *parent_link=process->next_sibling;
+        --parent->child_count;
     }
     process_reset_locked(process);
     spin_unlock_irqrestore(&process_lock,flags);
@@ -621,7 +686,8 @@ int process_reap(struct process *process, uint64_t *exit_status_out) {
 
 int process_abort_new(struct process *process) {
     uint64_t flags;
-    struct process *parent;
+    struct process *parent=0;
+    struct process **parent_link=0;
 
     if (!process_pointer_valid(process))
         return -1;
@@ -630,7 +696,9 @@ int process_abort_new(struct process *process) {
         process->state!=PROCESS_NEW || process->thread_count!=0 ||
         process->live_thread_count!=0 || process->creating_threads!=0 ||
         process->reaping_threads!=0 || process->lifetime_refs!=0 ||
-        process->first_child!=0) {
+        process->first_child!=0 ||
+        process_child_unlink_preflight_locked(process,&parent,
+                                               &parent_link)!=0) {
         spin_unlock_irqrestore(&process_lock,flags);
         return -1;
     }
@@ -640,16 +708,9 @@ int process_abort_new(struct process *process) {
         spin_unlock_irqrestore(&process_lock,flags);
         return -1;
     }
-    parent=process->parent;
     if (parent) {
-        struct process **cursor=&parent->first_child;
-        while (*cursor && *cursor!=process)
-            cursor=&(*cursor)->next_sibling;
-        if (*cursor==process) {
-            *cursor=process->next_sibling;
-            if (parent->child_count)
-                --parent->child_count;
-        }
+        *parent_link=process->next_sibling;
+        --parent->child_count;
     }
     process_reset_locked(process);
     spin_unlock_irqrestore(&process_lock,flags);
@@ -939,6 +1000,67 @@ int process_address_space_is_executable(const struct process *process,
     return executable;
 }
 
+int process_debug_child_chain_selftest(struct process *parent,
+                                           struct process *child) {
+    uint64_t flags;
+    struct process *found_parent=0;
+    struct process **link=0;
+    struct process *saved_first;
+    struct process *saved_next;
+    uint64_t saved_count;
+    int result=-1;
+
+    if (!process_pointer_valid(parent) || !process_pointer_valid(child))
+        return -1;
+
+    flags=spin_lock_irqsave(&process_lock);
+    if (process_lookup_locked(parent->pid)!=parent ||
+        process_lookup_locked(child->pid)!=child ||
+        child->parent!=parent)
+        goto out;
+
+    saved_first=parent->first_child;
+    saved_next=child->next_sibling;
+    saved_count=parent->child_count;
+
+    if (process_child_unlink_preflight_locked(child,&found_parent,&link)!=0 ||
+        found_parent!=parent || !link || *link!=child)
+        goto out;
+
+    /* An invalid head must be rejected before its fields are read. */
+    parent->first_child=(struct process *)(uint64_t)1;
+    if (process_child_unlink_preflight_locked(child,0,0)==0) {
+        parent->first_child=saved_first;
+        goto out;
+    }
+    parent->first_child=saved_first;
+
+    /* A self-cycle must terminate at the fixed process-table walk bound. */
+    child->next_sibling=child;
+    if (process_child_unlink_preflight_locked(child,0,0)==0) {
+        child->next_sibling=saved_next;
+        goto out;
+    }
+    child->next_sibling=saved_next;
+
+    /* Stored accounting must agree with the validated linked list. */
+    parent->child_count=saved_count+1ULL;
+    if (process_child_unlink_preflight_locked(child,0,0)==0) {
+        parent->child_count=saved_count;
+        goto out;
+    }
+    parent->child_count=saved_count;
+
+    if (process_child_unlink_preflight_locked(child,&found_parent,&link)!=0 ||
+        found_parent!=parent || !link || *link!=child)
+        goto out;
+
+    result=0;
+out:
+    spin_unlock_irqrestore(&process_lock,flags);
+    return result;
+}
+
 int process_debug_validate(void) {
     uint64_t flags=spin_lock_irqsave(&process_lock);
 
@@ -1004,25 +1126,7 @@ int process_debug_validate(void) {
             return -1;
         }
 
-        if (process->child_count) {
-            uint64_t count=0;
-            struct process *child=process->first_child;
-            while (child) {
-                if (!process_pointer_valid(child) || child->parent!=process) {
-                    spin_unlock_irqrestore(&process_lock,flags);
-                    return -1;
-                }
-                if (++count>ZEROOS_MAX_PROCESSES) {
-                    spin_unlock_irqrestore(&process_lock,flags);
-                    return -1;
-                }
-                child=child->next_sibling;
-            }
-            if (count!=process->child_count) {
-                spin_unlock_irqrestore(&process_lock,flags);
-                return -1;
-            }
-        } else if (process->first_child) {
+        if (process_child_link_locked(process,0,0,0,0,0)<0) {
             spin_unlock_irqrestore(&process_lock,flags);
             return -1;
         }

@@ -48,6 +48,9 @@ jobs:
       - name: Verify process thread attachment ownership
         run: python3 tools/test_process_thread_attachment.py
 
+      - name: Verify process child-list integrity
+        run: python3 tools/test_process_child_list_integrity.py
+
       - name: Verify process user-copy mapping stability
         run: python3 tools/test_process_user_copy_atomic.py
 

@@ -127,3 +127,4 @@ never:ZEROOS PANIC:
 ZEROOS: process address-space range unmap preflight self-test passed.
 ZEROOS: storage block in-flight flush barrier passed.
 ZEROOS: block duplicate completion ignored.
+ZEROOS: process child-list corruption guards passed.
