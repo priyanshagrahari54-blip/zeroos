@@ -10,7 +10,16 @@ Never create a basic version merely to replace it later.
 ## Current state
 
 
-### Current engineering state — 2026-11-15
+### Current engineering state — 2026-11-16
+
+- Main HEAD is `a363dbed7d027351ab9f3cdfe22e3da9e016aab2`; PR #52's exact head `c861709` passed Build #1942 and Stage 1 Scheduler #363. The Build passed native x86-64 build/check, 3/3 QEMU boots with 111/111 milestones, SMP4, NX-disabled, failed-IPI recovery, AHCI/NVMe persistence, production ISO and desktop/network smoke. PR #52 is merged.
+- Post-merge main Build #1943 is in progress; Stage 1 #364 passed on exact main SHA. Build #1931 on code-bearing `4c36c2c` published a stable/versioned ISO pair with matching SHA-256 `63e328cbe3672a31ced65d6b8e3483a06fa1efd70c66545d1d79381279e2559e`. A fresh publication for metadata merge `a363dbed` remains pending.
+- Candidate `fix/process-child-list-integrity-20261116` adds a bounded and provenance-checked child/sibling chain validator, generation/PID and parent-owner checks, child-count consistency, and preflighted unlink before process revoke/address-space teardown. The guest self-test covers an invalid child pointer, a self-cycle and accounting mismatch. Eight source-contract tests and a required boot milestone are integrated.
+- Candidate head `304562a58bb5a3e375cc3c975da4f3da12ddd309`: Build #1946 pending; Stage 1 Scheduler #367 in progress. Previous #1945/#366 were cancelled after the newline correction and do not validate the final head. Do not merge without full Build/QEMU/storage/production acceptance.
+- Next work order: (1) complete candidate Build #1946 and Stage 1 #367; (2) require all QEMU variants, storage persistence and production smoke before PR merge; (3) finish 600-second/four-vCPU scheduler soak; (4) physical G560 boot and SATA/NVMe/NIC/USB/graphics matrix; (5) physical power-loss/recovery and ACPI S5; (6) standalone installer/recovery; (7) physical desktop display/input; (8) browser/media/AI/compatibility.
+- Preserve every Stage 0–10 and all product requirements. Overall estimate remains ~43%; no percentage increase for CI or documentation.
+
+### Historical engineering state — 2026-11-15 (superseded)
 
 - Main includes PR #51 merge commit `4c36c2cf796bcedb9399b8488f431087441bc318`. Its exact PR head `16660e532a7c32dcd648724e6214bbdb31b80275` passed Build #1930 and Stage 1 Scheduler #351.
 - Build #1930 passed native x86-64 build/check, 3/3 QEMU boots with 111/111 milestones, SMP4, NX-disabled, failed-IPI recovery, scheduler diagnostics, q35 AHCI/NVMe two-boot persistence, production ISO and desktop/network smoke. It was a PR event; release publication was skipped.
