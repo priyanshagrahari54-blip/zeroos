@@ -1,6 +1,6 @@
 # ZEROOS — Validation and Support Matrix
 
-Updated: 2026-11-16. Main HEAD is `a363dbed7d027351ab9f3cdfe22e3da9e016aab2` (PR #52 merged). PR #52 exact head `c86170938be87645201da08fd121584482453196` passed Build #1942 and Stage 1 Scheduler #363; Build #1942 completed source regressions, native x86-64 build, clean `make check`, kernel-image verification, 3/3 QEMU boots with 111/111 milestones each, SMP4, NX-disabled, failed-IPI recovery, storage persistence and production desktop/network smoke. Post-merge main Build #1943 is still in progress; Stage 1 Scheduler #364 passed on exact main SHA. The stable/versioned ISO currently identifies code-bearing snapshot `4c36c2c`, not metadata merge `a363dbed`: both assets are 12,378,112 bytes and match at SHA-256 `63e328cbe3672a31ced65d6b8e3483a06fa1efd70c66545d1d79381279e2559e`. Main includes PR #51 merge commit `4c36c2cf796bcedb9399b8488f431087441bc318`. Its exact PR head `16660e532a7c32dcd648724e6214bbdb31b80275` passed Build #1930 (run `43669231347`) and Stage 1 Scheduler #351 (run `43669231292`). Post-merge main Build and release publication for `4c36c2c` remain unverified.
+Updated: 2026-11-16. Branch baseline: Main HEAD `aaf09738a9b3762e2e0b038addba8ca22421cf64`. Main Build #1949 and Stage 1 Scheduler #370 both passed on this exact SHA. Build #1949 verified native x86-64 build, clean `make check`, kernel image, 3/3 QEMU boots with 112/112 milestones each, SMP4, NX-disabled, failed-IPI recovery, scheduler panic diagnostics, AHCI/NVMe two-boot persistence, production ISO and production desktop/network smoke. Stable assets `zeroos-aaf0973.iso` and `zeroos.iso` are each 12,378,112 bytes and have identical SHA-256 `4afd97c7b7b14d1f0fcb3d04a4f6c0a7bb70c54e4d8d1dff8f75e0f4c8d1d6a2`. PR #54 candidate head `a48de5e2045e65d185da444adb5fcc84f821de2d` passed Build #1966 (push), Build #1967 (PR), Stage 1 #387 and Stage 1 #388; it is not merged and does not change the main release.
 
 ## Historical main acceptance — 2026-11-15 (superseded)
 
@@ -555,3 +555,37 @@ Open P1/P2 validation: 600-second/four-vCPU scheduler soak; physical Lenovo G560
 ## PR #51 candidate tracking — 2026-11-14
 - Candidate branch `fix/process-thread-attach-ownership-20261114` was opened from main HEAD `129707fa0c1f1d92ac8d2e972d09f0254437f9b7`. Initial code/test commit: `32675ddf50189e42cd513ba7cbd9dcfdbb684bf3`.
 - Exact candidate Build/QEMU/storage/production workflows are not yet visible in the current workflow-run lookup. Do not merge until the final PR head has a complete successful Build and Stage 1 result.
+
+
+## 2026-11-16 verification record — main and PR #54
+
+| Target | Workflow | Exact SHA | Result |
+|---|---|---|---|
+| Main Build #1949 | [run 43798556648](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/43798556648) | `aaf09738a9b3762e2e0b038addba8ca22421cf64` | PASS |
+| Main Stage 1 #370 | [run 43798556505](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/43798556505) | same main SHA | PASS |
+| PR #54 Build #1966 | [run 43803753228](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/43803753228) | `a48de5e2045e65d185da444adb5fcc84f821de2d` | PASS |
+| PR #54 Build #1967 | [run 43803760217](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/43803760217) | same candidate SHA | PASS |
+| PR #54 Stage 1 #387 | [run 43803753290](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/43803753290) | same candidate SHA | PASS |
+| PR #54 Stage 1 #388 | [run 43803760200](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/43803760200) | same candidate SHA | PASS |
+
+### Exact main checks
+- Native x86-64 build, clean `make check`, kernel-image verification: PASS.
+- QEMU: 3/3 boots; 112/112 required milestones per boot; 32-bit entry and long-mode markers: PASS.
+- SMP4, NX-disabled, failed-IPI recovery, scheduler panic-diagnostics certification: PASS.
+- AHCI/NVMe two-boot persistence, production ISO, production desktop/network smoke: PASS.
+- Stable/versioned main ISO assets: 12,378,112 bytes each; SHA-256 matches at `4afd97c7b7b14d1f0fcb3d04a4f6c0a7bb70c54e4d8d1dff8f75e0f4c8d1d6a2`.
+
+### Exact candidate checks
+- All 16 methods in `tools/test_process_child_reap_claim.py`: passed as the CI source-regression step.
+- Native x86-64 build, clean `make check`, kernel-image verification: PASS.
+- QEMU: 3/3 boots; 113/113 milestones per boot.
+- SMP4, NX-disabled, failed-IPI recovery, scheduler panic diagnostics: PASS.
+- q35 AHCI + NVMe two-boot persistence and host-side ZJFS checks: PASS.
+- Production image and production boot smoke: PASS.
+- PR Build release publication was skipped by policy; artifacts were retained. Candidate stable release publication is not claimed.
+
+### ISO verifier interpretation
+The current verifier summary is `PASS with 1 warning(s); required ISO 9660 and El Torito bootability checks passed`. Optional `pycdlib` cross-check was skipped because the package was not installed. This warning does not contradict the successful QEMU boot gates.
+
+### Remaining validation gaps
+Physical Lenovo G560 boot, physical SATA/NVMe/NIC/USB/graphics, physical power-loss recovery, ACPI S5, standalone installation and long-duration scheduler soak remain unverified. The PR #54 code is CI/QEMU validated but not merged into main. A non-blocking checkout cleanup warning reports `.claude/worktrees/hardening-mem-safety` missing a URL in `.gitmodules`; the workflows concluded success.

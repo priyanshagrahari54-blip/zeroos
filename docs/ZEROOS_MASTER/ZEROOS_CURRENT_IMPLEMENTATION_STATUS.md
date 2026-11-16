@@ -1,7 +1,7 @@
 # ZEROOS — CURRENT IMPLEMENTATION STATUS
 
 Updated: 2026-11-16
-Branch baseline: Main HEAD is `a363dbed7d027351ab9f3cdfe22e3da9e016aab2` (PR #52 merged). PR #52 exact head `c86170938be87645201da08fd121584482453196` passed Build #1942 and Stage 1 Scheduler #363; Build #1942 completed source regressions, native x86-64 build, clean `make check`, kernel-image verification, 3/3 QEMU boots with 111/111 milestones each, SMP4, NX-disabled, failed-IPI recovery, storage persistence and production desktop/network smoke. Post-merge main Build #1943 is still in progress; Stage 1 Scheduler #364 passed on exact main SHA. The stable/versioned ISO currently identifies code-bearing snapshot `4c36c2c`, not metadata merge `a363dbed`: both assets are 12,378,112 bytes and match at SHA-256 `63e328cbe3672a31ced65d6b8e3483a06fa1efd70c66545d1d79381279e2559e`.
+Branch baseline: Main HEAD `aaf09738a9b3762e2e0b038addba8ca22421cf64`. Main Build #1949 and Stage 1 Scheduler #370 both passed on this exact SHA. Build #1949 verified native x86-64 build, clean `make check`, kernel image, 3/3 QEMU boots with 112/112 milestones each, SMP4, NX-disabled, failed-IPI recovery, scheduler panic diagnostics, AHCI/NVMe two-boot persistence, production ISO and production desktop/network smoke. Stable assets `zeroos-aaf0973.iso` and `zeroos.iso` are each 12,378,112 bytes and have identical SHA-256 `4afd97c7b7b14d1f0fcb3d04a4f6c0a7bb70c54e4d8d1dff8f75e0f4c8d1d6a2`. PR #54 candidate head `a48de5e2045e65d185da444adb5fcc84f821de2d` passed Build #1966 (push), Build #1967 (PR), Stage 1 #387 and Stage 1 #388; it is not merged and does not change the main release.
 
 Status policy: **evidence-weighted estimate; never equate a source file, marker check, architecture document, or host test with a working end-user feature.**
 
@@ -602,3 +602,34 @@ The release pipeline itself is no longer a P0 blocker for code snapshot `100c8e2
 - Versioned asset `zeroos-b37b954.iso` and stable asset `zeroos.iso` are each 12,374,016 bytes and have identical SHA-256 `cb544ebfe3d91fb50d594aa6c8b81db32f8e24e416f7e71cb72ee596f54516ad`. Release notes identify `b37b954`, GRUB/El Torito legacy BIOS boot, and a live session; there is no disk installer.
 - The ISO verifier still emits a generic one-warning string (`THIS IMAGE WILL NOT BOOT`); the three successful guest QEMU iterations are the direct boot evidence. The G560 certification report in the Build artifact says its performance/thermal values are declared targets, not measured observations, and that no physical boot occurred. Physical Lenovo G560 certification remains open.
 - P0 build/boot/post-merge CI/stable-release freshness is closed for code snapshot `b37b954`. Remaining engineering gates: 600-second/four-vCPU scheduler soak; physical G560 and SATA/NVMe/NIC/USB/graphics matrix; physical power-loss/recovery; clean ACPI S5 shutdown; standalone disk installer. Overall estimate remains ~43%; no completion credit for CI or documentation.
+
+
+## 2026-11-16 latest verified snapshot — main and PR #54
+
+### Main branch — released and QEMU-validated
+- Main HEAD: `aaf09738a9b3762e2e0b038addba8ca22421cf64`.
+- Main Build #1949 (run `43798556648`) and Stage 1 Scheduler #370 (run `43798556505`) both passed on that exact SHA.
+- The Build reported `boot_test: PASS - 3/3 boots reached every milestone`; each boot reached all 112/112 required milestones and recorded 32-bit entry plus long-mode markers.
+- SMP4, NX-disabled boot, failed-IPI recovery, scheduler panic-diagnostics certification, AHCI/NVMe persistence over two boots, production ISO generation and production desktop/network smoke all passed.
+- The stable and versioned ISO assets `zeroos-aaf0973.iso` and `zeroos.iso` are both 12,378,112 bytes and have matching SHA-256 `4afd97c7b7b14d1f0fcb3d04a4f6c0a7bb70c54e4d8d1dff8f75e0f4c8d1d6a2`. This is the currently verified main release snapshot.
+- The ISO verifier now reports `PASS with 1 warning(s); required ISO 9660 and El Torito bootability checks passed`. The sole warning is that optional `pycdlib` independent parsing is unavailable; it is not a boot-failure claim. QEMU remains the direct guest boot evidence.
+
+### Candidate PR #54 — exclusive process/thread reaping
+- Candidate branch: `fix/process-child-reap-claim-20261116`; final code head: `a48de5e2045e65d185da444adb5fcc84f821de2d`; PR remains open and unmerged.
+- The exclusive zombie reaper claim is now used by all audited kernel-owned final-thread teardown paths: userspace probes/services in `kernel/user.c`, session certification in `kernel/session.c`, and storage userspace certification in `kernel/storage/storage.c`. The claim is acquired before `thread_reap()`, then `process_reap()` runs while the claim remains held; failed helper paths cancel the claim.
+- `tools/test_process_child_reap_claim.py` now has 16 source-contract regression methods, including user-probe, session and storage teardown ordering. The CI step `Verify process child reap ownership` passed on the final candidate.
+- Candidate Build #1966 (push run `43803753228`) and Build #1967 (PR run `43803760217`) both passed on the exact final candidate SHA. Stage 1 Scheduler #387 (push run `43803753290`) and #388 (PR run `43803760200`) also passed.
+- Candidate Build verified native x86-64 compilation, clean `make check`, kernel image, 3/3 QEMU boots with 113/113 milestones each, SMP4, NX-disabled, failed-IPI recovery, scheduler panic diagnostics, AHCI/NVMe two-boot persistence, production ISO and production desktop/network smoke.
+- The PR workflow preserved `zeroos-release`, boot diagnostics and production boot diagnostics artifacts. GitHub Release publication was skipped because this was a PR build; no candidate stable alias or release is claimed.
+
+### Candidate failure analysis retained
+- Earlier Build #1961 failed in the blocking IPC pipe-writer self-test after the probe's data path completed; kernel-owned cleanup in `kernel/user.c` was detaching the final thread and calling `process_reap()` without the new exclusive claim. Commit `dc60c4b` added a claim-aware helper and migrated all user.c probe/service cleanup paths.
+- Build #1962/#1963 then reached session certification and failed at `session certification failed: thread reap`; `kernel/session.c` was still using the old unclaimed sequence. Commit `4fdc95a` claims the session process before detaching its final thread.
+- Build #1964/#1965 then reached storage Stage 3 and failed at `storage certification failed: user probe thread reap`; `kernel/storage/storage.c` had the same missed call site. Commit `a48de5e` claims the storage probe process before thread detach.
+- The final #1966/#1967 runs passed the full boot and storage gates. The earlier failed runs remain historical evidence; they are not represented as successful.
+
+### Remaining release and hardware gates
+- Main QEMU build/boot/ISO/release freshness is verified for `aaf0973`; PR #54 is fully CI/QEMU validated but still unmerged.
+- Still open: 600-second/four-vCPU scheduler soak; physical Lenovo G560 boot; physical SATA/NVMe/NIC/USB/graphics matrix; physical power-loss and recovery tests; ACPI S5 shutdown; standalone disk installer; physical display/input certification.
+- The PR cleanup step emitted a non-blocking Git submodule cleanup warning for `.claude/worktrees/hardening-mem-safety` because it has no URL entry in `.gitmodules`; both full Build workflows still concluded success. Track repository cleanup separately; it did not fail build or boot gates.
+- Overall completion estimate remains approximately 43%. CI and documentation do not earn feature-completion credit. No physical-hardware capability is claimed from QEMU evidence.

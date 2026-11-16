@@ -9,8 +9,17 @@ Never create a basic version merely to replace it later.
 
 ## Current state
 
+### Current engineering state — 2026-11-16 (latest verified)
 
-### Current engineering state — 2026-11-16
+- Main HEAD `aaf09738a9b3762e2e0b038addba8ca22421cf64` passed Build #1949 and Stage 1 #370. Main QEMU boot is 3/3 with 112/112 milestones per iteration; SMP4, NX-disabled, failed-IPI, scheduler diagnostics, AHCI/NVMe two-boot persistence and production desktop/network smoke passed.
+- Stable/versioned main ISO assets are byte-identical: 12,378,112 bytes each, SHA-256 `4afd97c7b7b14d1f0fcb3d04a4f6c0a7bb70c54e4d8d1dff8f75e0f4c8d1d6a2`.
+- PR #54 head `a48de5e` implements exclusive zombie process reaping across kernel-owned userspace, session and storage teardown. Build #1966/#1967 and Stage 1 #387/#388 passed; QEMU 3/3 with 113/113 milestones, SMP4, NX-disabled, failed-IPI, scheduler diagnostics, AHCI/NVMe persistence and production smoke passed. The PR remains unmerged; candidate ISO publication is not claimed.
+- The process child-reap regression suite contains 16 source-contract methods. The three discovered missed teardown call sites were migrated to claim-before-thread-reap order; earlier failures and their fixes are recorded in CURRENT_IMPLEMENTATION_STATUS.md and VALIDATION.md.
+- Immediate priorities: integrate PR #54 after review; run the 600-second/four-vCPU scheduler soak; certify physical Lenovo G560 and SATA/NVMe/NIC/USB/graphics; test power-loss recovery and ACPI S5; implement and validate a standalone disk installer. Native desktop physical input/display remains open. Browser/media/AI/compatibility remain later priorities.
+- Evidence distinction: QEMU success is not physical-hardware certification. Documentation and CI do not count as implemented features. Overall completion estimate remains approximately 43%.
+
+
+### Previous engineering state — 2026-11-16 (superseded by latest verified state below)
 
 - Main HEAD is `a363dbed7d027351ab9f3cdfe22e3da9e016aab2`; PR #52's exact head `c861709` passed Build #1942 and Stage 1 Scheduler #363. The Build passed native x86-64 build/check, 3/3 QEMU boots with 111/111 milestones, SMP4, NX-disabled, failed-IPI recovery, AHCI/NVMe persistence, production ISO and desktop/network smoke. PR #52 is merged.
 - Post-merge main Build #1943 is in progress; Stage 1 #364 passed on exact main SHA. Build #1931 on code-bearing `4c36c2c` published a stable/versioned ISO pair with matching SHA-256 `63e328cbe3672a31ced65d6b8e3483a06fa1efd70c66545d1d79381279e2559e`. A fresh publication for metadata merge `a363dbed` remains pending.

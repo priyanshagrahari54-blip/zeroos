@@ -1,6 +1,6 @@
 # ZEROOS — MASTER DOCUMENT INDEX
-Version: 4.6
-Updated: 2026-11-16 (PR #52 merged; main Build #1943 pending; process child-list integrity candidate in CI).
+Version: 4.7
+Updated: 2026-11-16 (main Build #1949 and PR #54 Build #1966/#1967 passed; PR #54 remains unmerged).
 
 This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md` remains the canonical consolidated product/architecture specification. Stage 6-10 execution is split into dedicated production master documents so an implementation agent can work one stage at a time without losing cross-cutting requirements.
 
@@ -503,3 +503,15 @@ The release pipeline itself is no longer a P0 blocker for code snapshot `100c8e2
 - Versioned asset `zeroos-b37b954.iso` and stable asset `zeroos.iso` are each 12,374,016 bytes and have identical SHA-256 `cb544ebfe3d91fb50d594aa6c8b81db32f8e24e416f7e71cb72ee596f54516ad`. Release notes identify `b37b954`, GRUB/El Torito legacy BIOS boot, and a live session; there is no disk installer.
 - The ISO verifier still emits a generic one-warning string (`THIS IMAGE WILL NOT BOOT`); the three successful guest QEMU iterations are the direct boot evidence. The G560 certification report in the Build artifact says its performance/thermal values are declared targets, not measured observations, and that no physical boot occurred. Physical Lenovo G560 certification remains open.
 - P0 build/boot/post-merge CI/stable-release freshness is closed for code snapshot `b37b954`. Remaining engineering gates: 600-second/four-vCPU scheduler soak; physical G560 and SATA/NVMe/NIC/USB/graphics matrix; physical power-loss/recovery; clean ACPI S5 shutdown; standalone disk installer. Overall estimate remains ~43%; no completion credit for CI or documentation.
+
+
+## Latest verified repository state — 2026-11-16
+
+- Main HEAD `aaf09738a9b3762e2e0b038addba8ca22421cf64`: Build #1949 and Stage 1 #370 passed. Main QEMU evidence is 3/3 boots with 112/112 milestones each; SMP4, NX-disabled, failed-IPI, scheduler diagnostics, AHCI/NVMe persistence and production smoke passed.
+- Main stable/versioned ISO assets `zeroos-aaf0973.iso` and `zeroos.iso` are byte-identical, each 12,378,112 bytes, SHA-256 `4afd97c7b7b14d1f0fcb3d04a4f6c0a7bb70c54e4d8d1dff8f75e0f4c8d1d6a2`.
+- PR #54 candidate `a48de5e2045e65d185da444adb5fcc84f821de2d` passes full Build #1966/#1967 and Stage 1 #387/#388. It adds exclusive zombie process reaping across kernel-owned userspace, session and storage teardown paths. It remains unmerged.
+- Candidate QEMU evidence is 3/3 boots with 113/113 milestones each, plus SMP4, NX-disabled, failed-IPI, scheduler diagnostics, AHCI/NVMe persistence and production smoke.
+- The process lifecycle regression suite has 16 methods. Main completion estimate remains ~43%; no CI/documentation completion credit.
+- Primary remaining gates: long scheduler soak, physical G560/device matrix, physical power-loss recovery, ACPI S5, disk installer and physical desktop/input certification.
+
+Canonical product and architecture requirements remain in `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md`; this index update does not remove or relax any Stage 0-10 requirement.
