@@ -432,8 +432,11 @@ int process_child_reap_claim(struct process *parent, process_id_t pid,
         return -ZEROOS_EINVAL;
 
     flags=spin_lock_irqsave(&process_lock);
+    /* A zombie parent can still own children that must be reaped before
+     * the parent itself is eligible for process_reap(). Kernel cleanup may
+     * therefore claim its child chain even though user wait is unavailable. */
     if (process_lookup_locked(parent->pid)!=parent ||
-        parent->state==PROCESS_UNUSED || parent->state==PROCESS_ZOMBIE) {
+        parent->state==PROCESS_UNUSED) {
         spin_unlock_irqrestore(&process_lock,flags);
         return -ZEROOS_ECHILD;
     }
