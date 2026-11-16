@@ -122,6 +122,12 @@ class ProcessChildReapClaimTests(unittest.TestCase):
         )
         self.assertIn("uint32_t reap_claimed;", HEADER)
 
+    def test_pid_reuse_probe_claims_before_reaping_zombie_thread(self):
+        self.assertIn(
+            "process_reap_claim(process_probe_reuse)!=0 ||\n            thread_reap(thread_probe_reuse",
+            KERNEL,
+        )
+
     def test_claimed_reaper_bounds_and_validates_thread_walk(self):
         pending = function_body(
             SYSCALL,

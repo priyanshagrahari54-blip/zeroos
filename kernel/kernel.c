@@ -768,8 +768,9 @@ static void process_thread_probe_monitor_step(void) {
 
         uint64_t status=0xffffffffULL;
 
-        if (thread_reap(thread_probe_reuse,&status)!=0 || status!=0)
-            process_thread_probe_fail("reused thread reap failed");
+        if (process_reap_claim(process_probe_reuse)!=0 ||
+            thread_reap(thread_probe_reuse,&status)!=0 || status!=0)
+            process_thread_probe_fail("reused process/thread reap claim failed");
         if (process_reap(process_probe_reuse,&status)!=0 || status!=0)
             process_thread_probe_fail("reused process reap failed");
         if (thread_lookup(thread_probe_reuse_tid)!=0 ||
