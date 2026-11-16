@@ -82,11 +82,16 @@ static void session_main(void *argument) {
         task_sleep_ticks(2);
     if (!thread || thread->state != THREAD_ZOMBIE)
         session_fail("session did not finish");
-    if (thread_reap(thread, &status) != 0)
-        session_fail("thread reap");
     t0 = timer_ticks();
     while (process->state != PROCESS_ZOMBIE && timer_ticks() - t0 < 200U)
         task_sleep_ticks(1);
+    if (process->state != PROCESS_ZOMBIE)
+        session_fail("process did not exit");
+    /* process_reap() and the final thread detach share one exclusive claim. */
+    if (process_reap_claim(process) != 0)
+        session_fail("process reap claim");
+    if (thread_reap(thread, &status) != 0)
+        session_fail("thread reap");
     if (vmm_activate_kernel() != 0 || process_reap(process, &status) != 0)
         session_fail("process reap");
     if (status != 0) {

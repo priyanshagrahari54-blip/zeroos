@@ -10,6 +10,7 @@ HEADER = (ROOT / "kernel/process.h").read_text()
 SYSCALL = (ROOT / "kernel/syscall.c").read_text()
 KERNEL = (ROOT / "kernel/kernel.c").read_text()
 USER = (ROOT / "kernel/user.c").read_text()
+SESSION = (ROOT / "kernel/session.c").read_text()
 MILESTONES = (ROOT / "tools/boot_milestones.txt").read_text()
 WORKFLOW = (ROOT / ".github/workflows/build.yml").read_text()
 
@@ -172,6 +173,14 @@ class ProcessChildReapClaimTests(unittest.TestCase):
             "userspace_reap_zombie_process(manager_process,manager_thread,",
             USER,
         )
+
+    def test_session_certification_claims_before_thread_detach(self):
+        claim = SESSION.index("process_reap_claim(process)")
+        thread_reap = SESSION.index("thread_reap(thread")
+        process_reap = SESSION.index("process_reap(process")
+        self.assertLess(claim, thread_reap)
+        self.assertLess(thread_reap, process_reap)
+        self.assertIn('session_fail("process did not exit")', SESSION)
 
     def test_ci_runs_regression_before_build_tools(self):
         step = (
