@@ -11,6 +11,7 @@ SYSCALL = (ROOT / "kernel/syscall.c").read_text()
 KERNEL = (ROOT / "kernel/kernel.c").read_text()
 USER = (ROOT / "kernel/user.c").read_text()
 SESSION = (ROOT / "kernel/session.c").read_text()
+STORAGE = (ROOT / "kernel/storage/storage.c").read_text()
 MILESTONES = (ROOT / "tools/boot_milestones.txt").read_text()
 WORKFLOW = (ROOT / ".github/workflows/build.yml").read_text()
 
@@ -181,6 +182,14 @@ class ProcessChildReapClaimTests(unittest.TestCase):
         self.assertLess(claim, thread_reap)
         self.assertLess(thread_reap, process_reap)
         self.assertIn('session_fail("process did not exit")', SESSION)
+
+    def test_storage_probe_claims_before_final_thread_detach(self):
+        claim = STORAGE.index("process_reap_claim(process)")
+        thread_reap = STORAGE.index("thread_reap(thread")
+        process_reap = STORAGE.index("process_reap(process")
+        self.assertLess(claim, thread_reap)
+        self.assertLess(thread_reap, process_reap)
+        self.assertIn('storage_fail("user probe process did not exit")', STORAGE)
 
     def test_ci_runs_regression_before_build_tools(self):
         step = (

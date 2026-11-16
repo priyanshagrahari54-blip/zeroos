@@ -238,11 +238,16 @@ static void storage_run_user_probe(void) {
     uint64_t status=~0ULL;
     if (!thread || thread->state!=THREAD_ZOMBIE)
         storage_fail("user probe did not finish");
-    if (thread_reap(thread,&status)!=0)
-        storage_fail("user probe thread reap");
     t0=timer_ticks();
     while (process->state!=PROCESS_ZOMBIE && timer_ticks()-t0<200U)
         task_sleep_ticks(1);
+    if (process->state!=PROCESS_ZOMBIE)
+        storage_fail("user probe process did not exit");
+    /* Claim the zombie before detaching its final thread, matching wait(). */
+    if (process_reap_claim(process)!=0)
+        storage_fail("user probe process reap claim");
+    if (thread_reap(thread,&status)!=0)
+        storage_fail("user probe thread reap");
     if (vmm_activate_kernel()!=0 || process_reap(process,&status)!=0)
         storage_fail("user probe process reap");
     if (status!=0) {
