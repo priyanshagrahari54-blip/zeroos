@@ -1,10 +1,10 @@
 # ZEROOS — MASTER DOCUMENT INDEX
-Version: 4.5
-Updated: 2026-11-15 (PR #51 merged as `4c36c2c`; exact PR head Build #1930 / Stage 1 #351 passed; post-merge main release verification pending; PR #52 ISO-summary correction in validation).
+Version: 4.6
+Updated: 2026-11-16 (PR #52 merged; main Build #1943 pending; process child-list integrity candidate in CI).
 
 This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md` remains the canonical consolidated product/architecture specification. Stage 6-10 execution is split into dedicated production master documents so an implementation agent can work one stage at a time without losing cross-cutting requirements.
 
-## Current main verification — 2026-11-15
+## Historical main verification — 2026-11-15 (superseded)
 
 - Main includes PR #51 merge commit `4c36c2cf796bcedb9399b8488f431087441bc318`; exact tested PR head was `16660e532a7c32dcd648724e6214bbdb31b80275`.
 - Build #1930 (run `43669231347`) and Stage 1 Scheduler #351 (run `43669231292`) passed on the exact PR head. Build #1930 verified native build/check, 3/3 QEMU boots with 111/111 milestones each, SMP4, NX-disabled, failed-IPI recovery, scheduler panic diagnostics, q35 AHCI/NVMe two-boot persistence, production ISO and desktop/network smoke.
@@ -14,6 +14,15 @@ This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_
 - Open gates: post-merge main Build/release freshness; PR #52 full validation; 600-second scheduler soak; physical G560/device/power-recovery matrix; ACPI S5; standalone installer; physical desktop integration; then browser/media/AI/compatibility. Overall estimate remains ~43%; CI and documentation do not count as feature completion.
 
 
+
+## Current main verification — 2026-11-16
+
+- Latest main HEAD: `a363dbed7d027351ab9f3cdfe22e3da9e016aab2` (PR #52 merged). Exact PR #52 head `c861709` passed Build #1942 and Stage 1 #363, including 3/3 QEMU boots with 111/111 milestones, SMP4, NX-disabled, failed-IPI recovery, AHCI/NVMe persistence and production desktop/network smoke.
+- Post-merge main Build #1943 is in progress; Stage 1 Scheduler #364 passed on exact main SHA.
+- The current stable/versioned assets `zeroos.iso` and `zeroos-4c36c2c.iso` match at SHA-256 `63e328cbe3672a31ced65d6b8e3483a06fa1efd70c66545d1d79381279e2559e`. This digest is verified for code-bearing snapshot `4c36c2c`; a fresh release publication for metadata merge `a363dbed` is pending.
+- Candidate `fix/process-child-list-integrity-20261116` adds bounded child/sibling traversal, pointer/PID/generation/owner checks, count consistency and preflighted process unlink before destructive teardown. Its boot self-test covers invalid pointer, cycle and count mismatch; source regression and mandatory milestone are integrated.
+- Candidate head `304562a58bb5a3e375cc3c975da4f3da12ddd309`: Build #1946 pending; Stage 1 #367 in progress. No QEMU result for the candidate is claimed.
+- Priority order: candidate full Build/QEMU/storage/production; 600-second/four-vCPU soak; physical G560/device/power recovery; ACPI S5 and installer; physical desktop; then browser/media/AI/compatibility. Overall estimate remains ~43%.
 
 ## Historical snapshot — 2026-11-12 (superseded by 2026-11-13)
 

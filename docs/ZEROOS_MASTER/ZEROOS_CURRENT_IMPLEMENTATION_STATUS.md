@@ -1,11 +1,11 @@
 # ZEROOS — CURRENT IMPLEMENTATION STATUS
 
-Updated: 2026-11-15
-Branch baseline: main merge commit `4c36c2cf796bcedb9399b8488f431087441bc318` (PR #51 merged). PR #51's exact tested head `16660e532a7c32dcd648724e6214bbdb31b80275` passed Build #1930 and Stage 1 Scheduler #351. A post-merge main Build and stable-release refresh for `4c36c2c` have not yet been verified. The last verified stable ISO remains the `129707f` image, SHA-256 `cfd4f2c57962fd139699445a1a28ce29120ac58b84019f70b747dcf1c6fdff38`.
+Updated: 2026-11-16
+Branch baseline: Main HEAD is `a363dbed7d027351ab9f3cdfe22e3da9e016aab2` (PR #52 merged). PR #52 exact head `c86170938be87645201da08fd121584482453196` passed Build #1942 and Stage 1 Scheduler #363; Build #1942 completed source regressions, native x86-64 build, clean `make check`, kernel-image verification, 3/3 QEMU boots with 111/111 milestones each, SMP4, NX-disabled, failed-IPI recovery, storage persistence and production desktop/network smoke. Post-merge main Build #1943 is still in progress; Stage 1 Scheduler #364 passed on exact main SHA. The stable/versioned ISO currently identifies code-bearing snapshot `4c36c2c`, not metadata merge `a363dbed`: both assets are 12,378,112 bytes and match at SHA-256 `63e328cbe3672a31ced65d6b8e3483a06fa1efd70c66545d1d79381279e2559e`.
 
 Status policy: **evidence-weighted estimate; never equate a source file, marker check, architecture document, or host test with a working end-user feature.**
 
-## Latest main and release evidence — 2026-11-15
+## Historical main and release evidence — 2026-11-15 (superseded)
 
 - Main now includes PR #51, merged as `4c36c2cf796bcedb9399b8488f431087441bc318`. The change hardens process/thread attachment ownership: reject foreign-owner and duplicate list attachments, validate staged thread identity/state/task ownership, and bound process-thread list walks.
 - Exact PR #51 head `16660e532a7c32dcd648724e6214bbdb31b80275` passed Build #1930 (run `43669231347`) and Stage 1 Scheduler #351 (run `43669231292`). The Build job completed successfully.
@@ -15,6 +15,17 @@ Status policy: **evidence-weighted estimate; never equate a source file, marker 
 - Build #1930 repeatedly printed `pycdlib not installed; independent cross-check skipped` followed by the misleading summary `THIS IMAGE WILL NOT BOOT`. The required internal ISO/El Torito checks passed and the same run's three QEMU boots passed. PR #52 corrects only this summary classification; it does not weaken ISO, Multiboot2 or QEMU gates.
 - PR #52 (`fix/iso-verifier-warning-summary-20261115`) adds five summary-classification regressions and a Build-workflow step. Its exact-head CI/QEMU/storage/production validation is pending.
 - Remaining gates: post-merge main Build and stable ISO refresh for `4c36c2c`; PR #52 exact-head full validation; 600-second/four-vCPU scheduler soak; physical G560/device and power-recovery matrix; ACPI S5; standalone installer; physical desktop hardware integration; then browser/media/AI/compatibility. Overall estimate remains ~43%; CI and documentation do not count as feature completion.
+
+## Latest main and candidate review — 2026-11-16
+
+- Main HEAD is `a363dbed7d027351ab9f3cdfe22e3da9e016aab2` (PR #52 merged). PR #52 exact head `c86170938be87645201da08fd121584482453196` passed Build #1942 and Stage 1 Scheduler #363; Build #1942 completed source regressions, native x86-64 build, clean `make check`, kernel-image verification, 3/3 QEMU boots with 111/111 milestones each, SMP4, NX-disabled, failed-IPI recovery, storage persistence and production desktop/network smoke. Post-merge main Build #1943 is still in progress; Stage 1 Scheduler #364 passed on exact main SHA. The stable/versioned ISO currently identifies code-bearing snapshot `4c36c2c`, not metadata merge `a363dbed`: both assets are 12,378,112 bytes and match at SHA-256 `63e328cbe3672a31ced65d6b8e3483a06fa1efd70c66545d1d79381279e2559e`.
+- PR #52 was merged as `a363dbed7d027351ab9f3cdfe22e3da9e016aab2`. Its only executable changes are the ISO verifier's warning/waiver summary classification and its regression/CI integration; it does not change the kernel image.
+- The post-merge main Build #1943 (run `43796952894`) was in progress at this review. The exact main Stage 1 Scheduler #364 (run `43796952987`) completed successfully.
+- Current process-lifecycle candidate branch: `fix/process-child-list-integrity-20261116`. Code commit `234c12aee25c1950690d13facfb3ed04423176f7`; serial milestone escape correction `304562a58bb5a3e375cc3c975da4f3da12ddd309` is the branch head.
+- Candidate implementation adds a bounded, pointer-provenance-checked process child/sibling chain walk. It verifies process-table generation/PID identity, parent ownership, the fixed `ZEROOS_MAX_PROCESSES` bound and `child_count` consistency. `process_create`, `process_find_child`, `process_child_wait_prepare`, `process_reap`, `process_abort_new` and `process_debug_validate` use the shared validation path. Reap/abort preflight the parent link before IPC/shared-memory revoke or address-space destruction.
+- A boot-time self-test injects an invalid child-list head, a self-cycle and a child-count mismatch while holding `process_lock`, then verifies each is rejected and restores the valid chain. New required milestone: `ZEROOS: process child-list corruption guards passed.`
+- New source-contract regression: `tools/test_process_child_list_integrity.py` (8 test methods), integrated before build-tool installation. Exact candidate Build #1946 (run `43797446521`) is pending; Stage 1 Scheduler #367 (run `43797446574`) is in progress. Earlier #1945/#366 were cancelled when the candidate branch was corrected; they are not validation evidence. No candidate QEMU result is claimed.
+- Release blockers: candidate full Build/QEMU/storage/production acceptance; 600-second/four-vCPU scheduler soak; physical Lenovo G560/device and power-recovery matrix; ACPI S5; standalone installer; physical desktop display/input. Browser/media/AI/compatibility remain later priorities. Overall estimate remains ~43%; no progress credit for CI or documentation.
 
 ## Historical evidence refresh — 2026-10-26 (superseded for current HEAD)
 

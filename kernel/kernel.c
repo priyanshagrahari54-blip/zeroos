@@ -481,6 +481,11 @@ static void process_thread_probe_monitor_step(void) {
             process_child_count(process_probe_parent)!=1)
             process_thread_probe_fail("parent/child relationship validation failed");
 
+        if (process_debug_child_chain_selftest(process_probe_parent,
+                                               process_probe_child)!=0)
+            process_thread_probe_fail("corrupt process child-list was not rejected safely");
+        serial_write_public("ZEROOS: process child-list corruption guards passed.\n");
+
         {
             struct process *pinned_child=0;
             if (process_acquire_live(process_probe_child_pid,

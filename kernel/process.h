@@ -130,6 +130,8 @@ int process_address_space_is_executable(const struct process *process,
 uint64_t process_child_count(const struct process *process);
 uint64_t process_thread_count(const struct process *process);
 uint64_t process_live_thread_count(const struct process *process);
+int process_debug_child_chain_selftest(struct process *parent,
+                                           struct process *child);
 int process_debug_validate(void);
 
 #endif

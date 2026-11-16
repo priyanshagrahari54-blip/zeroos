@@ -1,8 +1,8 @@
 # ZEROOS — Validation and Support Matrix
 
-Updated: 2026-11-15. Main includes PR #51 merge commit `4c36c2cf796bcedb9399b8488f431087441bc318`. Its exact PR head `16660e532a7c32dcd648724e6214bbdb31b80275` passed Build #1930 (run `43669231347`) and Stage 1 Scheduler #351 (run `43669231292`). Post-merge main Build and release publication for `4c36c2c` remain unverified.
+Updated: 2026-11-16. Main HEAD is `a363dbed7d027351ab9f3cdfe22e3da9e016aab2` (PR #52 merged). PR #52 exact head `c86170938be87645201da08fd121584482453196` passed Build #1942 and Stage 1 Scheduler #363; Build #1942 completed source regressions, native x86-64 build, clean `make check`, kernel-image verification, 3/3 QEMU boots with 111/111 milestones each, SMP4, NX-disabled, failed-IPI recovery, storage persistence and production desktop/network smoke. Post-merge main Build #1943 is still in progress; Stage 1 Scheduler #364 passed on exact main SHA. The stable/versioned ISO currently identifies code-bearing snapshot `4c36c2c`, not metadata merge `a363dbed`: both assets are 12,378,112 bytes and match at SHA-256 `63e328cbe3672a31ced65d6b8e3483a06fa1efd70c66545d1d79381279e2559e`. Main includes PR #51 merge commit `4c36c2cf796bcedb9399b8488f431087441bc318`. Its exact PR head `16660e532a7c32dcd648724e6214bbdb31b80275` passed Build #1930 (run `43669231347`) and Stage 1 Scheduler #351 (run `43669231292`). Post-merge main Build and release publication for `4c36c2c` remain unverified.
 
-## Current main acceptance — 2026-11-15
+## Historical main acceptance — 2026-11-15 (superseded)
 
 - PR #51 is merged to main as `4c36c2cf796bcedb9399b8488f431087441bc318`. It hardens process/thread attachment ownership and the guest negative probe's SMP synchronization.
 - The exact PR head passed Build #1930 and Stage 1 Scheduler #351. Build #1930 passed source regressions, native x86-64 compilation, reproducible `make check`, kernel-image verification, 3/3 QEMU boots with 111/111 milestones each, SMP4, NX-disabled, failed-IPI recovery, scheduler panic diagnostics, q35 AHCI/NVMe two-boot persistence, production ISO and production desktop/network smoke.
@@ -10,6 +10,16 @@ Updated: 2026-11-15. Main includes PR #51 merge commit `4c36c2cf796bcedb9399b848
 - The same Build's ISO verifier emitted an optional `pycdlib not installed` warning and incorrectly appended `THIS IMAGE WILL NOT BOOT`. The internal ISO/El Torito checks and direct QEMU boots passed. PR #52 adds explicit result classification and five regressions; its exact-head CI is pending.
 
 
+
+## Current main and candidate acceptance — 2026-11-16
+
+- Main HEAD is `a363dbed7d027351ab9f3cdfe22e3da9e016aab2`. PR #52's exact head `c86170938be87645201da08fd121584482453196` passed Build #1942 (run `43671686695`) and Stage 1 Scheduler #363 (run `43671686703`). The Build log reports 3/3 sequential QEMU boots with 111/111 milestones each, SMP4, NX-disabled, failed-IPI recovery, storage two-boot persistence, production ISO and desktop/network smoke.
+- PR #52 was merged as `a363dbed`. Post-merge main Build #1943 (run `43796952894`) was in progress at review time; Stage 1 Scheduler #364 (run `43796952987`) passed on that exact SHA.
+- Main Build #1931 (run `43669957730`) on code-bearing main `4c36c2c` passed native build/check, source regressions, kernel-image verification, 3/3 QEMU boots, SMP4, NX-disabled, failed-IPI recovery, scheduler diagnostics, AHCI/NVMe two-boot persistence, production ISO and desktop/network smoke. It published and byte-compared the stable alias with the production ISO.
+- Versioned `zeroos-4c36c2c.iso` and stable `zeroos.iso` are both 12,378,112 bytes and have SHA-256 `63e328cbe3672a31ced65d6b8e3483a06fa1efd70c66545d1d79381279e2559e`. This is verified for the kernel code snapshot `4c36c2c`; the PR #52 merge changes verifier/workflow/docs, not kernel code. A fresh main publication for metadata merge `a363dbed` remains pending.
+- Candidate branch `fix/process-child-list-integrity-20261116`, head `304562a58bb5a3e375cc3c975da4f3da12ddd309`, adds bounded, pointer-validated child-list traversal and parent unlink preflight. The boot-time corruption self-test covers an invalid pointer, cycle and child-count mismatch. Its new serial milestone is mandatory in the shared QEMU milestone list.
+- The new `tools/test_process_child_list_integrity.py` has 8 source-contract regression methods and is invoked by Build CI. Candidate Build #1946 is pending and Stage 1 #367 is in progress; earlier #1945/#366 were cancelled after the branch head correction. Do not claim candidate compile/QEMU/storage/production validation until #1946 or a later exact-head Build completes.
+- The current ISO is a legacy BIOS El Torito live image, not a disk installer. Physical Lenovo G560, device matrix, power-loss recovery, ACPI S5, 600-second scheduler soak and physical desktop validation remain open. Overall estimate remains ~43%.
 
 ## Evidence classes
 
@@ -40,7 +50,17 @@ Updated: 2026-11-15. Main includes PR #51 merge commit `4c36c2cf796bcedb9399b848
 
 No stage is 100% complete until its hardening checklist has executable evidence at the required class. A host test cannot close a QEMU gate; QEMU cannot close a real-hardware gate. Detection, parsing, UI, architecture docs, source-marker checks and mocked APIs do not establish operational support.
 
-## Release blockers
+## Release blockers — 2026-11-16
+
+1. **P1 — candidate process child-list fix:** exact-head Build/QEMU/storage/production gates must pass before merge.
+2. **P1 — main metadata freshness:** post-merge Build #1943 must finish and confirm release publication/byte comparison for `a363dbed`; the existing stable ISO is verified for code-bearing snapshot `4c36c2c`.
+3. **P1 — scheduler:** 600-second/four-vCPU soak with latency, fairness, hot-offline and wakeup-race evidence.
+4. **P1 — physical hardware/recovery:** G560 boot/device matrix and physical power-loss/recovery.
+5. **P1 — power/install:** clean ACPI S5 and standalone disk installer/recovery path.
+6. **P2 — native desktop hardware:** physical display/input integration and application validation.
+7. **P3 — product expansion:** browser, media, AI and compatibility after kernel/storage/driver acceptance.
+
+## Historical release blockers
 
 1. **P0 — post-merge main acceptance:** run and verify the full Build/QEMU/storage/production workflow on main merge commit `4c36c2c`; publish and byte-compare the stable ISO only from a successful main run.
 2. **P1 — PR #52:** exact-head source regression, clean `make check`, QEMU, storage and production smoke must pass before merge.
