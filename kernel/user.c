@@ -1478,6 +1478,33 @@ static void process_wait_probe_entry(void *argument) {
     (void)argument;
 }
 
+static int userspace_reap_zombie_process(struct process *process,
+                                         struct thread *thread,
+                                         uint64_t *status_out) {
+    uint64_t status=0;
+
+    /* Kernel-owned self-test processes use the same exclusive lifetime rule
+     * as syscall wait: claim the zombie process before detaching its final
+     * thread, then reset the process slot only while the claim is held. */
+    if (!process || process->state!=PROCESS_ZOMBIE ||
+        (thread && (thread->process!=process ||
+                    thread->state!=THREAD_ZOMBIE)))
+        return -1;
+    if (process_reap_claim(process)!=0)
+        return -1;
+    if (thread && thread_reap(thread,&status)!=0)
+        goto cancel_claim;
+    if (vmm_activate_kernel()!=0 || process_reap(process,&status)!=0)
+        goto cancel_claim;
+    if (status_out)
+        *status_out=status;
+    return 0;
+
+cancel_claim:
+    (void)process_reap_cancel(process);
+    return -1;
+}
+
 static int userspace_child_wait_wakeup_self_test(void) {
     process_id_t parent_pid=0;
     process_id_t child_pid=0;
@@ -1518,9 +1545,8 @@ static int userspace_child_wait_wakeup_self_test(void) {
            (long long)(exit_deadline-timer_ticks())>0)
         (void)task_sleep_ticks(1);
     if (child->state!=PROCESS_ZOMBIE || thread->state!=THREAD_ZOMBIE ||
-        thread_reap(thread,&status)!=0 || status!=0 ||
-        vmm_activate_kernel()!=0 || process_reap(child,&status)!=0 ||
-        status!=0 || process_abort_new(parent)!=0 ||
+        userspace_reap_zombie_process(child,thread,&status)!=0 || status!=0 ||
+        process_abort_new(parent)!=0 ||
         process_lookup(parent_pid)!=0 || process_lookup(child_pid)!=0)
         goto fail;
     parent=0;
@@ -1529,13 +1555,12 @@ static int userspace_child_wait_wakeup_self_test(void) {
     return 0;
 
 fail:
-    if (thread && thread->state==THREAD_ZOMBIE) {
-        (void)thread_reap(thread,&status);
-        thread=0;
-    }
     if (child && child->state==PROCESS_ZOMBIE) {
-        (void)vmm_activate_kernel();
-        (void)process_reap(child,&status);
+        struct thread *reap_thread=(thread && thread->process==child &&
+                                    thread->state==THREAD_ZOMBIE) ? thread : 0;
+        if (userspace_reap_zombie_process(child,reap_thread,&status)==0 &&
+            reap_thread)
+            thread=0;
     } else if (child && child->state==PROCESS_NEW) {
         (void)process_abort_new(child);
     }
@@ -1745,10 +1770,9 @@ static int userspace_event_blocking_self_test(void) {
     if (atomic_u64_load(&event_probe_state)!=2 ||
         userspace_wait_probe_exit(thread,event_probe_process)!=0 ||
         thread->state!=THREAD_ZOMBIE ||
-        thread_reap(thread,&status)!=0 || status!=0 ||
         event_probe_process->state!=PROCESS_ZOMBIE ||
-        vmm_activate_kernel()!=0 ||
-        process_reap(event_probe_process,&status)!=0 || status!=0 ||
+        userspace_reap_zombie_process(event_probe_process,thread,&status)!=0 ||
+        status!=0 ||
         process_lookup(pid)!=0 || ipc_debug_validate()!=0) {
         thread=0;
         goto fail;
@@ -1770,13 +1794,13 @@ release_waiter:
             scheduler_yield();
     }
 fail:
-    if (thread_created && thread && thread->state==THREAD_ZOMBIE) {
-        (void)thread_reap(thread,&status);
-        thread=0;
-    }
     if (event_probe_process && event_probe_process->state==PROCESS_ZOMBIE) {
-        (void)vmm_activate_kernel();
-        (void)process_reap(event_probe_process,&status);
+        struct thread *reap_thread=(thread_created && thread &&
+                                    thread->process==event_probe_process &&
+                                    thread->state==THREAD_ZOMBIE) ? thread : 0;
+        if (userspace_reap_zombie_process(event_probe_process,reap_thread,
+                                          &status)==0 && reap_thread)
+            thread=0;
     } else if (event_probe_process && event_probe_process->state==PROCESS_NEW) {
         if (event_probe_signal)
             (void)ipc_close(event_probe_process,event_probe_signal);
@@ -1853,10 +1877,9 @@ static int userspace_ipc_close_wakeup_self_test(void) {
     if (atomic_u64_load(&ipc_close_probe_state)!=2 ||
         userspace_wait_probe_exit(thread,ipc_close_probe_process)!=0 ||
         thread->state!=THREAD_ZOMBIE ||
-        thread_reap(thread,&status)!=0 || status!=0 ||
         ipc_close_probe_process->state!=PROCESS_ZOMBIE ||
-        vmm_activate_kernel()!=0 ||
-        process_reap(ipc_close_probe_process,&status)!=0 || status!=0 ||
+        userspace_reap_zombie_process(ipc_close_probe_process,thread,
+                                      &status)!=0 || status!=0 ||
         process_lookup(pid)!=0 || ipc_debug_validate()!=0) {
         thread=0;
         goto fail;
@@ -1879,14 +1902,14 @@ release_waiter:
          atomic_u64_load(&ipc_close_probe_state)<2; ++i)
         scheduler_yield();
 fail:
-    if (thread_created && thread && thread->state==THREAD_ZOMBIE) {
-        (void)thread_reap(thread,&status);
-        thread=0;
-    }
     if (ipc_close_probe_process &&
         ipc_close_probe_process->state==PROCESS_ZOMBIE) {
-        (void)vmm_activate_kernel();
-        (void)process_reap(ipc_close_probe_process,&status);
+        struct thread *reap_thread=(thread_created && thread &&
+                                    thread->process==ipc_close_probe_process &&
+                                    thread->state==THREAD_ZOMBIE) ? thread : 0;
+        if (userspace_reap_zombie_process(ipc_close_probe_process,reap_thread,
+                                          &status)==0 && reap_thread)
+            thread=0;
     } else if (ipc_close_probe_process &&
                ipc_close_probe_process->state==PROCESS_NEW) {
         if (ipc_close_probe_signal)
@@ -2023,10 +2046,9 @@ static int userspace_ipc_pipe_wakeup_self_test(void) {
     atomic_u64_store(&ipc_pipe_probe_release,1);
     if (userspace_wait_probe_exit(thread,ipc_pipe_probe_process)!=0 ||
         thread->state!=THREAD_ZOMBIE ||
-        thread_reap(thread,&status)!=0 || status!=0 ||
         ipc_pipe_probe_process->state!=PROCESS_ZOMBIE ||
-        vmm_activate_kernel()!=0 ||
-        process_reap(ipc_pipe_probe_process,&status)!=0 || status!=0 ||
+        userspace_reap_zombie_process(ipc_pipe_probe_process,thread,
+                                      &status)!=0 || status!=0 ||
         process_lookup(pid)!=0) {
         thread=0;
         goto fail;
@@ -2063,14 +2085,14 @@ fail:
                                                         drain_result));
     serial_write_public(")");
     serial_write_public(".\n");
-    if (thread_created && thread && thread->state==THREAD_ZOMBIE) {
-        (void)thread_reap(thread,&status);
-        thread=0;
-    }
     if (ipc_pipe_probe_process &&
         ipc_pipe_probe_process->state==PROCESS_ZOMBIE) {
-        (void)vmm_activate_kernel();
-        (void)process_reap(ipc_pipe_probe_process,&status);
+        struct thread *reap_thread=(thread_created && thread &&
+                                    thread->process==ipc_pipe_probe_process &&
+                                    thread->state==THREAD_ZOMBIE) ? thread : 0;
+        if (userspace_reap_zombie_process(ipc_pipe_probe_process,reap_thread,
+                                          &status)==0 && reap_thread)
+            thread=0;
     } else if (ipc_pipe_probe_process &&
                ipc_pipe_probe_process->state!=PROCESS_UNUSED) {
         if (ipc_pipe_probe_writer)
@@ -2146,10 +2168,9 @@ static int userspace_ipc_send_wakeup_self_test(void) {
     if (atomic_u64_load(&ipc_send_probe_state)!=2 ||
         userspace_wait_probe_exit(thread,ipc_send_probe_process)!=0 ||
         thread->state!=THREAD_ZOMBIE ||
-        thread_reap(thread,&status)!=0 || status!=0 ||
         ipc_send_probe_process->state!=PROCESS_ZOMBIE ||
-        vmm_activate_kernel()!=0 ||
-        process_reap(ipc_send_probe_process,&status)!=0 || status!=0 ||
+        userspace_reap_zombie_process(ipc_send_probe_process,thread,
+                                      &status)!=0 || status!=0 ||
         process_lookup(pid)!=0 || ipc_debug_validate()!=0) {
         thread=0;
         goto fail;
@@ -2172,14 +2193,14 @@ release_sender:
          atomic_u64_load(&ipc_send_probe_state)<2; ++i)
         scheduler_yield();
 fail:
-    if (thread_created && thread && thread->state==THREAD_ZOMBIE) {
-        (void)thread_reap(thread,&status);
-        thread=0;
-    }
     if (ipc_send_probe_process &&
         ipc_send_probe_process->state==PROCESS_ZOMBIE) {
-        (void)vmm_activate_kernel();
-        (void)process_reap(ipc_send_probe_process,&status);
+        struct thread *reap_thread=(thread_created && thread &&
+                                    thread->process==ipc_send_probe_process &&
+                                    thread->state==THREAD_ZOMBIE) ? thread : 0;
+        if (userspace_reap_zombie_process(ipc_send_probe_process,reap_thread,
+                                          &status)==0 && reap_thread)
+            thread=0;
     } else if (ipc_send_probe_process &&
                ipc_send_probe_process->state==PROCESS_NEW) {
         if (ipc_send_probe_signal)
@@ -2536,9 +2557,11 @@ static int userspace_finish_service(void) {
         if (receive_buffer[i]!=expected)
             return -1;
     }
-    if (thread_reap(service_thread,&status)!=0 ||
+    if (!service_process || !service_thread ||
         service_process->state!=PROCESS_ZOMBIE ||
-        vmm_activate_kernel()!=0 || process_reap(service_process,&status)!=0)
+        service_thread->state!=THREAD_ZOMBIE ||
+        userspace_reap_zombie_process(service_process,service_thread,
+                                      &status)!=0)
         return -1;
 
     (void)ipc_close(service_controller,service_controller_handle);
@@ -2784,15 +2807,12 @@ int userspace_service_step(void) {
         }
         if (!init_thread || init_thread->state!=THREAD_ZOMBIE)
             return 0;
-        if (thread_reap(init_thread,&status)!=0) {
-            userspace_report_reap_failure("thread-reap",status);
-            return -1;
-        }
         if (!init_process || init_process->state!=PROCESS_ZOMBIE) {
             userspace_report_reap_failure("process-state",status);
             return -1;
         }
-        if (vmm_activate_kernel()!=0 || process_reap(init_process,&status)!=0) {
+        if (userspace_reap_zombie_process(init_process,init_thread,
+                                          &status)!=0) {
             userspace_report_reap_failure("process-reap",status);
             return -1;
         }
@@ -2829,10 +2849,10 @@ int userspace_service_step(void) {
     }
     if (!manager_thread || manager_thread->state!=THREAD_ZOMBIE)
         return 0;
-    if (thread_reap(manager_thread,&status)!=0 ||
+    if (!manager_thread || manager_thread->state!=THREAD_ZOMBIE ||
         !manager_process || manager_process->state!=PROCESS_ZOMBIE ||
-        vmm_activate_kernel()!=0 || process_reap(manager_process,&status)!=0 ||
-        status!=0)
+        userspace_reap_zombie_process(manager_process,manager_thread,
+                                      &status)!=0 || status!=0)
         return -1;
     if (!manager_controller || manager_controller->state!=PROCESS_NEW ||
         ipc_close(manager_controller,manager_shutdown_signal)!=0 ||

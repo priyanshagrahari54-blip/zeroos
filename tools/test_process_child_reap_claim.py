@@ -9,6 +9,7 @@ PROCESS = (ROOT / "kernel/process.c").read_text()
 HEADER = (ROOT / "kernel/process.h").read_text()
 SYSCALL = (ROOT / "kernel/syscall.c").read_text()
 KERNEL = (ROOT / "kernel/kernel.c").read_text()
+USER = (ROOT / "kernel/user.c").read_text()
 MILESTONES = (ROOT / "tools/boot_milestones.txt").read_text()
 WORKFLOW = (ROOT / ".github/workflows/build.yml").read_text()
 
@@ -143,6 +144,34 @@ class ProcessChildReapClaimTests(unittest.TestCase):
         )
         self.assertIn("visited<ZEROOS_PROCESS_DEFAULT_MAX_THREADS", reaper)
         self.assertIn("thread_pointer_valid(thread)", reaper)
+
+    def test_kernel_owned_zombie_reap_claims_before_thread_detach(self):
+        body = function_body(
+            USER,
+            "static int userspace_reap_zombie_process(",
+            "static int userspace_child_wait_wakeup_self_test(",
+        )
+        self.assertLess(body.index("process_reap_claim(process)"),
+                        body.index("thread_reap(thread"))
+        self.assertLess(body.index("thread_reap(thread"),
+                        body.index("process_reap(process"))
+        self.assertIn("process_reap_cancel(process)", body)
+        # Every kernel-managed userspace probe/service cleanup must use the
+        # claim-aware helper; no unclaimed direct reap call sites remain.
+        self.assertEqual(USER.count("thread_reap("), 1)
+        self.assertEqual(USER.count("process_reap("), 1)
+        self.assertIn(
+            "userspace_reap_zombie_process(ipc_pipe_probe_process,thread,",
+            USER,
+        )
+        self.assertIn(
+            "userspace_reap_zombie_process(init_process,init_thread,",
+            USER,
+        )
+        self.assertIn(
+            "userspace_reap_zombie_process(manager_process,manager_thread,",
+            USER,
+        )
 
     def test_ci_runs_regression_before_build_tools(self):
         step = (
