@@ -31,6 +31,7 @@ class Report:
     def __init__(self, allow_unbootable=False, require_bios_boot=False):
         self.failures = []
         self.warnings = []
+        self.bootability_waivers = []
         self.notes = []
         self.allow_unbootable = allow_unbootable
         self.require_bios_boot = require_bios_boot
@@ -47,6 +48,7 @@ class Report:
         warning by --allow-unbootable, for hosts that have no GRUB toolchain
         and only want the ISO 9660 layout validated."""
         if bootability and self.allow_unbootable:
+            self.bootability_waivers.append(msg)
             self.warnings.append(msg)
             self.notes.append(f"  WARN {msg} (bootability waived by --allow-unbootable)")
             return
@@ -302,6 +304,29 @@ def cross_check_pycdlib(path, rep):
     return rep
 
 
+def summary_line(rep):
+    """Describe the verification result without conflating optional warnings
+    with a failed or waived bootability check."""
+    if rep.failures:
+        return f"verify_iso: FAIL ({len(rep.failures)} check(s) failed)"
+
+    optional_warnings = len(rep.warnings) - len(rep.bootability_waivers)
+    if rep.bootability_waivers:
+        extra = (f" and {optional_warnings} optional warning(s)"
+                 if optional_warnings else "")
+        return (
+            f"verify_iso: PASS with {len(rep.bootability_waivers)} "
+            f"bootability check(s) waived{extra}; ISO 9660 layout validated, "
+            "bootability NOT certified"
+        )
+    if rep.warnings:
+        return (
+            f"verify_iso: PASS with {len(rep.warnings)} warning(s); "
+            "required ISO 9660 and El Torito bootability checks passed"
+        )
+    return "verify_iso: PASS - image is a structurally bootable ISO 9660 / El Torito image"
+
+
 def main(argv):
     if len(argv) < 2:
         print(__doc__)
@@ -326,16 +351,11 @@ def main(argv):
     for line in rep.notes:
         print(line)
     print()
+    print(summary_line(rep))
     if rep.failures:
-        print(f"verify_iso: FAIL ({len(rep.failures)} check(s) failed)")
         for f in rep.failures:
             print(f"  - {f}")
         return 1
-    if rep.warnings:
-        print(f"verify_iso: PASS with {len(rep.warnings)} warning(s) - "
-              f"ISO 9660 layout is valid but THIS IMAGE WILL NOT BOOT")
-        return 0
-    print("verify_iso: PASS - image is a structurally bootable ISO 9660 / El Torito image")
     return 0
 
 

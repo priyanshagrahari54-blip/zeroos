@@ -12,12 +12,14 @@ Never create a basic version merely to replace it later.
 
 ### Current engineering state — 2026-11-15
 
-- Main HEAD `129707fa0c1f1d92ac8d2e972d09f0254437f9b7` passed post-merge Build #1921 and Stage 1 Scheduler #342. Build #1921 passed native x86-64 build/check, 3/3 QEMU boots with 110/110 milestones, SMP4, NX-disabled, failed-IPI recovery, scheduler diagnostics, AHCI/NVMe two-boot persistence, production ISO and desktop/network smoke.
-- Current stable `zeroos.iso` and versioned `zeroos-129707f.iso` assets match the Build #1921 production image at SHA-256 `cfd4f2c57962fd139699445a1a28ce29120ac58b84019f70b747dcf1c6fdff38`. Main build/boot/release freshness is closed for code snapshot `129707f`.
-- PR #51's prior candidate head `fcb3fed` passed Stage 1 #348/#349 but failed full Build #1927/#1928 during SMP4. The child probe thread exited while the test compared process live-thread counts, creating a nondeterministic false failure. The follow-up holds the child until the accounting assertion completes and adds a regression that enforces the gate ordering. Do not merge until the corrected exact head passes all QEMU variants, storage and production gates.
-- Next work order: (1) complete corrected PR #51 Build/QEMU and merge only on full pass; (2) 600-second/four-vCPU scheduler soak; (3) physical G560 boot and SATA/NVMe/NIC/USB/graphics matrix; (4) physical power-loss/recovery and ACPI S5; (5) standalone installer/recovery; (6) physical desktop display/input; (7) browser/media/AI/compatibility.
+- Main includes PR #51 merge commit `4c36c2cf796bcedb9399b8488f431087441bc318`. Its exact PR head `16660e532a7c32dcd648724e6214bbdb31b80275` passed Build #1930 and Stage 1 Scheduler #351.
+- Build #1930 passed native x86-64 build/check, 3/3 QEMU boots with 111/111 milestones, SMP4, NX-disabled, failed-IPI recovery, scheduler diagnostics, q35 AHCI/NVMe two-boot persistence, production ISO and desktop/network smoke. It was a PR event; release publication was skipped.
+- Post-merge main Build and stable ISO publication/byte comparison for `4c36c2c` remain unverified. The last verified stable asset still identifies `129707f` at SHA-256 `cfd4f2c57962fd139699445a1a28ce29120ac58b84019f70b747dcf1c6fdff38`.
+- PR #52 corrects the ISO verifier's false `THIS IMAGE WILL NOT BOOT` summary when the optional `pycdlib` cross-check is unavailable. It preserves required ISO/El Torito checks and distinguishes explicit bootability waivers. Its full Build/QEMU/storage/production validation is pending.
+- Next work order: (1) verify post-merge main Build and stable ISO freshness for `4c36c2c`; (2) complete PR #52 exact-head CI and merge only after full pass; (3) 600-second/four-vCPU scheduler soak; (4) physical G560 boot and SATA/NVMe/NIC/USB/graphics matrix; (5) physical power-loss/recovery and ACPI S5; (6) standalone installer/recovery; (7) physical desktop display/input; (8) browser/media/AI/compatibility.
 - Preserve every Stage 0–10 and all product requirements. Overall estimate remains ~43%; no percentage increase for CI or documentation.
-- Separate diagnostic follow-up: investigate why `verify_iso.py` emits `THIS IMAGE WILL NOT BOOT` even though Build #1921's production ISO boots successfully in all three QEMU iterations. Do not weaken either check.
+
+
 
 ### Historical engineering state — 2026-11-14 (superseded by 2026-11-15)
 
