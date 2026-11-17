@@ -629,7 +629,16 @@ The release pipeline itself is no longer a P0 blocker for code snapshot `100c8e2
 - The final #1966/#1967 runs passed the full boot and storage gates. The earlier failed runs remain historical evidence; they are not represented as successful.
 
 ### Remaining release and hardware gates
-- Main QEMU build/boot/ISO/release freshness is verified for `aaf0973`; PR #54 is fully CI/QEMU validated but still unmerged.
+- Main QEMU build/boot/ISO/release freshness is verified for `aaf0973`; PR #54 was merged as `99355334375300383b7eeb1c956babfe3ab2db5c`; post-merge main Build #1970 and Stage 1 #391 are in progress.
 - Still open: 600-second/four-vCPU scheduler soak; physical Lenovo G560 boot; physical SATA/NVMe/NIC/USB/graphics matrix; physical power-loss and recovery tests; ACPI S5 shutdown; standalone disk installer; physical display/input certification.
 - The PR cleanup step emitted a non-blocking Git submodule cleanup warning for `.claude/worktrees/hardening-mem-safety` because it has no URL entry in `.gitmodules`; both full Build workflows still concluded success. Track repository cleanup separately; it did not fail build or boot gates.
 - Overall completion estimate remains approximately 43%. CI and documentation do not earn feature-completion credit. No physical-hardware capability is claimed from QEMU evidence.
+
+
+## 2026-11-17 post-merge update — PR #54
+
+- PR #54 (`fix(process): claim child reaping before teardown`) merged to main as `99355334375300383b7eeb1c956babfe3ab2db5c` using squash merge after review of its bounded child-list, exclusive reaper-claim, syscall wait, and kernel-owned cleanup changes.
+- Exact final PR head `551374301154ca8de6c84acb341640489bca33b8`: Build #1968 push and #1969 PR passed; Stage 1 Scheduler #389 and #390 passed. Build #1969 executed all 16 methods in `tools/test_process_child_reap_claim.py`, native x86-64 build, clean `make check`, kernel-image verification, 3/3 QEMU boots with 113/113 milestones each, SMP4, NX-disabled, failed-IPI recovery, scheduler diagnostics, q35 AHCI/NVMe two-boot persistence, production ISO, and desktop/network smoke.
+- Post-merge main Build #1970 (run `44006506107`) and Stage 1 Scheduler #391 (run `44006506109`) are running on this exact merge commit. At documentation update time, the new source-regression steps had passed; build-tool installation and scheduler certification were still running. Do not claim post-merge QEMU or release publication until these workflows finish.
+- GitHub Release assets still identify `aaf0973`; stable/versioned assets are byte-identical at 12,378,112 bytes and SHA-256 `4afdc8a2d519e2ecdfb39b65c58538c33bc441825623033976a04c9afe6503d7`. This is the previous main release, not the new merge commit.
+- Remaining product gates: 600-second/four-vCPU scheduler soak; physical Lenovo G560 and SATA/NVMe/NIC/USB/graphics certification; physical power-loss recovery; ACPI S5; standalone disk installer; physical desktop display/input. Overall estimate remains ~43%; CI and documentation do not count as feature completion.

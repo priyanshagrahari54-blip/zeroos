@@ -588,4 +588,26 @@ Open P1/P2 validation: 600-second/four-vCPU scheduler soak; physical Lenovo G560
 The current verifier summary is `PASS with 1 warning(s); required ISO 9660 and El Torito bootability checks passed`. Optional `pycdlib` cross-check was skipped because the package was not installed. This warning does not contradict the successful QEMU boot gates.
 
 ### Remaining validation gaps
-Physical Lenovo G560 boot, physical SATA/NVMe/NIC/USB/graphics, physical power-loss recovery, ACPI S5, standalone installation and long-duration scheduler soak remain unverified. The PR #54 code is CI/QEMU validated but not merged into main. A non-blocking checkout cleanup warning reports `.claude/worktrees/hardening-mem-safety` missing a URL in `.gitmodules`; the workflows concluded success.
+Physical Lenovo G560 boot, physical SATA/NVMe/NIC/USB/graphics, physical power-loss recovery, ACPI S5, standalone installation and long-duration scheduler soak remain unverified. The PR #54 is merged as `99355334375300383b7eeb1c956babfe3ab2db5c`; post-merge main Build #1970 and Stage 1 #391 are still in progress. A non-blocking checkout cleanup warning reports `.claude/worktrees/hardening-mem-safety` missing a URL in `.gitmodules`; the workflows concluded success.
+
+
+## 2026-11-17 post-merge verification record — PR #54
+
+| Target | Workflow | Exact SHA | Result at update time |
+|---|---|---|---|
+| PR #54 Build #1968 push | [run 43804905966](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/43804905966) | `551374301154ca8de6c84acb341640489bca33b8` | PASS |
+| PR #54 Build #1969 PR | [run 43804912193](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/43804912193) | same candidate SHA | PASS |
+| PR #54 Stage 1 #389 | [run 43804905974](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/43804905974) | same candidate SHA | PASS |
+| PR #54 Stage 1 #390 | [run 43804911681](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/43804911681) | same candidate SHA | PASS |
+| Main Build #1970 | [run 44006506107](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/44006506107) | `99355334375300383b7eeb1c956babfe3ab2db5c` | IN PROGRESS |
+| Main Stage 1 #391 | [run 44006506109](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/44006506109) | `99355334375300383b7eeb1c956babfe3ab2db5c` | IN PROGRESS |
+
+### Candidate exact checks
+- The final PR Build log reports `Ran 16 tests` for `tools/test_process_child_reap_claim.py`.
+- Native x86-64 build, clean `make check`, kernel-image verification: PASS.
+- QEMU: 3/3 boots; 113/113 milestones per boot; SMP4, NX-disabled and failed-IPI recovery: PASS.
+- q35 AHCI/NVMe two-boot persistence, production ISO and desktop/network smoke: PASS.
+- PR release publication was skipped by policy. The main release is still the previous `aaf0973` snapshot until Build #1970 completes.
+
+### Post-merge gate
+Build #1970's source-regression steps have passed. Its build-tool installation, kernel build, QEMU, storage, production and release steps were not yet complete at this update. Stage 1 #391 had compiled the native kernel and was still running scheduler certification. Update this section only after inspecting the completed job steps and logs.

@@ -1,5 +1,5 @@
 # ZEROOS — MASTER DOCUMENT INDEX
-Version: 4.7
+Version: 4.8
 Updated: 2026-11-16 (main Build #1949 and PR #54 Build #1966/#1967 passed; PR #54 remains unmerged).
 
 This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md` remains the canonical consolidated product/architecture specification. Stage 6-10 execution is split into dedicated production master documents so an implementation agent can work one stage at a time without losing cross-cutting requirements.
@@ -509,9 +509,20 @@ The release pipeline itself is no longer a P0 blocker for code snapshot `100c8e2
 
 - Main HEAD `aaf09738a9b3762e2e0b038addba8ca22421cf64`: Build #1949 and Stage 1 #370 passed. Main QEMU evidence is 3/3 boots with 112/112 milestones each; SMP4, NX-disabled, failed-IPI, scheduler diagnostics, AHCI/NVMe persistence and production smoke passed.
 - Main stable/versioned ISO assets `zeroos-aaf0973.iso` and `zeroos.iso` are byte-identical, each 12,378,112 bytes, SHA-256 `4afd97c7b7b14d1f0fcb3d04a4f6c0a7bb70c54e4d8d1dff8f75e0f4c8d1d6a2`.
-- PR #54 candidate `a48de5e2045e65d185da444adb5fcc84f821de2d` passes full Build #1966/#1967 and Stage 1 #387/#388. It adds exclusive zombie process reaping across kernel-owned userspace, session and storage teardown paths. It remains unmerged.
+- PR #54 candidate `a48de5e2045e65d185da444adb5fcc84f821de2d` passes full Build #1966/#1967 and Stage 1 #387/#388. It adds exclusive zombie process reaping across kernel-owned userspace, session and storage teardown paths. It was merged as `99355334375300383b7eeb1c956babfe3ab2db5c`; post-merge main CI is pending.
 - Candidate QEMU evidence is 3/3 boots with 113/113 milestones each, plus SMP4, NX-disabled, failed-IPI, scheduler diagnostics, AHCI/NVMe persistence and production smoke.
 - The process lifecycle regression suite has 16 methods. Main completion estimate remains ~43%; no CI/documentation completion credit.
 - Primary remaining gates: long scheduler soak, physical G560/device matrix, physical power-loss recovery, ACPI S5, disk installer and physical desktop/input certification.
 
 Canonical product and architecture requirements remain in `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md`; this index update does not remove or relax any Stage 0-10 requirement.
+
+
+## Latest repository state — 2026-11-17
+
+- Main HEAD `99355334375300383b7eeb1c956babfe3ab2db5c` is the squash merge of PR #54, which adds exclusive zombie process reaping across syscall wait and audited kernel-owned cleanup paths, with 16 source-contract regressions and a boot-time negative probe.
+- Final PR head `551374301154ca8de6c84acb341640489bca33b8` passed Build #1968/#1969 and Stage 1 #389/#390. QEMU: 3/3 boots with 113/113 milestones per boot; SMP4, NX-disabled, failed-IPI, scheduler diagnostics, AHCI/NVMe persistence and production desktop/network smoke passed.
+- Post-merge main Build #1970 and Stage 1 #391 are in progress on `99355334375300383b7eeb1c956babfe3ab2db5c`. Source regressions are green; full main QEMU/storage/release acceptance is not yet established.
+- Last verified stable/versioned ISO pair remains `zeroos-aaf0973.iso` and `zeroos.iso`, SHA-256 `4afdc8a2d519e2ecdfb39b65c58538c33bc441825623033976a04c9afe6503d7`. Do not attribute it to `99355334375300383b7eeb1c956babfe3ab2db5c` until Build #1970 publishes and byte-verifies the new pair.
+- Product gaps remain: scheduler long soak, physical G560/device and recovery matrix, ACPI S5, standalone installer, physical desktop display/input. Completion estimate remains ~43%; no CI/documentation completion credit.
+
+Canonical product and architecture requirements remain in `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md`; this index update preserves all Stage 0-10 requirements.

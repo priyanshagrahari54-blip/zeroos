@@ -9,13 +9,13 @@ Never create a basic version merely to replace it later.
 
 ## Current state
 
-### Current engineering state — 2026-11-16 (latest verified)
+### Prior verified engineering state — 2026-11-16 (superseded by 2026-11-17 merge)
 
 - Main HEAD `aaf09738a9b3762e2e0b038addba8ca22421cf64` passed Build #1949 and Stage 1 #370. Main QEMU boot is 3/3 with 112/112 milestones per iteration; SMP4, NX-disabled, failed-IPI, scheduler diagnostics, AHCI/NVMe two-boot persistence and production desktop/network smoke passed.
 - Stable/versioned main ISO assets are byte-identical: 12,378,112 bytes each, SHA-256 `4afd97c7b7b14d1f0fcb3d04a4f6c0a7bb70c54e4d8d1dff8f75e0f4c8d1d6a2`.
-- PR #54 head `a48de5e` implements exclusive zombie process reaping across kernel-owned userspace, session and storage teardown. Build #1966/#1967 and Stage 1 #387/#388 passed; QEMU 3/3 with 113/113 milestones, SMP4, NX-disabled, failed-IPI, scheduler diagnostics, AHCI/NVMe persistence and production smoke passed. The PR remains unmerged; candidate ISO publication is not claimed.
+- PR #54 final head `5513743` passed Build #1968/#1969 and Stage 1 #389/#390 with 3/3 QEMU boots, 113/113 milestones, SMP4, NX-disabled, failed-IPI, scheduler diagnostics, AHCI/NVMe persistence and production smoke. It was merged as `99355334375300383b7eeb1c956babfe3ab2db5c` on 2026-11-17. Post-merge main Build #1970 and Stage 1 #391 are running; new main release publication is pending.
 - The process child-reap regression suite contains 16 source-contract methods. The three discovered missed teardown call sites were migrated to claim-before-thread-reap order; earlier failures and their fixes are recorded in CURRENT_IMPLEMENTATION_STATUS.md and VALIDATION.md.
-- Immediate priorities: integrate PR #54 after review; run the 600-second/four-vCPU scheduler soak; certify physical Lenovo G560 and SATA/NVMe/NIC/USB/graphics; test power-loss recovery and ACPI S5; implement and validate a standalone disk installer. Native desktop physical input/display remains open. Browser/media/AI/compatibility remain later priorities.
+- Immediate priorities: complete post-merge Build #1970 and stable ISO verification; run the 600-second/four-vCPU scheduler soak; certify physical Lenovo G560 and SATA/NVMe/NIC/USB/graphics; test power-loss recovery and ACPI S5; implement and validate a standalone disk installer. Native desktop physical input/display remains open. Browser/media/AI/compatibility remain later priorities.
 - Evidence distinction: QEMU success is not physical-hardware certification. Documentation and CI do not count as implemented features. Overall completion estimate remains approximately 43%.
 
 
@@ -1208,3 +1208,12 @@ The release pipeline itself is no longer a P0 blocker for code snapshot `100c8e2
 - Versioned asset `zeroos-b37b954.iso` and stable asset `zeroos.iso` are each 12,374,016 bytes and have identical SHA-256 `cb544ebfe3d91fb50d594aa6c8b81db32f8e24e416f7e71cb72ee596f54516ad`. Release notes identify `b37b954`, GRUB/El Torito legacy BIOS boot, and a live session; there is no disk installer.
 - The ISO verifier still emits a generic one-warning string (`THIS IMAGE WILL NOT BOOT`); the three successful guest QEMU iterations are the direct boot evidence. The G560 certification report in the Build artifact says its performance/thermal values are declared targets, not measured observations, and that no physical boot occurred. Physical Lenovo G560 certification remains open.
 - P0 build/boot/post-merge CI/stable-release freshness is closed for code snapshot `b37b954`. Remaining engineering gates: 600-second/four-vCPU scheduler soak; physical G560 and SATA/NVMe/NIC/USB/graphics matrix; physical power-loss/recovery; clean ACPI S5 shutdown; standalone disk installer. Overall estimate remains ~43%; no completion credit for CI or documentation.
+
+
+## 2026-11-17 — PR #54 merged; post-merge verification pending
+
+- PR #54's exclusive zombie child-reap claim is merged to main as `99355334375300383b7eeb1c956babfe3ab2db5c`. It prevents concurrent waiters from reaping the same zombie, replaces the wait syscall's borrowed child pointer with an atomic claim, bounds claimed thread-list teardown, and migrates audited kernel-owned userspace/session/storage cleanup to claim-before-thread-reap order.
+- Final candidate Build #1968/#1969 and Stage 1 #389/#390 passed. Candidate QEMU was 3/3 with 113/113 milestones per boot; storage persistence and production desktop/network smoke passed. The 16-method process-reap source regression suite passed on the final candidate head.
+- Main Build #1970 and Stage 1 #391 are in progress on the merge commit. Do not count post-merge boot or stable-release publication until those runs complete and the release assets are checked.
+- Immediate order: finish Build #1970 and verify the stable/versioned ISO pair; finish Stage 1 #391; then run the 600-second/four-vCPU scheduler soak; physical G560 and device matrix; physical power-loss recovery; ACPI S5; standalone installer; physical desktop display/input. Browser/media/AI/compatibility remain later.
+- QEMU evidence does not certify physical hardware. Overall completion estimate remains ~43%; CI and documentation are not feature-completion credit.
