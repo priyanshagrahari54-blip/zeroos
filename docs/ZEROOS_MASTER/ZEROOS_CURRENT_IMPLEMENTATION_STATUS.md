@@ -1,7 +1,7 @@
 # ZEROOS — CURRENT IMPLEMENTATION STATUS
 
-Updated: 2026-11-16
-Branch baseline: Main HEAD `aaf09738a9b3762e2e0b038addba8ca22421cf64`. Main Build #1949 and Stage 1 Scheduler #370 both passed on this exact SHA. Build #1949 verified native x86-64 build, clean `make check`, kernel image, 3/3 QEMU boots with 112/112 milestones each, SMP4, NX-disabled, failed-IPI recovery, scheduler panic diagnostics, AHCI/NVMe two-boot persistence, production ISO and production desktop/network smoke. Stable assets `zeroos-aaf0973.iso` and `zeroos.iso` are each 12,378,112 bytes and have identical SHA-256 `4afd97c7b7b14d1f0fcb3d04a4f6c0a7bb70c54e4d8d1dff8f75e0f4c8d1d6a2`. PR #54 candidate head `a48de5e2045e65d185da444adb5fcc84f821de2d` passed Build #1966 (push), Build #1967 (PR), Stage 1 #387 and Stage 1 #388; it is not merged and does not change the main release.
+Updated: 2026-11-17
+Branch baseline: Main HEAD `99355334375300383b7eeb1c956babfe3ab2db5c` is the PR #54 squash merge. PR #54 final candidate `551374301154ca8de6c84acb341640489bca33b8` passed Build #1968/#1969 and Stage 1 #389/#390, including 16 process-reap regressions, native x86-64 build, clean `make check`, 3/3 QEMU boots with 113/113 milestones, SMP4, NX-disabled, failed-IPI, storage persistence and production desktop/network smoke. Post-merge main Build #1970 and Stage 1 #391 are in progress; the stable release still identifies `aaf0973` until the new main Build completes and publishes/verifies the merged snapshot.
 
 Status policy: **evidence-weighted estimate; never equate a source file, marker check, architecture document, or host test with a working end-user feature.**
 
