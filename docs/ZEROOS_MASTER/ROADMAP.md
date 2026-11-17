@@ -102,3 +102,12 @@ Stages 0-5 are the existing production foundation. The next five stages are:
 The detailed authoritative definitions are in `ZEROOS_MASTER_ROADMAP.md`. The reusable agent prompt is `ZEROOS_MASTER_PROMPT_10_STAGE.md`.
 
 All stage claims remain evidence-gated: detection != operational support, host-tested != hardware-supported, roadmap intent != implementation.
+
+
+## 2026-11-16 verified implementation state
+
+- Main `aaf0973` is QEMU/release validated: Build #1949 and Stage 1 #370 pass; 3/3 boots, 112/112 milestones each, SMP4, NX-disabled, failed-IPI, scheduler diagnostics, AHCI/NVMe persistence and production smoke pass. Stable/versioned ISO pair is byte-identical at SHA-256 `4afd97c7b7b14d1f0fcb3d04a4f6c0a7bb70c54e4d8d1dff8f75e0f4c8d1d6a2`.
+- PR #54 candidate `a48de5e` implements the exclusive process-reap claim through kernel-owned userspace, session and storage teardown. It passes Build #1966/#1967 and Stage 1 #387/#388, including 3/3 QEMU boots with 113/113 milestones, SMP4, NX-disabled, failed-IPI, storage persistence and production smoke. It is committed but remains unmerged.
+- Regression coverage: 16 source-contract tests in `tools/test_process_child_reap_claim.py`; the CI regression step passed on the final candidate.
+- Next execution: integrate the fully validated candidate after review; 600-second/four-vCPU scheduler soak; physical G560 and device matrix; physical power-loss recovery; ACPI S5; standalone disk installer; physical desktop display/input.
+- Browser/media/AI/compatibility remain lower priority. QEMU results do not certify physical hardware. Overall completion estimate remains ~43%; docs and CI are not feature completion.

@@ -42,6 +42,9 @@ struct process {
      * transitioning to zombie while a cross-process capability grant is
      * being published. */
     uint64_t lifetime_refs;
+    /* Exclusive parent-wait reaper claim. A claimed zombie remains linked
+     * and cannot be reaped by another concurrent waiter. */
+    uint32_t reap_claimed;
 
     /* Explicit resource ceilings; zero is never interpreted as unlimited. */
     uint64_t max_threads;
@@ -69,9 +72,18 @@ struct process *process_lookup(process_id_t pid);
  * cannot be published as zombie or reaped until the release. */
 int process_acquire_live(process_id_t pid, struct process **process_out);
 int process_release_live(struct process *process);
-/* Returns a live child owned by parent, preferring a zombie child when pid is
- * zero. The pointer is stable until the caller reaps that child. */
+/* Borrowed diagnostic lookup only; the returned pointer is not pinned after
+ * process_lock is released. Never retain it across concurrent wait/reap. */
 struct process *process_find_child(struct process *parent, process_id_t pid);
+/* Claim a zombie process for exclusive reaping. The child form atomically
+ * validates parent ownership and returns 1 with a stable claimed pointer,
+ * 0 when a matching child is not yet reapable/already claimed, or -ECHILD
+ * when no matching child exists. PID 0 selects any unclaimed zombie child. */
+int process_reap_claim(struct process *process);
+int process_child_reap_claim(struct process *parent, process_id_t pid,
+                             struct process **child_out);
+/* Release an unsuccessful reaper claim and wake parent waiters to retry. */
+int process_reap_cancel(struct process *process);
 /* Recheck child state while publishing the current task on the parent's wait
  * queue. Returns 1 when a matching zombie is already present, 0 after a
  * waiter is prepared, or a negative ZEROOS_E* value when no child/queue

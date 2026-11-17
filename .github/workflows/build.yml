@@ -51,6 +51,9 @@ jobs:
       - name: Verify process child-list integrity
         run: python3 tools/test_process_child_list_integrity.py
 
+      - name: Verify process child reap ownership
+        run: python3 tools/test_process_child_reap_claim.py
+
       - name: Verify process user-copy mapping stability
         run: python3 tools/test_process_user_copy_atomic.py
 

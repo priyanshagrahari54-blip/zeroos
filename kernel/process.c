@@ -69,6 +69,7 @@ static struct process *process_lookup_locked(process_id_t pid) {
 static int process_child_link_locked(struct process *parent,
                                      process_id_t pid,
                                      int zombie_only,
+                                     int reapable_only,
                                      struct process *target,
                                      struct process **child_out,
                                      struct process ***link_out) {
@@ -98,7 +99,11 @@ static int process_child_link_locked(struct process *parent,
                     match_link=cursor;
                 }
             } else if ((pid==0 || child->pid==pid) &&
-                       (!zombie_only || child->state==PROCESS_ZOMBIE)) {
+                       (!zombie_only || child->state==PROCESS_ZOMBIE) &&
+                       (!reapable_only ||
+                        (child->state==PROCESS_ZOMBIE &&
+                         !child->reap_claimed &&
+                         child->lifetime_refs==0))) {
                 match=child;
                 match_link=cursor;
             }
@@ -142,7 +147,7 @@ static int process_child_unlink_preflight_locked(struct process *process,
         return 0;
     if (!process_pointer_valid(parent) ||
         process_lookup_locked(parent->pid)!=parent ||
-        process_child_link_locked(parent,0,0,process,&found,&link)!=1 ||
+        process_child_link_locked(parent,0,0,0,process,&found,&link)!=1 ||
         found!=process || !link || *link!=process)
         return -1;
 
@@ -191,6 +196,7 @@ static void process_reset_locked(struct process *process) {
     process->creating_threads=0;
     process->reaping_threads=0;
     process->lifetime_refs=0;
+    process->reap_claimed=0;
     process->max_threads=0;
     process->max_children=0;
     process->max_address_space_pages=0;
@@ -221,6 +227,7 @@ int process_system_init(void) {
         processes[i].creating_threads=0;
         processes[i].reaping_threads=0;
         processes[i].lifetime_refs=0;
+        processes[i].reap_claimed=0;
         processes[i].max_threads=0;
         processes[i].max_children=0;
         processes[i].max_address_space_pages=0;
@@ -246,7 +253,7 @@ int process_create(struct process *parent, process_id_t *pid_out) {
                    parent->state==PROCESS_ZOMBIE ||
                    process_lookup_locked(parent->pid)!=parent ||
                    parent->child_count>=parent->max_children ||
-                   process_child_link_locked(parent,0,0,0,0,0)<0)) {
+                   process_child_link_locked(parent,0,0,0,0,0,0)<0)) {
         spin_unlock_irqrestore(&process_lock,flags);
         return -1;
     }
@@ -293,6 +300,7 @@ int process_create(struct process *parent, process_id_t *pid_out) {
     process->creating_threads=0;
     process->reaping_threads=0;
     process->lifetime_refs=0;
+    process->reap_claimed=0;
     process->max_threads=ZEROOS_PROCESS_DEFAULT_MAX_THREADS;
     process->max_children=ZEROOS_PROCESS_DEFAULT_MAX_CHILDREN;
     process->max_address_space_pages=ZEROOS_PROCESS_DEFAULT_MAX_ADDRESS_SPACE_PAGES;
@@ -362,6 +370,10 @@ int process_release_live(struct process *process) {
     return 0;
 }
 
+/* Borrowed diagnostic lookup only. The returned pointer is not pinned
+ * after process_lock is released and must not be used across concurrent
+ * child wait/reap operations. Destructive callers use
+ * process_child_reap_claim() instead. */
 struct process *process_find_child(struct process *parent, process_id_t pid) {
     uint64_t flags;
     struct process *match=0;
@@ -374,10 +386,125 @@ struct process *process_find_child(struct process *parent, process_id_t pid) {
         spin_unlock_irqrestore(&process_lock,flags);
         return 0;
     }
-    if (process_child_link_locked(parent,pid,pid==0,0,&match,0)!=1)
+    if (process_child_link_locked(parent,pid,pid==0,0,0,&match,0)!=1)
         match=0;
     spin_unlock_irqrestore(&process_lock,flags);
     return match;
+}
+
+static int process_reap_claim_locked(struct process *process) {
+    if (!process_pointer_valid(process) ||
+        process_lookup_locked(process->pid)!=process ||
+        process->state!=PROCESS_ZOMBIE ||
+        process->lifetime_refs!=0 ||
+        process->reap_claimed)
+        return -1;
+    process->reap_claimed=1;
+    return 0;
+}
+
+int process_reap_claim(struct process *process) {
+    uint64_t flags;
+    int result;
+    if (!process_pointer_valid(process))
+        return -1;
+    flags=spin_lock_irqsave(&process_lock);
+    result=process_reap_claim_locked(process);
+    spin_unlock_irqrestore(&process_lock,flags);
+    return result;
+}
+
+/* Atomically claim a reapable child while it is still linked to parent.
+ * Returns 1 with an exclusive stable child pointer, 0 when a matching child
+ * exists but is not currently reapable/already claimed, or -ECHILD when no
+ * matching child exists. PID 0 selects any unclaimed zombie child. */
+int process_child_reap_claim(struct process *parent, process_id_t pid,
+                             struct process **child_out) {
+    uint64_t flags;
+    struct process *child=0;
+    struct process *any_child=0;
+    int found;
+
+    if (!child_out)
+        return -ZEROOS_EINVAL;
+    *child_out=0;
+    if (!process_pointer_valid(parent))
+        return -ZEROOS_EINVAL;
+
+    flags=spin_lock_irqsave(&process_lock);
+    /* A zombie parent can still own children that must be reaped before
+     * the parent itself is eligible for process_reap(). Kernel cleanup may
+     * therefore claim its child chain even though user wait is unavailable. */
+    if (process_lookup_locked(parent->pid)!=parent ||
+        parent->state==PROCESS_UNUSED) {
+        spin_unlock_irqrestore(&process_lock,flags);
+        return -ZEROOS_ECHILD;
+    }
+
+    if (pid==0) {
+        found=process_child_link_locked(parent,0,0,0,0,&any_child,0);
+        if (found<0) {
+            spin_unlock_irqrestore(&process_lock,flags);
+            return -ZEROOS_EINVAL;
+        }
+        if (found==0) {
+            spin_unlock_irqrestore(&process_lock,flags);
+            return -ZEROOS_ECHILD;
+        }
+        found=process_child_link_locked(parent,0,1,1,0,&child,0);
+        if (found<0) {
+            spin_unlock_irqrestore(&process_lock,flags);
+            return -ZEROOS_EINVAL;
+        }
+        if (found==0) {
+            spin_unlock_irqrestore(&process_lock,flags);
+            return 0;
+        }
+    } else {
+        found=process_child_link_locked(parent,pid,0,0,0,&child,0);
+        if (found<0) {
+            spin_unlock_irqrestore(&process_lock,flags);
+            return -ZEROOS_EINVAL;
+        }
+        if (found==0) {
+            spin_unlock_irqrestore(&process_lock,flags);
+            return -ZEROOS_ECHILD;
+        }
+        if (child->state!=PROCESS_ZOMBIE ||
+            child->reap_claimed || child->lifetime_refs!=0) {
+            spin_unlock_irqrestore(&process_lock,flags);
+            return 0;
+        }
+    }
+
+    if (process_reap_claim_locked(child)!=0) {
+        spin_unlock_irqrestore(&process_lock,flags);
+        return 0;
+    }
+    *child_out=child;
+    spin_unlock_irqrestore(&process_lock,flags);
+    return 1;
+}
+
+int process_reap_cancel(struct process *process) {
+    uint64_t flags;
+    struct process *parent=0;
+    if (!process_pointer_valid(process))
+        return -1;
+    flags=spin_lock_irqsave(&process_lock);
+    if (process_lookup_locked(process->pid)!=process ||
+        process->state!=PROCESS_ZOMBIE || !process->reap_claimed) {
+        spin_unlock_irqrestore(&process_lock,flags);
+        return -1;
+    }
+    process->reap_claimed=0;
+    if (process_pointer_valid(process->parent) &&
+        process_lookup_locked(process->parent->pid)==process->parent)
+        parent=process->parent;
+    spin_unlock_irqrestore(&process_lock,flags);
+    if (parent)
+        (void)wait_queue_wake_all(&parent->child_waiters);
+    return 0;
 }
 
 int process_child_wait_prepare(struct process *parent, process_id_t pid,
@@ -385,6 +512,7 @@ int process_child_wait_prepare(struct process *parent, process_id_t pid,
     struct process *child=0;
     uint64_t process_flags;
     uint64_t wait_flags;
+    int found;
 
     if (!process_pointer_valid(parent) || !flags_out)
         return -ZEROOS_EINVAL;
@@ -394,14 +522,44 @@ int process_child_wait_prepare(struct process *parent, process_id_t pid,
         spin_unlock_irqrestore(&process_lock,process_flags);
         return -ZEROOS_ECHILD;
     }
-    if (process_child_link_locked(parent,pid,0,0,&child,0)!=1) {
-        spin_unlock_irqrestore(&process_lock,process_flags);
-        return -ZEROOS_ECHILD;
+
+    if (pid==0) {
+        found=process_child_link_locked(parent,0,0,0,0,&child,0);
+        if (found<0) {
+            spin_unlock_irqrestore(&process_lock,process_flags);
+            return -ZEROOS_EINVAL;
+        }
+        if (found==0) {
+            spin_unlock_irqrestore(&process_lock,process_flags);
+            return -ZEROOS_ECHILD;
+        }
+        child=0;
+        found=process_child_link_locked(parent,0,1,1,0,&child,0);
+        if (found<0) {
+            spin_unlock_irqrestore(&process_lock,process_flags);
+            return -ZEROOS_EINVAL;
+        }
+        if (found>0) {
+            spin_unlock_irqrestore(&process_lock,process_flags);
+            return 1;
+        }
+    } else {
+        found=process_child_link_locked(parent,pid,0,0,0,&child,0);
+        if (found<0) {
+            spin_unlock_irqrestore(&process_lock,process_flags);
+            return -ZEROOS_EINVAL;
+        }
+        if (found==0) {
+            spin_unlock_irqrestore(&process_lock,process_flags);
+            return -ZEROOS_ECHILD;
+        }
+        if (child->state==PROCESS_ZOMBIE &&
+            !child->reap_claimed && child->lifetime_refs==0) {
+            spin_unlock_irqrestore(&process_lock,process_flags);
+            return 1;
+        }
     }
-    if (child->state==PROCESS_ZOMBIE) {
-        spin_unlock_irqrestore(&process_lock,process_flags);
-        return 1;
-    }
+
     if (wait_queue_prepare(&parent->child_waiters,&wait_flags)!=0) {
         spin_unlock_irqrestore(&process_lock,process_flags);
         return -ZEROOS_EBUSY;
@@ -594,6 +752,7 @@ int process_thread_reap_begin(struct thread *thread,
         return -1;
     flags=spin_lock_irqsave(&process_lock);
     if (process_lookup_locked(process->pid)!=process ||
+        (process->state==PROCESS_ZOMBIE && !process->reap_claimed) ||
         thread->state!=THREAD_ZOMBIE ||
         process->reaping_threads==~0ULL) {
         spin_unlock_irqrestore(&process_lock,flags);
@@ -633,6 +792,7 @@ int process_thread_reap_finish(struct process *process) {
 int process_reap(struct process *process, uint64_t *exit_status_out) {
     uint64_t flags;
     struct process *parent=0;
+    struct process *parent_to_wake=0;
     struct process **parent_link=0;
 
     if (!process_pointer_valid(process)) return -1;
@@ -640,6 +800,7 @@ int process_reap(struct process *process, uint64_t *exit_status_out) {
 
     if (process_lookup_locked(process->pid)!=process ||
         process->state!=PROCESS_ZOMBIE ||
+        !process->reap_claimed ||
         process->thread_count!=0 ||
         process->live_thread_count!=0 ||
         process->creating_threads!=0 ||
@@ -675,9 +836,12 @@ int process_reap(struct process *process, uint64_t *exit_status_out) {
     if (parent) {
         *parent_link=process->next_sibling;
         --parent->child_count;
+        parent_to_wake=parent;
     }
     process_reset_locked(process);
     spin_unlock_irqrestore(&process_lock,flags);
+    if (parent_to_wake)
+        (void)wait_queue_wake_all(&parent_to_wake->child_waiters);
     /* Outside process_lock: queue descriptor/mapping teardown for the
      * storage worker (non-blocking). */
     storage_process_exit(exited_pid,exited_generation);
@@ -687,6 +851,7 @@ int process_reap(struct process *process, uint64_t *exit_status_out) {
 int process_abort_new(struct process *process) {
     uint64_t flags;
     struct process *parent=0;
+    struct process *parent_to_wake=0;
     struct process **parent_link=0;
 
     if (!process_pointer_valid(process))
@@ -696,7 +861,7 @@ int process_abort_new(struct process *process) {
         process->state!=PROCESS_NEW || process->thread_count!=0 ||
         process->live_thread_count!=0 || process->creating_threads!=0 ||
         process->reaping_threads!=0 || process->lifetime_refs!=0 ||
-        process->first_child!=0 ||
+        process->reap_claimed || process->first_child!=0 ||
         process_child_unlink_preflight_locked(process,&parent,
                                                &parent_link)!=0) {
         spin_unlock_irqrestore(&process_lock,flags);
@@ -711,9 +876,12 @@ int process_abort_new(struct process *process) {
     if (parent) {
         *parent_link=process->next_sibling;
         --parent->child_count;
+        parent_to_wake=parent;
     }
     process_reset_locked(process);
     spin_unlock_irqrestore(&process_lock,flags);
+    if (parent_to_wake)
+        (void)wait_queue_wake_all(&parent_to_wake->child_waiters);
     return 0;
 }
 
@@ -1074,7 +1242,8 @@ int process_debug_validate(void) {
                 process->next_sibling || process->child_count ||
                 process->first_thread || process->thread_count ||
                 process->live_thread_count || process->creating_threads ||
-                process->reaping_threads || process->max_threads || process->max_children ||
+                process->reaping_threads || process->reap_claimed ||
+                process->max_threads || process->max_children ||
                 wait_queue_count(&process->child_waiters) ||
                 process->max_address_space_pages || process->resident_pages ||
                 process->address_space.root ||
@@ -1094,7 +1263,9 @@ int process_debug_validate(void) {
             return -1;
         }
 
-        if (process->max_threads==0 || process->max_children==0 ||
+        if ((process->reap_claimed &&
+             (process->state!=PROCESS_ZOMBIE || process->lifetime_refs!=0)) ||
+            process->max_threads==0 || process->max_children==0 ||
             process->max_address_space_pages==0 ||
             process->thread_count>process->max_threads ||
             process->reaping_threads>process->max_threads ||
@@ -1126,7 +1297,7 @@ int process_debug_validate(void) {
             return -1;
         }
 
-        if (process_child_link_locked(process,0,0,0,0,0)<0) {
+        if (process_child_link_locked(process,0,0,0,0,0,0)<0) {
             spin_unlock_irqrestore(&process_lock,flags);
             return -1;
         }
