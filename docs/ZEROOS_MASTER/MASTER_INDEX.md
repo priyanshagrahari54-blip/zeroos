@@ -1,6 +1,6 @@
 # ZEROOS — MASTER DOCUMENT INDEX
 Version: 4.8
-Updated: 2026-11-17 (docs-only main HEAD `2969f57885a5143b6db9fbcff5c0f6622bca0ebb`; PR #54 code merge `99355334375300383b7eeb1c956babfe3ab2db5c`; post-merge main Build #1970 and Stage 1 #391 in progress).
+Updated: 2026-11-17 (PR #54 code merge `99355334375300383b7eeb1c956babfe3ab2db5c`; subsequent main changes in this update are documentation-only; post-merge main Build #1970 and Stage 1 #391 in progress).
 
 This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md` remains the canonical consolidated product/architecture specification. Stage 6-10 execution is split into dedicated production master documents so an implementation agent can work one stage at a time without losing cross-cutting requirements.
 
@@ -519,7 +519,7 @@ Canonical product and architecture requirements remain in `ZEROOS_ALL_IN_ONE_MAS
 
 ## Latest repository state — 2026-11-17
 
-- Main HEAD `2969f57885a5143b6db9fbcff5c0f6622bca0ebb` is documentation-only on top of the PR #54 squash merge `99355334375300383b7eeb1c956babfe3ab2db5c`, which adds exclusive zombie process reaping across syscall wait and audited kernel-owned cleanup paths, with 16 source-contract regressions and a boot-time negative probe.
+- The code-bearing main commit is `99355334375300383b7eeb1c956babfe3ab2db5c` (PR #54 squash merge); subsequent documentation commits do not change the tested code snapshot. which adds exclusive zombie process reaping across syscall wait and audited kernel-owned cleanup paths, with 16 source-contract regressions and a boot-time negative probe.
 - Final PR head `551374301154ca8de6c84acb341640489bca33b8` passed Build #1968/#1969 and Stage 1 #389/#390. QEMU: 3/3 boots with 113/113 milestones per boot; SMP4, NX-disabled, failed-IPI, scheduler diagnostics, AHCI/NVMe persistence and production desktop/network smoke passed.
 - Post-merge main Build #1970 and Stage 1 #391 are in progress on `99355334375300383b7eeb1c956babfe3ab2db5c`. Source regressions are green; full main QEMU/storage/release acceptance is not yet established.
 - Last verified stable/versioned ISO pair remains `zeroos-aaf0973.iso` and `zeroos.iso`, SHA-256 `4afdc8a2d519e2ecdfb39b65c58538c33bc441825623033976a04c9afe6503d7`. Do not attribute it to `99355334375300383b7eeb1c956babfe3ab2db5c` until Build #1970 publishes and byte-verifies the new pair.

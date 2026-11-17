@@ -1,7 +1,7 @@
 # ZEROOS — CURRENT IMPLEMENTATION STATUS
 
 Updated: 2026-11-17
-Branch baseline: Main HEAD `2969f57885a5143b6db9fbcff5c0f6622bca0ebb` is documentation-only on top of the code-bearing PR #54 squash merge `99355334375300383b7eeb1c956babfe3ab2db5c`. PR #54 final candidate `551374301154ca8de6c84acb341640489bca33b8` passed Build #1968/#1969 and Stage 1 #389/#390, including 16 process-reap regressions, native x86-64 build, clean `make check`, 3/3 QEMU boots with 113/113 milestones, SMP4, NX-disabled, failed-IPI, storage persistence and production desktop/network smoke. Post-merge main Build #1970 and Stage 1 #391 are in progress; the stable release still identifies `aaf0973` until the new main Build completes and publishes/verifies the merged snapshot.
+Branch baseline: Code-bearing main commit is `99355334375300383b7eeb1c956babfe3ab2db5c` (PR #54 squash merge); subsequent main changes in this update are documentation-only. PR #54 final candidate `551374301154ca8de6c84acb341640489bca33b8` passed Build #1968/#1969 and Stage 1 #389/#390, including 16 process-reap regressions, native x86-64 build, clean `make check`, 3/3 QEMU boots with 113/113 milestones, SMP4, NX-disabled, failed-IPI, storage persistence and production desktop/network smoke. Post-merge main Build #1970 and Stage 1 #391 are in progress; the stable release still identifies `aaf0973` until the new main Build completes and publishes/verifies the merged snapshot.
 
 Status policy: **evidence-weighted estimate; never equate a source file, marker check, architecture document, or host test with a working end-user feature.**
 
