@@ -1,8 +1,27 @@
 # ZEROOS — MASTER DOCUMENT INDEX
-Version: 4.8
-Updated: 2026-11-17 (PR #54 code merge `99355334375300383b7eeb1c956babfe3ab2db5c`; subsequent main changes in this update are documentation-only; post-merge main Build #1970 and Stage 1 #391 in progress).
+Version: 4.9
+Updated: 2026-11-18 (main Build #1970 / Stage 1 #391 passed for code commit `9935533`; stable/versioned ISO pair verified; PR #55 adds a VFS forced-unmount live-reference guard, with full candidate Build pending).
 
 This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md` remains the canonical consolidated product/architecture specification. Stage 6-10 execution is split into dedicated production master documents so an implementation agent can work one stage at a time without losing cross-cutting requirements.
+
+## Current main and release acceptance — 2026-11-18
+
+- Latest main HEAD is `a6fdbd1aaa6982888730b975358c368ef75161fa`; the commits after code-bearing merge `99355334375300383b7eeb1c956babfe3ab2db5c` are documentation-only.
+- Post-merge main ZEROOS Build #1970 (run `44006506107`) and Stage 1 Scheduler #391 (run `44006506109`) both completed successfully on code-bearing commit `9935533`.
+- Build #1970 passed the full configured regression suite, native x86-64 build, clean `make check`, kernel/ISO verification, three sequential QEMU boots with **113/113 required milestones per boot**, SMP4, NX-disabled compatibility, failed-IPI recovery, scheduler panic-diagnostics certification, AHCI/NVMe two-boot persistence, production desktop/network smoke, diagnostic retention and release publication.
+- The Build log explicitly reports `boot_test: PASS - 3/3 boots reached every milestone`. The storage step completed its two-boot persistence checks; fsck reported clean results after replay. The production smoke required the interactive desktop-session marker and passed.
+- The release workflow downloaded and byte-compared the versioned and stable ISO assets against the production image. `zeroos-9935533.iso` and `zeroos.iso` are both **12,384,256 bytes** with SHA-256 `e7024915fa4e8be008c56c5e944959ca6bff7c1b79ac16c7437e5f2e10383836`. Release notes identify `9935533`. This closes the P0 build/boot/stable-release gate for that code snapshot.
+- The release is a **legacy BIOS El Torito live ISO**, not a standalone disk installer and not physical-hardware certification.
+- New storage-safety candidate PR #55 (`fix/vfs-forced-unmount-live-refs-20261118`, code commit `92d4fa631fbcf147c772784822514d6de701f934)) prevents `force` from bypassing open-file/mmap busy checks in `vfs_unmount`. Its source regression passed in Build #1971 and #1972; Stage 1 #392 and #393 passed. At this documentation snapshot, both full Build jobs are still running at tool installation; candidate QEMU, storage persistence and production smoke are **pending**, not claimed.
+- Remaining independent gates: 600-second/four-vCPU scheduler soak; physical Lenovo G560 and SATA/NVMe/NIC/USB/graphics matrix; physical power-loss recovery; ACPI S5; standalone installer/recovery; physical desktop display/input. Browser/media/AI/compatibility remain later priorities. Overall estimate remains ~43%; CI and documentation do not count as feature completion.
+
+## Candidate VFS lifetime correction — 2026-11-18
+
+- Main-source review found that `vfs_unmount(path, force)` allowed `force=1` to bypass `sb->refcount` and mmap busy checks. It could continue to filesystem unmount and `block_close` while an open file still retained an inode/superblock pointer.
+- PR #55 changes the rule: live file/mmap references always return `-SE_BUSY` before the mount is marked DYING. The existing force flag remains limited to the writeback-error path; it does not override reference safety.
+- The boot-time VFS regression writes a payload to an open file, requires both normal and forced unmount to return EBUSY, then reads the same payload through the still-open file before closing it and performing a clean unmount.
+- Required QEMU marker: `ZEROOS: VFS forced unmount refuses live references.` Source-contract regression: `tools/test_vfs_forced_unmount_refs.py`, wired exactly once before tool installation.
+- Local focused fixture execution and Python syntax compilation passed. Exact candidate Build #1971/#1972 and Stage 1 #392/#393 are in progress/passed as stated above. Do not merge until a full Build reports successful `make check`, QEMU boot matrix, storage persistence and production smoke.
 
 ## Historical main verification — 2026-11-15 (superseded)
 
