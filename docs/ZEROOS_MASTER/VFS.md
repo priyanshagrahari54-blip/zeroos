@@ -76,6 +76,9 @@ The lock order is normative and specified in STORAGE.md §6.
 General rules:
 - Operations may block on mutexes and on I/O. They never busy-wait.
 - The caller's thread performs the work. Completion interrupts wake it.
+- Forced unmount (`vfs_unmount(path, 1)`) still returns EBUSY while open file
+  descriptions or mmap regions reference the mount. The force flag only permits
+  teardown to continue after a writeback error; it never frees a live superblock.
 - Errors are negative errno values. Kernel `SE_*` values equal the public
   `ZEROOS_E*` values.
 - **Cancellation:** a blocked filesystem call is not interruptible (there

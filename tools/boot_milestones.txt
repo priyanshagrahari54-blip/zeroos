@@ -129,3 +129,4 @@ ZEROOS: storage block in-flight flush barrier passed.
 ZEROOS: block duplicate completion ignored.
 ZEROOS: process child-list corruption guards passed.
 ZEROOS: child process reap claim is exclusive and cancellable.
+ZEROOS: VFS forced unmount refuses live references.
