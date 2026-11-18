@@ -19,7 +19,7 @@ Never create a basic version merely to replace it later.
 - Preserve every Stage 0–10 and all product requirements. Overall estimate remains ~43%; CI and documentation do not count as feature completion.
 
 
-### Prior verified engineering state — 2026-11-16 (superseded by 2026-11-17 merge)
+### Historical verified engineering state — 2026-11-16 (superseded by 2026-11-18 update)
 
 - Main HEAD `aaf09738a9b3762e2e0b038addba8ca22421cf64` passed Build #1949 and Stage 1 #370. Main QEMU boot is 3/3 with 112/112 milestones per iteration; SMP4, NX-disabled, failed-IPI, scheduler diagnostics, AHCI/NVMe two-boot persistence and production desktop/network smoke passed.
 - Stable/versioned main ISO assets are byte-identical: 12,378,112 bytes each, SHA-256 `4afd97c7b7b14d1f0fcb3d04a4f6c0a7bb70c54e4d8d1dff8f75e0f4c8d1d6a2`.

@@ -12,7 +12,7 @@ This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_
 - The Build log explicitly reports `boot_test: PASS - 3/3 boots reached every milestone`. The storage step completed its two-boot persistence checks; fsck reported clean results after replay. The production smoke required the interactive desktop-session marker and passed.
 - The release workflow downloaded and byte-compared the versioned and stable ISO assets against the production image. `zeroos-9935533.iso` and `zeroos.iso` are both **12,384,256 bytes** with SHA-256 `e7024915fa4e8be008c56c5e944959ca6bff7c1b79ac16c7437e5f2e10383836`. Release notes identify `9935533`. This closes the P0 build/boot/stable-release gate for that code snapshot.
 - The release is a **legacy BIOS El Torito live ISO**, not a standalone disk installer and not physical-hardware certification.
-- New storage-safety candidate PR #55 (`fix/vfs-forced-unmount-live-refs-20261118`, code commit `92d4fa631fbcf147c772784822514d6de701f934)) prevents `force` from bypassing open-file/mmap busy checks in `vfs_unmount`. Its source regression passed in Build #1971 and #1972; Stage 1 #392 and #393 passed. At this documentation snapshot, both full Build jobs are still running at tool installation; candidate QEMU, storage persistence and production smoke are **pending**, not claimed.
+- New storage-safety candidate PR #55 (`fix/vfs-forced-unmount-live-refs-20261118`, code commit `92d4fa631fbcf147c772784822514d6de701f934`) prevents `force` from bypassing open-file/mmap busy checks in `vfs_unmount`. Its source regression passed in Build #1971 and #1972; Stage 1 #392 and #393 passed. At this documentation snapshot, both full Build jobs are still running at tool installation; candidate QEMU, storage persistence and production smoke are **pending**, not claimed.
 - Remaining independent gates: 600-second/four-vCPU scheduler soak; physical Lenovo G560 and SATA/NVMe/NIC/USB/graphics matrix; physical power-loss recovery; ACPI S5; standalone installer/recovery; physical desktop display/input. Browser/media/AI/compatibility remain later priorities. Overall estimate remains ~43%; CI and documentation do not count as feature completion.
 
 ## Candidate VFS lifetime correction — 2026-11-18
@@ -34,7 +34,7 @@ This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_
 
 
 
-## Current main verification — 2026-11-16
+## Historical main verification — 2026-11-16 (superseded by 2026-11-18)
 
 - Latest main HEAD: `a363dbed7d027351ab9f3cdfe22e3da9e016aab2` (PR #52 merged). Exact PR #52 head `c861709` passed Build #1942 and Stage 1 #363, including 3/3 QEMU boots with 111/111 milestones, SMP4, NX-disabled, failed-IPI recovery, AHCI/NVMe persistence and production desktop/network smoke.
 - Post-merge main Build #1943 is in progress; Stage 1 Scheduler #364 passed on exact main SHA.
