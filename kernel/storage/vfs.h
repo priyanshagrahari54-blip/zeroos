@@ -19,7 +19,8 @@
  * released through the filesystem when the last reference drops; an inode
  * with links==0 is destroyed at that point (orphan processing guarantees
  * the same after a crash). A superblock cannot be unmounted while it has
- * open files, cached busy inodes, or dirty data that fails to write back.
+ * open files, cached busy inodes, or live mappings. Forced unmount may
+ * bypass a writeback error, never a live reference.
  *
  * Lock order (outer to inner):
  *   vfs namespace mutex (rename/unlink/create path walks)

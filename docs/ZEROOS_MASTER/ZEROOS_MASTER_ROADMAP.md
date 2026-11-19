@@ -9,7 +9,17 @@ Never create a basic version merely to replace it later.
 
 ## Current state
 
-### Prior verified engineering state — 2026-11-16 (superseded by 2026-11-17 merge)
+### Current verified main and next execution — 2026-11-18
+
+- Main code commit `99355334375300383b7eeb1c956babfe3ab2db5c` passed post-merge Build #1970 and Stage 1 #391. Latest main HEAD `a6fdbd1` is documentation-only after that code snapshot.
+- Build #1970 passed native x86-64 compilation, clean `make check`, all configured source regressions, 3/3 QEMU boots with 113/113 milestones each, SMP4, NX-disabled, failed-IPI recovery, scheduler panic diagnostics, AHCI/NVMe two-boot persistence and production desktop/network smoke.
+- The main workflow published and byte-compared the production image with both `zeroos-9935533.iso` and `zeroos.iso`; each is 12,384,256 bytes with SHA-256 `e7024915fa4e8be008c56c5e944959ca6bff7c1b79ac16c7437e5f2e10383836`. P0 main build/boot/release acceptance is closed for this snapshot.
+- PR #55 is a narrowly scoped VFS safety correction: forced unmount must not bypass live open-file/mmap references. Its source regression and Stage 1 checks passed; full Build #1971/#1972 remain in progress at this snapshot. Do not merge without QEMU, storage and production gates.
+- Next work order: (1) complete PR #55 full candidate validation and merge only after all gates pass; (2) verify post-merge main Build and stable ISO freshness; (3) run the 600-second/four-vCPU scheduler soak; (4) physical G560/device and power-loss recovery matrix; (5) ACPI S5 and standalone installer/recovery; (6) physical desktop display/input; (7) browser/media/AI/compatibility.
+- Preserve every Stage 0–10 and all product requirements. Overall estimate remains ~43%; CI and documentation do not count as feature completion.
+
+
+### Historical verified engineering state — 2026-11-16 (superseded by 2026-11-18 update)
 
 - Main HEAD `aaf09738a9b3762e2e0b038addba8ca22421cf64` passed Build #1949 and Stage 1 #370. Main QEMU boot is 3/3 with 112/112 milestones per iteration; SMP4, NX-disabled, failed-IPI, scheduler diagnostics, AHCI/NVMe two-boot persistence and production desktop/network smoke passed.
 - Stable/versioned main ISO assets are byte-identical: 12,378,112 bytes each, SHA-256 `4afd97c7b7b14d1f0fcb3d04a4f6c0a7bb70c54e4d8d1dff8f75e0f4c8d1d6a2`.

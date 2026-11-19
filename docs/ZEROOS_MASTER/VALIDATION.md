@@ -1,6 +1,25 @@
 # ZEROOS — Validation and Support Matrix
+Updated: 2026-11-18. Latest main HEAD `a6fdbd1aaa6982888730b975358c368ef75161fa` is documentation-only after tested code commit `99355334375300383b7eeb1c956babfe3ab2db5c`. Main Build #1970 and Stage 1 #391 passed; stable/versioned ISO assets match at SHA-256 `e7024915fa4e8be008c56c5e944959ca6bff7c1b79ac16c7437e5f2e10383836`. PR #55's source regression and Stage 1 checks passed; its full Build/QEMU/storage/production gates are pending.
 
-Updated: 2026-11-17. Code-bearing main commit is `99355334375300383b7eeb1c956babfe3ab2db5c` (PR #54 squash merge); subsequent main changes in this update are documentation-only. Final PR head `551374301154ca8de6c84acb341640489bca33b8` passed Build #1968/#1969 and Stage 1 #389/#390, including 16 process-reap regressions, native x86-64 build, clean `make check`, 3/3 QEMU boots with 113/113 milestones, SMP4, NX-disabled, failed-IPI, storage persistence and production desktop/network smoke. Post-merge main Build #1970 (run `44006506107`) and Stage 1 #391 (run `44006506109`) are in progress; no post-merge QEMU or stable-release result is claimed. Last verified stable/versioned assets remain `zeroos-aaf0973.iso` and `zeroos.iso`, 12,378,112 bytes each, SHA-256 `4afdc8a2d519e2ecdfb39b65c58538c33bc441825623033976a04c9afe6503d7`.
+
+## Current main and release acceptance — 2026-11-18
+
+- Latest main HEAD is `a6fdbd1aaa6982888730b975358c368ef75161fa`; the commits after code-bearing merge `99355334375300383b7eeb1c956babfe3ab2db5c` are documentation-only.
+- Post-merge main ZEROOS Build #1970 (run `44006506107`) and Stage 1 Scheduler #391 (run `44006506109`) both completed successfully on code-bearing commit `9935533`.
+- Build #1970 passed the full configured regression suite, native x86-64 build, clean `make check`, kernel/ISO verification, three sequential QEMU boots with **113/113 required milestones per boot**, SMP4, NX-disabled compatibility, failed-IPI recovery, scheduler panic-diagnostics certification, AHCI/NVMe two-boot persistence, production desktop/network smoke, diagnostic retention and release publication.
+- The Build log explicitly reports `boot_test: PASS - 3/3 boots reached every milestone`. The storage step completed its two-boot persistence checks; fsck reported clean results after replay. The production smoke required the interactive desktop-session marker and passed.
+- The release workflow downloaded and byte-compared the versioned and stable ISO assets against the production image. `zeroos-9935533.iso` and `zeroos.iso` are both **12,384,256 bytes** with SHA-256 `e7024915fa4e8be008c56c5e944959ca6bff7c1b79ac16c7437e5f2e10383836`. Release notes identify `9935533`. This closes the P0 build/boot/stable-release gate for that code snapshot.
+- The release is a **legacy BIOS El Torito live ISO**, not a standalone disk installer and not physical-hardware certification.
+- New storage-safety candidate PR #55 (`fix/vfs-forced-unmount-live-refs-20261118`, code commit `92d4fa631fbcf147c772784822514d6de701f934`) prevents `force` from bypassing open-file/mmap busy checks in `vfs_unmount`. Its source regression passed in Build #1971 and #1972; Stage 1 #392 and #393 passed. At this documentation snapshot, push Build #1971 has passed native build, clean `make check` and kernel-image verification and is in the QEMU Boot test; PR Build #1972 has passed source regressions and native build and is in the reproducible `make check`. Both remain in progress; no candidate QEMU, storage-persistence or production-smoke result is claimed.
+- Remaining independent gates: 600-second/four-vCPU scheduler soak; physical Lenovo G560 and SATA/NVMe/NIC/USB/graphics matrix; physical power-loss recovery; ACPI S5; standalone installer/recovery; physical desktop display/input. Browser/media/AI/compatibility remain later priorities. Overall estimate remains ~43%; CI and documentation do not count as feature completion.
+
+## Candidate VFS lifetime correction — 2026-11-18
+
+- Main-source review found that `vfs_unmount(path, force)` allowed `force=1` to bypass `sb->refcount` and mmap busy checks. It could continue to filesystem unmount and `block_close` while an open file still retained an inode/superblock pointer.
+- PR #55 changes the rule: live file/mmap references always return `-SE_BUSY` before the mount is marked DYING. The existing force flag remains limited to the writeback-error path; it does not override reference safety.
+- The boot-time VFS regression writes a payload to an open file, requires both normal and forced unmount to return EBUSY, then reads the same payload through the still-open file before closing it and performing a clean unmount.
+- Required QEMU marker: `ZEROOS: VFS forced unmount refuses live references.` Source-contract regression: `tools/test_vfs_forced_unmount_refs.py`, wired exactly once before tool installation.
+- Local focused fixture execution and Python syntax compilation passed. Exact candidate Build #1971/#1972 and Stage 1 #392/#393 are in progress/passed as stated above. Do not merge until a full Build reports successful `make check`, QEMU boot matrix, storage persistence and production smoke.
 
 ## Historical main acceptance — 2026-11-15 (superseded)
 
@@ -11,7 +30,7 @@ Updated: 2026-11-17. Code-bearing main commit is `99355334375300383b7eeb1c956bab
 
 
 
-## Current main and candidate acceptance — 2026-11-16
+## Historical main and candidate acceptance — 2026-11-16 (superseded by 2026-11-18)
 
 - Main HEAD is `a363dbed7d027351ab9f3cdfe22e3da9e016aab2`. PR #52's exact head `c86170938be87645201da08fd121584482453196` passed Build #1942 (run `43671686695`) and Stage 1 Scheduler #363 (run `43671686703`). The Build log reports 3/3 sequential QEMU boots with 111/111 milestones each, SMP4, NX-disabled, failed-IPI recovery, storage two-boot persistence, production ISO and desktop/network smoke.
 - PR #52 was merged as `a363dbed`. Post-merge main Build #1943 (run `43796952894`) was in progress at review time; Stage 1 Scheduler #364 (run `43796952987`) passed on that exact SHA.
@@ -20,6 +39,17 @@ Updated: 2026-11-17. Code-bearing main commit is `99355334375300383b7eeb1c956bab
 - Candidate branch `fix/process-child-list-integrity-20261116`, head `304562a58bb5a3e375cc3c975da4f3da12ddd309`, adds bounded, pointer-validated child-list traversal and parent unlink preflight. The boot-time corruption self-test covers an invalid pointer, cycle and child-count mismatch. Its new serial milestone is mandatory in the shared QEMU milestone list.
 - The new `tools/test_process_child_list_integrity.py` has 8 source-contract regression methods and is invoked by Build CI. Candidate Build #1946 is pending and Stage 1 #367 is in progress; earlier #1945/#366 were cancelled after the branch head correction. Do not claim candidate compile/QEMU/storage/production validation until #1946 or a later exact-head Build completes.
 - The current ISO is a legacy BIOS El Torito live image, not a disk installer. Physical Lenovo G560, device matrix, power-loss recovery, ACPI S5, 600-second scheduler soak and physical desktop validation remain open. Overall estimate remains ~43%.
+
+## Current release blockers — 2026-11-18
+
+1. **P1 — PR #55 full acceptance:** Build #1971 (push) and #1972 (PR) are running; Stage 1 #392/#393 passed. Require exact-code QEMU, SMP4, NX-disabled, failed-IPI, storage two-boot persistence and production desktop/network smoke before merge.
+2. **P1 — scheduler soak:** execute and retain the 600-second/four-vCPU soak with fairness/latency, hot-offline and wakeup-race evidence.
+3. **P1 — physical hardware/recovery:** certify Lenovo G560 boot, SATA/NVMe/NIC/USB/graphics, interrupted-write and power-loss recovery. QEMU does not close this gate.
+4. **P1/P2 — power and installation:** ACPI S5 and standalone disk installer/recovery remain unverified.
+5. **P2 — native desktop hardware:** physical display/input integration and application validation.
+6. **P3 — later product expansion:** browser, media, AI and Windows/Android compatibility after kernel/storage/driver acceptance.
+
+No P0 main build/boot/stable-release blocker remains for code snapshot `9935533`. Overall implementation estimate remains ~43%.
 
 ## Evidence classes
 
@@ -36,21 +66,18 @@ Updated: 2026-11-17. Code-bearing main commit is `99355334375300383b7eeb1c956bab
 
 ## Current release status
 
-- PR #51 is merged into main as `4c36c2c`; its exact PR head passed Build #1930 and Stage 1 #351, including 3/3 QEMU boots, SMP4, NX-disabled, failed-IPI recovery, two-boot AHCI/NVMe persistence and production desktop/network smoke.
-- Build #1930 was a PR run and skipped release publication. The post-merge main Build and release freshness for `4c36c2c` are not yet verified.
-- The last verified stable/versioned assets remain `zeroos.iso` and `zeroos-129707f.iso`, 12,378,112 bytes, SHA-256 `cfd4f2c57962fd139699445a1a28ce29120ac58b84019f70b747dcf1c6fdff38`. Do not attribute this digest to `4c36c2c`.
-- PR #52 corrects the ISO verifier's misleading summary when an optional `pycdlib` cross-check is unavailable. The required ISO 9660/El Torito checks remain mandatory; an explicitly waived bootability check will be reported as not certified. PR #52 has not yet passed its full CI/QEMU gates.
-- The current artifact is a GRUB/El Torito legacy BIOS live ISO, not a standalone disk installer. It does not certify UEFI installation or physical Lenovo G560 compatibility.
-- Physical Lenovo G560, SATA/NVMe/NIC/USB/graphics, thermal and power-loss recovery certification remain pending. QEMU evidence does not substitute for physical hardware.
-- Standalone disk installation, full dynamic linking, production browser/media stacks, Windows/Android runtime compatibility and a complete ZERO AI tool/backend execution stack remain incomplete.
-
-
+- Code-bearing main commit `99355334375300383b7eeb1c956babfe3ab2db5c` passed post-merge Build #1970 (run `44006506107`) and Stage 1 Scheduler #391 (run `44006506109`). Latest main HEAD `a6fdbd1` is documentation-only after that tested code snapshot.
+- Build #1970 passed native x86-64 compilation, clean `make check`, the configured source regressions, 3/3 QEMU boots with 113/113 milestones per boot, SMP4, NX-disabled, failed-IPI recovery, scheduler panic diagnostics, AHCI/NVMe two-boot persistence and production desktop/network smoke.
+- The main release workflow published `zeroos-9935533.iso` and `zeroos.iso`, downloaded both, and byte-compared them against the production ISO. Each asset is 12,384,256 bytes with SHA-256 `e7024915fa4e8be008c56c5e944959ca6bff7c1b79ac16c7437e5f2e10383836`; release notes identify `9935533`.
+- The published image is a legacy BIOS El Torito live ISO, not a standalone disk installer and not physical-hardware certification.
+- PR #55's forced-unmount live-reference source regression passed in Build #1971/#1972 and Stage 1 #392/#393 passed. Push Build #1971 has passed native build, clean `make check` and kernel-image verification and is in QEMU Boot test; PR Build #1972 has passed source regressions and native build and is in `make check`. Full QEMU/storage/production acceptance remains pending; do not merge until it completes.
+- No P0 build/boot/stable-release blocker remains for code snapshot `9935533`. Remaining gates are the 600-second scheduler soak, physical G560/device and power-recovery matrix, ACPI S5, installer/recovery and physical desktop display/input. Browser/media/AI/compatibility remain later priorities.
 
 ## Stage completion rule
 
 No stage is 100% complete until its hardening checklist has executable evidence at the required class. A host test cannot close a QEMU gate; QEMU cannot close a real-hardware gate. Detection, parsing, UI, architecture docs, source-marker checks and mocked APIs do not establish operational support.
 
-## Release blockers — 2026-11-16
+## Historical release blockers — 2026-11-16 (superseded by 2026-11-18)
 
 1. **P1 — candidate process child-list fix:** exact-head Build/QEMU/storage/production gates must pass before merge.
 2. **P1 — main metadata freshness:** post-merge Build #1943 must finish and confirm release publication/byte comparison for `a363dbed`; the existing stable ISO is verified for code-bearing snapshot `4c36c2c`.

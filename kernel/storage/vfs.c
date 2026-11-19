@@ -1255,13 +1255,15 @@ int vfs_unmount(const char *path, int force) {
     for (uint32_t i=0; i<VFS_MAX_INODES; ++i)
         if (inodes[i].sb==sb && inodes[i].mmap_count)
             busy=1;
-    if (!busy || force)
-        sb->flags|=VFS_SB_DYING;           /* no new lookups */
-    spin_unlock_irqrestore(&vfs_lock,lf);
-    if (busy && !force) {
+    /* Force may bypass a writeback error, never a live file or mapping. */
+    if (busy) {
+        spin_unlock_irqrestore(&vfs_lock,lf);
         kmutex_unlock(&vfs_mount_lock);
+        klog("ZEROOS: vfs: unmount %s refused: live references remain.",path);
         return -SE_BUSY;
     }
+    sb->flags|=VFS_SB_DYING;               /* no new lookups */
+    spin_unlock_irqrestore(&vfs_lock,lf);
     int rc=vfs_writeback_sb(sb);
     if (rc && !force) {
         lf=spin_lock_irqsave(&vfs_lock);

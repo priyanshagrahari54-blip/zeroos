@@ -556,8 +556,17 @@ static int tf_concurrency(void) {
 
 static int tf_unmount_rules(struct block_device *device) {
     struct vfs_file *f;
+    const char payload[]="live-reference";
+    char readback[sizeof(payload)];
     TF_CHECK(vfs_open(&tf_root,"/t/busy",VFS_O_CREAT|VFS_O_RDWR,0644,&f)==0,"busy file");
+    TF_CHECK(vfs_write(f,payload,sizeof(payload))==(int64_t)sizeof(payload),
+             "busy file write");
     TF_CHECK(vfs_unmount("/t",0)==-SE_BUSY,"unmount with open file -> EBUSY");
+    TF_CHECK(vfs_unmount("/t",1)==-SE_BUSY,
+             "forced unmount cannot bypass live file reference");
+    TF_CHECK(vfs_pread(f,readback,sizeof(readback),0)==(int64_t)sizeof(readback) &&
+             memcmp(readback,payload,sizeof(payload))==0,
+             "open file remains usable after rejected forced unmount");
     vfs_file_put(f);
     TF_CHECK(vfs_unlink(&tf_root,"/t/busy")==0,"unlink busy");
     TF_CHECK(vfs_unmount("/t",0)==0,"clean unmount");
@@ -567,6 +576,7 @@ static int tf_unmount_rules(struct block_device *device) {
     page_free(page);
     TF_CHECK(clean,"superblock CLEAN after unmount");
     TF_CHECK(tf_fsck_clean(device,"functional suite")==0,"fsck clean");
+    klog("ZEROOS: VFS forced unmount refuses live references.");
     return 0;
 }
 

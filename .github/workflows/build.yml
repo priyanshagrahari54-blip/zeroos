@@ -72,6 +72,9 @@ jobs:
       - name: Verify ZJFS ordered-data writeback failure handling
         run: python3 tools/test_zjfs_ordered_writeback.py
 
+      - name: Verify VFS forced unmount preserves live references
+        run: python3 tools/test_vfs_forced_unmount_refs.py
+
       - name: Verify storage persistence gate fails closed
         run: python3 tools/test_storage_persistence_gate_fail_closed.py
 
