@@ -1,7 +1,7 @@
 # ZEROOS — CURRENT IMPLEMENTATION STATUS
 ## Current main and VFS acceptance — 2026-11-19
 
-- Latest main HEAD is `6ef1fcb550d6b1eff9b857cd6d67809d4d58336e`, the squash merge of PR #55. Its parent is the previously verified main documentation tip `a6fdbd1aaa6982888730b975358c368ef75161fa`.
+- The code-bearing main commit is `6ef1fcb550d6b1eff9b857cd6d67809d4d58336e`, the squash merge of PR #55. This status update is documentation-only after that merge.
 - PR #55 changes `kernel/storage/vfs.c`: `vfs_unmount(path, force)` now rejects live superblock/open-file/mmap references with `-SE_BUSY` before setting `VFS_SB_DYING`. `force` remains limited to the existing writeback-error policy; it cannot free a superblock or close its block device under a live reference.
 - Runtime regression in `kernel/storage/test_fs.c` writes a payload to an open file, verifies normal and forced unmount both return EBUSY, reads the same payload after the rejected forced unmount, then closes and cleanly unmounts. Required marker: `ZEROOS: VFS forced unmount refuses live references.`
 - Exact candidate code commit `92d4fa631fbcf147c772784822514d6de701f934`: Build #1971 (run `44229495662`) and Build #1972 (run `44229586735`) both passed. Each ran the VFS source regression, native x86-64 build, reproducible `make check`, kernel-image verification, 3/3 QEMU boots with **114/114 milestones per boot**, SMP4, NX-disabled, failed-IPI recovery, scheduler panic diagnostics, q35 AHCI/NVMe two-boot persistence, production ISO build and desktop/network smoke. Stage 1 #392 and #393 also passed. PR #55 was squash-merged as `6ef1fcb` on 2026-11-19.

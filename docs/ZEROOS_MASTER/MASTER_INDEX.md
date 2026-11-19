@@ -4,7 +4,7 @@ Updated: 2026-11-19 (PR #55 merged as `6ef1fcb`; candidate full Build/QEMU/stora
 
 ## Current main snapshot — 2026-11-19
 
-- Main HEAD: `6ef1fcb550d6b1eff9b857cd6d67809d4d58336e` (PR #55 squash merge).
+- Code-bearing main merge: `6ef1fcb550d6b1eff9b857cd6d67809d4d58336e` (PR #55 squash merge); this index update is documentation-only.
 - PR #55 protects VFS superblock lifetime: forced unmount cannot bypass live open-file/mmap references. The runtime regression and source-contract test are merged.
 - Exact candidate Build #1971/#1972 passed native build, reproducible `make check`, kernel verification, 3/3 QEMU boots with 114/114 milestones, SMP4, NX-disabled, failed-IPI, scheduler diagnostics, AHCI/NVMe persistence, production ISO and desktop/network smoke. Stage 1 #392/#393 passed.
 - Post-merge Stage 1 #394 passed. Main Build #1973 is running; source regressions have passed, while native build and post-merge QEMU/storage/release acceptance remain pending.
