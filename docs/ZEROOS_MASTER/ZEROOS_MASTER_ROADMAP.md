@@ -9,7 +9,17 @@ Never create a basic version merely to replace it later.
 
 ## Current state
 
-### Current verified main and next execution — 2026-11-18
+### Current main execution — 2026-11-19
+
+- PR #55's VFS live-reference fix is merged to main as `6ef1fcb550d6b1eff9b857cd6d67809d4d58336e`. Forced unmount now rejects live open-file/mmap references before marking a superblock DYING; `force` remains limited to writeback-error handling.
+- Candidate Build #1971/#1972 and Stage 1 #392/#393 passed on exact code commit `92d4fa6`: native x86-64 build, reproducible `make check`, kernel-image verification, 3/3 QEMU boots with 114/114 milestones, SMP4, NX-disabled, failed-IPI recovery, scheduler diagnostics, AHCI/NVMe two-boot persistence, production ISO and desktop/network smoke. The runtime test verifies the open file remains readable after forced unmount is rejected.
+- Post-merge Stage 1 #394 passed. Main Build #1973 is running; source regressions passed, but native build, main QEMU, storage, production smoke and release publication remain pending.
+- The current stable ISO still identifies `9935533` (SHA-256 `e7024915fa4e8be008c56c5e944959ca6bff7c1b79ac16c7437e5f2e10383836`). Do not attribute it to `6ef1fcb`; require a successful post-merge Build and stable/versioned byte comparison.
+- Immediate order: (1) complete Build #1973 and inspect QEMU, SMP4, NX-disabled, failed-IPI, storage and desktop logs; (2) verify and publish the `6ef1fcb` stable/versioned ISO pair; (3) run the 600-second/four-vCPU scheduler soak; (4) certify physical G560 and storage/NIC/USB/graphics; (5) physical power-loss recovery and ACPI S5; (6) standalone installer/recovery; (7) physical desktop display/input; (8) browser/media/AI/compatibility.
+- Preserve every Stage 0–10 and all product requirements. Overall estimate remains ~43%; CI and documentation do not count as feature completion.
+
+
+### Historical verified main and next execution — 2026-11-18 (superseded by 2026-11-19)
 
 - Main code commit `99355334375300383b7eeb1c956babfe3ab2db5c` passed post-merge Build #1970 and Stage 1 #391. Latest main HEAD `a6fdbd1` is documentation-only after that code snapshot.
 - Build #1970 passed native x86-64 compilation, clean `make check`, all configured source regressions, 3/3 QEMU boots with 113/113 milestones each, SMP4, NX-disabled, failed-IPI recovery, scheduler panic diagnostics, AHCI/NVMe two-boot persistence and production desktop/network smoke.

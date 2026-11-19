@@ -1,10 +1,19 @@
 # ZEROOS — MASTER DOCUMENT INDEX
-Version: 4.9
-Updated: 2026-11-18 (main Build #1970 / Stage 1 #391 passed for code commit `9935533`; stable/versioned ISO pair verified; PR #55 adds a VFS forced-unmount live-reference guard, with full candidate Build pending).
+Version: 5.0
+Updated: 2026-11-19 (PR #55 merged as `6ef1fcb`; candidate full Build/QEMU/storage/production checks passed; post-merge main Build #1973 running; Stage 1 #394 passed).
+
+## Current main snapshot — 2026-11-19
+
+- Main HEAD: `6ef1fcb550d6b1eff9b857cd6d67809d4d58336e` (PR #55 squash merge).
+- PR #55 protects VFS superblock lifetime: forced unmount cannot bypass live open-file/mmap references. The runtime regression and source-contract test are merged.
+- Exact candidate Build #1971/#1972 passed native build, reproducible `make check`, kernel verification, 3/3 QEMU boots with 114/114 milestones, SMP4, NX-disabled, failed-IPI, scheduler diagnostics, AHCI/NVMe persistence, production ISO and desktop/network smoke. Stage 1 #392/#393 passed.
+- Post-merge Stage 1 #394 passed. Main Build #1973 is running; source regressions have passed, while native build and post-merge QEMU/storage/release acceptance remain pending.
+- The stable/versioned release still identifies `9935533` at SHA-256 `e7024915fa4e8be008c56c5e944959ca6bff7c1b79ac16c7437e5f2e10383836`; it is not yet a release for `6ef1fcb`.
+- Remaining gates: 600-second/four-vCPU scheduler soak; physical G560/device and recovery matrix; ACPI S5; standalone installer/recovery; physical desktop display/input; later browser/media/AI/compatibility. Overall implementation estimate remains ~43%; CI and documentation do not count as feature completion.
 
 This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_ALL_IN_ONE_MASTER_SPEC.md` remains the canonical consolidated product/architecture specification. Stage 6-10 execution is split into dedicated production master documents so an implementation agent can work one stage at a time without losing cross-cutting requirements.
 
-## Current main and release acceptance — 2026-11-18
+## Historical main and release acceptance — 2026-11-18 (superseded by 2026-11-19)
 
 - Latest main HEAD is `a6fdbd1aaa6982888730b975358c368ef75161fa`; the commits after code-bearing merge `99355334375300383b7eeb1c956babfe3ab2db5c` are documentation-only.
 - Post-merge main ZEROOS Build #1970 (run `44006506107`) and Stage 1 Scheduler #391 (run `44006506109`) both completed successfully on code-bearing commit `9935533`.
@@ -15,7 +24,7 @@ This is the navigation layer for the complete ZEROOS documentation set. `ZEROOS_
 - New storage-safety candidate PR #55 (`fix/vfs-forced-unmount-live-refs-20261118`, code commit `92d4fa631fbcf147c772784822514d6de701f934`) prevents `force` from bypassing open-file/mmap busy checks in `vfs_unmount`. Its source regression passed in Build #1971 and #1972; Stage 1 #392 and #393 passed. At this documentation snapshot, push Build #1971 has passed native build, clean `make check` and kernel-image verification and is in the QEMU Boot test; PR Build #1972 has passed source regressions and native build and is in the reproducible `make check`. Both remain in progress; no candidate QEMU, storage-persistence or production-smoke result is claimed.
 - Remaining independent gates: 600-second/four-vCPU scheduler soak; physical Lenovo G560 and SATA/NVMe/NIC/USB/graphics matrix; physical power-loss recovery; ACPI S5; standalone installer/recovery; physical desktop display/input. Browser/media/AI/compatibility remain later priorities. Overall estimate remains ~43%; CI and documentation do not count as feature completion.
 
-## Candidate VFS lifetime correction — 2026-11-18
+## Historical VFS lifetime candidate — 2026-11-18 (merged 2026-11-19)
 
 - Main-source review found that `vfs_unmount(path, force)` allowed `force=1` to bypass `sb->refcount` and mmap busy checks. It could continue to filesystem unmount and `block_close` while an open file still retained an inode/superblock pointer.
 - PR #55 changes the rule: live file/mmap references always return `-SE_BUSY` before the mount is marked DYING. The existing force flag remains limited to the writeback-error path; it does not override reference safety.

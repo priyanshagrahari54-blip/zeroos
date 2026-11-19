@@ -1,11 +1,21 @@
 # ZEROOS — CURRENT IMPLEMENTATION STATUS
-Updated: 2026-11-18
-Branch baseline: Latest main HEAD is `a6fdbd1aaa6982888730b975358c368ef75161fa` (documentation-only after code-bearing merge `99355334375300383b7eeb1c956babfe3ab2db5c`). Post-merge main Build #1970 and Stage 1 #391 passed; the stable/versioned `zeroos-9935533.iso` and `zeroos.iso` are byte-identical to the boot-tested production image at SHA-256 `e7024915fa4e8be008c56c5e944959ca6bff7c1b79ac16c7437e5f2e10383836`. New VFS forced-unmount lifetime candidate PR #55 is committed; source regression and Stage 1 passed, while full Build/QEMU/storage/production acceptance remains pending.
+## Current main and VFS acceptance — 2026-11-19
+
+- Latest main HEAD is `6ef1fcb550d6b1eff9b857cd6d67809d4d58336e`, the squash merge of PR #55. Its parent is the previously verified main documentation tip `a6fdbd1aaa6982888730b975358c368ef75161fa`.
+- PR #55 changes `kernel/storage/vfs.c`: `vfs_unmount(path, force)` now rejects live superblock/open-file/mmap references with `-SE_BUSY` before setting `VFS_SB_DYING`. `force` remains limited to the existing writeback-error policy; it cannot free a superblock or close its block device under a live reference.
+- Runtime regression in `kernel/storage/test_fs.c` writes a payload to an open file, verifies normal and forced unmount both return EBUSY, reads the same payload after the rejected forced unmount, then closes and cleanly unmounts. Required marker: `ZEROOS: VFS forced unmount refuses live references.`
+- Exact candidate code commit `92d4fa631fbcf147c772784822514d6de701f934`: Build #1971 (run `44229495662`) and Build #1972 (run `44229586735`) both passed. Each ran the VFS source regression, native x86-64 build, reproducible `make check`, kernel-image verification, 3/3 QEMU boots with **114/114 milestones per boot**, SMP4, NX-disabled, failed-IPI recovery, scheduler panic diagnostics, q35 AHCI/NVMe two-boot persistence, production ISO build and desktop/network smoke. Stage 1 #392 and #393 also passed. PR #55 was squash-merged as `6ef1fcb` on 2026-11-19.
+- Post-merge main Stage 1 #394 (run `44446660589`) passed. Main Build #1973 (run `44446660585`) is in progress; at this update, all configured source regressions have passed and the job is still installing build/QEMU tools. Native build, `make check`, kernel-image verification, main QEMU, storage, production smoke and release publication have not yet completed for `6ef1fcb`.
+- Published stable/versioned assets still identify `9935533`: `zeroos-9935533.iso` and `zeroos.iso`, 12,384,256 bytes, SHA-256 `e7024915fa4e8be008c56c5e944959ca6bff7c1b79ac16c7437e5f2e10383836`. This is the last verified release, not the newly merged `6ef1fcb` image. The P0 post-merge main boot/release-freshness gate remains open until Build #1973 completes and the stable/versioned assets are verified against its production ISO.
+- Remaining engineering gates: 600-second/four-vCPU scheduler soak; physical Lenovo G560 and SATA/NVMe/NIC/USB/graphics matrix; physical power-loss/interrupted-write recovery; ACPI S5; standalone disk installer/recovery; physical desktop display/input. Browser/media/AI/compatibility remain later priorities. Overall estimate remains approximately 43%; CI and documentation do not count as feature completion.
+
+Updated: 2026-11-19
+Branch baseline: main code-bearing HEAD `6ef1fcb550d6b1eff9b857cd6d67809d4d58336e` (PR #55 squash merge). Candidate Build #1971/#1972 and Stage 1 #392/#393 passed; post-merge main Stage 1 #394 passed; main Build #1973 is running. The currently published stable ISO still identifies `9935533`, not `6ef1fcb`.
 
 
 Status policy: **evidence-weighted estimate; never equate a source file, marker check, architecture document, or host test with a working end-user feature.**
 
-## Current main and release acceptance — 2026-11-18
+## Historical main and release acceptance — 2026-11-18 (superseded by 2026-11-19)
 
 - Latest main HEAD is `a6fdbd1aaa6982888730b975358c368ef75161fa`; the commits after code-bearing merge `99355334375300383b7eeb1c956babfe3ab2db5c` are documentation-only.
 - Post-merge main ZEROOS Build #1970 (run `44006506107`) and Stage 1 Scheduler #391 (run `44006506109`) both completed successfully on code-bearing commit `9935533`.
@@ -16,7 +26,7 @@ Status policy: **evidence-weighted estimate; never equate a source file, marker 
 - New storage-safety candidate PR #55 (`fix/vfs-forced-unmount-live-refs-20261118`, code commit `92d4fa631fbcf147c772784822514d6de701f934`) prevents `force` from bypassing open-file/mmap busy checks in `vfs_unmount`. Its source regression passed in Build #1971 and #1972; Stage 1 #392 and #393 passed. At this documentation snapshot, push Build #1971 has passed native build, clean `make check` and kernel-image verification and is in the QEMU Boot test; PR Build #1972 has passed source regressions and native build and is in the reproducible `make check`. Both remain in progress; no candidate QEMU, storage-persistence or production-smoke result is claimed.
 - Remaining independent gates: 600-second/four-vCPU scheduler soak; physical Lenovo G560 and SATA/NVMe/NIC/USB/graphics matrix; physical power-loss recovery; ACPI S5; standalone installer/recovery; physical desktop display/input. Browser/media/AI/compatibility remain later priorities. Overall estimate remains ~43%; CI and documentation do not count as feature completion.
 
-## Candidate VFS lifetime correction — 2026-11-18
+## Historical VFS lifetime candidate — 2026-11-18 (merged 2026-11-19)
 
 - Main-source review found that `vfs_unmount(path, force)` allowed `force=1` to bypass `sb->refcount` and mmap busy checks. It could continue to filesystem unmount and `block_close` while an open file still retained an inode/superblock pointer.
 - PR #55 changes the rule: live file/mmap references always return `-SE_BUSY` before the mount is marked DYING. The existing force flag remains limited to the writeback-error path; it does not override reference safety.

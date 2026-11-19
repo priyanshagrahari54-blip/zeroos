@@ -1,8 +1,30 @@
 # ZEROOS — Validation and Support Matrix
+## Latest main and candidate verification — 2026-11-19
+
+| Gate | Exact evidence | Result |
+|---|---|---|
+| VFS source regression | Build #1971/#1972, code SHA `92d4fa6` | PASS |
+| Native x86-64 build | Build #1971/#1972 | PASS |
+| Reproducible `make check` | Build #1971/#1972 | PASS |
+| Kernel-image verification | Build #1971/#1972 | PASS |
+| QEMU boot | Build #1971/#1972, 3 boots × 114/114 milestones | PASS |
+| SMP4 / NX-disabled / failed-IPI | Build #1971/#1972 | PASS |
+| Scheduler panic diagnostics | Build #1971/#1972 | PASS |
+| AHCI/NVMe two-boot persistence | Build #1971/#1972 | PASS |
+| Production ISO and desktop/network smoke | Build #1971/#1972 | PASS |
+| Stage 1 Scheduler | #392/#393 candidate; #394 post-merge main | PASS |
+| Post-merge main Build | #1973, run `44446660585` | IN PROGRESS |
+
+PR #55 (`92d4fa6`) was squash-merged to main as `6ef1fcb550d6b1eff9b857cd6d67809d4d58336e`. The VFS runtime test requires both normal and forced unmount to return EBUSY while a file is open, then verifies the same open file remains readable. Forced unmount no longer bypasses live file or mmap references.
+
+At the time of this update, main Build #1973 had passed all configured source-regression steps and was still installing build/QEMU tools. Do not attribute candidate QEMU/storage results to post-merge main until #1973 completes.
+
+The last published stable/versioned image pair still identifies `9935533`: 12,384,256 bytes each, SHA-256 `e7024915fa4e8be008c56c5e944959ca6bff7c1b79ac16c7437e5f2e10383836`. It does not certify `6ef1fcb`. Main release freshness is open until #1973 publishes and byte-verifies the new pair.
+
 Updated: 2026-11-18. Latest main HEAD `a6fdbd1aaa6982888730b975358c368ef75161fa` is documentation-only after tested code commit `99355334375300383b7eeb1c956babfe3ab2db5c`. Main Build #1970 and Stage 1 #391 passed; stable/versioned ISO assets match at SHA-256 `e7024915fa4e8be008c56c5e944959ca6bff7c1b79ac16c7437e5f2e10383836`. PR #55's source regression and Stage 1 checks passed; its full Build/QEMU/storage/production gates are pending.
 
 
-## Current main and release acceptance — 2026-11-18
+## Historical main and release acceptance — 2026-11-18 (superseded by 2026-11-19)
 
 - Latest main HEAD is `a6fdbd1aaa6982888730b975358c368ef75161fa`; the commits after code-bearing merge `99355334375300383b7eeb1c956babfe3ab2db5c` are documentation-only.
 - Post-merge main ZEROOS Build #1970 (run `44006506107`) and Stage 1 Scheduler #391 (run `44006506109`) both completed successfully on code-bearing commit `9935533`.
@@ -13,7 +35,7 @@ Updated: 2026-11-18. Latest main HEAD `a6fdbd1aaa6982888730b975358c368ef75161fa`
 - New storage-safety candidate PR #55 (`fix/vfs-forced-unmount-live-refs-20261118`, code commit `92d4fa631fbcf147c772784822514d6de701f934`) prevents `force` from bypassing open-file/mmap busy checks in `vfs_unmount`. Its source regression passed in Build #1971 and #1972; Stage 1 #392 and #393 passed. At this documentation snapshot, push Build #1971 has passed native build, clean `make check` and kernel-image verification and is in the QEMU Boot test; PR Build #1972 has passed source regressions and native build and is in the reproducible `make check`. Both remain in progress; no candidate QEMU, storage-persistence or production-smoke result is claimed.
 - Remaining independent gates: 600-second/four-vCPU scheduler soak; physical Lenovo G560 and SATA/NVMe/NIC/USB/graphics matrix; physical power-loss recovery; ACPI S5; standalone installer/recovery; physical desktop display/input. Browser/media/AI/compatibility remain later priorities. Overall estimate remains ~43%; CI and documentation do not count as feature completion.
 
-## Candidate VFS lifetime correction — 2026-11-18
+## Historical VFS lifetime candidate — 2026-11-18 (merged 2026-11-19)
 
 - Main-source review found that `vfs_unmount(path, force)` allowed `force=1` to bypass `sb->refcount` and mmap busy checks. It could continue to filesystem unmount and `block_close` while an open file still retained an inode/superblock pointer.
 - PR #55 changes the rule: live file/mmap references always return `-SE_BUSY` before the mount is marked DYING. The existing force flag remains limited to the writeback-error path; it does not override reference safety.
@@ -40,7 +62,7 @@ Updated: 2026-11-18. Latest main HEAD `a6fdbd1aaa6982888730b975358c368ef75161fa`
 - The new `tools/test_process_child_list_integrity.py` has 8 source-contract regression methods and is invoked by Build CI. Candidate Build #1946 is pending and Stage 1 #367 is in progress; earlier #1945/#366 were cancelled after the branch head correction. Do not claim candidate compile/QEMU/storage/production validation until #1946 or a later exact-head Build completes.
 - The current ISO is a legacy BIOS El Torito live image, not a disk installer. Physical Lenovo G560, device matrix, power-loss recovery, ACPI S5, 600-second scheduler soak and physical desktop validation remain open. Overall estimate remains ~43%.
 
-## Current release blockers — 2026-11-18
+## Historical release blockers — 2026-11-18 (superseded by 2026-11-19)
 
 1. **P1 — PR #55 full acceptance:** Build #1971 (push) and #1972 (PR) are running; Stage 1 #392/#393 passed. Require exact-code QEMU, SMP4, NX-disabled, failed-IPI, storage two-boot persistence and production desktop/network smoke before merge.
 2. **P1 — scheduler soak:** execute and retain the 600-second/four-vCPU soak with fairness/latency, hot-offline and wakeup-race evidence.
