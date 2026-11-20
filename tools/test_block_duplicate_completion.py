@@ -10,8 +10,10 @@ milestones = (ROOT / "tools/boot_milestones.txt").read_text()
 workflow = (ROOT / ".github/workflows/build.yml").read_text()
 
 assert "BLOCK_REQ_COMPLETING=5" in header
-complete = block.split("void block_complete(struct block_request *request, int status)", 1)[1].split(
-    "void block_note_interrupt", 1
+# Completion logic now lives in the shared internal path used by both
+# hardware callbacks and sequence-checked watchdog timeout claims.
+complete = block.split("static int block_complete_internal(", 1)[1].split(
+    "void block_complete(struct block_request *request, int status)", 1
 )[0]
 membership = complete.find("if (!*cursor || device->inflight_count==0)")
 claim = complete.find("request->state=BLOCK_REQ_COMPLETING")

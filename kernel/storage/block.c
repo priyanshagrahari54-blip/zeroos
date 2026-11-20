@@ -345,13 +345,27 @@ static void block_unmerge_locked(struct block_device *device,
     }
 }
 
-void block_complete(struct block_request *request, int status) {
+static int block_complete_internal(struct block_request *request, int status,
+                                   uint64_t expected_sequence,
+                                   int watchdog_timeout) {
+    if (!request || !request->device)
+        return 0;
     struct block_device *device=request->device;
     uint64_t flags=spin_lock_irqsave(&device->lock);
+
+    /* A watchdog scan drops device->lock before claiming a timeout. The
+     * request pool can recycle this address in that gap, so sequence plus
+     * the STALL disposition must still identify the same submission. */
+    if (watchdog_timeout &&
+        (request->sequence!=expected_sequence ||
+         request->injected!=BLOCK_FAULT_STALL)) {
+        spin_unlock_irqrestore(&device->lock,flags);
+        return 0;
+    }
     if (request->state!=BLOCK_REQ_DISPATCHED) {
         /* Duplicate completion (e.g. IRQ racing a reset): ignore. */
         spin_unlock_irqrestore(&device->lock,flags);
-        return;
+        return 0;
     }
     struct block_request **cursor=&device->inflight;
     while (*cursor && *cursor!=request)
@@ -362,7 +376,12 @@ void block_complete(struct block_request *request, int status) {
      * of the in-flight list, and publish COMPLETING under the same lock. */
     if (!*cursor || device->inflight_count==0) {
         spin_unlock_irqrestore(&device->lock,flags);
-        return;
+        return 0;
+    }
+    if (watchdog_timeout) {
+        /* Count only a timeout that successfully claimed this exact request. */
+        request->injected=0;
+        ++device->stats.timeouts;
     }
     request->state=BLOCK_REQ_COMPLETING;
     *cursor=request->next;
@@ -388,7 +407,7 @@ void block_complete(struct block_request *request, int status) {
         ++device->queued;
         spin_unlock_irqrestore(&device->lock,flags);
         block_run_queue(device);
-        return;
+        return 1;
     }
     if (status<0 && retryable && request->retries<BLOCK_MAX_RETRIES) {
         ++request->retries;
@@ -398,11 +417,21 @@ void block_complete(struct block_request *request, int status) {
         ++device->queued;
         spin_unlock_irqrestore(&device->lock,flags);
         block_run_queue(device);
-        return;
+        return 1;
     }
     spin_unlock_irqrestore(&device->lock,flags);
     block_finalize_chain(device,request,status);
     block_run_queue(device);
+    return 1;
+}
+
+void block_complete(struct block_request *request, int status) {
+    (void)block_complete_internal(request,status,0,0);
+}
+
+int block_timeout_stalled_request(struct block_request *request,
+                                  uint64_t expected_sequence) {
+    return block_complete_internal(request,-SE_TIMEDOUT,expected_sequence,1);
 }
 
 void block_note_interrupt(struct block_device *device) {
@@ -815,6 +844,8 @@ void block_submit(struct block_device *device, struct block_request *request) {
         block_finalize_chain(root,request,error);
         return;
     }
+    /* sequence is a per-submission identity as well as a FLUSH-order key.
+     * Deferred watchdog claims validate it after dropping/reacquiring lock. */
     request->sequence=++root->next_sequence;
     request->state=BLOCK_REQ_QUEUED;
     if (request->op==BLOCK_OP_FLUSH || !block_try_merge_locked(root,request)) {
@@ -1001,7 +1032,10 @@ void block_report(struct block_device *device) {
 /* -------------------------------------------------------------- watchdog */
 
 static void block_watchdog_scan(struct block_device *device) {
-    struct block_request *expired[BLOCK_POOL_MAX];
+    struct expired_request {
+        struct block_request *request;
+        uint64_t sequence;
+    } expired[BLOCK_POOL_MAX];
     uint32_t expired_count=0;
     int driver_expired=0;
 
@@ -1015,8 +1049,11 @@ static void block_watchdog_scan(struct block_device *device) {
         if (now-r->dispatch_tick<device->timeout_ticks)
             continue;
         if (r->injected==BLOCK_FAULT_STALL) {
-            if (expired_count<BLOCK_POOL_MAX)
-                expired[expired_count++]=r;
+            if (expired_count<BLOCK_POOL_MAX) {
+                expired[expired_count].request=r;
+                expired[expired_count].sequence=r->sequence;
+                ++expired_count;
+            }
         } else {
             if (!driver_expired)
                 klog("ZEROOS: block %s: expired request op=%u lba=%llu sectors=%u age=%llu state=%u.",
@@ -1039,11 +1076,9 @@ static void block_watchdog_scan(struct block_device *device) {
                 driver_expired=1;
         spin_unlock_irqrestore(&device->lock,flags);
     }
-    for (uint32_t i=0; i<expired_count; ++i) {
-        __atomic_fetch_add(&device->stats.timeouts,1ULL,__ATOMIC_RELAXED);
-        expired[i]->injected=0;
-        block_complete(expired[i],-SE_TIMEDOUT);
-    }
+    for (uint32_t i=0; i<expired_count; ++i)
+        (void)block_timeout_stalled_request(expired[i].request,
+                                            expired[i].sequence);
     if (driver_expired) {
         __atomic_fetch_add(&device->stats.timeouts,1ULL,__ATOMIC_RELAXED);
         klog("ZEROOS: block %s: I/O timeout, resetting device.",device->name);
