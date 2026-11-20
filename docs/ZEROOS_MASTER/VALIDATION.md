@@ -1,5 +1,33 @@
 # ZEROOS — Validation and Support Matrix
-## Latest main and candidate verification — 2026-11-19
+## Latest main and block-watchdog verification — 2026-11-20
+
+| Gate | Exact evidence | Result |
+|---|---|---|
+| Latest main code commit | PR #56 merge `de3c44c1a9e4711f49415381a348b8142ebb666d` | Merged |
+| Candidate watchdog source regression | Build #1976/#1977, head `358bed2` | PASS |
+| Existing duplicate-completion regression after refactor | Build #1976/#1977 | PASS |
+| Native x86-64 build | Build #1976/#1977 | PASS |
+| Reproducible `make check` | Build #1976/#1977 | PASS |
+| Kernel-image verification | Build #1976/#1977 | PASS |
+| QEMU boot | Build #1976/#1977, 3 boots × **115/115 milestones** | PASS |
+| SMP4 / NX-disabled / failed-IPI | Build #1976/#1977 | PASS |
+| Scheduler panic diagnostics | Build #1976/#1977 | PASS |
+| AHCI/NVMe two-boot persistence | Build #1976/#1977 | PASS |
+| Production ISO and desktop/network smoke | Build #1976/#1977 | PASS |
+| Stage 1 Scheduler | #397 and #398 on final candidate head | PASS |
+| Post-merge main Stage 1 | #399 on `de3c44c` | PASS |
+| Post-merge main full Build | #1978, run `44666160949` | IN PROGRESS — build/QEMU tool installation |
+| Post-merge stable ISO | Last verified release still `6ef1fcb` | PENDING |
+
+Candidate links: [Build #1976](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/44664776616), [Build #1977](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/44664785758), [Stage 1 #397](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/44664776631), [Stage 1 #398](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/44664785628). Main links: [Build #1978](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/44666160949), [Stage 1 #399](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/44666160909).
+
+The watchdog fix uses the existing per-submit request `sequence` as an ABA-resistant identity. The watchdog captures pointer plus sequence under `device->lock`; `block_timeout_stalled_request()` validates sequence, STALL disposition, state and in-flight membership under the lock before mutating timeout state. The runtime test forces request-pool slot reuse and replays the stale sequence. Required marker: `ZEROOS: block watchdog stale timeout snapshot ignored after request reuse.`
+
+The first two candidate Build attempts (#1974/#1975 on `82f2edfc`) failed only because the older duplicate-completion source test parsed the public wrapper after the completion body was factored into a shared helper. The test was corrected on final head `358bed2`; both full final-head Builds passed. Do not treat the initial harness-coupling failure as a QEMU or kernel failure.
+
+The last verified release for code commit `6ef1fcb` has byte-identical versioned/stable assets at 12,384,256 bytes and SHA-256 `b7afd71af0d5e8b0868ca4172061c28898dfe99050a4a3c91d2f8d2f3b2cabce`. It is not a release for `de3c44c`. Main Build #1978 must complete and publish/verify the new production ISO before the new code snapshot is release-certified.
+
+## Historical main and VFS candidate verification — 2026-11-19 (superseded by 2026-11-20)
 
 | Gate | Exact evidence | Result |
 |---|---|---|

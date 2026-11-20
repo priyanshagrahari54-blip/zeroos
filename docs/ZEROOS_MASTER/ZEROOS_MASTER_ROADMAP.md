@@ -9,7 +9,16 @@ Never create a basic version merely to replace it later.
 
 ## Current state
 
-### Current main execution — 2026-11-19
+### Current main execution — 2026-11-20
+
+- PR #56's block-watchdog request-pool ABA fix is merged as `de3c44c1a9e4711f49415381a348b8142ebb666d`. The watchdog captures request pointer plus per-submit sequence under `device->lock`; a deferred timeout claim validates the same sequence, STALL disposition, DISPATCHED state and in-flight membership before clearing the fault marker or incrementing timeout statistics.
+- Final candidate Build #1976/#1977 and Stage 1 #397/#398 passed: source regressions, native x86-64 build, reproducible `make check`, kernel verification, 3/3 QEMU boots with 115/115 milestones, SMP4, NX-disabled, failed-IPI, scheduler diagnostics, AHCI/NVMe two-boot persistence, production ISO and desktop/network smoke. Runtime self-test forces reuse of the same request-pool slot and replays the stale sequence.
+- Post-merge Stage 1 #399 passed. Main Build #1978 is in progress after all source regressions passed; at this update it is installing build/QEMU tools. Do not claim post-merge QEMU, storage or release certification until the full Build completes.
+- The current stable ISO still identifies `6ef1fcb` (SHA-256 `b7afd71af0d5e8b0868ca4172061c28898dfe99050a4a3c91d2f8d2f3b2cabce`). Require Build #1978 to complete and publish/byte-compare the `de3c44c` versioned and stable ISO pair.
+- Immediate order: (1) complete Build #1978 and inspect QEMU, SMP4, NX-disabled, failed-IPI, storage and desktop logs; (2) verify/publish the `de3c44c` stable/versioned ISO pair; (3) run the 600-second/four-vCPU scheduler soak; (4) certify physical G560 and storage/NIC/USB/graphics; (5) physical power-loss recovery and ACPI S5; (6) standalone installer/recovery; (7) physical desktop display/input; (8) browser/media/AI/compatibility.
+- Preserve every Stage 0–10 and all product requirements. Overall estimate remains ~43%; CI and documentation do not count as feature completion.
+
+### Historical main execution — 2026-11-19 (superseded by 2026-11-20)
 
 - PR #55's VFS live-reference fix is merged to main as `6ef1fcb550d6b1eff9b857cd6d67809d4d58336e`. Forced unmount now rejects live open-file/mmap references before marking a superblock DYING; `force` remains limited to writeback-error handling.
 - Candidate Build #1971/#1972 and Stage 1 #392/#393 passed on exact code commit `92d4fa6`: native x86-64 build, reproducible `make check`, kernel-image verification, 3/3 QEMU boots with 114/114 milestones, SMP4, NX-disabled, failed-IPI recovery, scheduler diagnostics, AHCI/NVMe two-boot persistence, production ISO and desktop/network smoke. The runtime test verifies the open file remains readable after forced unmount is rejected.

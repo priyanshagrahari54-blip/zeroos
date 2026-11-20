@@ -1,8 +1,18 @@
 # ZEROOS — MASTER DOCUMENT INDEX
-Version: 5.0
-Updated: 2026-11-19 (PR #55 merged as `6ef1fcb`; candidate full Build/QEMU/storage/production checks passed; post-merge main Build #1973 running; Stage 1 #394 passed).
+Version: 5.1
+Updated: 2026-11-20 (PR #56 merged as `de3c44c`; candidate Build #1976/#1977 and Stage 1 #397/#398 passed; post-merge main Stage 1 #399 passed; main Build #1978 in progress).
 
-## Current main snapshot — 2026-11-19
+## Current main snapshot — 2026-11-20
+
+- Code-bearing main merge: `de3c44c1a9e4711f49415381a348b8142ebb666d` (PR #56 squash merge).
+- PR #56 prevents a stale block-watchdog pointer from timing out a different request after request-pool slot reuse. The watchdog now snapshots the per-submit sequence under the device lock; timeout claim validates sequence, STALL disposition, DISPATCHED state and in-flight membership under the same lock.
+- Runtime regression forces same-slot reuse and replays the old sequence; source regression `tools/test_block_watchdog_reuse.py` is integrated before tool installation. Required boot milestone: `ZEROOS: block watchdog stale timeout snapshot ignored after request reuse.`
+- Final candidate Build #1976/#1977 passed native build, reproducible `make check`, kernel verification, 3/3 QEMU boots with 115/115 milestones, SMP4, NX-disabled, failed-IPI, scheduler diagnostics, AHCI/NVMe two-boot persistence, production ISO and desktop/network smoke. Stage 1 #397/#398 passed.
+- Post-merge main Stage 1 #399 passed. Main Build #1978 is in progress after all source regressions passed; native build/check, QEMU, storage and release publication remain pending at this update.
+- The last stable/versioned ISO still identifies `6ef1fcb` at SHA-256 `b7afd71af0d5e8b0868ca4172061c28898dfe99050a4a3c91d2f8d2f3b2cabce`; it is not yet a release for `de3c44c`.
+- Remaining gates: 600-second/four-vCPU scheduler soak; physical G560/device and recovery matrix; ACPI S5; standalone installer/recovery; physical desktop display/input; later browser/media/AI/compatibility. Overall implementation estimate remains ~43%; CI and documentation do not count as feature completion.
+
+## Historical main snapshot — 2026-11-19 (superseded by 2026-11-20)
 
 - Code-bearing main merge: `6ef1fcb550d6b1eff9b857cd6d67809d4d58336e` (PR #55 squash merge); this index update is documentation-only.
 - PR #55 protects VFS superblock lifetime: forced unmount cannot bypass live open-file/mmap references. The runtime regression and source-contract test are merged.
