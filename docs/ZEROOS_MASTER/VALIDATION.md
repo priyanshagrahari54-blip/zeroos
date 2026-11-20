@@ -16,7 +16,7 @@
 | Production ISO and desktop/network smoke | Build #1976/#1977 | PASS |
 | Stage 1 Scheduler | #397 and #398 on final candidate head | PASS |
 | Post-merge main Stage 1 | #399 on `de3c44c` | PASS |
-| Post-merge main full Build | #1978, run `44666160949` | IN PROGRESS — build/QEMU tool installation |
+| Post-merge main full Build | #1978, run `44666160949` | IN PROGRESS — source regressions, native build, reproducible `make check` and kernel-image verification passed; QEMU boot test in progress |
 | Post-merge stable ISO | Last verified release still `6ef1fcb` | PENDING |
 
 Candidate links: [Build #1976](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/44664776616), [Build #1977](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/44664785758), [Stage 1 #397](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/44664776631), [Stage 1 #398](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/44664785628). Main links: [Build #1978](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/44666160949), [Stage 1 #399](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/44666160909).
