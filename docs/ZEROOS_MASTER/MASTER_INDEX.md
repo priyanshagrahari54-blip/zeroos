@@ -1,5 +1,5 @@
 # ZEROOS — MASTER DOCUMENT INDEX
-Version: 5.1
+Version: 5.2
 Updated: 2026-11-20 (PR #56 merged as `de3c44c`; candidate Build #1976/#1977 and Stage 1 #397/#398 passed; post-merge main Stage 1 #399 passed; main Build #1978 in progress).
 
 ## Current main snapshot — 2026-11-20
