@@ -111,7 +111,7 @@ struct block_request {
     uint32_t own_sectors;
     uint32_t tag;                       /* driver command slot */
     uint64_t lba;                       /* physical-device LBA */
-    uint64_t sequence;                  /* ordering vs. flush barriers */
+    uint64_t sequence;                  /* per-submit identity + FLUSH ordering */
     int32_t status;                     /* 0 or -SE_* */
     uint32_t flags;
     uint64_t submit_tick;
@@ -270,6 +270,10 @@ int block_cancel(struct block_request *request);
 
 /* Called by drivers (any context) when hardware finishes a request. */
 void block_complete(struct block_request *request, int status);
+/* Deferred watchdog claim: only times out the exact submission sequence
+ * captured under device->lock. Returns 1 if that request was claimed. */
+int block_timeout_stalled_request(struct block_request *request,
+                                  uint64_t expected_sequence);
 /* Called by drivers from their interrupt handler (statistics only). */
 void block_note_interrupt(struct block_device *device);
 void block_device_set_state(struct block_device *device, uint32_t state);

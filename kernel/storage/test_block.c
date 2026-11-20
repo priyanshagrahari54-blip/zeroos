@@ -238,6 +238,61 @@ static int tb_duplicate_completion(struct block_device *disk, uint8_t *buffer) {
     return 0;
 }
 
+/* A watchdog scan may retain a request pointer after dropping the
+ * device lock. If the request completes, is freed, and the pool reuses that
+ * slot before the scan claims it, the old pointer must not time out the new
+ * submission. */
+static int tb_watchdog_reuse_aba(struct block_device *disk, uint8_t *buffer) {
+    struct block_fault fault;
+    struct block_request *first,*second;
+    struct block_stats before,after;
+    uint64_t stale_sequence;
+    uint32_t inflight=0;
+    uint32_t saved_timeout=disk->timeout_ticks;
+    disk->timeout_ticks=0xffffffffU;
+
+    memset(&fault,0,sizeof(fault));
+    fault.mode=BLOCK_FAULT_STALL;
+    fault.op_mask=1U<<BLOCK_OP_READ;
+    fault.remaining=1;
+    block_fault_set(disk,&fault);
+    first=tb_async(disk,BLOCK_OP_READ,80,buffer,512,BLOCK_PRIO_NORMAL);
+    TB_CHECK(first && first->state==BLOCK_REQ_DISPATCHED,
+             "first watchdog request stalled in flight");
+    stale_sequence=first->sequence;
+
+    block_fault_clear(disk);
+    block_complete(first,0);
+    TB_CHECK(block_wait(first)==0,"first request completed before stale timeout");
+    block_request_free(first);
+
+    fault.remaining=1;
+    block_fault_set(disk,&fault);
+    second=tb_async(disk,BLOCK_OP_READ,81,buffer,512,BLOCK_PRIO_NORMAL);
+    TB_CHECK(second==first,"request pool reused the same slot");
+    TB_CHECK(second->state==BLOCK_REQ_DISPATCHED &&
+             second->sequence!=stale_sequence,
+             "reused slot has a new in-flight submission identity");
+    block_stats_snapshot(disk,&before,0,&inflight);
+    TB_CHECK(inflight==1,"replacement request remains in flight");
+
+    TB_CHECK(block_timeout_stalled_request(second,stale_sequence)==0,
+             "stale watchdog snapshot cannot claim replacement request");
+    block_stats_snapshot(disk,&after,0,&inflight);
+    TB_CHECK(inflight==1 && second->state==BLOCK_REQ_DISPATCHED,
+             "stale timeout leaves replacement request untouched");
+    TB_CHECK(after.timeouts==before.timeouts,
+             "stale watchdog snapshot does not increment timeout count");
+
+    block_fault_clear(disk);
+    block_complete(second,0);
+    TB_CHECK(block_wait(second)==0,"replacement request completes normally");
+    block_request_free(second);
+    disk->timeout_ticks=saved_timeout;
+    klog("ZEROOS: block watchdog stale timeout snapshot ignored after request reuse.");
+    return 0;
+}
+
 static int tb_cancel(struct block_device *disk, uint8_t *buffer) {
     ramdisk_pause(disk,1);
     struct block_request *a=tb_async(disk,BLOCK_OP_READ,1,buffer,512,BLOCK_PRIO_NORMAL);
@@ -461,6 +516,7 @@ int storage_selftest_block(void) {
     TB_RUN(tb_priority(disk,b),"priority-aging");
     TB_RUN(tb_barrier(disk,b),"flush-barrier");
     TB_RUN(tb_duplicate_completion(disk,b),"duplicate-completion");
+    TB_RUN(tb_watchdog_reuse_aba(disk,b),"watchdog-reuse-aba");
     TB_RUN(tb_cancel(disk,b),"cancel");
     TB_RUN(tb_pool(disk),"pool-backpressure");
     TB_RUN(tb_faults(disk,a,b),"eio-timeout-retry");
