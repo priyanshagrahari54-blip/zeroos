@@ -1,3 +1,27 @@
+## Main release and new pool-integrity candidate — 2026-11-21
+
+| Gate | Exact evidence | Result |
+|---|---|---|
+| Main code snapshot | `de3c44c1a9e4711f49415381a348b8142ebb666d` | Verified |
+| Main Build | #1978, run `44666160949` | PASS |
+| Main Stage 1 | #399, run `44666160909` | PASS |
+| Main QEMU | 3 boots × 115/115 milestones | PASS |
+| SMP4 / NX-disabled / failed-IPI | Build #1978 | PASS |
+| Scheduler panic diagnostics | Build #1978 | PASS |
+| AHCI/NVMe two-boot persistence | Build #1978 | PASS |
+| Production ISO / desktop-network smoke | Build #1978 | PASS |
+| Stable/versioned ISO byte comparison | Build #1978 | PASS |
+| Stable/versioned ISO SHA-256 | `beb72531c7c52234bc6903c22f779c804fe2656d766f32fa81a5e2414468c0fd` | Verified |
+| Candidate double-free source regression | New PR branch | Pending |
+| Candidate native build / make check | New PR branch | Pending |
+| Candidate QEMU / storage / production smoke | New PR branch | Pending |
+
+Main evidence: [Build #1978](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/44666160949), [Stage 1 #399](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/44666160909).
+
+The new request-pool fix is limited to `block_request_free()`: under the root device lock it validates that `pool_index` points to the same pool slot, rejects `BLOCK_REQ_FREE`, and prevents pool-free-count overflow before linking. Runtime test forces a duplicate free and verifies full-pool unique allocation afterward. Required marker: `ZEROOS: block request double-free rejected without pool corruption.`. The first Stage 1 run on the initial candidate failed compilation at `kernel/storage/block.c:243:40` (struct-versus-pointer comparison). The guard now compares the pool element address. Build #1990 source regression passed, then compilation failed. Corrected PR head `c253333` passed Stage 1 #420, including native compilation and scheduler certification. Build #1999 is pending. The exact corrected-head full Build, QEMU, storage persistence and production smoke remain unverified. Do not merge until all gates pass.
+
+The stable ISO is a legacy BIOS El Torito live session, not an installer. QEMU evidence is not physical G560/device certification.
+
 # ZEROOS — Validation and Support Matrix
 ## Latest main and block-watchdog verification — 2026-11-20
 
