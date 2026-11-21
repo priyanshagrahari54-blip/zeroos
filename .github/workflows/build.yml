@@ -72,6 +72,9 @@ jobs:
       - name: Verify block watchdog request-reuse ABA guard
         run: python3 tools/test_block_watchdog_reuse.py
 
+      - name: Verify block request double-free pool guard
+        run: python3 tools/test_block_request_double_free.py
+
       - name: Verify ZJFS ordered-data writeback failure handling
         run: python3 tools/test_zjfs_ordered_writeback.py
 
