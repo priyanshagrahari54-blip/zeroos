@@ -34,16 +34,16 @@ def function_body(source: str, signature: str) -> str:
                 if depth == 0:
                     return source[opening + 1:i]
         elif state == "string":
-            if ch == "\\\\":
+            if ch == "\\":
                 i += 1
             elif ch == '"':
                 state = "code"
         elif state == "char":
-            if ch == "\\\\":
+            if ch == "\\":
                 i += 1
             elif ch == "'":
                 state = "code"
-        elif state == "line" and ch == "\\n":
+        elif state == "line" and ch == "\n":
             state = "code"
         elif state == "block" and ch == "*" and nxt == "/":
             state = "code"
@@ -80,7 +80,8 @@ for required in (
 ):
     assert required in runtime, f"runtime double-free regression missing: {required}"
 
-assert milestones.count("ZEROOS: block request double-free rejected without pool corruption.") == 1, "double-free milestone must be required exactly once"
+marker = "ZEROOS: block request double-free rejected without pool corruption."
+assert milestones.count(marker) == 1, "double-free milestone must be required exactly once"
 assert workflow.count("python3 tools/test_block_request_double_free.py") == 1, (
     "CI must run the double-free source regression exactly once"
 )
