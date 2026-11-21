@@ -58,7 +58,7 @@ milestones = (ROOT / "tools/boot_milestones.txt").read_text()
 workflow = (ROOT / ".github/workflows/build.yml").read_text()
 
 free = function_body(block, "void block_request_free(")
-pool_identity = free.find("root->pool[request->pool_index]!=request")
+pool_identity = free.find("&root->pool[request->pool_index]!=request")
 free_state = free.find("request->state==BLOCK_REQ_FREE")
 capacity = free.find("root->pool_free_count>=root->pool_size")
 state_write = free.find("request->state=BLOCK_REQ_FREE")
