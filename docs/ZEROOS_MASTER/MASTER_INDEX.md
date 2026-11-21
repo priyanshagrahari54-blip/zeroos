@@ -1,6 +1,11 @@
 # ZEROOS — MASTER DOCUMENT INDEX
 Version: 5.3
 Updated: 2026-11-21 (main Build #1978 / Stage 1 #399 verified; request-pool double-free candidate opened)
+## Request-pool double-free candidate — 2026-11-21
+
+- Main code commit `de3c44c` passed Build #1978 and Stage 1 #399; QEMU 3/3 × 115/115, SMP4, NX-disabled, failed-IPI, storage persistence and production smoke passed. Stable/versioned ISO SHA-256: `beb72531c7c52234bc6903c22f779c804fe2656d766f32fa81a5e2414468c0fd`.
+- Candidate PR #57 adds a locked duplicate-free guard and a runtime full-pool uniqueness regression. Initial Build #1990 source regression passed but compilation failed on a struct-versus-pointer comparison; corrected to compare the pool element address.
+- Corrected PR head `c253333`: Stage 1 #420 passed native compilation and is running scheduler certification; Build #1999 is pending. Exact-head QEMU/storage/production acceptance is not yet verified.
 
 Updated: 2026-11-20 (PR #56 merged as `de3c44c`; candidate Build #1976/#1977 and Stage 1 #397/#398 passed; post-merge main Stage 1 #399 passed; main Build #1978 in progress).
 
