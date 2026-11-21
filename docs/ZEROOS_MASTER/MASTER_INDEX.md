@@ -1,3 +1,4 @@
+# ZEROOS — MASTER DOCUMENT INDEX
 Version: 5.3
 Updated: 2026-11-21 (main Build #1978 / Stage 1 #399 verified; request-pool double-free candidate opened)
 
