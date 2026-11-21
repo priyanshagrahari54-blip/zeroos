@@ -240,7 +240,7 @@ void block_request_free(struct block_request *request) {
      * Serialize the FREE-state check with the free-list insertion so a
      * duplicate return cannot link the same pool slot twice. */
     if (request->pool_index>=root->pool_size ||
-        root->pool[request->pool_index]!=request ||
+        &root->pool[request->pool_index]!=request ||
         request->state==BLOCK_REQ_FREE ||
         root->pool_free_count>=root->pool_size) {
         spin_unlock_irqrestore(&root->lock,flags);
