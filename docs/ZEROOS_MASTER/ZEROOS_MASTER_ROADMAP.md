@@ -1,3 +1,12 @@
+### 2026-11-21 — main release verified; request-pool ownership hardening
+
+- Main code-bearing commit `de3c44c` (PR #56) is now verified by post-merge Build #1978 and Stage 1 #399. Main QEMU passed 3/3 with 115/115 milestones; SMP4, NX-disabled, failed-IPI, scheduler diagnostics, AHCI/NVMe two-boot persistence and production desktop/network smoke passed. The release workflow byte-compared the stable/versioned ISO pair with the production image; SHA-256 is `beb72531c7c52234bc6903c22f779c804fe2656d766f32fa81a5e2414468c0fd`. P0 main release freshness is closed for this snapshot.
+- New scoped code candidate: make `block_request_free()` reject a duplicate free while holding the device lock and validate pool-slot identity/capacity before free-list insertion. This addresses a concrete request-pool integrity failure mode (same slot linked twice, free count inflated, duplicate allocation).
+- Add runtime test: duplicate-return one request, allocate/drain the full pool, require every pointer unique and exact pool capacity restored. Add source-contract regression and required boot milestone. Do not merge until full Build and Stage 1 pass on exact candidate head.
+- Next sequence after candidate acceptance: 600-second/four-vCPU scheduler soak; physical G560/device matrix; physical power-loss recovery; ACPI S5; standalone installer/recovery; physical desktop display/input; then browser/media/AI/compatibility.
+- Preserve all Stage 0–10 requirements. Overall estimate remains ~43%; CI and documentation are not feature completion.
+
+
 # ZEROOS MASTER ROADMAP
 
 ## Execution rule
