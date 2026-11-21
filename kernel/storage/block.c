@@ -230,10 +230,22 @@ struct block_request *block_request_alloc(struct block_device *device,
 }
 
 void block_request_free(struct block_request *request) {
-    if (!request)
+    if (!request || !request->device)
         return;
-    struct block_device *root=request->device;
+    struct block_device *root=block_root(request->device);
+    if (!root || !root->pool)
+        return;
     uint64_t flags=spin_lock_irqsave(&root->lock);
+    /* A request may be returned by an async callback or a synchronous owner.
+     * Serialize the FREE-state check with the free-list insertion so a
+     * duplicate return cannot link the same pool slot twice. */
+    if (request->pool_index>=root->pool_size ||
+        root->pool[request->pool_index]!=request ||
+        request->state==BLOCK_REQ_FREE ||
+        root->pool_free_count>=root->pool_size) {
+        spin_unlock_irqrestore(&root->lock,flags);
+        return;
+    }
     request->state=BLOCK_REQ_FREE;
     request->next=root->pool_free;
     root->pool_free=request;
