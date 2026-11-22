@@ -2,13 +2,13 @@
 Version: 5.4
 Updated: 2026-11-22 (PR #57 merged as `7d586d4`; corrected candidate Build #1999 and Stage 1 #420 passed; post-merge main verification pending).
 
-## Request-pool double-free candidate — 2026-11-21
+## Historical PR #57 candidate record — 2026-11-21 (superseded 2026-11-22)
 
 - Main code commit `de3c44c` passed Build #1978 and Stage 1 #399; QEMU 3/3 × 115/115, SMP4, NX-disabled, failed-IPI, storage persistence and production smoke passed. Stable/versioned ISO SHA-256: `beb72531c7c52234bc6903c22f779c804fe2656d766f32fa81a5e2414468c0fd`.
 - Candidate PR #57 adds a locked duplicate-free guard and a runtime full-pool uniqueness regression. Initial Build #1990 source regression passed but compilation failed on a struct-versus-pointer comparison; corrected to compare the pool element address.
-- Corrected PR head `c253333` passed Stage 1 #420 (native compilation and scheduler certification). Build #1999 is pending; exact-head QEMU/storage/production acceptance is not yet verified.
+- Corrected PR head `c253333` passed Stage 1 #420. Full corrected candidate Build #1999 completed successfully with 3/3 QEMU boots × 116/116 milestones, native build, `make check`, SMP4, NX-disabled, failed-IPI, scheduler diagnostics, AHCI/NVMe persistence and production smoke. The candidate did not publish a release; post-merge main validation remains pending.
 
-Updated: 2026-11-20 (PR #56 merged as `de3c44c`; candidate Build #1976/#1977 and Stage 1 #397/#398 passed; post-merge main Stage 1 #399 passed; main Build #1978 in progress).
+Historical update: 2026-11-20 (superseded by the 2026-11-22 main snapshot above).
 
 ## Current main snapshot — 2026-11-22
 
