@@ -306,6 +306,42 @@ static int tb_cancel(struct block_device *disk, uint8_t *buffer) {
     return 0;
 }
 
+/* A double return must not put one request slot on the free list twice.
+ * Drain the whole pool afterward and prove every allocation is unique. */
+static int tb_double_free(struct block_device *disk) {
+    struct block_request *request;
+    struct block_request *held[BLOCK_POOL_MAX];
+    uint32_t free_before=disk->pool_free_count;
+    uint32_t count=0;
+
+    request=block_request_alloc(disk,BLOCK_PRIO_NORMAL,0);
+    TB_CHECK(request!=0,"double-free request allocated");
+    block_request_free(request);
+    TB_CHECK(disk->pool_free_count==free_before,
+             "first return restores the pool count");
+    block_request_free(request);
+    TB_CHECK(disk->pool_free_count==free_before,
+             "duplicate return leaves pool count unchanged");
+
+    while (count<disk->pool_size) {
+        struct block_request *next=block_request_alloc(disk,BLOCK_PRIO_FOREGROUND,0);
+        if (!next)
+            break;
+        for (uint32_t i=0; i<count; ++i)
+            TB_CHECK(held[i]!=next,"free list contains no duplicate slot");
+        held[count++]=next;
+    }
+    TB_CHECK(count==disk->pool_size,"double-free does not shrink pool capacity");
+    TB_CHECK(!block_request_alloc(disk,BLOCK_PRIO_FOREGROUND,0),
+             "pool remains bounded after double-free attempt");
+    for (uint32_t i=0; i<count; ++i)
+        block_request_free(held[i]);
+    TB_CHECK(disk->pool_free_count==disk->pool_size,
+             "pool count restored exactly after unique drain");
+    klog("ZEROOS: block request double-free rejected without pool corruption.");
+    return 0;
+}
+
 static int tb_pool(struct block_device *disk) {
     struct block_request *held[BLOCK_POOL_MAX];
     uint32_t count=0, background=0;
@@ -518,6 +554,7 @@ int storage_selftest_block(void) {
     TB_RUN(tb_duplicate_completion(disk,b),"duplicate-completion");
     TB_RUN(tb_watchdog_reuse_aba(disk,b),"watchdog-reuse-aba");
     TB_RUN(tb_cancel(disk,b),"cancel");
+    TB_RUN(tb_double_free(disk),"double-free-guard");
     TB_RUN(tb_pool(disk),"pool-backpressure");
     TB_RUN(tb_faults(disk,a,b),"eio-timeout-retry");
     TB_RUN(tb_power(disk,a,b),"power-cut-removal");
