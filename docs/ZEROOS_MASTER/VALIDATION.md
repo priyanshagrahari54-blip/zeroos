@@ -1,3 +1,29 @@
+## 2026-11-22 — PR #57 merged; corrected candidate Build accepted; main validation pending
+
+| Gate | Exact evidence | Result |
+| |---|---|
+| Main code merge | `7d586d40ea80d52337403ec8e5ed9aef6f4c04a7` (PR #57) | Merged |
+| Candidate source regression | Build #1999, run `44857395130` | PASS |
+| Corrected native x86-64 build | Build #1999 | PASS |
+| Reproducible `make check` | Build #1999 | PASS |
+| Kernel-image / ISO verification | Build #1999 | PASS |
+| QEMU boot | Build #1999, 3 boots × **116/116 milestones** | PASS |
+| SMP4 / NX-disabled / failed-IPI | Build #1999 | PASS |
+| Scheduler panic diagnostics | Build #1999 | PASS |
+| AHCI/NVMe two-boot persistence | Build #1999 | PASS |
+| Production ISO build and desktop/network smoke | Build #1999 | PASS |
+| Corrected candidate Stage 1 | #420, run `44857395125` | PASS |
+| Main post-merge Build / QEMU / Stage 1 | Commit `7d586d4` | Pending fresh evidence |
+| Stable ISO for `7d586d4` | Last verified release is `de3c44c` | Pending |
+
+Candidate links: [Build #1999](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/44857395130), [Stage 1 #420](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/44857395125). Earlier initial candidate Build #1990 failed native compilation on a struct-versus-pointer comparison; the corrected address comparison is included in the Build #1999 candidate and passed.
+
+The double-free fix validates pool index, exact pool-slot identity, FREE state and capacity under the device lock before free-list insertion. Runtime test `tb_double_free()` proves the pool can be drained with unique pointers and restored to exact capacity after an attempted duplicate return. Required guest marker: `ZEROOS: block request double-free rejected without pool corruption.`
+
+The PR Build did not publish a release asset because it was a candidate workflow. The current stable ISO is still the verified `de3c44c` image at SHA-256 `beb72531c7c52234bc6903c22f779c804fe2656d766f32fa81a5e2414468c0fd`. A fresh post-merge main Build must publish and byte/hash-verify a release for `7d586d4`.
+
+Remaining independent gates: 600-second/four-vCPU scheduler soak; physical Lenovo G560 and SATA/NVMe/NIC/USB/graphics certification; physical power-loss/interrupted-write recovery; ACPI S5; standalone installer/recovery; physical desktop display/input. Overall estimate remains ~43%; no completion credit for CI or documentation.
+
 ## Main release and new pool-integrity candidate — 2026-11-21
 
 | Gate | Exact evidence | Result |
