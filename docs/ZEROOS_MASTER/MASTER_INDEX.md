@@ -1,6 +1,6 @@
 # ZEROOS — MASTER DOCUMENT INDEX
-Version: 5.3
-Updated: 2026-11-21 (main Build #1978 / Stage 1 #399 verified; request-pool double-free candidate opened)
+Version: 5.4
+Updated: 2026-11-22 (PR #57 merged as `7d586d4`; corrected candidate Build #1999 and Stage 1 #420 passed; post-merge main verification pending).
 
 ## Request-pool double-free candidate — 2026-11-21
 
@@ -9,6 +9,14 @@ Updated: 2026-11-21 (main Build #1978 / Stage 1 #399 verified; request-pool doub
 - Corrected PR head `c253333` passed Stage 1 #420 (native compilation and scheduler certification). Build #1999 is pending; exact-head QEMU/storage/production acceptance is not yet verified.
 
 Updated: 2026-11-20 (PR #56 merged as `de3c44c`; candidate Build #1976/#1977 and Stage 1 #397/#398 passed; post-merge main Stage 1 #399 passed; main Build #1978 in progress).
+
+## Current main snapshot — 2026-11-22
+
+- Code-bearing main merge: `7d586d40ea80d52337403ec8e5ed9aef6f4c04a7` (PR #57 squash merge).
+- PR #57 guards `block_request_free()` against duplicate free-list insertion: validate pool index/slot identity, FREE state and capacity under the root device lock. Runtime test drains the pool after a duplicate-free attempt and verifies pointer uniqueness and exact count restoration. Source regression: `tools/test_block_request_double_free.py`; guest milestone: `ZEROOS: block request double-free rejected without pool corruption.`
+- Corrected candidate Build #1999 passed native x86-64 build, reproducible `make check`, kernel/ISO verification, QEMU 3/3 with 116/116 milestones, SMP4, NX-disabled, failed-IPI, scheduler diagnostics, AHCI/NVMe two-boot persistence, production ISO and desktop/network smoke. Stage 1 #420 passed. Initial Build #1990 compile failure was corrected before #1999.
+- Candidate Build #1999 did not publish a release (candidate event). Post-merge main Build/QEMU/Stage 1 for `7d586d4` and a fresh stable ISO are pending. Last verified release remains `de3c44c`, SHA-256 `beb72531c7c52234bc6903c22f779c804fe2656d766f32fa81a5e2414468c0fd`.
+- Remaining gates: post-merge main Build and stable release; 600-second/four-vCPU scheduler soak; physical G560/device/recovery matrix; ACPI S5; standalone installer/recovery; physical desktop display/input; later browser/media/AI/compatibility. Overall estimate remains ~43%; CI and docs do not count as feature completion.
 
 ## Current main snapshot — 2026-11-20
 
