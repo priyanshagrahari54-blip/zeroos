@@ -18,6 +18,16 @@ Never create a basic version merely to replace it later.
 
 ## Current state
 
+### Current main execution — 2026-11-22
+
+- PR #57's bounded block-request pool double-free guard is merged as `7d586d40ea80d52337403ec8e5ed9aef6f4c04a7`. `block_request_free()` now validates pool index and exact slot identity, rejects an already-FREE request and prevents free-count overflow under the root device lock before linking.
+- Runtime `tb_double_free()` attempts a duplicate return, drains the pool, verifies unique pointers and exact capacity restoration. Source regression and required QEMU milestone are integrated.
+- Corrected candidate Build #1999 passed native build, reproducible `make check`, kernel/ISO verification, 3/3 QEMU boots with 116/116 milestones, SMP4, NX-disabled, failed-IPI, scheduler diagnostics, AHCI/NVMe two-boot persistence, production ISO and desktop/network smoke. Stage 1 #420 passed. Initial Build #1990 type error was corrected and is historical.
+- The candidate workflow did not publish a release. Post-merge main Build/QEMU/Stage 1 and a new stable/versioned ISO for `7d586d4` remain pending; the previous verified release identifies `de3c44c`.
+- Immediate order: (1) complete post-merge main Build and Stage 1; (2) verify QEMU 3/3, SMP4, NX-off, failed-IPI, storage persistence and production smoke; (3) publish and hash-compare the new stable/versioned ISO; (4) 600-second/four-vCPU scheduler soak; (5) physical G560/storage/NIC/USB/graphics and power-loss recovery; (6) ACPI S5; (7) standalone installer/recovery; (8) physical desktop display/input; then browser/media/AI/compatibility.
+- Preserve all Stage 0–10 product requirements. Overall estimate remains ~43%; CI and documentation do not count as feature completion.
+
+
 ### Current main execution — 2026-11-20
 
 - PR #56's block-watchdog request-pool ABA fix is merged as `de3c44c1a9e4711f49415381a348b8142ebb666d`. The watchdog captures request pointer plus per-submit sequence under `device->lock`; a deferred timeout claim validates the same sequence, STALL disposition, DISPATCHED state and in-flight membership before clearing the fault marker or incrementing timeout statistics.
