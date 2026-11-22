@@ -1,3 +1,11 @@
+## 2026-11-22 — main merge and request-pool integrity update
+
+- Main code-bearing merge: `7d586d40ea80d52337403ec8e5ed9aef6f4c04a7` (PR #57). The scoped fix prevents `block_request_free()` from inserting the same bounded request slot into the free list twice. Under the root device lock it checks pool index, exact slot identity, FREE state and pool capacity before insertion.
+- Runtime regression `tb_double_free()` attempts a duplicate return, drains the request pool, checks pointer uniqueness and exact capacity restoration. Source regression `tools/test_block_request_double_free.py` and required QEMU milestone are integrated.
+- Corrected candidate Build #1999 (run `44857395130`) completed successfully: native x86-64 build, reproducible `make check`, kernel/ISO verification, 3/3 QEMU boots with **116/116 milestones each**, SMP4, NX-disabled, failed-IPI, scheduler panic diagnostics, AHCI/NVMe two-boot persistence, production ISO and desktop/network smoke. Stage 1 #420 (run `44857395125`) passed. Build #1990's initial type mismatch was corrected before #1999.
+- Candidate Build did not publish a release. Post-merge main Build/QEMU/Stage 1 for `7d586d4` and a new stable ISO are pending; the last verified stable image is for `de3c44c` at SHA-256 `beb72531c7c52234bc6903c22f779c804fe2656d766f32fa81a5e2414468c0fd`.
+- Next gate: post-merge main full Build, QEMU 3/3, storage persistence, production smoke and stable/versioned ISO byte/hash comparison. Remaining independent work: scheduler soak, physical G560/device/recovery matrix, ACPI S5, standalone installer/recovery and physical desktop display/input. Preserve Stage 0–10 requirements; estimate remains ~43%, with no CI/docs completion credit.
+
 ## Main release verified; request-pool double-free fix under review — 2026-11-21
 
 - Latest main documentation HEAD before this work: `f203167635725704fbdddd33ea6c7e2db54ade62`; code-bearing main merge: `de3c44c1a9e4711f49415381a348b8142ebb666d` (PR #56). Main Build #1978 (run `44666160949`) completed successfully on the exact code-bearing commit; main Stage 1 #399 (run `44666160909`) passed.
@@ -12,15 +20,7 @@ Updated: 2026-11-21
 
 # ZEROOS — CURRENT IMPLEMENTATION STATUS
 
-## 2026-11-22 — block request pool double-free fix merged; main revalidation pending
 
-- Main code-bearing merge: `7d586d40ea80d52337403ec8e5ed9aef6f4c04a7` (PR #57 squash merge). The candidate's corrected code was reviewed and merged after its full Build completed successfully.
-- PR #57 fixes `block_request_free()`: while holding the root device lock, it validates pool index and exact slot identity, rejects a request already in `BLOCK_REQ_FREE`, and prevents free-count overflow before modifying the free list. This prevents a duplicate return from linking one bounded request slot twice and enabling duplicate allocation.
-- Runtime regression `tb_double_free()` returns one request twice, drains the pool, checks all allocated pointers are unique, verifies the pool remains bounded, and requires the free count to return exactly to `pool_size`. Source regression: `tools/test_block_request_double_free.py`; required milestone: `ZEROOS: block request double-free rejected without pool corruption.`
-- Corrected candidate Build #1999 (run `44857395130`) completed successfully. Its log reports native x86-64 build, reproducible `make check`, kernel/ISO verification, 3/3 QEMU boots with **116/116 milestones each**, SMP4, NX-disabled, failed-IPI recovery, scheduler panic diagnostics, AHCI/NVMe two-boot persistence, production ISO creation and desktop/network smoke. The candidate workflow did not publish a GitHub release because it was a PR/push candidate build. Stage 1 #420 (run `44857395125`) passed.
-- Initial candidate Build #1990 caught a struct-versus-pointer comparison at `kernel/storage/block.c:243`; the guard was corrected to compare `&root->pool[request->pool_index]`. The corrected full Build #1999 passed. This historical compiler failure is not represented as a QEMU failure.
-- Main post-merge Build/QEMU and Stage 1 for `7d586d4` have not yet been verified in this review. The last verified stable ISO remains the `de3c44c` release, SHA-256 `beb72531c7c52234bc6903c22f779c804fe2656d766f32fa81a5e2414468c0fd`; do not attribute it to `7d586d4`.
-- Immediate gate: post-merge main native Build, reproducible `make check`, kernel verification, QEMU 3/3 × 116 milestones, SMP4/NX-off/failed-IPI, storage persistence, production smoke and stable/versioned ISO byte/hash equality. Other open gates remain 600-second/four-vCPU scheduler soak; physical G560 and storage/NIC/USB/graphics matrix; physical interrupted-write/power-loss recovery; ACPI S5; standalone installer/recovery; physical desktop display/input. Browser/media/AI/compatibility remain later stages. Completion estimate unchanged at ~43%; CI/docs do not count as feature completion.
 
 ## Current main and block-watchdog acceptance — 2026-11-20
 
