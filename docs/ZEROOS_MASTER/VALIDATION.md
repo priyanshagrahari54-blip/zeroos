@@ -26,8 +26,7 @@ Remaining independent gates: 600-second/four-vCPU scheduler soak; physical Lenov
 
 ## Main release and new pool-integrity candidate — 2026-11-21
 
-| Gate | Exact evidence | Result |
-|---|---|---|
+| Gate | Exact evidence | Result |---|---|---|
 | Main code snapshot | `de3c44c1a9e4711f49415381a348b8142ebb666d` | Verified |
 | Main Build | #1978, run `44666160949` | PASS |
 | Main Stage 1 | #399, run `44666160909` | PASS |
@@ -51,8 +50,7 @@ The stable ISO is a legacy BIOS El Torito live session, not an installer. QEMU e
 # ZEROOS — Validation and Support Matrix
 ## Latest main and block-watchdog verification — 2026-11-20
 
-| Gate | Exact evidence | Result |
-|---|---|---|
+| Gate | Exact evidence | Result |---|---|---|
 | Latest main code commit | PR #56 merge `de3c44c1a9e4711f49415381a348b8142ebb666d` | Merged |
 | Candidate watchdog source regression | Build #1976/#1977, head `358bed2` | PASS |
 | Existing duplicate-completion regression after refactor | Build #1976/#1977 | PASS |
@@ -79,8 +77,7 @@ The last verified release for code commit `6ef1fcb` has byte-identical versioned
 
 ## Historical main and VFS candidate verification — 2026-11-19 (superseded by 2026-11-20)
 
-| Gate | Exact evidence | Result |
-|---|---|---|
+| Gate | Exact evidence | Result |---|---|---|
 | VFS source regression | Build #1971/#1972, code SHA `92d4fa6` | PASS |
 | Native x86-64 build | Build #1971/#1972 | PASS |
 | Reproducible `make check` | Build #1971/#1972 | PASS |
@@ -153,8 +150,7 @@ No P0 main build/boot/stable-release blocker remains for code snapshot `9935533`
 
 ## Evidence classes
 
-| Class | What it proves | Current limitation |
-|---|---|---|
+| Class | What it proves | Current limitation |---|---|---|
 | UNIT | Host code path exercised | Does not prove kernel execution |
 | BUILD | Freestanding objects and kernel link | Does not prove the ISO boots |
 | ISO-STRUCTURE | ISO/El Torito/Multiboot structure validated | Does not prove guest execution |
@@ -568,8 +564,7 @@ The release pipeline itself is no longer a P0 blocker for code snapshot `100c8e2
 
 ## 2026-11-11 — main-branch storage ordering and release validation
 
-| Check | Evidence | Result |
-|---|---|---|
+| Check | Evidence | Result |---|---|---|
 | Block FLUSH source regression | Build #1899 / #1900, exact head `8e69f8f` | PASS |
 | Block FLUSH runtime self-test | Required serial milestone in the 107-milestone boot set | PASS |
 | Storage persistence gate fail-closed regression | Build #1899 / #1900 | PASS |
@@ -686,8 +681,7 @@ Open P1/P2 validation: 600-second/four-vCPU scheduler soak; physical Lenovo G560
 
 ## 2026-11-16 verification record — main and PR #54
 
-| Target | Workflow | Exact SHA | Result |
-|---|---|---|---|
+| Target | Workflow | Exact SHA | Result |---|---|---|---|
 | Main Build #1949 | [run 43798556648](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/43798556648) | `aaf09738a9b3762e2e0b038addba8ca22421cf64` | PASS |
 | Main Stage 1 #370 | [run 43798556505](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/43798556505) | same main SHA | PASS |
 | PR #54 Build #1966 | [run 43803753228](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/43803753228) | `a48de5e2045e65d185da444adb5fcc84f821de2d` | PASS |
@@ -720,8 +714,7 @@ Physical Lenovo G560 boot, physical SATA/NVMe/NIC/USB/graphics, physical power-l
 
 ## 2026-11-17 post-merge verification record — PR #54
 
-| Target | Workflow | Exact SHA | Result at update time |
-|---|---|---|---|
+| Target | Workflow | Exact SHA | Result at update time |---|---|---|---|
 | PR #54 Build #1968 push | [run 43804905966](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/43804905966) | `551374301154ca8de6c84acb341640489bca33b8` | PASS |
 | PR #54 Build #1969 PR | [run 43804912193](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/43804912193) | same candidate SHA | PASS |
 | PR #54 Stage 1 #389 | [run 43804905974](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/43804905974) | same candidate SHA | PASS |
