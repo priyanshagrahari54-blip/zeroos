@@ -6,7 +6,7 @@
 - Candidate Build did not publish a release. Post-merge main Build/QEMU/Stage 1 for `7d586d4` and a new stable ISO are pending; the last verified stable image is for `de3c44c` at SHA-256 `beb72531c7c52234bc6903c22f779c804fe2656d766f32fa81a5e2414468c0fd`.
 - Next gate: post-merge main full Build, QEMU 3/3, storage persistence, production smoke and stable/versioned ISO byte/hash comparison. Remaining independent work: scheduler soak, physical G560/device/recovery matrix, ACPI S5, standalone installer/recovery and physical desktop display/input. Preserve Stage 0–10 requirements; estimate remains ~43%, with no CI/docs completion credit.
 
-## Main release verified; request-pool double-free fix under review — 2026-11-21
+## Historical 2026-11-21 — main release verified; request-pool double-free fix under review (superseded 2026-11-22)
 
 - Latest main documentation HEAD before this work: `f203167635725704fbdddd33ea6c7e2db54ade62`; code-bearing main merge: `de3c44c1a9e4711f49415381a348b8142ebb666d` (PR #56). Main Build #1978 (run `44666160949`) completed successfully on the exact code-bearing commit; main Stage 1 #399 (run `44666160909`) passed.
 - Build #1978 passed all configured source regressions, native x86-64 build, reproducible `make check`, kernel-image verification, three QEMU boots with **115/115 milestones per boot**, SMP4, NX-disabled, failed-IPI recovery, scheduler panic diagnostics, AHCI/NVMe two-boot persistence, production ISO, desktop/network smoke and release publication. Its log explicitly reports `boot_test: PASS - 3/3 boots reached every milestone`.
