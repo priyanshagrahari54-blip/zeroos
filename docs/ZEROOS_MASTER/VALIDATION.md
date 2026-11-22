@@ -24,7 +24,7 @@ The PR Build did not publish a release asset because it was a candidate workflow
 
 Remaining independent gates: 600-second/four-vCPU scheduler soak; physical Lenovo G560 and SATA/NVMe/NIC/USB/graphics certification; physical power-loss/interrupted-write recovery; ACPI S5; standalone installer/recovery; physical desktop display/input. Overall estimate remains ~43%; no completion credit for CI or documentation.
 
-## Main release and new pool-integrity candidate — 2026-11-21
+## Historical validation — 2026-11-21 (superseded 2026-11-22)
 
 | Gate | Exact evidence | Result |---|---|---|
 | Main code snapshot | `de3c44c1a9e4711f49415381a348b8142ebb666d` | Verified |
