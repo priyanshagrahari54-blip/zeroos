@@ -1,7 +1,7 @@
 ## 2026-11-22 — PR #57 merged; corrected candidate Build accepted; main validation pending
 
 | Gate | Exact evidence | Result |
-| |---|---|
+|---|---|
 | Main code merge | `7d586d40ea80d52337403ec8e5ed9aef6f4c04a7` (PR #57) | Merged |
 | Candidate source regression | Build #1999, run `44857395130` | PASS |
 | Corrected native x86-64 build | Build #1999 | PASS |
