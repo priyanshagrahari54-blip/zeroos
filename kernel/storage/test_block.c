@@ -325,6 +325,11 @@ static int tb_buffer_range(struct block_device *disk) {
     TB_CHECK(request->segments[0].length==8,
              "rejected coalesce leaves prior segment unchanged");
 
+    request->segment_count=(uint8_t)(BLOCK_MAX_SEGMENTS+1U);
+    TB_CHECK(block_request_add_buffer(request,0x2000,4)==-SE_INVAL,
+             "segment count beyond capacity rejected before indexing");
+    TB_CHECK(request->segment_count==BLOCK_MAX_SEGMENTS+1U,
+             "out-of-range segment count left unchanged");
     request->segment_count=0;
     TB_CHECK(block_request_add_buffer(request,0x1000,4096)==0,
              "ordinary aligned buffer accepted");

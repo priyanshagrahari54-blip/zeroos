@@ -63,6 +63,11 @@ last_range_check = fn.find("last->physical>max_address-(uint64_t)last->length")
 adjacency = fn.find("last->physical+last->length==physical")
 segment_write = fn.find("request->segments[request->segment_count].physical=physical")
 assert min(null_check, range_check, last_range_check, adjacency, segment_write) >= 0
+segment_count_guard = fn.find("request->segment_count>BLOCK_MAX_SEGMENTS")
+assert segment_count_guard >= 0
+assert segment_count_guard < fn.find("if (request->segment_count)") < last_range_check, (
+    "reject corrupt segment counts before indexing the segment array"
+)
 assert null_check < range_check < last_range_check < adjacency < segment_write, (
     "validate null, new range and prior range before coalescing or writing"
 )

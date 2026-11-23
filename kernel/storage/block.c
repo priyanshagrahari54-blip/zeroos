@@ -260,6 +260,8 @@ int block_request_add_buffer(struct block_request *request, uint64_t physical,
     if (!request || length==0 || (physical&3ULL) || (length&3U) ||
         physical>max_address-(uint64_t)length)
         return -SE_INVAL;
+    if (request->segment_count>BLOCK_MAX_SEGMENTS)
+        return -SE_INVAL;
     if (request->segment_count) {
         struct block_segment *last=&request->segments[request->segment_count-1U];
         /* Do not let a corrupted/forged prior segment wrap during adjacency
