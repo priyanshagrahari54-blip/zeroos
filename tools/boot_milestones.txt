@@ -121,6 +121,8 @@ ZEROOS: session shell process reaped cleanly.
 
 ZEROOS: Multiboot2 info range policy self-test passed.
 
+ZEROOS: block DMA buffer range overflow rejected.
+
 # Negative gates: these indicate a failed or panicked boot.
 never:storage.*FAILED
 never:ZEROOS PANIC:

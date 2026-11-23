@@ -306,6 +306,33 @@ static int tb_cancel(struct block_device *disk, uint8_t *buffer) {
     return 0;
 }
 
+/* Physical DMA segment ranges must not wrap the 64-bit address space. */
+static int tb_buffer_range(struct block_device *disk) {
+    struct block_request *request=block_request_alloc(disk,BLOCK_PRIO_NORMAL,0);
+    TB_CHECK(request!=0,"buffer-range request allocated");
+    TB_CHECK(block_request_add_buffer(0,0,4)==-SE_INVAL,
+             "null request rejected");
+    TB_CHECK(block_request_add_buffer(request,0xfffffffffffffffCULL,4)==-SE_INVAL,
+             "physical end-exclusive address overflow rejected");
+    TB_CHECK(request->segment_count==0,"overflow does not add a segment");
+
+    /* Simulate invalid prior metadata: adjacency must not wrap either. */
+    request->segment_count=1;
+    request->segments[0].physical=0xfffffffffffffffCULL;
+    request->segments[0].length=8;
+    TB_CHECK(block_request_add_buffer(request,4,4)==-SE_INVAL,
+             "overflowing prior segment rejected before coalescing");
+    TB_CHECK(request->segments[0].length==8,
+             "rejected coalesce leaves prior segment unchanged");
+
+    request->segment_count=0;
+    TB_CHECK(block_request_add_buffer(request,0x1000,4096)==0,
+             "ordinary aligned buffer accepted");
+    block_request_free(request);
+    klog("ZEROOS: block DMA buffer range overflow rejected.");
+    return 0;
+}
+
 /* A double return must not put one request slot on the free list twice.
  * Drain the whole pool afterward and prove every allocation is unique. */
 static int tb_double_free(struct block_device *disk) {
@@ -554,6 +581,7 @@ int storage_selftest_block(void) {
     TB_RUN(tb_duplicate_completion(disk,b),"duplicate-completion");
     TB_RUN(tb_watchdog_reuse_aba(disk,b),"watchdog-reuse-aba");
     TB_RUN(tb_cancel(disk,b),"cancel");
+    TB_RUN(tb_buffer_range(disk),"buffer-range-overflow");
     TB_RUN(tb_double_free(disk),"double-free-guard");
     TB_RUN(tb_pool(disk),"pool-backpressure");
     TB_RUN(tb_faults(disk,a,b),"eio-timeout-retry");

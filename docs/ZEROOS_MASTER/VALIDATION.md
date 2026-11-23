@@ -1,3 +1,26 @@
+## 2026-11-23 — main Build #2013 and stable ISO verified; DMA range candidate pending
+
+| Gate | Exact evidence | Result |
+|---|---|---|
+| Latest main HEAD | `af3e6bf9f8664e51250b9881090ab3487a1d298b` | Current |
+| Main Build | #2013, run [44978406405](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/44978406405) | PASS |
+| Main Stage 1 | #434, run [44978406392](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/44978406392) | PASS |
+| Native x86-64 build / reproducible `make check` | Build #2013 | PASS |
+| Kernel-image and ISO verification | Build #2013 | PASS |
+| QEMU boot | 3/3 boots × **116/116 milestones each** | PASS |
+| SMP4 / NX-disabled / failed-IPI | Build #2013 | PASS |
+| AHCI/NVMe two-boot persistence | Build #2013 | PASS |
+| Production ISO / desktop-network smoke | Build #2013 | PASS |
+| Stable/versioned ISO byte comparison | Build #2013 | PASS |
+| Stable ISO SHA-256 | `95cb636d08163b01a669dbd19088ebe02565985c710892176a52306df9552d3c` | Verified |
+| Candidate physical DMA range guard | Branch `fix/block-buffer-physical-range-20261123` | CI pending |
+
+The main Build log reports `boot_test: PASS - 3/3 boots reached every milestone` and individually reports 116/116 milestones for iterations 1, 2 and 3. The release log confirms the stable ISO matches the boot-tested production image at the SHA-256 above. The image is a legacy BIOS El Torito live session, not a disk installer.
+
+The new candidate rejects null requests and 64-bit physical range overflow in `block_request_add_buffer()`, including an overflow in existing segment metadata before coalescing. Runtime regression `tb_buffer_range()` and source-contract test `tools/test_block_buffer_range.py` are added; CI invokes the source test before tool installation. Required guest marker: `ZEROOS: block DMA buffer range overflow rejected.`. Candidate native build, `make check`, QEMU, storage persistence and production smoke are **not yet verified**.
+
+Remaining: scheduler 600-second/four-vCPU soak; physical G560/device/recovery matrix; ACPI S5; standalone installer/recovery; physical desktop display/input. Overall estimate remains ~43%; no percentage increase for CI or documentation.
+
 ## 2026-11-22 — PR #57 merged; corrected candidate Build accepted; main validation pending
 
 | Gate | Exact evidence | Result |

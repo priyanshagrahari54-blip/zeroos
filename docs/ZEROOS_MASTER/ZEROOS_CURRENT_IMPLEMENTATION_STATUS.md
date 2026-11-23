@@ -1,3 +1,13 @@
+## 2026-11-23 — latest main Build/release verified; DMA range guard candidate
+
+- Latest main documentation HEAD: `af3e6bf9f8664e51250b9881090ab3487a1d298b`; code-bearing merge remains PR #57 `7d586d4`. Main Build #2013 (run [44978406405](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/44978406405)) completed successfully on the exact HEAD, and Stage 1 #434 (run [44978406392](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/44978406392)) passed.
+- Build #2013 evidence: native x86-64 build, reproducible `make check`, kernel/ISO verification, QEMU **3/3 boots × 116/116 milestones**, SMP4, NX-disabled, failed-IPI recovery, AHCI/NVMe two-boot persistence, production ISO, desktop/network smoke and release publication. QEMU log explicitly reports all 116 milestones on each of the three boots.
+- Main stable/versioned release assets for `af3e6bf` are 12,384,256 bytes each and byte-identical; SHA-256 `95cb636d08163b01a669dbd19088ebe02565985c710892176a52306df9552d3c`. Release notes specify a legacy BIOS El Torito live session; there is no standalone disk installer.
+- New scoped storage fix on branch `fix/block-buffer-physical-range-20261123`: `block_request_add_buffer()` now rejects a null request and any 64-bit physical-range end overflow before coalescing or segment insertion. It also rejects overflow in a pre-existing segment before adjacency arithmetic. This prevents wrapped physical DMA ranges from being merged or passed to a driver.
+- Runtime regression `tb_buffer_range()` tests null input, a new range ending past `UINT64_MAX`, corrupted prior-segment wrap during coalescing, no mutation on rejection, and a normal aligned buffer. Source regression `tools/test_block_buffer_range.py` is wired into CI before tool installation. Required milestone: `ZEROOS: block DMA buffer range overflow rejected.`.
+- Candidate PR and exact-head CI are pending. No candidate native build, QEMU, storage, or release result is claimed until the workflow completes.
+- Remaining independent gates: 600-second/four-vCPU scheduler soak; physical Lenovo G560 and SATA/NVMe/NIC/USB/graphics certification; physical power-loss/interrupted-write recovery; ACPI S5; standalone installer/recovery; physical desktop display/input. Preserve all Stage 0–10 requirements. Overall estimate remains ~43%; no CI/docs completion credit.
+
 ## 2026-11-22 — main merge and request-pool integrity update
 
 - Main code-bearing merge: `7d586d40ea80d52337403ec8e5ed9aef6f4c04a7` (PR #57). The scoped fix prevents `block_request_free()` from inserting the same bounded request slot into the free list twice. Under the root device lock it checks pool index, exact slot identity, FREE state and pool capacity before insertion.

@@ -256,10 +256,16 @@ void block_request_free(struct block_request *request) {
 
 int block_request_add_buffer(struct block_request *request, uint64_t physical,
                              uint32_t length) {
-    if (length==0 || (physical&3ULL) || (length&3U))
+    const uint64_t max_address=0xffffffffffffffffULL;
+    if (!request || length==0 || (physical&3ULL) || (length&3U) ||
+        physical>max_address-(uint64_t)length)
         return -SE_INVAL;
     if (request->segment_count) {
         struct block_segment *last=&request->segments[request->segment_count-1U];
+        /* Do not let a corrupted/forged prior segment wrap during adjacency
+         * arithmetic and turn an unrelated address into a merged DMA range. */
+        if (last->physical>max_address-(uint64_t)last->length)
+            return -SE_INVAL;
         if (last->physical+last->length==physical &&
             (uint64_t)last->length+length<=0x400000ULL) {
             last->length+=length;

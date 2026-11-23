@@ -1,3 +1,10 @@
+### Current execution — 2026-11-23
+
+- Main HEAD `af3e6bf` is verified by Build #2013 and Stage 1 #434. Main QEMU passed 3/3 with 116/116 milestones each; SMP4, NX-disabled, failed-IPI, AHCI/NVMe two-boot persistence and production desktop/network smoke passed. Stable/versioned ISO pair is byte-identical at SHA-256 `95cb636d08163b01a669dbd19088ebe02565985c710892176a52306df9552d3c`.
+- Candidate `fix/block-buffer-physical-range-20261123` rejects null request and overflowing 64-bit physical DMA segment ranges before coalescing/insertion. A runtime test checks direct overflow, corrupted prior-segment overflow, nonmutation on rejection and ordinary aligned acceptance. Source regression is wired into Build CI; candidate Build/QEMU/storage/production gates are pending.
+- Execution order: (1) complete candidate source regression, native build and reproducible `make check`; (2) verify kernel/ISO and QEMU 3/3 including the new milestone, SMP4, NX-off and failed-IPI; (3) storage persistence and production smoke; (4) merge only after exact-head pass and verify post-merge main/release freshness; (5) 600-second/four-vCPU scheduler soak; (6) physical G560/device and power-loss recovery; (7) ACPI S5; (8) standalone installer/recovery; (9) physical desktop display/input; then browser/media/AI/compatibility.
+- Preserve all Stage 0–10 requirements. Overall estimate remains ~43%; no completion credit for CI or docs.
+
 ### Historical 2026-11-21 — main release verified; PR #57 candidate (superseded 2026-11-22)
 
 - Main code-bearing commit `de3c44c` (PR #56) is now verified by post-merge Build #1978 and Stage 1 #399. Main QEMU passed 3/3 with 115/115 milestones; SMP4, NX-disabled, failed-IPI, scheduler diagnostics, AHCI/NVMe two-boot persistence and production desktop/network smoke passed. The release workflow byte-compared the stable/versioned ISO pair with the production image; SHA-256 is `beb72531c7c52234bc6903c22f779c804fe2656d766f32fa81a5e2414468c0fd`. P0 main release freshness is closed for this snapshot.
