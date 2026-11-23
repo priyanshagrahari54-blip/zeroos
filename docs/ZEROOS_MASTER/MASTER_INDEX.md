@@ -1,14 +1,13 @@
+# ZEROOS — MASTER DOCUMENT INDEX
+Version: 5.5
+Updated: 2026-11-23 (main Build #2013 / Stage 1 #434 / stable ISO verified; PR #58 Stage 1 #439 passed on current head; exact-head full Build pending).
+
 ## Current main snapshot — 2026-11-23
 
-- Latest main HEAD `af3e6bf9f8664e51250b9881090ab3487a1d298b` is documentation-only after the code-bearing PR #57 merge `7d586d4`.
-- Main Build #2013 (run 44978406405) passed native x86-64 build, reproducible `make check`, kernel/ISO verification, QEMU 3/3 × 116/116 milestones, SMP4, NX-disabled, failed-IPI, AHCI/NVMe two-boot persistence, production ISO, desktop/network smoke and stable release byte/hash verification. Stage 1 #434 (run 44978406392) passed.
-- Versioned `zeroos-af3e6bf.iso` and `zeroos.iso` are 12,384,256 bytes and match at SHA-256 `95cb636d08163b01a669dbd19088ebe02565985c710892176a52306df9552d3c`. BIOS El Torito live image; no disk installer.
-- Candidate `fix/block-buffer-physical-range-20261123` adds null and 64-bit range-overflow checks to block DMA segment construction, including pre-existing segment-end validation before coalescing. Runtime/source regressions and required boot milestone are integrated. Candidate CI is pending; do not claim build or QEMU acceptance yet.
-- Remaining: scheduler soak, physical G560/device/recovery, ACPI S5, standalone installer/recovery and physical desktop display/input. Overall estimate remains ~43%; CI/docs do not count as feature completion.
-
-# ZEROOS — MASTER DOCUMENT INDEX
-Version: 5.4
-Updated: 2026-11-23 (main Build #2013 / Stage 1 #434 and stable ISO verified; DMA range-overflow candidate opened).
+- Latest completed main Build #2013 on `af3e6bf` passed native build/check, kernel/ISO verification, QEMU 3/3 × 116/116, SMP4, NX-disabled, failed-IPI, AHCI/NVMe persistence, production ISO and desktop/network smoke. Stage 1 #434 passed.
+- Stable/versioned `zeroos-af3e6bf.iso` and `zeroos.iso` are 12,384,256 bytes and byte-identical at SHA-256 `95cb636d08163b01a669dbd19088ebe02565985c710892176a52306df9552d3c`. Legacy BIOS El Torito live session; no disk installer.
+- PR #58 candidate head `883a332` adds DMA physical-range overflow and segment-count bounds. Stage 1 #439 passed on exact current head. Build #2016 source regression/native/make-check/kernel verification passed only on predecessor `1a19769`; its QEMU was in progress. Exact-head Build #2018 pending; do not claim current-head QEMU/storage/production acceptance.
+- Remaining: scheduler soak, physical G560/device/recovery, ACPI S5, installer/recovery and physical desktop display/input. Estimate ~43%; no CI/docs completion credit.
 
 ## Historical PR #57 candidate record — 2026-11-21 (superseded 2026-11-22)
 

@@ -1,51 +1,26 @@
-## 2026-11-23 — main Build #2013 and stable ISO verified; DMA range candidate pending
+## 2026-11-23 — main Build #2013 verified; PR #58 validation in progress
 
 | Gate | Exact evidence | Result |
 |---|---|---|
-| Latest main HEAD | `af3e6bf9f8664e51250b9881090ab3487a1d298b` | Current |
-| Main Build | #2013, run [44978406405](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/44978406405) | PASS |
+| Latest completed main Build | #2013, run [44978406405](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/44978406405), head `af3e6bf` | PASS |
 | Main Stage 1 | #434, run [44978406392](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/44978406392) | PASS |
-| Native x86-64 build / reproducible `make check` | Build #2013 | PASS |
-| Kernel-image and ISO verification | Build #2013 | PASS |
-| QEMU boot | 3/3 boots × **116/116 milestones each** | PASS |
+| Native x86-64 / reproducible `make check` | Build #2013 | PASS |
+| QEMU | 3/3 × **116/116 milestones each** | PASS |
 | SMP4 / NX-disabled / failed-IPI | Build #2013 | PASS |
 | AHCI/NVMe two-boot persistence | Build #2013 | PASS |
 | Production ISO / desktop-network smoke | Build #2013 | PASS |
-| Stable/versioned ISO byte comparison | Build #2013 | PASS |
-| Stable ISO SHA-256 | `95cb636d08163b01a669dbd19088ebe02565985c710892176a52306df9552d3c` | Verified |
-| Candidate physical DMA range guard | Branch `fix/block-buffer-physical-range-20261123` | CI pending |
+| Stable/versioned ISO byte compare and SHA-256 | Build #2013 | PASS |
+| Candidate Stage 1 | #439 on exact head `883a332` | PASS |
+| Candidate source regressions | Build #2016 on predecessor `1a19769` | PASS; not current head |
+| Candidate native build / `make check` | Build #2016 on predecessor `1a19769` | PASS; not current head |
+| Candidate exact-head Build #2018 | head `883a332` | Pending |
+| Candidate exact-head QEMU/storage/production | Build #2018 | Pending |
 
-The main Build log reports `boot_test: PASS - 3/3 boots reached every milestone` and individually reports 116/116 milestones for iterations 1, 2 and 3. The release log confirms the stable ISO matches the boot-tested production image at the SHA-256 above. The image is a legacy BIOS El Torito live session, not a disk installer.
+Stable/versioned main ISO pair SHA-256: `95cb636d08163b01a669dbd19088ebe02565985c710892176a52306df9552d3c`. The release log confirms the stable asset matches the boot-tested production ISO. It is a legacy BIOS El Torito live session, not a disk installer.
 
-The new candidate rejects null requests and 64-bit physical range overflow in `block_request_add_buffer()`, including an overflow in existing segment metadata before coalescing. Runtime regression `tb_buffer_range()` and source-contract test `tools/test_block_buffer_range.py` are added; CI invokes the source test before tool installation. Required guest marker: `ZEROOS: block DMA buffer range overflow rejected.`. Candidate native build, `make check`, QEMU, storage persistence and production smoke are **not yet verified**.
+PR #58 adds null/range/segment-count checks and runtime/source regressions. Stage 1 #439 proves native compilation and scheduler certification for the current code head. Build #2016 source regression, `make check` and kernel verification are from the predecessor head and must not be attributed to the current head. The exact-head Build #2018 is pending. Static source assertions passed but are not boot evidence.
 
-Remaining: scheduler 600-second/four-vCPU soak; physical G560/device/recovery matrix; ACPI S5; standalone installer/recovery; physical desktop display/input. Overall estimate remains ~43%; no percentage increase for CI or documentation.
-
-## 2026-11-22 — PR #57 merged; corrected candidate Build accepted; main validation pending
-
-| Gate | Exact evidence | Result |
-|---|---|---|
-| Main code merge | `7d586d40ea80d52337403ec8e5ed9aef6f4c04a7` (PR #57) | Merged |
-| Candidate source regression | Build #1999, run `44857395130` | PASS |
-| Corrected native x86-64 build | Build #1999 | PASS |
-| Reproducible `make check` | Build #1999 | PASS |
-| Kernel-image / ISO verification | Build #1999 | PASS |
-| QEMU boot | Build #1999, 3 boots × **116/116 milestones** | PASS |
-| SMP4 / NX-disabled / failed-IPI | Build #1999 | PASS |
-| Scheduler panic diagnostics | Build #1999 | PASS |
-| AHCI/NVMe two-boot persistence | Build #1999 | PASS |
-| Production ISO build and desktop/network smoke | Build #1999 | PASS |
-| Corrected candidate Stage 1 | #420, run `44857395125` | PASS |
-| Main post-merge Build / QEMU / Stage 1 | Commit `7d586d4` | Pending fresh evidence |
-| Stable ISO for `7d586d4` | Last verified release is `de3c44c` | Pending |
-
-Candidate links: [Build #1999](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/44857395130), [Stage 1 #420](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/44857395125). Earlier initial candidate Build #1990 failed native compilation on a struct-versus-pointer comparison; the corrected address comparison is included in the Build #1999 candidate and passed.
-
-The double-free fix validates pool index, exact pool-slot identity, FREE state and capacity under the device lock before free-list insertion. Runtime test `tb_double_free()` proves the pool can be drained with unique pointers and restored to exact capacity after an attempted duplicate return. Required guest marker: `ZEROOS: block request double-free rejected without pool corruption.`
-
-The PR Build did not publish a release asset because it was a candidate workflow. The current stable ISO is still the verified `de3c44c` image at SHA-256 `beb72531c7c52234bc6903c22f779c804fe2656d766f32fa81a5e2414468c0fd`. A fresh post-merge main Build must publish and byte/hash-verify a release for `7d586d4`.
-
-Remaining independent gates: 600-second/four-vCPU scheduler soak; physical Lenovo G560 and SATA/NVMe/NIC/USB/graphics certification; physical power-loss/interrupted-write recovery; ACPI S5; standalone installer/recovery; physical desktop display/input. Overall estimate remains ~43%; no completion credit for CI or documentation.
+Remaining: scheduler soak; physical G560/device/recovery matrix; ACPI S5; standalone installer/recovery; physical desktop display/input. Estimate remains ~43%.
 
 ## Historical validation — 2026-11-21 (superseded 2026-11-22)
 
