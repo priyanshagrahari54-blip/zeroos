@@ -721,3 +721,10 @@ The release pipeline itself is no longer a P0 blocker for code snapshot `100c8e2
 - Release blocker: post-merge Build/QEMU/storage/production evidence and stable ISO publication for `04732d7`.
 - Physical G560/device/power-loss certification, 600-second SMP scheduler soak, ACPI S5, standalone installer, and physical desktop input/display remain open.
 - No overall completion percentage change; CI and documentation work do not count as feature completion.
+
+
+## Evidence correction — 2026-11-24 08:43 IST
+
+- Main Build #2021 (run 45318017587) remains in progress on code-bearing merge `04732d7`; last observed active step was the reproducible local release gate after source regressions and native compilation completed.
+- Main Stage 1 #442 (run 45318017602) was cancelled after a subsequent documentation-only push. Do not mark it passed. Candidate Stage 1 #439 passed on code commit `883a332`; rerun main Stage 1 after Build #2021 if an exact main-HEAD result is required.
+- PR #58 candidate Build #2020 (run 45104643866) completed successfully with the QEMU boot-test step, scheduler diagnostics, AHCI/NVMe persistence, production image and desktop/network smoke. This supports candidate acceptance; main Build #2021 and release freshness are still pending.

@@ -740,3 +740,10 @@ Build #1970's source-regression steps have passed. Its build-tool installation, 
 - Main Stage 1 #442: IN PROGRESS, run [45318017602](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/45318017602), head `04732d7`.
 - Previous main Build #2013 and Stage 1 #434 passed on `af3e6bf`; those results do not certify the new merge.
 - Stable ISO currently corresponds to the previous main snapshot. New release publication and SHA-256 comparison are pending successful post-merge main Build, QEMU, storage and production smoke.
+
+
+## Evidence correction — 2026-11-24 08:43 IST
+
+- Main Build #2021 (run 45318017587) remains in progress on code-bearing merge `04732d7`; last observed active step was the reproducible local release gate after source regressions and native compilation completed.
+- Main Stage 1 #442 (run 45318017602) was cancelled after a subsequent documentation-only push. Do not mark it passed. Candidate Stage 1 #439 passed on code commit `883a332`; rerun main Stage 1 after Build #2021 if an exact main-HEAD result is required.
+- PR #58 candidate Build #2020 (run 45104643866) completed successfully with the QEMU boot-test step, scheduler diagnostics, AHCI/NVMe persistence, production image and desktop/network smoke. This supports candidate acceptance; main Build #2021 and release freshness are still pending.

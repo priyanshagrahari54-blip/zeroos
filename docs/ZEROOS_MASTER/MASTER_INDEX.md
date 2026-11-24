@@ -1,5 +1,8 @@
 # ZEROOS — MASTER DOCUMENT INDEX
 
+> Evidence correction — 2026-11-24 08:43 IST: main Build #2021 remains in progress; Stage 1 #442 was cancelled (not passed). Candidate Stage 1 #439 passed on the PR code commit. Re-run Stage 1 after Build #2021 if needed.
+
+
 > Daily verification snapshot — 2026-11-24: PR #58 merged as `04732d7`. Candidate Build #2020 passed; post-merge main Build #2021 and Stage 1 #442 are in progress. New stable ISO publication remains gated on main validation.
 
 Version: 5.5

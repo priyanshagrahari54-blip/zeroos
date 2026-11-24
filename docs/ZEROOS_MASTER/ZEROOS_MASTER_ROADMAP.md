@@ -1284,3 +1284,10 @@ The release pipeline itself is no longer a P0 blocker for code snapshot `100c8e2
 5. Complete standalone installer/recovery and physical desktop input/display before prioritizing browser/media/AI/compatibility.
 
 Do not count documentation, workflow, or test infrastructure as product feature completion. Preserve all Stage 0–10 requirements; separate implemented code, QEMU evidence, physical-hardware certification, and planned work.
+
+
+## Evidence correction — 2026-11-24 08:43 IST
+
+- Main Build #2021 (run 45318017587) remains in progress on code-bearing merge `04732d7`; last observed active step was the reproducible local release gate after source regressions and native compilation completed.
+- Main Stage 1 #442 (run 45318017602) was cancelled after a subsequent documentation-only push. Do not mark it passed. Candidate Stage 1 #439 passed on code commit `883a332`; rerun main Stage 1 after Build #2021 if an exact main-HEAD result is required.
+- PR #58 candidate Build #2020 (run 45104643866) completed successfully with the QEMU boot-test step, scheduler diagnostics, AHCI/NVMe persistence, production image and desktop/network smoke. This supports candidate acceptance; main Build #2021 and release freshness are still pending.
