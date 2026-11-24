@@ -729,3 +729,14 @@ Physical Lenovo G560 boot, physical SATA/NVMe/NIC/USB/graphics, physical power-l
 
 ### Post-merge gate
 Build #1970's source-regression steps have passed. Its build-tool installation, kernel build, QEMU, storage, production and release steps were not yet complete at this update. Stage 1 #391 had compiled the native kernel and was still running scheduler certification. Update this section only after inspecting the completed job steps and logs.
+
+
+## 2026-11-24 — PR #58 merged; post-merge main pending
+
+- Merge: `04732d7e50a97f1463aba027eb9ee486022b9146`.
+- Candidate Build #2020: PASS, run [45104643866](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/45104643866). The job completed source regression steps, native build, reproducible `make check`, kernel/ISO verification, QEMU boot-test step, scheduler panic diagnostics, AHCI/NVMe two-boot persistence, production ISO and desktop/network smoke. Candidate workflow skipped GitHub release publication because it was a PR run.
+- Candidate Stage 1 #439: PASS, run [45104396665](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/45104396665) on code commit `883a332`.
+- Main Build #2021: IN PROGRESS, run [45318017587](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/45318017587), head `04732d7`.
+- Main Stage 1 #442: IN PROGRESS, run [45318017602](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/45318017602), head `04732d7`.
+- Previous main Build #2013 and Stage 1 #434 passed on `af3e6bf`; those results do not certify the new merge.
+- Stable ISO currently corresponds to the previous main snapshot. New release publication and SHA-256 comparison are pending successful post-merge main Build, QEMU, storage and production smoke.

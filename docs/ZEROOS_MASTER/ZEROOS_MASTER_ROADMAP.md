@@ -1273,3 +1273,14 @@ The release pipeline itself is no longer a P0 blocker for code snapshot `100c8e2
 - Main Build #1970 and Stage 1 #391 are in progress on the merge commit. Do not count post-merge boot or stable-release publication until those runs complete and the release assets are checked.
 - Immediate order: finish Build #1970 and verify the stable/versioned ISO pair; finish Stage 1 #391; then run the 600-second/four-vCPU scheduler soak; physical G560 and device matrix; physical power-loss recovery; ACPI S5; standalone installer; physical desktop display/input. Browser/media/AI/compatibility remain later.
 - QEMU evidence does not certify physical hardware. Overall completion estimate remains ~43%; CI and documentation are not feature-completion credit.
+
+
+## Daily execution checkpoint — 2026-11-24
+
+1. Complete main Build #2021 and Stage 1 #442 for merge `04732d7`; retain exact job/boot logs and confirm the DMA overflow milestone.
+2. If main Build passes, verify the production ISO against the release output, publish versioned and stable assets, and compare their SHA-256 digests.
+3. Continue the 600-second four-vCPU scheduler soak and preserve fairness/latency/hot-offline evidence.
+4. Certify physical Lenovo G560 boot, SATA/NVMe, USB, NIC, graphics, power-loss recovery and ACPI S5.
+5. Complete standalone installer/recovery and physical desktop input/display before prioritizing browser/media/AI/compatibility.
+
+Do not count documentation, workflow, or test infrastructure as product feature completion. Preserve all Stage 0–10 requirements; separate implemented code, QEMU evidence, physical-hardware certification, and planned work.

@@ -709,3 +709,15 @@ The release pipeline itself is no longer a P0 blocker for code snapshot `100c8e2
 - Post-merge main Build #1970 (run `44006506107`) and Stage 1 Scheduler #391 (run `44006506109`) are running on this exact merge commit. At documentation update time, the new source-regression steps had passed; build-tool installation and scheduler certification were still running. Do not claim post-merge QEMU or release publication until these workflows finish.
 - GitHub Release assets still identify `aaf0973`; stable/versioned assets are byte-identical at 12,378,112 bytes and SHA-256 `4afdc8a2d519e2ecdfb39b65c58538c33bc441825623033976a04c9afe6503d7`. This is the previous main release, not the new merge commit.
 - Remaining product gates: 600-second/four-vCPU scheduler soak; physical Lenovo G560 and SATA/NVMe/NIC/USB/graphics certification; physical power-loss recovery; ACPI S5; standalone disk installer; physical desktop display/input. Overall estimate remains ~43%; CI and documentation do not count as feature completion.
+
+
+## Daily engineering update — 2026-11-24
+
+- Main code commit: `04732d7e50a97f1463aba027eb9ee486022b9146` (PR #58 merged).
+- Implemented: `block_request_add_buffer()` rejects null requests, end-exclusive physical range overflow, overflowing existing segment ranges, and `segment_count > BLOCK_MAX_SEGMENTS` before segment indexing. Runtime and source regressions plus a boot milestone were added.
+- Candidate exact-head Build #2020 passed (run 45104643866): source regressions, native build, reproducible `make check`, kernel/ISO verification, QEMU Boot test step, scheduler diagnostics, AHCI/NVMe two-boot persistence, production image and desktop/network smoke. The run published CI artifacts; GitHub release publication was skipped for the PR event.
+- Post-merge main Build #2021 (run 45318017587) and Stage 1 #442 (run 45318017602) were started for `04732d7` and are in progress as of this update. Do not mark the merged commit QEMU-certified until those main runs finish.
+- Previous main Build #2013 / Stage 1 #434 passed on `af3e6bf`; stable release hash was verified for that older code snapshot. The stable ISO must be refreshed only after post-merge main production validation.
+- Release blocker: post-merge Build/QEMU/storage/production evidence and stable ISO publication for `04732d7`.
+- Physical G560/device/power-loss certification, 600-second SMP scheduler soak, ACPI S5, standalone installer, and physical desktop input/display remain open.
+- No overall completion percentage change; CI and documentation work do not count as feature completion.

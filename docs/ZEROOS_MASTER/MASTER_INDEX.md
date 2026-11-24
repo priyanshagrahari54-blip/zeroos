@@ -1,4 +1,7 @@
 # ZEROOS — MASTER DOCUMENT INDEX
+
+> Daily verification snapshot — 2026-11-24: PR #58 merged as `04732d7`. Candidate Build #2020 passed; post-merge main Build #2021 and Stage 1 #442 are in progress. New stable ISO publication remains gated on main validation.
+
 Version: 5.5
 Updated: 2026-11-23 (main Build #2013 / Stage 1 #434 / stable ISO verified; PR #58 Stage 1 #439 passed on current head; exact-head full Build pending).
 
