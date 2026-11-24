@@ -1,3 +1,11 @@
+### Current execution — 2026-11-23
+
+- Main Build #2013 / Stage 1 #434 passed on `af3e6bf`: native build/check, 3/3 QEMU × 116/116 milestones, SMP4, NX-off, failed-IPI, AHCI/NVMe persistence, production ISO and desktop/network smoke. Stable/versioned ISO SHA-256 `95cb636d08163b01a669dbd19088ebe02565985c710892176a52306df9552d3c`.
+- PR #58 guards `block_request_add_buffer()` against null requests, new physical range overflow, corrupted prior-segment overflow and segment counts greater than `BLOCK_MAX_SEGMENTS` before indexing. Runtime/source tests and a required boot milestone are integrated.
+- Stage 1 #439 passed native compilation and scheduler certification on exact candidate head `883a332`. Build #2016 source regressions, `make check` and kernel verification passed on predecessor `1a19769`; QEMU was in progress. Exact-head Build #2018 remains pending; no current-head QEMU/storage/production pass is claimed.
+- Execution order: (1) complete exact-head Build #2018 source tests/native build/check; (2) verify kernel/ISO and QEMU 3/3 including DMA-range milestone, SMP4, NX-off and failed-IPI; (3) AHCI/NVMe persistence and production smoke; (4) merge only after full exact-head pass and verify post-merge main/release; (5) 600-second/four-vCPU scheduler soak; (6) physical G560/device and power-loss recovery; (7) ACPI S5; (8) standalone installer/recovery; (9) physical desktop display/input; then browser/media/AI/compatibility.
+- Preserve all Stage 0–10 requirements. Estimate remains ~43%; no CI/docs completion credit.
+
 ### Historical 2026-11-21 — main release verified; PR #57 candidate (superseded 2026-11-22)
 
 - Main code-bearing commit `de3c44c` (PR #56) is now verified by post-merge Build #1978 and Stage 1 #399. Main QEMU passed 3/3 with 115/115 milestones; SMP4, NX-disabled, failed-IPI, scheduler diagnostics, AHCI/NVMe two-boot persistence and production desktop/network smoke passed. The release workflow byte-compared the stable/versioned ISO pair with the production image; SHA-256 is `beb72531c7c52234bc6903c22f779c804fe2656d766f32fa81a5e2414468c0fd`. P0 main release freshness is closed for this snapshot.

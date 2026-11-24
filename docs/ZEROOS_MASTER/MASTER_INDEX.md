@@ -1,6 +1,13 @@
 # ZEROOS — MASTER DOCUMENT INDEX
-Version: 5.4
-Updated: 2026-11-22 (PR #57 merged as `7d586d4`; corrected candidate Build #1999 and Stage 1 #420 passed; post-merge main verification pending).
+Version: 5.5
+Updated: 2026-11-23 (main Build #2013 / Stage 1 #434 / stable ISO verified; PR #58 Stage 1 #439 passed on current head; exact-head full Build pending).
+
+## Current main snapshot — 2026-11-23
+
+- Latest completed main Build #2013 on `af3e6bf` passed native build/check, kernel/ISO verification, QEMU 3/3 × 116/116, SMP4, NX-disabled, failed-IPI, AHCI/NVMe persistence, production ISO and desktop/network smoke. Stage 1 #434 passed.
+- Stable/versioned `zeroos-af3e6bf.iso` and `zeroos.iso` are 12,384,256 bytes and byte-identical at SHA-256 `95cb636d08163b01a669dbd19088ebe02565985c710892176a52306df9552d3c`. Legacy BIOS El Torito live session; no disk installer.
+- PR #58 candidate head `883a332` adds DMA physical-range overflow and segment-count bounds. Stage 1 #439 passed on exact current head. Build #2016 source regression/native/make-check/kernel verification passed only on predecessor `1a19769`; its QEMU was in progress. Exact-head Build #2018 pending; do not claim current-head QEMU/storage/production acceptance.
+- Remaining: scheduler soak, physical G560/device/recovery, ACPI S5, installer/recovery and physical desktop display/input. Estimate ~43%; no CI/docs completion credit.
 
 ## Historical PR #57 candidate record — 2026-11-21 (superseded 2026-11-22)
 
