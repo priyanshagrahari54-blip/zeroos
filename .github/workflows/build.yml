@@ -78,6 +78,9 @@ jobs:
       - name: Verify block DMA buffer range overflow guards
         run: python3 tools/test_block_buffer_range.py
 
+      - name: Verify block request submission lifecycle
+        run: python3 tools/test_block_request_lifecycle.py
+
       - name: Verify ZJFS ordered-data writeback failure handling
         run: python3 tools/test_zjfs_ordered_writeback.py
 
