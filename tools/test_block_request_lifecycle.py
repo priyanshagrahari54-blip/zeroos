@@ -54,11 +54,16 @@ mutate = submit.find("request->submit_tick=timer_ticks()")
 seq = submit.find("request->sequence=++root->next_sequence")
 assert min(lock, state, mutate, seq) >= 0 and lock < state < mutate < seq
 assert "&root->pool[request->pool_index]!=request" in submit
+bound = submit.find("request->segment_count>BLOCK_MAX_SEGMENTS")
+loop = submit.find("for (uint32_t i=0; i<request->segment_count")
+assert bound >= 0 and loop >= 0 and bound < loop, "validate segment_count before reading the fixed array"
 
 test = body(tests, "static int tb_request_lifecycle(")
 for phrase in ("late_add==-SE_INVAL", "sequence_second==sequence_first",
-               "after.submitted[BLOCK_OP_READ]==before.submitted[BLOCK_OP_READ]+1",
-               "post_complete_add==-SE_INVAL", "ZEROOS: block request mutation and duplicate submit rejected."):
+               "post_complete_add==-SE_INVAL",
+               "corrupt->segment_count=(uint16_t)(BLOCK_MAX_SEGMENTS+1U)",
+               "corrupt_status==-SE_INVAL",
+               "ZEROOS: block request mutation and duplicate submit rejected."):
     assert phrase in test, "missing runtime lifecycle assertion: " + phrase
 assert milestones.count("ZEROOS: block request mutation and duplicate submit rejected.") == 1
 assert workflow.count("python3 tools/test_block_request_lifecycle.py") == 1
