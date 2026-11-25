@@ -828,7 +828,20 @@ static void block_run_queue(struct block_device *device) {
 }
 
 void block_submit(struct block_device *device, struct block_request *request) {
+    if (!request || !request->device)
+        return;
     struct block_device *root=block_root(device);
+    if (!root)
+        return;
+    uint64_t flags=spin_lock_irqsave(&root->lock);
+    /* One allocated pool request has exactly one submitter. */
+    if (request->device!=root || !root->pool ||
+        request->pool_index>=root->pool_size ||
+        &root->pool[request->pool_index]!=request ||
+        request->state!=BLOCK_REQ_ALLOCATED) {
+        spin_unlock_irqrestore(&root->lock,flags);
+        return;
+    }
     uint64_t bytes=0;
     int error=0;
     for (uint32_t i=0; i<request->segment_count; ++i)
@@ -863,8 +876,6 @@ void block_submit(struct block_device *device, struct block_request *request) {
     }
     request->own_sectors=request->sectors;
     request->own_segment_count=request->segment_count;
-
-    uint64_t flags=spin_lock_irqsave(&root->lock);
     if (!error) {
         if (root->state==BLOCK_STATE_GONE || root->state==BLOCK_STATE_POWERED_OFF)
             error=-SE_NODEV;
@@ -877,8 +888,6 @@ void block_submit(struct block_device *device, struct block_request *request) {
         block_finalize_chain(root,request,error);
         return;
     }
-    /* sequence is a per-submission identity as well as a FLUSH-order key.
-     * Deferred watchdog claims validate it after dropping/reacquiring lock. */
     request->sequence=++root->next_sequence;
     request->state=BLOCK_REQ_QUEUED;
     if (request->op==BLOCK_OP_FLUSH || !block_try_merge_locked(root,request)) {
@@ -890,7 +899,6 @@ void block_submit(struct block_device *device, struct block_request *request) {
     spin_unlock_irqrestore(&root->lock,flags);
     block_run_queue(root);
 }
-
 int block_wait(struct block_request *request) {
     kcompletion_wait(&request->completion);
     return request->status;
