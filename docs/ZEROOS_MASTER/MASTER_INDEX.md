@@ -1,3 +1,15 @@
+> Evidence correction — 2026-11-25: The 2026-11-24 pending snapshot below is superseded. Main Build #2023 and Stage 1 #444 passed on `ccf9399`; stable/versioned ISO pair verified. Candidate `fix/block-request-single-submit-lifecycle-20261125` is pending exact-head CI.
+
+Version: 5.6
+Updated: 2026-11-25
+
+## Current main snapshot
+
+- Build #2023 [45318242398](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/45318242398) passed native x86-64, reproducible `make check`, kernel/ISO checks, QEMU 3/3 × 117/117 milestones, SMP4, NX-off, failed-IPI, scheduler diagnostics, AHCI/NVMe persistence, production ISO, desktop/network smoke and release.
+- Stage 1 Scheduler #444 [45318242427](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/45318242427) passed. Stable/versioned ISO pair: 12,388,352 bytes, byte-identical, SHA-256 `0d991c2cc97382704221c3be2f07f6615dc3e028528e88fbe143d559a34265a7`. Optional pycdlib cross-check skipped; required ISO checks passed. Legacy BIOS live image; no installer.
+- Code-bearing main `04732d7` (PR #58); docs HEAD `ccf9399`. Candidate `fix/block-request-single-submit-lifecycle-20261125` rejects duplicate submit and post-submit buffer mutation; runtime/source regression and milestone added, exact-head CI pending.
+- Remaining: scheduler soak, physical G560/device/recovery, ACPI S5, installer/recovery, physical desktop input/display, later browser/media/AI/compatibility. Estimate ~43%; CI/docs not feature completion.
+
 # ZEROOS — MASTER DOCUMENT INDEX
 
 > Evidence correction — 2026-11-24 08:43 IST: main Build #2021 remains in progress; Stage 1 #442 was cancelled (not passed). Candidate Stage 1 #439 passed on the PR code commit. Re-run Stage 1 after Build #2021 if needed.
@@ -5,7 +17,7 @@
 
 > Daily verification snapshot — 2026-11-24: PR #58 merged as `04732d7`. Candidate Build #2020 passed; post-merge main Build #2021 and Stage 1 #442 are in progress. New stable ISO publication remains gated on main validation.
 
-Version: 5.5
+Version: 5.6
 Updated: 2026-11-23 (main Build #2013 / Stage 1 #434 / stable ISO verified; PR #58 Stage 1 #439 passed on current head; exact-head full Build pending).
 
 ## Current main snapshot — 2026-11-23
