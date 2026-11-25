@@ -306,7 +306,46 @@ static int tb_cancel(struct block_device *disk, uint8_t *buffer) {
     return 0;
 }
 
+/* Request buffers are immutable after submit; duplicate submit is ignored. */
+static int tb_request_lifecycle(struct block_device *disk, uint8_t *buffer) {
+    struct block_request *request=block_request_alloc(disk,BLOCK_PRIO_NORMAL,0);
+    struct block_stats before,after;
+    TB_CHECK(request!=0,"lifecycle request allocated");
+    request->op=BLOCK_OP_READ;
+    request->lba=128;
+    TB_CHECK(block_request_add_buffer(request,(uint64_t)buffer,512)==0,
+             "buffer accepted before submit");
+    block_stats_snapshot(disk,&before,0,0);
+    ramdisk_pause(disk,1);
+    block_submit(disk,request);
+    uint8_t state_first=request->state;
+    uint64_t sequence_first=request->sequence;
+    uint16_t segments_first=request->segment_count;
+    int late_add=block_request_add_buffer(request,(uint64_t)(buffer+512),512);
+    block_submit(disk,request);
+    uint8_t state_second=request->state;
+    uint64_t sequence_second=request->sequence;
+    ramdisk_pause(disk,0);
+    int status=block_wait(request);
+    int post_complete_add=block_request_add_buffer(request,(uint64_t)(buffer+1024),512);
+    block_request_free(request);
+    block_stats_snapshot(disk,&after,0,0);
+    TB_CHECK(state_first!=BLOCK_REQ_ALLOCATED,"first submit leaves ALLOCATED");
+    TB_CHECK(late_add==-SE_INVAL && segments_first==1 &&
+             request->segment_count==segments_first,
+             "late buffer append rejected without DMA mutation");
+    TB_CHECK(state_second==state_first && sequence_second==sequence_first,
+             "duplicate submit leaves state and sequence unchanged");
+    TB_CHECK(after.submitted[BLOCK_OP_READ]==before.submitted[BLOCK_OP_READ]+1,
+             "request accounted as one submission");
+    TB_CHECK(status==0,"original request completes");
+    TB_CHECK(post_complete_add==-SE_INVAL,"completed request DMA program immutable");
+    klog("ZEROOS: block request mutation and duplicate submit rejected.");
+    return 0;
+}
+
 /* Physical DMA segment ranges must not wrap the 64-bit address space. */
+
 static int tb_buffer_range(struct block_device *disk) {
     struct block_request *request=block_request_alloc(disk,BLOCK_PRIO_NORMAL,0);
     TB_CHECK(request!=0,"buffer-range request allocated");
@@ -587,6 +626,7 @@ int storage_selftest_block(void) {
     TB_RUN(tb_watchdog_reuse_aba(disk,b),"watchdog-reuse-aba");
     TB_RUN(tb_cancel(disk,b),"cancel");
     TB_RUN(tb_buffer_range(disk),"buffer-range-overflow");
+    TB_RUN(tb_request_lifecycle(disk,b),"request-lifecycle");
     TB_RUN(tb_double_free(disk),"double-free-guard");
     TB_RUN(tb_pool(disk),"pool-backpressure");
     TB_RUN(tb_faults(disk,a,b),"eio-timeout-retry");
