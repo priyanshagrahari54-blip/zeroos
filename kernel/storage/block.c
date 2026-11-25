@@ -236,12 +236,14 @@ void block_request_free(struct block_request *request) {
     if (!root || !root->pool)
         return;
     uint64_t flags=spin_lock_irqsave(&root->lock);
-    /* A request may be returned by an async callback or a synchronous owner.
-     * Serialize the FREE-state check with the free-list insertion so a
-     * duplicate return cannot link the same pool slot twice. */
+    /* Only an unsubmitted allocation or a completed request may return to
+     * the pool. Keep this ownership check and the duplicate-FREE check
+     * serialized with the free-list insertion. */
     if (request->pool_index>=root->pool_size ||
         &root->pool[request->pool_index]!=request ||
         request->state==BLOCK_REQ_FREE ||
+        (request->state!=BLOCK_REQ_ALLOCATED &&
+         request->state!=BLOCK_REQ_COMPLETE) ||
         root->pool_free_count>=root->pool_size) {
         spin_unlock_irqrestore(&root->lock,flags);
         return;
