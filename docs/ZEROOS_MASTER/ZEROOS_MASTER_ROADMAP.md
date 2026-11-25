@@ -1,3 +1,10 @@
+### Current execution — 2026-11-25
+
+- Main Build #2023 and Stage 1 #444 passed on `ccf9399`: native build/check, QEMU 3/3 × 117/117, SMP4, NX-off, failed-IPI, scheduler diagnostics, AHCI/NVMe persistence, production ISO and desktop/network smoke. Stable ISO pair SHA-256 `0d991c2cc97382704221c3be2f07f6615dc3e028528e88fbe143d559a34265a7`; byte-identical and release log verified stable asset matches production. Optional pycdlib cross-check skipped; required El Torito checks passed.
+- Candidate `fix/block-request-single-submit-lifecycle-20261125` enforces one submission per block request and immutable DMA segments after allocation ownership ends. Runtime/source tests and required boot milestone integrated; exact-head Build/QEMU/Stage 1 pending.
+- Order: candidate source regression/native/check; QEMU and required milestones; SMP4/NX-off/failed-IPI; storage persistence and production smoke; Stage 1; merge only after exact-head acceptance; fresh main/release check; 600-second scheduler soak; physical G560/device/power-loss recovery; ACPI S5; installer/recovery; physical desktop display/input; then browser/media/AI/compatibility.
+- Preserve Stage 0–10; estimate ~43%; CI/docs are not feature completion.
+
 ### Current execution — 2026-11-23
 
 - Main Build #2013 / Stage 1 #434 passed on `af3e6bf`: native build/check, 3/3 QEMU × 116/116 milestones, SMP4, NX-off, failed-IPI, AHCI/NVMe persistence, production ISO and desktop/network smoke. Stable/versioned ISO SHA-256 `95cb636d08163b01a669dbd19088ebe02565985c710892176a52306df9552d3c`.
