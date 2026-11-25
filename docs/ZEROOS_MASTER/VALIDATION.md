@@ -1,3 +1,23 @@
+## 2026-11-25 — latest main Build and release verified; candidate lifecycle fix pending
+
+| Gate | Evidence | Result |
+|---|---|---|
+| Main Build | #2023 [45318242398](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/45318242398), head `ccf9399` | PASS |
+| Main Stage 1 | #444 [45318242427](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/45318242427) | PASS |
+| Native x86-64 / reproducible `make check` / kernel verification | #2023 | PASS |
+| QEMU | 3/3 × **117/117 milestones each** | PASS |
+| SMP4 / NX-off / failed-IPI / scheduler diagnostics | #2023 | PASS |
+| AHCI/NVMe two-boot persistence | #2023 | PASS |
+| Production ISO / desktop-network smoke | #2023 | PASS |
+| Stable/versioned ISO byte comparison | #2023 | PASS |
+| SHA-256 | `0d991c2cc97382704221c3be2f07f6615dc3e028528e88fbe143d559a34265a7` | Verified |
+| Optional pycdlib cross-check | #2023 | Skipped; non-fatal |
+| Candidate lifecycle source regression/build/QEMU | `fix/block-request-single-submit-lifecycle-20261125` | Pending CI |
+
+Build #2023 logs explicitly report `boot_test: PASS - 3/3 boots reached every milestone`; each boot had all 117 milestones. Release log confirms stable ISO matches production. Candidate fix rejects duplicate submission and DMA segment append outside ALLOCATED; do not merge before exact-head Build/QEMU and Stage 1 pass.
+
+Remaining: scheduler soak, physical G560/device/recovery, ACPI S5, installer/recovery and physical desktop input/display. Estimate remains ~43%.
+
 ## 2026-11-23 — main Build #2013 verified; PR #58 validation in progress
 
 | Gate | Exact evidence | Result |
