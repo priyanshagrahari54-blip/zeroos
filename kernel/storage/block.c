@@ -844,8 +844,11 @@ void block_submit(struct block_device *device, struct block_request *request) {
     }
     uint64_t bytes=0;
     int error=0;
-    for (uint32_t i=0; i<request->segment_count; ++i)
-        bytes+=request->segments[i].length;
+    if (request->segment_count>BLOCK_MAX_SEGMENTS)
+        error=-SE_INVAL;
+    else
+        for (uint32_t i=0; i<request->segment_count; ++i)
+            bytes+=request->segments[i].length;
     request->device=root;
     request->status=0;
     request->retries=0;
