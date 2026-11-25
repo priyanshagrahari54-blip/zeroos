@@ -47,6 +47,13 @@ assert "request->pool_index>=root->pool_size" in add
 assert "&root->pool[request->pool_index]!=request" in add
 assert "spin_unlock_irqrestore(&root->lock,flags)" in add
 
+free = body(block, "void block_request_free(")
+allocated_only = free.find("request->state!=BLOCK_REQ_ALLOCATED")
+complete_only = free.find("request->state!=BLOCK_REQ_COMPLETE")
+free_link = free.find("request->state=BLOCK_REQ_FREE")
+assert min(allocated_only, complete_only, free_link) >= 0
+assert allocated_only < free_link and complete_only < free_link
+
 submit = body(block, "void block_submit(")
 lock = submit.find("spin_lock_irqsave(&root->lock)")
 state = submit.find("request->state!=BLOCK_REQ_ALLOCATED")
@@ -59,7 +66,7 @@ loop = submit.find("for (uint32_t i=0; i<request->segment_count")
 assert bound >= 0 and loop >= 0 and bound < loop, "validate segment_count before reading the fixed array"
 
 test = body(tests, "static int tb_request_lifecycle(")
-for phrase in ("late_add==-SE_INVAL", "sequence_second==sequence_first",
+for phrase in ("state_after_premature_free==state_first", "late_add==-SE_INVAL", "sequence_second==sequence_first",
                "post_complete_add==-SE_INVAL",
                "corrupt->segment_count=(uint16_t)(BLOCK_MAX_SEGMENTS+1U)",
                "corrupt_status==-SE_INVAL",
