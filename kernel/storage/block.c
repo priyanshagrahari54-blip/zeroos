@@ -257,31 +257,44 @@ void block_request_free(struct block_request *request) {
 int block_request_add_buffer(struct block_request *request, uint64_t physical,
                              uint32_t length) {
     const uint64_t max_address=0xffffffffffffffffULL;
-    if (!request || length==0 || (physical&3ULL) || (length&3U) ||
-        physical>max_address-(uint64_t)length)
+    if (!request || !request->device)
         return -SE_INVAL;
-    if (request->segment_count>BLOCK_MAX_SEGMENTS)
+    struct block_device *root=block_root(request->device);
+    if (!root || !root->pool)
         return -SE_INVAL;
-    if (request->segment_count) {
+    uint64_t flags=spin_lock_irqsave(&root->lock);
+    int rc=0;
+    if (request->device!=root || request->pool_index>=root->pool_size ||
+        &root->pool[request->pool_index]!=request ||
+        request->state!=BLOCK_REQ_ALLOCATED) {
+        rc=-SE_INVAL;
+    } else if (length==0 || (physical&3ULL) || (length&3U) ||
+               physical>max_address-(uint64_t)length) {
+        rc=-SE_INVAL;
+    } else if (request->segment_count>BLOCK_MAX_SEGMENTS) {
+        rc=-SE_INVAL;
+    } else if (request->segment_count) {
         struct block_segment *last=&request->segments[request->segment_count-1U];
-        /* Do not let a corrupted/forged prior segment wrap during adjacency
-         * arithmetic and turn an unrelated address into a merged DMA range. */
-        if (last->physical>max_address-(uint64_t)last->length)
-            return -SE_INVAL;
-        if (last->physical+last->length==physical &&
-            (uint64_t)last->length+length<=0x400000ULL) {
+        if (last->physical>max_address-(uint64_t)last->length) {
+            rc=-SE_INVAL;
+        } else if (last->physical+last->length==physical &&
+                   (uint64_t)last->length+length<=0x400000ULL) {
             last->length+=length;
-            return 0;
+        } else if (request->segment_count>=BLOCK_MAX_SEGMENTS) {
+            rc=-SE_INVAL;
+        } else {
+            request->segments[request->segment_count].physical=physical;
+            request->segments[request->segment_count].length=length;
+            ++request->segment_count;
         }
+    } else {
+        request->segments[request->segment_count].physical=physical;
+        request->segments[request->segment_count].length=length;
+        ++request->segment_count;
     }
-    if (request->segment_count>=BLOCK_MAX_SEGMENTS)
-        return -SE_INVAL;
-    request->segments[request->segment_count].physical=physical;
-    request->segments[request->segment_count].length=length;
-    ++request->segment_count;
-    return 0;
+    spin_unlock_irqrestore(&root->lock,flags);
+    return rc;
 }
-
 /* ----------------------------------------------------------- completion */
 
 static void block_finish_one(struct block_request *request) {
