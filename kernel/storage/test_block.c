@@ -318,6 +318,8 @@ static int tb_request_lifecycle(struct block_device *disk, uint8_t *buffer) {
     block_submit(disk,request);
     uint8_t state_first=request->state;
     uint64_t sequence_first=request->sequence;
+    block_request_free(request);
+    uint8_t state_after_premature_free=request->state;
     uint16_t segments_first=request->segment_count;
     int late_add=block_request_add_buffer(request,(uint64_t)(buffer+512),512);
     uint16_t segments_after_late=request->segment_count;
@@ -328,6 +330,8 @@ static int tb_request_lifecycle(struct block_device *disk, uint8_t *buffer) {
     int status=block_wait(request);
     int post_complete_add=block_request_add_buffer(request,(uint64_t)(buffer+1024),512);
     TB_CHECK(state_first!=BLOCK_REQ_ALLOCATED,"first submit leaves ALLOCATED");
+    TB_CHECK(state_after_premature_free==state_first,
+             "queued or in-flight request cannot be returned to pool");
     TB_CHECK(late_add==-SE_INVAL && segments_first==1 &&
              segments_after_late==segments_first,
              "late buffer append rejected without DMA mutation");
