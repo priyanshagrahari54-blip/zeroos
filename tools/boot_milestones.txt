@@ -134,3 +134,4 @@ ZEROOS: child process reap claim is exclusive and cancellable.
 ZEROOS: VFS forced unmount refuses live references.
 ZEROOS: block watchdog stale timeout snapshot ignored after request reuse.
 ZEROOS: block request double-free rejected without pool corruption.
+ZEROOS: block request mutation and duplicate submit rejected.
