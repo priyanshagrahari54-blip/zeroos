@@ -1,3 +1,18 @@
+## 2026-11-26 follow-up — PR #59 exact-head test guard failure corrected, rerun pending
+
+| Gate | Evidence | Result |
+|---|---|---|
+| Main Build #2023 / Stage 1 #444 | 45318242398 / 45318242427 | PASS |
+| Main QEMU / storage / production | Build #2023 | PASS, 3/3 × 117/117 |
+| Stable ISO pair | ccf9399; SHA-256 0d991c2cc97382704221c3be2f07f6615dc3e028528e88fbe143d559a34265a7 | Verified |
+| PR #59 Build #2048 / #2049 | head 355ba8d | QEMU storage self-test failed at test_block.c:416 (pool_size assumption) |
+| PR #59 Stage 1 #469 / #470 | head 355ba8d | PASS |
+| Follow-up Build #2050 | head 4a405175 | FAIL before build: stale double-free source guard expected count==pool_size |
+| Follow-up Stage 1 #471 | head 4a405175 | PASS |
+| Latest source guard correction | next exact-head commit | CI pending |
+
+Build #2050's failing step was `Verify block request double-free pool guard`; it still expected `count==disk->pool_size` after the runtime test had been corrected to use `free_before`. The source guard now checks the baseline free count. QEMU, storage persistence and production acceptance for the corrected candidate remain pending.
+
 ## 2026-11-26 — current main pass; PR #59 candidate QEMU regression corrected, rerun pending
 
 | Gate | Evidence | Result |

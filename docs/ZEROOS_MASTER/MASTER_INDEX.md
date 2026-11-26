@@ -1,3 +1,14 @@
+> 2026-11-26 evidence update: PR #59 Build #2048/#2049 failed at the runtime free-pool test's total-capacity assumption. Commit #4a405175 fixed the runtime test, but Build #2050 then exposed the older source-contract test's stale `pool_size` expectation; Stage 1 #471 passed. The source guard is now synchronized; exact-head Build pending.
+
+Version: 5.8
+Updated: 2026-11-26
+
+## Current candidate state
+
+- PR #59 lifecycle implementation remains unmerged. Original candidate `355ba8d` passed native build, `make check`, kernel/ISO checks and Stage 1 #469/#470 but QEMU failed at `tb_double_free()` line 416 because it assumed every pool slot was free.
+- Commit `4a405175` changed the runtime test to use the captured available free count, but Build #2050 failed before compilation because `tools/test_block_request_double_free.py` retained the old `count==disk->pool_size` contract. Stage 1 #471 passed.
+- This follow-up updates that source regression to enforce `free_before`. New exact-head Build must run all source tests, build, `make check`, QEMU, storage and production acceptance before merge.
+
 > Current evidence update — 2026-11-26: Main Build #2023 / Stage 1 #444 pass on `ccf9399`. PR #59 exact-head Build #2048 and PR Build #2049 failed in QEMU at the double-free test's incorrect `pool_size` assumption; Stage 1 #469/#470 passed. Follow-up adjusts the test to use baseline free count and awaits exact-head CI.
 
 Version: 5.7

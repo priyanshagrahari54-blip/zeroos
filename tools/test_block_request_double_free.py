@@ -74,8 +74,9 @@ for required in (
     "block_request_free(request)",
     "duplicate return leaves pool count unchanged",
     "held[i]!=next",
-    "count==disk->pool_size",
-    "pool count restored exactly after unique drain",
+    "while (count<free_before)",
+    "count==free_before",
+    "pool count restored to initial available count after unique drain",
     "ZEROOS: block request double-free rejected without pool corruption.",
 ):
     assert required in runtime, f"runtime double-free regression missing: {required}"

@@ -1,3 +1,10 @@
+### Current execution — 2026-11-26 follow-up
+
+- Main Build #2023 / Stage 1 #444 remain verified PASS on `ccf9399`; main QEMU 3/3 × 117/117, storage persistence, production ISO and release checks passed. Stable ISO SHA-256 `0d991c2cc97382704221c3be2f07f6615dc3e028528e88fbe143d559a34265a7`.
+- PR #59's runtime double-free test was corrected to use its captured `free_before` count. Build #2050 then failed before compilation because the older source-contract test still required `count==disk->pool_size`; Stage 1 #471 passed on that candidate.
+- This follow-up synchronizes `tools/test_block_request_double_free.py` with the available-free-count invariant. Await exact-head Build/QEMU/storage/production; do not merge until all pass.
+- Preserve Stage 0–10 and keep the feature estimate unchanged. Remaining physical G560/device/power-loss certification, scheduler soak, ACPI S5, installer and physical desktop input/display are still open.
+
 ### Current execution — 2026-11-26
 
 - Main Build #2023 and Stage 1 #444 passed on `ccf9399`: native build/check, QEMU 3/3 × 117/117, SMP4, NX-off, failed-IPI, scheduler diagnostics, AHCI/NVMe persistence, production ISO, desktop/network smoke and release verification. Stable ISO pair SHA-256 `0d991c2cc97382704221c3be2f07f6615dc3e028528e88fbe143d559a34265a7`.

@@ -1,3 +1,9 @@
+## 2026-11-26 follow-up — source guard synchronized; exact-head Build pending
+
+- Follow-up commit `4a405175049d7d922649ec0e9aa853d60c465773` changed `tb_double_free()` to drain and restore the baseline `free_before` count. Build #2050 [run 45744412588] then failed before compilation at the existing `tools/test_block_request_double_free.py` source guard, which still demanded the old `count==disk->pool_size` assertion. This was a stale regression expectation; it did not execute QEMU.
+- Stage 1 #471 [run 45744412574] passed on `4a405175`.
+- This follow-up synchronizes the double-free source guard with the runtime test: require `while (count<free_before)`, `count==free_before`, and restoration to `free_before`; explicitly reject the invalid pool-size assumption. New exact-head Build/QEMU is pending. Do not merge based on Stage 1 alone.
+
 ## 2026-11-26 — PR #59 boot regression diagnosed; free-pool test corrected (CI pending)
 
 - Main branch HEAD remains `ccf93994310b8a92cbf1ae55b0c3cb90923abb34`; code-bearing commit `04732d7`. Main Build #2023 [run 45318242398](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/45318242398) and Stage 1 #444 [run 45318242427](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/45318242427) passed. Build #2023: native x86-64, reproducible `make check`, kernel/ISO verification, QEMU 3/3 with 117/117 milestones, SMP4, NX-off, failed-IPI, scheduler diagnostics, AHCI/NVMe persistence, production ISO, desktop/network smoke and release verification.
