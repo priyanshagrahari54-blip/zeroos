@@ -405,7 +405,7 @@ static int tb_double_free(struct block_device *disk) {
     TB_CHECK(disk->pool_free_count==free_before,
              "duplicate return leaves pool count unchanged");
 
-    while (count<disk->pool_size) {
+    while (count<free_before) {
         struct block_request *next=block_request_alloc(disk,BLOCK_PRIO_FOREGROUND,0);
         if (!next)
             break;
@@ -413,13 +413,13 @@ static int tb_double_free(struct block_device *disk) {
             TB_CHECK(held[i]!=next,"free list contains no duplicate slot");
         held[count++]=next;
     }
-    TB_CHECK(count==disk->pool_size,"double-free does not shrink pool capacity");
+    TB_CHECK(count==free_before,"double-free preserves available pool slots");
     TB_CHECK(!block_request_alloc(disk,BLOCK_PRIO_FOREGROUND,0),
              "pool remains bounded after double-free attempt");
     for (uint32_t i=0; i<count; ++i)
         block_request_free(held[i]);
-    TB_CHECK(disk->pool_free_count==disk->pool_size,
-             "pool count restored exactly after unique drain");
+    TB_CHECK(disk->pool_free_count==free_before,
+             "pool count restored to initial available count after unique drain");
     klog("ZEROOS: block request double-free rejected without pool corruption.");
     return 0;
 }

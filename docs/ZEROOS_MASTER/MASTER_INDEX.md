@@ -1,3 +1,15 @@
+> Current evidence update — 2026-11-26: Main Build #2023 / Stage 1 #444 pass on `ccf9399`. PR #59 exact-head Build #2048 and PR Build #2049 failed in QEMU at the double-free test's incorrect `pool_size` assumption; Stage 1 #469/#470 passed. Follow-up adjusts the test to use baseline free count and awaits exact-head CI.
+
+Version: 5.7
+Updated: 2026-11-26
+
+## Current main
+
+- Main Build #2023 [45318242398] and Stage 1 #444 [45318242427] passed. QEMU 3/3 × 117/117, SMP4, NX-off, failed-IPI, scheduler diagnostics, AHCI/NVMe persistence and production smoke passed.
+- Stable/versioned `zeroos-ccf9399.iso` / `zeroos.iso`: 12,388,352 bytes, byte-identical; SHA-256 `0d991c2cc97382704221c3be2f07f6615dc3e028528e88fbe143d559a34265a7`. Legacy BIOS live ISO, not installer.
+- PR #59 exact head `355ba8d`: Build #2048 and PR Build #2049 failed at `test_block.c:416` because the test expected all `pool_size` slots to be free. Stage 1 #469/#470 passed. Follow-up corrects the runtime regression to drain/restore the baseline free count; exact-head Build/QEMU is pending.
+- No candidate merge or completion-percentage increase until all gates pass. Physical G560, scheduler soak, device/power-loss recovery, ACPI S5, installer and physical desktop input/display remain uncertified/unimplemented.
+
 > Evidence correction — 2026-11-25: The 2026-11-24 pending snapshot below is superseded. Main Build #2023 and Stage 1 #444 passed on `ccf9399`; stable/versioned ISO pair verified. Candidate `fix/block-request-single-submit-lifecycle-20261125` is pending exact-head CI.
 
 Version: 5.6

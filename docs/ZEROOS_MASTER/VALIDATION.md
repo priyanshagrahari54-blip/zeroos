@@ -1,3 +1,22 @@
+## 2026-11-26 — current main pass; PR #59 candidate QEMU regression corrected, rerun pending
+
+| Gate | Evidence | Result |
+|---|---|---|
+| Main Build | #2023 [45318242398], head `ccf9399` | PASS |
+| Main Stage 1 | #444 [45318242427] | PASS |
+| Native x86-64 / `make check` / kernel and ISO verification | #2023 | PASS |
+| Main QEMU | 3/3 × 117/117 milestones | PASS |
+| SMP4 / NX-off / failed-IPI / scheduler diagnostics | #2023 | PASS |
+| AHCI/NVMe two-boot persistence | #2023 | PASS |
+| Production ISO / desktop-network smoke / release | #2023 | PASS |
+| Stable/versioned ISO | 12,388,352 bytes; SHA-256 `0d991c2cc97382704221c3be2f07f6615dc3e028528e88fbe143d559a34265a7` | Verified |
+| PR #59 Build #2048 / PR Build #2049 | head `355ba8d` | FAIL at QEMU block self-test |
+| PR #59 Stage 1 #469 / PR Stage 1 #470 | head `355ba8d` | PASS |
+| Failure location | `test_block.c:416`, assumed free count equals total pool size | Diagnosed |
+| Follow-up free-count-baseline regression | New branch commit | Source assertions passed; CI pending |
+
+Build #2048 and #2049 logs show source regressions, native build, reproducible `make check`, kernel/ISO verification passed. QEMU reached the new request-lifecycle test, then failed at the double-free test because it drained `disk->pool_size` slots even though `free_before` can be lower due to live allocations. The test now drains exactly `free_before`, asserts unique pointers and exhaustion, and restores that same baseline count. The updated Python source regression checks this expectation. The new exact-head Build must prove QEMU, SMP4, NX-off, failed-IPI, storage persistence and production gates; do not infer them from the earlier failure or Stage 1 pass.
+
 ## 2026-11-25 — latest main Build and release verified; candidate lifecycle fix pending
 
 | Gate | Evidence | Result |

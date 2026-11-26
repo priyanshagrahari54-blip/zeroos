@@ -73,6 +73,13 @@ for phrase in ("state_after_premature_free==state_first", "late_add==-SE_INVAL",
                "ZEROOS: block request mutation and duplicate submit rejected."):
     assert phrase in test, "missing runtime lifecycle assertion: " + phrase
 assert milestones.count("ZEROOS: block request mutation and duplicate submit rejected.") == 1
+double_free = body(tests, "static int tb_double_free(")
+assert "uint32_t free_before=disk->pool_free_count;" in double_free
+assert "while (count<free_before)" in double_free
+assert "count==free_before" in double_free
+assert "count==disk->pool_size" not in double_free
+assert "pool_free_count==free_before" in double_free
+assert "double-free preserves available pool slots" in double_free
 assert workflow.count("python3 tools/test_block_request_lifecycle.py") == 1
 assert workflow.index("python3 tools/test_block_request_lifecycle.py") < workflow.index(
     "- name: Install build and QEMU tools")

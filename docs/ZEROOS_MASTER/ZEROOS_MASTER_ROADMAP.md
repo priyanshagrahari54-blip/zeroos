@@ -1,3 +1,11 @@
+### Current execution — 2026-11-26
+
+- Main Build #2023 and Stage 1 #444 passed on `ccf9399`: native build/check, QEMU 3/3 × 117/117, SMP4, NX-off, failed-IPI, scheduler diagnostics, AHCI/NVMe persistence, production ISO, desktop/network smoke and release verification. Stable ISO pair SHA-256 `0d991c2cc97382704221c3be2f07f6615dc3e028528e88fbe143d559a34265a7`.
+- PR #59 code at `355ba8d` passed source regressions, native build, `make check`, kernel/ISO checks and Stage 1 #469/#470, but Build #2048 and PR Build #2049 failed at QEMU storage self-test: `tb_double_free()` incorrectly required free requests to equal total pool size (line 416). The pool can have outstanding allocations.
+- Follow-up correction uses the initial free-count baseline for draining and restoration; source regression asserts this invariant. Exact-head CI must confirm the runtime test and full QEMU/storage/production matrix before merge.
+- Order: exact-head Build/QEMU; SMP4/NX-off/failed-IPI; storage persistence and production smoke; Stage 1; merge only after all pass; fresh main/release check; scheduler soak; physical G560/device/power-loss recovery; ACPI S5; installer/recovery; physical desktop input/display; then browser/media/AI/compatibility.
+- Preserve Stage 0–10. No completion credit for docs or CI. Keep feature estimate unchanged.
+
 ### Current execution — 2026-11-25
 
 - Main Build #2023 and Stage 1 #444 passed on `ccf9399`: native build/check, QEMU 3/3 × 117/117, SMP4, NX-off, failed-IPI, scheduler diagnostics, AHCI/NVMe persistence, production ISO and desktop/network smoke. Stable ISO pair SHA-256 `0d991c2cc97382704221c3be2f07f6615dc3e028528e88fbe143d559a34265a7`; byte-identical and release log verified stable asset matches production. Optional pycdlib cross-check skipped; required El Torito checks passed.
