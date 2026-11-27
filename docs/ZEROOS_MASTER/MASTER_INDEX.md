@@ -1,8 +1,10 @@
+> 2026-11-27 refresh: PR #59 head `e826ec4` passed Stage 1 #475 and #476. Build #2054/#2055 passed source regressions, native kernel build and kernel verification; both are currently at `make check`. QEMU/storage/production remain pending.
+
 > 2026-11-27 exact evidence: Main Build #2023 / Stage 1 #444 remain PASS on ccf9399. PR #59 Build #2052 and PR Build #2053 failed at QEMU storage self-test line 437 (background admission reserve) after the new lifecycle/DMA/double-free milestones passed. Stage 1 #473/#474 passed. Boot artifact identifies a synthetic request-state cleanup leak in tb_duplicate_completion; cleanup fix and pool-baseline assertion committed, exact-head rerun pending.
 
 > 2026-11-26 evidence update: PR #59 Build #2048/#2049 failed at the runtime free-pool test's total-capacity assumption. Commit #4a405175 fixed the runtime test, but Build #2050 then exposed the older source-contract test's stale `pool_size` expectation; Stage 1 #471 passed. The source guard is now synchronized; exact-head Build pending.
 
-Version: 5.9
+Version: 5.10
 Updated: 2026-11-27
 
 ## Current candidate state

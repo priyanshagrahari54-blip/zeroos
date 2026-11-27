@@ -1,3 +1,8 @@
+### 2026-11-27 validation update
+
+- Candidate `e826ec4` Stage 1 #475/#476 passed. Build #2054/#2055 have passed all source regressions, native x86-64 build and kernel-image verification and are at reproducible `make check`.
+- QEMU, storage persistence, production ISO and smoke remain pending; no merge/release claim until the full Build completes.
+
 ### Current execution — 2026-11-27
 
 - Main remains verified at docs HEAD ccf9399 / code-bearing 04732d7: Build #2023 and Stage 1 #444 passed; QEMU 3/3 × 117/117, storage persistence, production smoke and stable ISO checksum verified.

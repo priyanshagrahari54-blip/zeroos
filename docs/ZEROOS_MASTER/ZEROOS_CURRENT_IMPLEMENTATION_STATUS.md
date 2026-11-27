@@ -1,3 +1,9 @@
+## 2026-11-27 follow-up — Stage 1 passed; full Build at reproducible gate
+
+- Exact candidate commit `e826ec438969d703bae0f1786e7fe84ffb5b0bfe` passed Stage 1 Scheduler #475 (push run [45929891423]) and #476 (PR run [45929899172]).
+- Build #2054 [45929891417] and PR Build #2055 [45929899114] have passed all source-contract regressions, tool installation, native kernel build and kernel verification; both are currently running the reproducible `make check` gate. QEMU and later storage/production stages have not run yet.
+- The duplicate-completion source guard ran successfully on this head. The QEMU fixture cleanup commit restores synthetic COMPLETE state before freeing and checks pool count baseline. No exact-head QEMU pass or merge is claimed.
+
 ## 2026-11-27 — PR #59 QEMU storage self-test failure isolated; cleanup fix committed, rerun pending
 
 - Latest main remains `ccf93994310b8a92cbf1ae55b0c3cb90923abb34` (code-bearing `04732d7`). Main Build #2023 [45318242398] and Stage 1 #444 [45318242427] are the latest completed main evidence: QEMU 3/3 × 117/117, SMP4, NX-off, failed-IPI, scheduler diagnostics, AHCI/NVMe persistence, production ISO and stable release passed.

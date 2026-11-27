@@ -1,3 +1,17 @@
+## 2026-11-27 status refresh — exact-head Stage 1 pass; Build pending
+
+| Gate | Run / head | Result |
+|---|---|---|
+| Source regressions | Build #2054 / #2055, `e826ec4` | PASS |
+| Native x86-64 kernel build | #2054 / #2055 | PASS |
+| Kernel image verification | #2054 / #2055 | PASS |
+| Reproducible `make check` | #2054 / #2055 | IN PROGRESS |
+| Stage 1 Scheduler | #475 [45929891423] / #476 [45929899172] | PASS |
+| QEMU / SMP4 / NX-off / failed-IPI | #2054 / #2055 | Not run yet |
+| Storage persistence / production ISO / smoke | #2054 / #2055 | Pending QEMU |
+
+Both Build jobs are at the reproducible release gate. Their exact-head source regressions and native build have passed; no QEMU or release acceptance is inferred.
+
 ## 2026-11-27 — PR #59 boot diagnostic: synthetic duplicate-completion request leaked
 
 | Gate | Evidence | Result |
