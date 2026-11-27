@@ -215,6 +215,7 @@ static int tb_barrier(struct block_device *disk, uint8_t *buffer) {
  * been unlinked from the in-flight list. Recreate that state explicitly:
  * state still says DISPATCHED, but the device no longer owns the request. */
 static int tb_duplicate_completion(struct block_device *disk, uint8_t *buffer) {
+    uint32_t free_before=disk->pool_free_count;
     struct block_request *request=tb_async(disk,BLOCK_OP_READ,32,buffer,512,
                                             BLOCK_PRIO_NORMAL);
     struct block_stats before,after;
@@ -233,7 +234,13 @@ static int tb_duplicate_completion(struct block_device *disk, uint8_t *buffer) {
     TB_CHECK(after.completed[BLOCK_OP_READ]==before.completed[BLOCK_OP_READ] &&
              after.errors[BLOCK_OP_READ]==before.errors[BLOCK_OP_READ],
              "stale duplicate is not accounted twice");
+    /* The DISPATCHED state above is synthetic: the request has already
+     * completed and is no longer on the in-flight list. Restore its terminal
+     * state so the lifecycle-checked free returns this slot to the pool. */
+    request->state=BLOCK_REQ_COMPLETE;
     block_request_free(request);
+    TB_CHECK(disk->pool_free_count==free_before,
+             "duplicate-completion probe returns request slot");
     klog("ZEROOS: block duplicate completion ignored.\n");
     return 0;
 }

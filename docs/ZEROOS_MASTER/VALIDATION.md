@@ -1,3 +1,18 @@
+## 2026-11-27 — PR #59 boot diagnostic: synthetic duplicate-completion request leaked
+
+| Gate | Evidence | Result |
+|---|---|---|
+| Main Build #2023 / Stage 1 #444 | 45318242398 / 45318242427, head ccf9399 | PASS |
+| Main QEMU | Build #2023 | 3/3 × 117/117 |
+| Main storage persistence / production / release | Build #2023 | PASS |
+| Stable ISO | 12,388,352 bytes; SHA-256 0d991c2cc97382704221c3be2f07f6615dc3e028528e88fbe143d559a34265a7 | Verified |
+| PR #59 Build #2052 / #2053 | head ba902d1 | FAIL in QEMU storage self-test |
+| PR #59 Stage 1 #473 / #474 | head ba902d1 | PASS |
+| Exact failing milestone sequence | Build #2053 serial artifact | lifecycle, buffer-range, double-free passed; background-admission reserve failed at test_block.c:437 |
+| Corrected duplicate-completion cleanup | New candidate commit | Source regression/check pending CI |
+
+Build #2053 retained diagnostics were downloaded and inspected. The test's stale-callback probe manually changed a completed request to DISPATCHED, then failed to restore COMPLETE before free. The lifecycle guard rejected that synthetic invalid free, leaving one pool slot allocated; the later reserve test's full-pool assumption failed. The correction restores COMPLETE, frees the request and asserts the free count returns to its starting baseline. This fixes test ownership cleanup without weakening the kernel guard. QEMU, storage persistence and production acceptance on the corrected head are pending.
+
 ## 2026-11-26 follow-up — PR #59 exact-head test guard failure corrected, rerun pending
 
 | Gate | Evidence | Result |

@@ -1,3 +1,12 @@
+### Current execution — 2026-11-27
+
+- Main remains verified at docs HEAD ccf9399 / code-bearing 04732d7: Build #2023 and Stage 1 #444 passed; QEMU 3/3 × 117/117, storage persistence, production smoke and stable ISO checksum verified.
+- PR #59 exact head ba902d1: Build #2052/#2053 failed at the block self-test's background admission reserve after the request-lifecycle, DMA range and double-free milestones passed. Stage 1 #473/#474 passed.
+- Retained Build #2053 serial diagnostics isolated the failure to tb_duplicate_completion: it sets a completed request to synthetic DISPATCHED to test stale completion, but does not restore COMPLETE before block_request_free. The new lifecycle guard correctly refuses the invalid free; one slot remains allocated and the later full-pool reserve assertion fails.
+- Scoped correction: restore COMPLETE after the stale duplicate callback, free the request, and assert pool_free_count returns to the captured baseline. Update the duplicate-completion source contract to require this cleanup order. No weakening of block_request_free or pool reserve behavior.
+- Next: run exact-head source regressions, native build, reproducible make check, QEMU 3/3/all milestones, SMP4, NX-off, failed-IPI, storage persistence and production smoke; Stage 1 must also pass. Merge PR #59 only after all checks pass; then require fresh post-merge main and release verification.
+- Preserve all Stage 0–10 requirements. Keep feature estimate unchanged. Physical G560/device/power-loss recovery, scheduler soak, ACPI S5, installer and physical desktop input/display remain open.
+
 ### Current execution — 2026-11-26 follow-up
 
 - Main Build #2023 / Stage 1 #444 remain verified PASS on `ccf9399`; main QEMU 3/3 × 117/117, storage persistence, production ISO and release checks passed. Stable ISO SHA-256 `0d991c2cc97382704221c3be2f07f6615dc3e028528e88fbe143d559a34265a7`.
