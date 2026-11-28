@@ -26,12 +26,22 @@ runtime = test_block.split("static int tb_duplicate_completion", 1)[1].split("st
 for required in (
     "request->state=BLOCK_REQ_DISPATCHED",
     "block_complete(request,0)",
+    "request->state=BLOCK_REQ_COMPLETE",
+    "block_request_free(request)",
+    "disk->pool_free_count==free_before",
     "after.completed[BLOCK_OP_READ]==before.completed[BLOCK_OP_READ]",
     "inflight==0",
     "ZEROOS: block duplicate completion ignored.",
 ):
     assert required in runtime, f"runtime duplicate-completion probe missing: {required}"
 
+restore=runtime.find("request->state=BLOCK_REQ_COMPLETE")
+free=runtime.find("block_request_free(request)", restore)
+pool=runtime.find("disk->pool_free_count==free_before", free)
+assert restore>=0 and free>restore and pool>free, (
+    "synthetic stale-callback state must be restored before lifecycle-checked free"
+)
+assert "uint32_t free_before=disk->pool_free_count;" in runtime
 marker = "ZEROOS: block duplicate completion ignored."
 assert marker in milestones
 assert workflow.count("python3 tools/test_block_duplicate_completion.py") == 1

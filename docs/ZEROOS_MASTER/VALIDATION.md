@@ -1,3 +1,86 @@
+## 2026-11-27 status refresh — exact-head Stage 1 pass; Build pending
+
+| Gate | Run / head | Result |
+|---|---|---|
+| Source regressions | Build #2054 / #2055, `e826ec4` | PASS |
+| Native x86-64 kernel build | #2054 / #2055 | PASS |
+| Kernel image verification | #2054 / #2055 | PASS |
+| Reproducible `make check` | #2054 / #2055 | IN PROGRESS |
+| Stage 1 Scheduler | #475 [45929891423] / #476 [45929899172] | PASS |
+| QEMU / SMP4 / NX-off / failed-IPI | #2054 / #2055 | Not run yet |
+| Storage persistence / production ISO / smoke | #2054 / #2055 | Pending QEMU |
+
+Both Build jobs are at the reproducible release gate. Their exact-head source regressions and native build have passed; no QEMU or release acceptance is inferred.
+
+## 2026-11-27 — PR #59 boot diagnostic: synthetic duplicate-completion request leaked
+
+| Gate | Evidence | Result |
+|---|---|---|
+| Main Build #2023 / Stage 1 #444 | 45318242398 / 45318242427, head ccf9399 | PASS |
+| Main QEMU | Build #2023 | 3/3 × 117/117 |
+| Main storage persistence / production / release | Build #2023 | PASS |
+| Stable ISO | 12,388,352 bytes; SHA-256 0d991c2cc97382704221c3be2f07f6615dc3e028528e88fbe143d559a34265a7 | Verified |
+| PR #59 Build #2052 / #2053 | head ba902d1 | FAIL in QEMU storage self-test |
+| PR #59 Stage 1 #473 / #474 | head ba902d1 | PASS |
+| Exact failing milestone sequence | Build #2053 serial artifact | lifecycle, buffer-range, double-free passed; background-admission reserve failed at test_block.c:437 |
+| Corrected duplicate-completion cleanup | New candidate commit | Source regression/check pending CI |
+
+Build #2053 retained diagnostics were downloaded and inspected. The test's stale-callback probe manually changed a completed request to DISPATCHED, then failed to restore COMPLETE before free. The lifecycle guard rejected that synthetic invalid free, leaving one pool slot allocated; the later reserve test's full-pool assumption failed. The correction restores COMPLETE, frees the request and asserts the free count returns to its starting baseline. This fixes test ownership cleanup without weakening the kernel guard. QEMU, storage persistence and production acceptance on the corrected head are pending.
+
+## 2026-11-26 follow-up — PR #59 exact-head test guard failure corrected, rerun pending
+
+| Gate | Evidence | Result |
+|---|---|---|
+| Main Build #2023 / Stage 1 #444 | 45318242398 / 45318242427 | PASS |
+| Main QEMU / storage / production | Build #2023 | PASS, 3/3 × 117/117 |
+| Stable ISO pair | ccf9399; SHA-256 0d991c2cc97382704221c3be2f07f6615dc3e028528e88fbe143d559a34265a7 | Verified |
+| PR #59 Build #2048 / #2049 | head 355ba8d | QEMU storage self-test failed at test_block.c:416 (pool_size assumption) |
+| PR #59 Stage 1 #469 / #470 | head 355ba8d | PASS |
+| Follow-up Build #2050 | head 4a405175 | FAIL before build: stale double-free source guard expected count==pool_size |
+| Follow-up Stage 1 #471 | head 4a405175 | PASS |
+| Latest source guard correction | next exact-head commit | CI pending |
+
+Build #2050's failing step was `Verify block request double-free pool guard`; it still expected `count==disk->pool_size` after the runtime test had been corrected to use `free_before`. The source guard now checks the baseline free count. QEMU, storage persistence and production acceptance for the corrected candidate remain pending.
+
+## 2026-11-26 — current main pass; PR #59 candidate QEMU regression corrected, rerun pending
+
+| Gate | Evidence | Result |
+|---|---|---|
+| Main Build | #2023 [45318242398], head `ccf9399` | PASS |
+| Main Stage 1 | #444 [45318242427] | PASS |
+| Native x86-64 / `make check` / kernel and ISO verification | #2023 | PASS |
+| Main QEMU | 3/3 × 117/117 milestones | PASS |
+| SMP4 / NX-off / failed-IPI / scheduler diagnostics | #2023 | PASS |
+| AHCI/NVMe two-boot persistence | #2023 | PASS |
+| Production ISO / desktop-network smoke / release | #2023 | PASS |
+| Stable/versioned ISO | 12,388,352 bytes; SHA-256 `0d991c2cc97382704221c3be2f07f6615dc3e028528e88fbe143d559a34265a7` | Verified |
+| PR #59 Build #2048 / PR Build #2049 | head `355ba8d` | FAIL at QEMU block self-test |
+| PR #59 Stage 1 #469 / PR Stage 1 #470 | head `355ba8d` | PASS |
+| Failure location | `test_block.c:416`, assumed free count equals total pool size | Diagnosed |
+| Follow-up free-count-baseline regression | New branch commit | Source assertions passed; CI pending |
+
+Build #2048 and #2049 logs show source regressions, native build, reproducible `make check`, kernel/ISO verification passed. QEMU reached the new request-lifecycle test, then failed at the double-free test because it drained `disk->pool_size` slots even though `free_before` can be lower due to live allocations. The test now drains exactly `free_before`, asserts unique pointers and exhaustion, and restores that same baseline count. The updated Python source regression checks this expectation. The new exact-head Build must prove QEMU, SMP4, NX-off, failed-IPI, storage persistence and production gates; do not infer them from the earlier failure or Stage 1 pass.
+
+## 2026-11-25 — latest main Build and release verified; candidate lifecycle fix pending
+
+| Gate | Evidence | Result |
+|---|---|---|
+| Main Build | #2023 [45318242398](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/45318242398), head `ccf9399` | PASS |
+| Main Stage 1 | #444 [45318242427](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/45318242427) | PASS |
+| Native x86-64 / reproducible `make check` / kernel verification | #2023 | PASS |
+| QEMU | 3/3 × **117/117 milestones each** | PASS |
+| SMP4 / NX-off / failed-IPI / scheduler diagnostics | #2023 | PASS |
+| AHCI/NVMe two-boot persistence | #2023 | PASS |
+| Production ISO / desktop-network smoke | #2023 | PASS |
+| Stable/versioned ISO byte comparison | #2023 | PASS |
+| SHA-256 | `0d991c2cc97382704221c3be2f07f6615dc3e028528e88fbe143d559a34265a7` | Verified |
+| Optional pycdlib cross-check | #2023 | Skipped; non-fatal |
+| Candidate lifecycle source regression/build/QEMU | `fix/block-request-single-submit-lifecycle-20261125` | Pending CI |
+
+Build #2023 logs explicitly report `boot_test: PASS - 3/3 boots reached every milestone`; each boot had all 117 milestones. Release log confirms stable ISO matches production. Candidate fix rejects duplicate submission and DMA segment append outside ALLOCATED; do not merge before exact-head Build/QEMU and Stage 1 pass.
+
+Remaining: scheduler soak, physical G560/device/recovery, ACPI S5, installer/recovery and physical desktop input/display. Estimate remains ~43%.
+
 ## 2026-11-23 — main Build #2013 verified; PR #58 validation in progress
 
 | Gate | Exact evidence | Result |

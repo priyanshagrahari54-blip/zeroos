@@ -215,6 +215,7 @@ static int tb_barrier(struct block_device *disk, uint8_t *buffer) {
  * been unlinked from the in-flight list. Recreate that state explicitly:
  * state still says DISPATCHED, but the device no longer owns the request. */
 static int tb_duplicate_completion(struct block_device *disk, uint8_t *buffer) {
+    uint32_t free_before=disk->pool_free_count;
     struct block_request *request=tb_async(disk,BLOCK_OP_READ,32,buffer,512,
                                             BLOCK_PRIO_NORMAL);
     struct block_stats before,after;
@@ -233,7 +234,13 @@ static int tb_duplicate_completion(struct block_device *disk, uint8_t *buffer) {
     TB_CHECK(after.completed[BLOCK_OP_READ]==before.completed[BLOCK_OP_READ] &&
              after.errors[BLOCK_OP_READ]==before.errors[BLOCK_OP_READ],
              "stale duplicate is not accounted twice");
+    /* The DISPATCHED state above is synthetic: the request has already
+     * completed and is no longer on the in-flight list. Restore its terminal
+     * state so the lifecycle-checked free returns this slot to the pool. */
+    request->state=BLOCK_REQ_COMPLETE;
     block_request_free(request);
+    TB_CHECK(disk->pool_free_count==free_before,
+             "duplicate-completion probe returns request slot");
     klog("ZEROOS: block duplicate completion ignored.\n");
     return 0;
 }
@@ -306,7 +313,57 @@ static int tb_cancel(struct block_device *disk, uint8_t *buffer) {
     return 0;
 }
 
+/* Request buffers are immutable after submit; duplicate submit is ignored. */
+static int tb_request_lifecycle(struct block_device *disk, uint8_t *buffer) {
+    struct block_request *request=block_request_alloc(disk,BLOCK_PRIO_NORMAL,0);
+    TB_CHECK(request!=0,"lifecycle request allocated");
+    request->op=BLOCK_OP_READ;
+    request->lba=128;
+    TB_CHECK(block_request_add_buffer(request,(uint64_t)buffer,512)==0,
+             "buffer accepted before submit");
+    ramdisk_pause(disk,1);
+    block_submit(disk,request);
+    uint8_t state_first=request->state;
+    uint64_t sequence_first=request->sequence;
+    block_request_free(request);
+    uint8_t state_after_premature_free=request->state;
+    uint16_t segments_first=request->segment_count;
+    int late_add=block_request_add_buffer(request,(uint64_t)(buffer+512),512);
+    uint16_t segments_after_late=request->segment_count;
+    block_submit(disk,request);
+    uint8_t state_second=request->state;
+    uint64_t sequence_second=request->sequence;
+    ramdisk_pause(disk,0);
+    int status=block_wait(request);
+    int post_complete_add=block_request_add_buffer(request,(uint64_t)(buffer+1024),512);
+    TB_CHECK(state_first!=BLOCK_REQ_ALLOCATED,"first submit leaves ALLOCATED");
+    TB_CHECK(state_after_premature_free==state_first,
+             "queued or in-flight request cannot be returned to pool");
+    TB_CHECK(late_add==-SE_INVAL && segments_first==1 &&
+             segments_after_late==segments_first,
+             "late buffer append rejected without DMA mutation");
+    TB_CHECK(state_second==state_first && sequence_second==sequence_first,
+             "duplicate submit leaves state and sequence unchanged");
+    TB_CHECK(status==0,"original request completes");
+    TB_CHECK(post_complete_add==-SE_INVAL,"completed request DMA program immutable");
+    block_request_free(request);
+
+    struct block_request *corrupt=block_request_alloc(disk,BLOCK_PRIO_NORMAL,0);
+    TB_CHECK(corrupt!=0,"corrupt-count request allocated");
+    corrupt->op=BLOCK_OP_READ;
+    corrupt->lba=128;
+    corrupt->segment_count=(uint16_t)(BLOCK_MAX_SEGMENTS+1U);
+    block_submit(disk,corrupt);
+    int corrupt_status=block_wait(corrupt);
+    block_request_free(corrupt);
+    TB_CHECK(corrupt_status==-SE_INVAL,
+             "submit rejects segment count beyond fixed array capacity");
+    klog("ZEROOS: block request mutation and duplicate submit rejected.");
+    return 0;
+}
+
 /* Physical DMA segment ranges must not wrap the 64-bit address space. */
+
 static int tb_buffer_range(struct block_device *disk) {
     struct block_request *request=block_request_alloc(disk,BLOCK_PRIO_NORMAL,0);
     TB_CHECK(request!=0,"buffer-range request allocated");
@@ -355,7 +412,7 @@ static int tb_double_free(struct block_device *disk) {
     TB_CHECK(disk->pool_free_count==free_before,
              "duplicate return leaves pool count unchanged");
 
-    while (count<disk->pool_size) {
+    while (count<free_before) {
         struct block_request *next=block_request_alloc(disk,BLOCK_PRIO_FOREGROUND,0);
         if (!next)
             break;
@@ -363,13 +420,13 @@ static int tb_double_free(struct block_device *disk) {
             TB_CHECK(held[i]!=next,"free list contains no duplicate slot");
         held[count++]=next;
     }
-    TB_CHECK(count==disk->pool_size,"double-free does not shrink pool capacity");
+    TB_CHECK(count==free_before,"double-free preserves available pool slots");
     TB_CHECK(!block_request_alloc(disk,BLOCK_PRIO_FOREGROUND,0),
              "pool remains bounded after double-free attempt");
     for (uint32_t i=0; i<count; ++i)
         block_request_free(held[i]);
-    TB_CHECK(disk->pool_free_count==disk->pool_size,
-             "pool count restored exactly after unique drain");
+    TB_CHECK(disk->pool_free_count==free_before,
+             "pool count restored to initial available count after unique drain");
     klog("ZEROOS: block request double-free rejected without pool corruption.");
     return 0;
 }
@@ -587,6 +644,7 @@ int storage_selftest_block(void) {
     TB_RUN(tb_watchdog_reuse_aba(disk,b),"watchdog-reuse-aba");
     TB_RUN(tb_cancel(disk,b),"cancel");
     TB_RUN(tb_buffer_range(disk),"buffer-range-overflow");
+    TB_RUN(tb_request_lifecycle(disk,b),"request-lifecycle");
     TB_RUN(tb_double_free(disk),"double-free-guard");
     TB_RUN(tb_pool(disk),"pool-backpressure");
     TB_RUN(tb_faults(disk,a,b),"eio-timeout-retry");

@@ -1,3 +1,42 @@
+> 2026-11-27 refresh: PR #59 head `e826ec4` passed Stage 1 #475 and #476. Build #2054/#2055 passed source regressions, native kernel build and kernel verification; both are currently at `make check`. QEMU/storage/production remain pending.
+
+> 2026-11-27 exact evidence: Main Build #2023 / Stage 1 #444 remain PASS on ccf9399. PR #59 Build #2052 and PR Build #2053 failed at QEMU storage self-test line 437 (background admission reserve) after the new lifecycle/DMA/double-free milestones passed. Stage 1 #473/#474 passed. Boot artifact identifies a synthetic request-state cleanup leak in tb_duplicate_completion; cleanup fix and pool-baseline assertion committed, exact-head rerun pending.
+
+> 2026-11-26 evidence update: PR #59 Build #2048/#2049 failed at the runtime free-pool test's total-capacity assumption. Commit #4a405175 fixed the runtime test, but Build #2050 then exposed the older source-contract test's stale `pool_size` expectation; Stage 1 #471 passed. The source guard is now synchronized; exact-head Build pending.
+
+Version: 5.10
+Updated: 2026-11-27
+
+## Current candidate state
+
+- PR #59 lifecycle implementation remains unmerged. Original candidate `355ba8d` passed native build, `make check`, kernel/ISO checks and Stage 1 #469/#470 but QEMU failed at `tb_double_free()` line 416 because it assumed every pool slot was free.
+- Commit `4a405175` changed the runtime test to use the captured available free count, but Build #2050 failed before compilation because `tools/test_block_request_double_free.py` retained the old `count==disk->pool_size` contract. Stage 1 #471 passed.
+- This follow-up updates that source regression to enforce `free_before`. New exact-head Build must run all source tests, build, `make check`, QEMU, storage and production acceptance before merge.
+
+> Current evidence update — 2026-11-26: Main Build #2023 / Stage 1 #444 pass on `ccf9399`. PR #59 exact-head Build #2048 and PR Build #2049 failed in QEMU at the double-free test's incorrect `pool_size` assumption; Stage 1 #469/#470 passed. Follow-up adjusts the test to use baseline free count and awaits exact-head CI.
+
+Version: 5.7
+Updated: 2026-11-26
+
+## Current main
+
+- Main Build #2023 [45318242398] and Stage 1 #444 [45318242427] passed. QEMU 3/3 × 117/117, SMP4, NX-off, failed-IPI, scheduler diagnostics, AHCI/NVMe persistence and production smoke passed.
+- Stable/versioned `zeroos-ccf9399.iso` / `zeroos.iso`: 12,388,352 bytes, byte-identical; SHA-256 `0d991c2cc97382704221c3be2f07f6615dc3e028528e88fbe143d559a34265a7`. Legacy BIOS live ISO, not installer.
+- PR #59 exact head `355ba8d`: Build #2048 and PR Build #2049 failed at `test_block.c:416` because the test expected all `pool_size` slots to be free. Stage 1 #469/#470 passed. Follow-up corrects the runtime regression to drain/restore the baseline free count; exact-head Build/QEMU is pending.
+- No candidate merge or completion-percentage increase until all gates pass. Physical G560, scheduler soak, device/power-loss recovery, ACPI S5, installer and physical desktop input/display remain uncertified/unimplemented.
+
+> Evidence correction — 2026-11-25: The 2026-11-24 pending snapshot below is superseded. Main Build #2023 and Stage 1 #444 passed on `ccf9399`; stable/versioned ISO pair verified. Candidate `fix/block-request-single-submit-lifecycle-20261125` is pending exact-head CI.
+
+Version: 5.6
+Updated: 2026-11-25
+
+## Current main snapshot
+
+- Build #2023 [45318242398](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/45318242398) passed native x86-64, reproducible `make check`, kernel/ISO checks, QEMU 3/3 × 117/117 milestones, SMP4, NX-off, failed-IPI, scheduler diagnostics, AHCI/NVMe persistence, production ISO, desktop/network smoke and release.
+- Stage 1 Scheduler #444 [45318242427](https://github.com/priyanshagrahari54-blip/zeroos/actions/runs/45318242427) passed. Stable/versioned ISO pair: 12,388,352 bytes, byte-identical, SHA-256 `0d991c2cc97382704221c3be2f07f6615dc3e028528e88fbe143d559a34265a7`. Optional pycdlib cross-check skipped; required ISO checks passed. Legacy BIOS live image; no installer.
+- Code-bearing main `04732d7` (PR #58); docs HEAD `ccf9399`. Candidate `fix/block-request-single-submit-lifecycle-20261125` rejects duplicate submit and post-submit buffer mutation; runtime/source regression and milestone added, exact-head CI pending.
+- Remaining: scheduler soak, physical G560/device/recovery, ACPI S5, installer/recovery, physical desktop input/display, later browser/media/AI/compatibility. Estimate ~43%; CI/docs not feature completion.
+
 # ZEROOS — MASTER DOCUMENT INDEX
 
 > Evidence correction — 2026-11-24 08:43 IST: main Build #2021 remains in progress; Stage 1 #442 was cancelled (not passed). Candidate Stage 1 #439 passed on the PR code commit. Re-run Stage 1 after Build #2021 if needed.
@@ -5,7 +44,7 @@
 
 > Daily verification snapshot — 2026-11-24: PR #58 merged as `04732d7`. Candidate Build #2020 passed; post-merge main Build #2021 and Stage 1 #442 are in progress. New stable ISO publication remains gated on main validation.
 
-Version: 5.5
+Version: 5.6
 Updated: 2026-11-23 (main Build #2013 / Stage 1 #434 / stable ISO verified; PR #58 Stage 1 #439 passed on current head; exact-head full Build pending).
 
 ## Current main snapshot — 2026-11-23

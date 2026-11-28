@@ -1,3 +1,39 @@
+### 2026-11-27 validation update
+
+- Candidate `e826ec4` Stage 1 #475/#476 passed. Build #2054/#2055 have passed all source regressions, native x86-64 build and kernel-image verification and are at reproducible `make check`.
+- QEMU, storage persistence, production ISO and smoke remain pending; no merge/release claim until the full Build completes.
+
+### Current execution — 2026-11-27
+
+- Main remains verified at docs HEAD ccf9399 / code-bearing 04732d7: Build #2023 and Stage 1 #444 passed; QEMU 3/3 × 117/117, storage persistence, production smoke and stable ISO checksum verified.
+- PR #59 exact head ba902d1: Build #2052/#2053 failed at the block self-test's background admission reserve after the request-lifecycle, DMA range and double-free milestones passed. Stage 1 #473/#474 passed.
+- Retained Build #2053 serial diagnostics isolated the failure to tb_duplicate_completion: it sets a completed request to synthetic DISPATCHED to test stale completion, but does not restore COMPLETE before block_request_free. The new lifecycle guard correctly refuses the invalid free; one slot remains allocated and the later full-pool reserve assertion fails.
+- Scoped correction: restore COMPLETE after the stale duplicate callback, free the request, and assert pool_free_count returns to the captured baseline. Update the duplicate-completion source contract to require this cleanup order. No weakening of block_request_free or pool reserve behavior.
+- Next: run exact-head source regressions, native build, reproducible make check, QEMU 3/3/all milestones, SMP4, NX-off, failed-IPI, storage persistence and production smoke; Stage 1 must also pass. Merge PR #59 only after all checks pass; then require fresh post-merge main and release verification.
+- Preserve all Stage 0–10 requirements. Keep feature estimate unchanged. Physical G560/device/power-loss recovery, scheduler soak, ACPI S5, installer and physical desktop input/display remain open.
+
+### Current execution — 2026-11-26 follow-up
+
+- Main Build #2023 / Stage 1 #444 remain verified PASS on `ccf9399`; main QEMU 3/3 × 117/117, storage persistence, production ISO and release checks passed. Stable ISO SHA-256 `0d991c2cc97382704221c3be2f07f6615dc3e028528e88fbe143d559a34265a7`.
+- PR #59's runtime double-free test was corrected to use its captured `free_before` count. Build #2050 then failed before compilation because the older source-contract test still required `count==disk->pool_size`; Stage 1 #471 passed on that candidate.
+- This follow-up synchronizes `tools/test_block_request_double_free.py` with the available-free-count invariant. Await exact-head Build/QEMU/storage/production; do not merge until all pass.
+- Preserve Stage 0–10 and keep the feature estimate unchanged. Remaining physical G560/device/power-loss certification, scheduler soak, ACPI S5, installer and physical desktop input/display are still open.
+
+### Current execution — 2026-11-26
+
+- Main Build #2023 and Stage 1 #444 passed on `ccf9399`: native build/check, QEMU 3/3 × 117/117, SMP4, NX-off, failed-IPI, scheduler diagnostics, AHCI/NVMe persistence, production ISO, desktop/network smoke and release verification. Stable ISO pair SHA-256 `0d991c2cc97382704221c3be2f07f6615dc3e028528e88fbe143d559a34265a7`.
+- PR #59 code at `355ba8d` passed source regressions, native build, `make check`, kernel/ISO checks and Stage 1 #469/#470, but Build #2048 and PR Build #2049 failed at QEMU storage self-test: `tb_double_free()` incorrectly required free requests to equal total pool size (line 416). The pool can have outstanding allocations.
+- Follow-up correction uses the initial free-count baseline for draining and restoration; source regression asserts this invariant. Exact-head CI must confirm the runtime test and full QEMU/storage/production matrix before merge.
+- Order: exact-head Build/QEMU; SMP4/NX-off/failed-IPI; storage persistence and production smoke; Stage 1; merge only after all pass; fresh main/release check; scheduler soak; physical G560/device/power-loss recovery; ACPI S5; installer/recovery; physical desktop input/display; then browser/media/AI/compatibility.
+- Preserve Stage 0–10. No completion credit for docs or CI. Keep feature estimate unchanged.
+
+### Current execution — 2026-11-25
+
+- Main Build #2023 and Stage 1 #444 passed on `ccf9399`: native build/check, QEMU 3/3 × 117/117, SMP4, NX-off, failed-IPI, scheduler diagnostics, AHCI/NVMe persistence, production ISO and desktop/network smoke. Stable ISO pair SHA-256 `0d991c2cc97382704221c3be2f07f6615dc3e028528e88fbe143d559a34265a7`; byte-identical and release log verified stable asset matches production. Optional pycdlib cross-check skipped; required El Torito checks passed.
+- Candidate `fix/block-request-single-submit-lifecycle-20261125` enforces one submission per block request and immutable DMA segments after allocation ownership ends. Runtime/source tests and required boot milestone integrated; exact-head Build/QEMU/Stage 1 pending.
+- Order: candidate source regression/native/check; QEMU and required milestones; SMP4/NX-off/failed-IPI; storage persistence and production smoke; Stage 1; merge only after exact-head acceptance; fresh main/release check; 600-second scheduler soak; physical G560/device/power-loss recovery; ACPI S5; installer/recovery; physical desktop display/input; then browser/media/AI/compatibility.
+- Preserve Stage 0–10; estimate ~43%; CI/docs are not feature completion.
+
 ### Current execution — 2026-11-23
 
 - Main Build #2013 / Stage 1 #434 passed on `af3e6bf`: native build/check, 3/3 QEMU × 116/116 milestones, SMP4, NX-off, failed-IPI, AHCI/NVMe persistence, production ISO and desktop/network smoke. Stable/versioned ISO SHA-256 `95cb636d08163b01a669dbd19088ebe02565985c710892176a52306df9552d3c`.
