@@ -1,3 +1,13 @@
+## 2026-11-28 — PR #59 merged; post-merge main gate pending
+
+- Exact candidate PR Build #2057 [45930038783] passed source regressions, native x86-64 build, reproducible `make check`, kernel/ISO verification, QEMU 3/3 × 118/118, SMP4, NX-off, failed-IPI recovery, scheduler diagnostics, AHCI/NVMe persistence and production ISO/smoke. Build #2056 [45930033962] also passed on the same PR head.
+- Stage 1 #478 [45930038835] and #477 [45930033854] passed. PR #59 merged as `9b14e082df769a8225666a152affb4829c48894f`.
+- Post-merge main Build #2058 [46099287994] and Stage 1 #479 [46099287963] were in progress at this snapshot. Stable ISO still targets `04732d7`; new release publication awaits post-merge checks.
+- Main branch metadata reports unprotected; the integration cannot access the protection endpoint. Enable required Build and Stage 1 checks in repository Settings.
+- Preserve all Stage 0–10 requirements. No completion increase from CI/docs.
+
+---
+
 ## 2026-11-27 status refresh — exact-head Stage 1 pass; Build pending
 
 | Gate | Run / head | Result |

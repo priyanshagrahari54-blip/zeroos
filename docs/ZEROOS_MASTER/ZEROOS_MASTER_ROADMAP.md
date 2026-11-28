@@ -1,3 +1,12 @@
+### 2026-11-28 — PR #59 accepted and merged; post-merge release gate
+
+- PR #59 merged as `9b14e082df769a8225666a152affb4829c48894f` after exact candidate Build #2057 and Stage 1 #478 passed.
+- Storage request lifecycle correction prevents duplicate submission, post-submit DMA metadata mutation, and premature pool recycling. Duplicate-completion test cleanup restores COMPLETE before free and checks pool-count baseline.
+- Candidate Build #2057: source regressions, native x86-64, reproducible `make check`, kernel/ISO verification, QEMU 3/3 × 118/118, SMP4, NX-off, failed-IPI, scheduler diagnostics, AHCI/NVMe persistence, production ISO and desktop/network smoke all PASS. Build #2056 and Stage 1 #477/#478 also passed.
+- Main Build #2058 and Stage 1 #479 were running on the merge SHA. Next gate: finish both exact-main checks, then verify new stable/versioned ISO and SHA-256. Existing stable release still corresponds to `04732d7`.
+- Main branch is unprotected; configure required Build and Stage 1 checks in repository Settings. Integration could not access the protection endpoint.
+- Continue in order: main release gate; scheduler long-soak; physical G560 boot and device/storage/power-loss recovery; ACPI S5; installer/recovery; physical desktop input/display; later browser/media/AI/compatibility. Preserve all Stage 0–10 requirements and do not inflate implementation status.
+
 ### 2026-11-27 validation update
 
 - Candidate `e826ec4` Stage 1 #475/#476 passed. Build #2054/#2055 have passed all source regressions, native x86-64 build and kernel-image verification and are at reproducible `make check`.

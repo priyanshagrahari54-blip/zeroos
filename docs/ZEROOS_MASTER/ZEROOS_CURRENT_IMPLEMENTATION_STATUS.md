@@ -1,3 +1,15 @@
+## 2026-11-28 current verification — PR #59 merged; post-merge main checks pending
+
+- Main merged PR #59 as `9b14e082df769a8225666a152affb4829c48894f`. It adds block request single-submit ownership, exact pool-slot validation, immutable DMA segment metadata after submit, and prevention of premature recycling while queued/in-flight.
+- Exact candidate Build #2057 [45930038783] passed source regressions, native x86-64, reproducible `make check`, kernel/ISO verification, QEMU 3/3 × 118/118, SMP4, NX-disabled, failed-IPI, scheduler diagnostics, AHCI/NVMe two-boot persistence, production ISO and desktop/network smoke. Build #2056 [45930033962] also passed on the same candidate.
+- Stage 1 #478 [45930038835] and #477 [45930033854] passed. PR #59 was merged after exact-head Build and Stage 1 passed.
+- Post-merge main Build #2058 [46099287994] and Stage 1 #479 [46099287963] were in progress at this snapshot. No post-merge boot pass is claimed yet.
+- Stable release still targets `04732d7` (12,388,352 bytes; SHA-256 `22a57efd77861f17c8bedf19d421a28e9c3e8fa80920ffcb1fb0817d20336720`). New release publication for merge SHA is pending.
+- Main branch metadata reports unprotected. The integration cannot access the branch-protection endpoint; enable required Build and Stage 1 checks in repository Settings.
+- Remaining: scheduler soak, physical G560/device and power-loss recovery, ACPI S5, installer/recovery, physical desktop input/display, then browser/media/AI/compatibility. No implementation estimate increase; CI/docs are not feature completion.
+
+---
+
 ## 2026-11-27 follow-up — Stage 1 passed; full Build at reproducible gate
 
 - Exact candidate commit `e826ec438969d703bae0f1786e7fe84ffb5b0bfe` passed Stage 1 Scheduler #475 (push run [45929891423]) and #476 (PR run [45929899172]).

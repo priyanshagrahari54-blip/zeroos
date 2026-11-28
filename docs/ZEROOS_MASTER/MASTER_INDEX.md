@@ -1,3 +1,20 @@
+> 2026-11-28 verified update: PR #59 merged as `9b14e082df769a8225666a152affb4829c48894f` after candidate Build #2057 and Stage 1 #478 passed. Candidate QEMU: 3/3 × 118/118; SMP4, NX-off, failed-IPI, storage persistence, production ISO and smoke passed. Post-merge main Build #2058 and Stage 1 #479 were running; stable release still targets `04732d7`. Main branch metadata reports unprotected; manual protection setup remains a release-integrity action.
+
+Version: 5.11
+Updated: 2026-11-28
+
+## Current execution gate
+
+- Code fix: block request lifecycle single-submit/ownership guard and immutable submitted DMA segments, merged in PR #59.
+- Exact candidate evidence: Build #2057 [45930038783] and Stage 1 #478 [45930038835] passed; Build #2056 [45930033962] and Stage 1 #477 [45930033854] also passed on the same PR head.
+- Main merge: `9b14e082df769a8225666a152affb4829c48894f`.
+- Post-merge Build #2058 [46099287994] and Stage 1 #479 [46099287963] were in progress. Do not mark the merged SHA boot-certified until they pass.
+- Release freshness: current stable/versioned asset `zeroos-04732d7.iso`; new ISO publication and hash verification are pending post-merge acceptance.
+- Main is unprotected. Configure required Build + Stage 1 checks in repository Settings.
+- Preserve all Stage 0–10 requirements. No completion percentage increase for CI, docs, or merge work.
+
+---
+
 > 2026-11-27 refresh: PR #59 head `e826ec4` passed Stage 1 #475 and #476. Build #2054/#2055 passed source regressions, native kernel build and kernel verification; both are currently at `make check`. QEMU/storage/production remain pending.
 
 > 2026-11-27 exact evidence: Main Build #2023 / Stage 1 #444 remain PASS on ccf9399. PR #59 Build #2052 and PR Build #2053 failed at QEMU storage self-test line 437 (background admission reserve) after the new lifecycle/DMA/double-free milestones passed. Stage 1 #473/#474 passed. Boot artifact identifies a synthetic request-state cleanup leak in tb_duplicate_completion; cleanup fix and pool-baseline assertion committed, exact-head rerun pending.
